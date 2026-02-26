@@ -1,0 +1,39 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type Post {
+  id: ID!
+  content: String!
+  author: User!
+  authorId: String!
+  createdAt: DateTime!
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
+type User {
+  id: ID!
+  email: String!
+  username: String!
+  firstName: String!
+  lastName: String!
+  photoUrl: String
+  posts: [Post!]
+}
+
+type Query {
+  """Verifica si el servidor GraphQL está funcionando"""
+  ping: String!
+
+  """Obtiene los datos del usuario logueado en base al token JWT"""
+  me: String!
+  getPosts: [Post!]!
+}
+
+type Mutation {
+  createPost(content: String!): Post!
+}
