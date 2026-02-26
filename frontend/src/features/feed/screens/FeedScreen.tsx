@@ -7,7 +7,7 @@ export default function FeedScreen() {
     return (
         <SafeAreaView style={styles.safeArea}>
             <View style={styles.container}>
-                <Text style={styles.title}>Bienvenido al Feed de Chunchi City</Text>
+                <Text style={styles.title}>Bienvenido a Chunchi City App</Text>
             </View>
         </SafeAreaView>
     );
