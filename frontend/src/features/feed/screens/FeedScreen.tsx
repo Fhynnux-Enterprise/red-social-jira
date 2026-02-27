@@ -7,7 +7,7 @@ export default function FeedScreen() {
     return (
         <SafeAreaView style={styles.safeArea}>
             <View style={styles.container}>
-                <Text style={styles.title}>Bienvenido a Chunchi City prueba para que mueva la tarea</Text>
+                <Text style={styles.title}>Bienvenido a Chunchi City ahora en la tercera rama por si acaso</Text>
             </View>
         </SafeAreaView>
     );
