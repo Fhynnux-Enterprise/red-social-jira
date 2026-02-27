@@ -23,6 +23,6 @@ export class Post {
     authorId: string;
 
     @Field()
-    @CreateDateColumn()
+    @CreateDateColumn({ type: 'timestamptz' })
     createdAt: Date;
 }
