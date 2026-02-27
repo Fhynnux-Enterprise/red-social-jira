@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
+import { DeviceEventEmitter } from 'react-native';
+import Toast from 'react-native-toast-message';
 
 // Apuntamos usando la IP de tu PC para que un celular físico conectado al mismo Wi-Fi pueda acceder
 const BASE_URL = 'http://192.168.1.129:3000';
@@ -26,6 +27,24 @@ apiClient.interceptors.request.use(
         return config;
     },
     (error) => {
+        return Promise.reject(error);
+    }
+);
+
+// Response Interceptor: Atrapar 401 Unauthorized globally
+apiClient.interceptors.response.use(
+    (response) => {
+        return response;
+    },
+    (error) => {
+        if (error.response?.status === 401) {
+            DeviceEventEmitter.emit('session_expired');
+            Toast.show({
+                type: 'error',
+                text1: 'Sesión expirada',
+                text2: 'Por favor, inicia sesión nuevamente.',
+            });
+        }
         return Promise.reject(error);
     }
 );

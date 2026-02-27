@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
+import { DeviceEventEmitter } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { AuthService } from '../services/auth.service';
 
@@ -15,6 +16,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [userToken, setUserToken] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
+    const signOut = async () => {
+        await AuthService.logout();
+        setUserToken(null);
+    };
+
     useEffect(() => {
         const checkToken = async () => {
             try {
@@ -30,16 +36,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         };
 
         checkToken();
+
+        // Escuchar el evento de sesión expirada
+        const subscription = DeviceEventEmitter.addListener('session_expired', () => {
+            signOut();
+        });
+
+        return () => subscription.remove();
     }, []);
 
     const signIn = async (token: string) => {
         await SecureStore.setItemAsync('access_token', token);
         setUserToken(token);
-    };
-
-    const signOut = async () => {
-        await AuthService.logout();
-        setUserToken(null);
     };
 
     return (
