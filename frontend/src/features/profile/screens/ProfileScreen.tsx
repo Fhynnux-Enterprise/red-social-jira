@@ -114,23 +114,27 @@ export default function ProfileScreen() {
                             <Text style={styles.badgeText}>{userData.badge.title}</Text>
                         </View>
                     )}
+                </View>
 
+                {/* Tarjetas Informativas Contenedor */}
+                <View style={styles.cardsContainer}>
                     {/* Stats Card */}
-                    <View style={styles.statsCard}>
-
-                        <View style={styles.statItem}>
-                            <Text style={styles.statNumber}>0</Text>
-                            <Text style={styles.statLabel}>Seguidores</Text>
-                        </View>
-                        <View style={styles.statDivider} />
-                        <View style={styles.statItem}>
-                            <Text style={styles.statNumber}>0</Text>
-                            <Text style={styles.statLabel}>Siguiendo</Text>
-                        </View>
-                        <View style={styles.statDivider} />
-                        <View style={styles.statItem}>
-                            <Text style={styles.statNumber}>{userData.posts?.length || 0}</Text>
-                            <Text style={styles.statLabel}>Publicaciones</Text>
+                    <View style={styles.statsCardWrapper}>
+                        <View style={styles.statsCard}>
+                            <View style={styles.statItem}>
+                                <Text style={styles.statNumber}>0</Text>
+                                <Text style={styles.statLabel}>Seguidores</Text>
+                            </View>
+                            <View style={styles.statDivider} />
+                            <View style={styles.statItem}>
+                                <Text style={styles.statNumber}>0</Text>
+                                <Text style={styles.statLabel}>Siguiendo</Text>
+                            </View>
+                            <View style={styles.statDivider} />
+                            <View style={styles.statItem}>
+                                <Text style={styles.statNumber}>{userData.posts?.length || 0}</Text>
+                                <Text style={styles.statLabel}>Publicaciones</Text>
+                            </View>
                         </View>
                     </View>
 
@@ -175,62 +179,62 @@ export default function ProfileScreen() {
                             ))}
                         </View>
                     )}
+                </View>
 
-                    {/* Seccion de Publicaciones */}
-                    <View style={styles.postsSection}>
-                        <Text style={styles.postsSectionTitle}>Publicaciones</Text>
-                        {userData.posts && userData.posts.length > 0 ? (
-                            userData.posts.map((post, index) => (
-                                <View key={post.id || index} style={styles.postCard}>
-                                    {/* Author Info */}
-                                    <View style={styles.postHeader}>
-                                        <View style={styles.postAuthorImagePlaceholder}>
-                                            {userData.photoUrl ? (
-                                                <Image source={{ uri: userData.photoUrl }} style={styles.postAuthorImage} />
-                                            ) : (
-                                                <Text style={styles.postAuthorImageText}>
-                                                    {(userData.firstName?.charAt(0) || '')}{(userData.lastName?.charAt(0) || '')}
-                                                </Text>
-                                            )}
-                                        </View>
-                                        <View style={styles.postAuthorInfo}>
-                                            <Text style={styles.postAuthorName}>
-                                                {userData.firstName} {userData.lastName}
+                {/* Seccion de Publicaciones */}
+                <View style={styles.postsSection}>
+                    <Text style={styles.postsSectionTitle}>Publicaciones</Text>
+                    {userData.posts && userData.posts.length > 0 ? (
+                        userData.posts.map((post, index) => (
+                            <View key={post.id || index} style={styles.postCard}>
+                                {/* Author Info */}
+                                <View style={styles.postHeader}>
+                                    <View style={styles.postAuthorImagePlaceholder}>
+                                        {userData.photoUrl ? (
+                                            <Image source={{ uri: userData.photoUrl }} style={styles.postAuthorImage} />
+                                        ) : (
+                                            <Text style={styles.postAuthorImageText}>
+                                                {(userData.firstName?.charAt(0) || '')}{(userData.lastName?.charAt(0) || '')}
                                             </Text>
-                                            <Text style={styles.postTime}>
-                                                {new Date(post.createdAt).toLocaleDateString()}
-                                            </Text>
-                                        </View>
+                                        )}
                                     </View>
-
-                                    {/* Content */}
-                                    <Text style={styles.postContent}>{post.content}</Text>
-
-                                    {/* Interaction Row Dummy */}
-                                    <View style={styles.postInteractions}>
-                                        <TouchableOpacity style={styles.interactionBtn}>
-                                            <Ionicons name="heart-outline" size={20} color={colors.textSecondary} />
-                                            <Text style={styles.interactionText}>0</Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity style={styles.interactionBtn}>
-                                            <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
-                                            <Text style={styles.interactionText}>0</Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity style={styles.interactionBtn}>
-                                            <Ionicons name="share-social-outline" size={20} color={colors.textSecondary} />
-                                            <Text style={styles.interactionText}>0</Text>
-                                        </TouchableOpacity>
+                                    <View style={styles.postAuthorInfo}>
+                                        <Text style={styles.postAuthorName}>
+                                            {userData.firstName} {userData.lastName}
+                                        </Text>
+                                        <Text style={styles.postTime}>
+                                            {new Date(post.createdAt).toLocaleDateString()}
+                                        </Text>
                                     </View>
                                 </View>
-                            ))
-                        ) : (
-                            <View style={styles.emptyPostsContainer}>
-                                <Ionicons name="images-outline" size={48} color={colors.textSecondary} style={{ opacity: 0.5 }} />
-                                <Text style={styles.emptyPostsText}>Aún no hay publicaciones</Text>
-                                <Text style={styles.emptyPostsSubText}>Cuando compartas fotos y videos, aparecerán aquí.</Text>
+
+                                {/* Content */}
+                                <Text style={styles.postContent}>{post.content}</Text>
+
+                                {/* Interaction Row Dummy */}
+                                <View style={styles.postInteractions}>
+                                    <TouchableOpacity style={styles.interactionBtn}>
+                                        <Ionicons name="heart-outline" size={20} color={colors.textSecondary} />
+                                        <Text style={styles.interactionText}>0</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.interactionBtn}>
+                                        <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
+                                        <Text style={styles.interactionText}>0</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.interactionBtn}>
+                                        <Ionicons name="share-social-outline" size={20} color={colors.textSecondary} />
+                                        <Text style={styles.interactionText}>0</Text>
+                                    </TouchableOpacity>
+                                </View>
                             </View>
-                        )}
-                    </View>
+                        ))
+                    ) : (
+                        <View style={styles.emptyPostsContainer}>
+                            <Ionicons name="images-outline" size={48} color={colors.textSecondary} style={{ opacity: 0.5 }} />
+                            <Text style={styles.emptyPostsText}>Aún no hay publicaciones</Text>
+                            <Text style={styles.emptyPostsSubText}>Cuando compartas fotos y videos, aparecerán aquí.</Text>
+                        </View>
+                    )}
                 </View>
             </ScrollView>
 
@@ -244,10 +248,10 @@ export default function ProfileScreen() {
                 <TouchableWithoutFeedback onPress={() => setIsMenuVisible(false)}>
                     <View style={styles.modalOverlay}>
                         <TouchableWithoutFeedback>
-                            <View style={[styles.modalContent, { paddingTop: insets.top + 20, paddingBottom: Math.max(insets.bottom, 20) + 20 }]}>
+                            <View style={[styles.modalContent, { paddingTop: Math.max(insets.top, 20) + 10, paddingBottom: Math.max(insets.bottom, 20) + 20 }]}>
                                 {/* Encabezado del Drawer */}
                                 <View style={styles.drawerHeader}>
-                                    <TouchableOpacity onPress={() => setIsMenuVisible(false)}>
+                                    <TouchableOpacity onPress={() => setIsMenuVisible(false)} style={styles.drawerCloseBtn}>
                                         <Ionicons name="close" size={28} color={colors.text} />
                                     </TouchableOpacity>
                                     <Text style={styles.modalTitle}>Configuración</Text>
@@ -348,9 +352,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         alignItems: 'center',
     },
     content: {
-        flex: 1,
-        paddingHorizontal: 16,
-        paddingBottom: 20,
+        // Removed paddingHorizontal and paddingBottom from here
     },
     avatarCenterContainer: {
         alignItems: 'center',
@@ -412,17 +414,23 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         textTransform: 'uppercase',
         letterSpacing: 0.5,
     },
+    // ---- TARJETAS Y CONTENEDORES GLOBALES ----
+    cardsContainer: {
+        marginBottom: 16,
+    },
+    statsCardWrapper: {
+        backgroundColor: colors.surface,
+        marginBottom: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+    },
     statsCard: {
         flexDirection: 'row',
-        backgroundColor: colors.surface,
-        borderRadius: 16,
         paddingVertical: 16,
-        paddingHorizontal: 10,
+        paddingHorizontal: 20, // Adjusted padding
         justifyContent: 'space-around',
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: colors.border,
-        marginBottom: 20,
+        // Removed borderRadius, borderWidth, borderColor
     },
     statItem: {
         alignItems: 'center',
@@ -445,11 +453,12 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     },
     infoCard: {
         backgroundColor: colors.surface,
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
+        paddingHorizontal: 20,
+        paddingVertical: 18,
+        marginBottom: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+        // Removed borderRadius, borderWidth, borderColor
     },
     infoBlock: {
         flexDirection: 'column',
@@ -504,7 +513,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         fontWeight: 'bold',
         color: colors.text,
         marginBottom: 16,
-        paddingHorizontal: 4,
+        paddingHorizontal: 16,
     },
     emptyPostsContainer: {
         alignItems: 'center',
@@ -515,6 +524,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         borderWidth: 1,
         borderColor: colors.border,
         borderStyle: 'dashed',
+        marginHorizontal: 16,
     },
     emptyPostsText: {
         fontSize: 18,
@@ -528,13 +538,14 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         color: colors.textSecondary,
         textAlign: 'center',
         paddingHorizontal: 30,
+        lineHeight: 20,
     },
     postCard: {
         backgroundColor: colors.surface,
-        borderRadius: 16,
         padding: 16,
-        marginBottom: 16,
-        borderWidth: 1,
+        marginBottom: 8,
+        borderTopWidth: 1,
+        borderBottomWidth: 1,
         borderColor: colors.border,
     },
     postHeader: {
@@ -606,11 +617,10 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: 16,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: colors.error,
+        borderRadius: 16,
         backgroundColor: isDark ? 'rgba(255, 82, 82, 0.1)' : 'rgba(255, 82, 82, 0.05)',
         marginBottom: 20,
+        marginTop: 10,
     },
     logoutText: {
         color: colors.error,
@@ -629,7 +639,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         alignItems: 'flex-end', // Pega el contenido hacia el lado derecho
     },
     modalContent: {
-        backgroundColor: colors.surface,
+        backgroundColor: colors.background,
         width: '75%', // Tamaño de un menú lateral común (Drawer)
         height: '100%',
         paddingHorizontal: 20,
@@ -647,6 +657,17 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         fontSize: 18,
         fontWeight: 'bold', // Un tamaño más modesto para el encabezado del drawer
         color: colors.text,
+    },
+    drawerCloseBtn: {
+        padding: 4,
+    },
+    menuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 18,
+        paddingHorizontal: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
     },
     settingButton: {
         flexDirection: 'row',
