@@ -1,7 +1,7 @@
 import { apiClient } from '../../../api/axios.client';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../../../api/supabase.client';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { GoogleSignin, statusCodes, isErrorWithCode } from '@react-native-google-signin/google-signin';
 
 export const AuthService = {
     async login(loginData: { email: string; password: string }) {
@@ -55,7 +55,11 @@ export const AuthService = {
             await GoogleSignin.hasPlayServices();
 
             // 2. Iniciar sesión nativa con Google
-            const userInfo = await GoogleSignin.signIn();
+            const userInfo = await GoogleSignin.signIn() as any;
+
+            if (userInfo?.type === 'cancelled' || userInfo?.type === 'cancel') {
+                throw { isCancelled: true };
+            }
 
             // Adjusting to handle newer versions for safety
             const idToken = (userInfo as any).data?.idToken || (userInfo as any).idToken;
@@ -85,7 +89,10 @@ export const AuthService = {
             await apiClient.post('/auth/sync');
 
             return { access_token };
-        } catch (error) {
+        } catch (error: any) {
+            if (error?.isCancelled || (isErrorWithCode(error) && error.code === statusCodes.SIGN_IN_CANCELLED)) {
+                throw { isCancelled: true };
+            }
             console.error('Error in Native loginWithGoogle: ', error);
             throw error;
         }

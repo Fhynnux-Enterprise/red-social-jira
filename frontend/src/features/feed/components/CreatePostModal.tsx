@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     Modal,
     View,
@@ -15,7 +15,7 @@ import { useMutation } from '@apollo/client';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { CREATE_POST, GET_POSTS } from '../graphql/posts.operations';
-import { colors } from '../../../theme/colors';
+import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 
 interface CreatePostModalProps {
     visible: boolean;
@@ -23,8 +23,12 @@ interface CreatePostModalProps {
 }
 
 export default function CreatePostModal({ visible, onClose }: CreatePostModalProps) {
+    const { colors } = useTheme();
     const [content, setContent] = useState('');
     const insets = useSafeAreaInsets();
+
+    // Generamos estilos dinámicos que reaccionan al tema
+    const styles = useMemo(() => getStyles(colors), [colors]);
 
     const [createPost, { loading: creating }] = useMutation(CREATE_POST, {
         onCompleted: () => {
@@ -63,7 +67,7 @@ export default function CreatePostModal({ visible, onClose }: CreatePostModalPro
                     {/* Header */}
                     <View style={styles.header}>
                         <TouchableOpacity onPress={handleClose} style={styles.iconButton}>
-                            <Ionicons name="close" size={28} color={colors.dark.text} />
+                            <Ionicons name="close" size={28} color={colors.text} />
                         </TouchableOpacity>
                         <Text style={styles.headerTitle}>Crear publicación</Text>
                         <TouchableOpacity
@@ -84,14 +88,14 @@ export default function CreatePostModal({ visible, onClose }: CreatePostModalPro
                     <View style={styles.editorContainer}>
                         <View style={styles.userInfo}>
                             <View style={styles.smallAvatarPlaceholder}>
-                                <Ionicons name="person" size={20} color={colors.dark.textSecondary} />
+                                <Ionicons name="person" size={20} color={colors.textSecondary} />
                             </View>
                             <Text style={styles.userName}>Tú</Text>
                         </View>
                         <TextInput
                             style={styles.input}
                             placeholder="¿Qué está pasando en Chunchi?"
-                            placeholderTextColor={colors.dark.textSecondary}
+                            placeholderTextColor={colors.textSecondary}
                             multiline
                             autoFocus={true}
                             value={content}
@@ -126,14 +130,14 @@ export default function CreatePostModal({ visible, onClose }: CreatePostModalPro
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: colors.dark.background,
+        backgroundColor: colors.background,
     },
     container: {
         flex: 1,
-        backgroundColor: colors.dark.background,
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
@@ -142,7 +146,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: colors.dark.border,
+        borderBottomColor: colors.border,
     },
     iconButton: {
         padding: 4,
@@ -150,7 +154,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: colors.dark.text,
+        color: colors.text,
     },
     publishButton: {
         backgroundColor: colors.primary,
@@ -179,27 +183,27 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: colors.dark.surface,
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 12,
     },
     userName: {
-        color: colors.dark.text,
+        color: colors.text,
         fontWeight: 'bold',
         fontSize: 16,
     },
     input: {
         flex: 1,
-        color: colors.dark.text,
+        color: colors.text,
         fontSize: 18,
         lineHeight: 26,
     },
     toolbar: {
         borderTopWidth: 1,
-        borderTopColor: colors.dark.border,
-        backgroundColor: colors.dark.surface,
-        paddingBottom: 8, // Da un poco de respiro al final
+        borderTopColor: colors.border,
+        backgroundColor: colors.surface,
+        paddingBottom: 8,
     },
     toolbarOption: {
         flexDirection: 'row',
@@ -208,7 +212,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
     },
     toolbarOptionText: {
-        color: colors.dark.text,
+        color: colors.text,
         fontSize: 16,
         marginLeft: 12,
         fontWeight: '500',

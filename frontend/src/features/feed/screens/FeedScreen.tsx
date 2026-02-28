@@ -1,23 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, Image, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@apollo/client';
 import { GET_POSTS } from '../graphql/posts.operations';
-import { colors } from '../../../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../auth/context/AuthContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import CreatePostModal from '../components/CreatePostModal';
+import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 
 export default function FeedScreen() {
     const { signOut } = useAuth();
+    const { colors } = useTheme();
     const [isModalVisible, setIsModalVisible] = useState(false);
+
+    // Generamos estilos dinámicos que reaccionan al tema
+    const styles = useMemo(() => getStyles(colors), [colors]);
 
     const { data, loading, error, refetch } = useQuery(GET_POSTS);
 
     const formatDate = (isoString: string) => {
-        // Postgres envía la fecha UTC pero sin la 'Z' al final, por lo que JS la tomaba como local sumándole +5 horas de error.
         const utcString = isoString.endsWith('Z') ? isoString : `${isoString}Z`;
         const date = new Date(utcString);
 
@@ -36,14 +39,17 @@ export default function FeedScreen() {
         }
     };
 
-    // Render tarjeta individual
     const renderPost = ({ item }: { item: any }) => (
         <View style={styles.postCard}>
             <View style={styles.postHeader}>
-                <View style={styles.avatarPlaceholder}>
-                    <Text style={styles.avatarText}>
-                        {item.author.firstName[0]}{item.author.lastName[0]}
-                    </Text>
+                <View style={[styles.avatarPlaceholder, { overflow: 'hidden' }]}>
+                    {item.author.photoUrl ? (
+                        <Image source={{ uri: item.author.photoUrl }} style={styles.avatarImage} />
+                    ) : (
+                        <Text style={styles.avatarText}>
+                            {item.author.firstName?.[0] || ''}{item.author.lastName?.[0] || ''}
+                        </Text>
+                    )}
                 </View>
                 <View style={styles.authorInfo}>
                     <Text style={styles.authorName}>
@@ -58,11 +64,11 @@ export default function FeedScreen() {
 
             <View style={styles.postFooter}>
                 <TouchableOpacity style={styles.actionButton}>
-                    <Ionicons name="heart-outline" size={20} color={colors.dark.textSecondary} />
+                    <Ionicons name="heart-outline" size={20} color={colors.textSecondary} />
                     <Text style={styles.actionText}>Me gusta</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.actionButton}>
-                    <Ionicons name="chatbubble-outline" size={20} color={colors.dark.textSecondary} />
+                    <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
                     <Text style={styles.actionText}>Comentar</Text>
                 </TouchableOpacity>
             </View>
@@ -97,10 +103,10 @@ export default function FeedScreen() {
                 </View>
                 <View style={styles.headerIcons}>
                     <TouchableOpacity style={styles.iconButton}>
-                        <Ionicons name="search-outline" size={22} color={colors.dark.text} />
+                        <Ionicons name="search-outline" size={22} color={colors.text} />
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.iconButton}>
-                        <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.dark.text} />
+                        <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.text} />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -109,7 +115,7 @@ export default function FeedScreen() {
             <View style={styles.createPostContainer}>
                 <View style={styles.createPostRow}>
                     <View style={styles.smallAvatarPlaceholder}>
-                        <Ionicons name="person" size={20} color={colors.dark.textSecondary} />
+                        <Ionicons name="person" size={20} color={colors.textSecondary} />
                     </View>
                     <TouchableOpacity
                         style={styles.fakeInput}
@@ -146,10 +152,10 @@ export default function FeedScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: colors.dark.background,
+        backgroundColor: colors.background,
     },
     topHeader: {
         flexDirection: 'row',
@@ -158,7 +164,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: colors.dark.border,
+        borderBottomColor: colors.border,
     },
     brandContainer: {
         flexDirection: 'row',
@@ -185,14 +191,14 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: colors.dark.surface,
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
     },
     createPostContainer: {
         padding: 16,
         borderBottomWidth: 6,
-        borderBottomColor: colors.dark.surface,
+        borderBottomColor: colors.surface,
     },
     createPostRow: {
         flexDirection: 'row',
@@ -202,25 +208,25 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: colors.dark.surface,
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 12,
         borderWidth: 1,
-        borderColor: colors.dark.border,
+        borderColor: colors.border,
     },
     fakeInput: {
         flex: 1,
-        backgroundColor: colors.dark.surface,
+        backgroundColor: colors.surface,
         borderRadius: 20,
         paddingHorizontal: 16,
         justifyContent: 'center',
         height: 40,
         borderWidth: 1,
-        borderColor: colors.dark.border,
+        borderColor: colors.border,
     },
     fakeInputText: {
-        color: colors.dark.textSecondary,
+        color: colors.textSecondary,
         fontSize: 16,
     },
     listContainer: {
@@ -231,17 +237,17 @@ const styles = StyleSheet.create({
         marginTop: 40,
     },
     errorText: {
-        color: colors.dark.error,
+        color: colors.error,
         textAlign: 'center',
         marginTop: 40,
     },
     postCard: {
-        backgroundColor: colors.dark.surface,
+        backgroundColor: colors.surface,
         padding: 16,
         marginBottom: 8,
         borderTopWidth: 1,
         borderBottomWidth: 1,
-        borderColor: colors.dark.border,
+        borderColor: colors.border,
     },
     postHeader: {
         flexDirection: 'row',
@@ -258,6 +264,11 @@ const styles = StyleSheet.create({
         marginRight: 12,
         borderWidth: 1,
         borderColor: 'rgba(255, 101, 36, 0.3)',
+        overflow: 'hidden',
+    },
+    avatarImage: {
+        width: '100%',
+        height: '100%',
     },
     avatarText: {
         color: colors.primary,
@@ -270,17 +281,17 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     authorName: {
-        color: colors.dark.text,
+        color: colors.text,
         fontWeight: 'bold',
         fontSize: 16,
         marginBottom: 2,
     },
     postDate: {
-        color: colors.dark.textSecondary,
+        color: colors.textSecondary,
         fontSize: 13,
     },
     postContent: {
-        color: colors.dark.text,
+        color: colors.text,
         fontSize: 16,
         lineHeight: 24,
         marginTop: 4,
@@ -290,7 +301,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         paddingTop: 12,
         borderTopWidth: 1,
-        borderTopColor: colors.dark.border,
+        borderTopColor: colors.border,
     },
     actionButton: {
         flexDirection: 'row',
@@ -299,7 +310,7 @@ const styles = StyleSheet.create({
         paddingVertical: 4,
     },
     actionText: {
-        color: colors.dark.textSecondary,
+        color: colors.textSecondary,
         marginLeft: 6,
         fontSize: 14,
         fontWeight: '500',

@@ -1,6 +1,9 @@
-import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, OneToMany } from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, OneToMany, OneToOne } from 'typeorm';
 import { ObjectType, Field, ID } from '@nestjs/graphql';
 import { Post } from '../../posts/entities/post.entity';
+import { UserCustomField } from '../../users/entities/user-custom-field.entity';
+import { UserBadge } from '../../users/entities/user-badge.entity';
+
 
 @ObjectType()
 @Entity('users')
@@ -25,9 +28,11 @@ export class User {
     @Column()
     lastName: string;
 
+    @Field({ nullable: true })
     @Column({ nullable: true })
     phone: string;
 
+    @Field({ nullable: true })
     @Column({ type: 'text', nullable: true })
     bio: string;
 
@@ -53,4 +58,12 @@ export class User {
     @Field(() => [Post], { nullable: true })
     @OneToMany(() => Post, (post) => post.author)
     posts: Post[];
+
+    @Field(() => [UserCustomField], { nullable: true })
+    @OneToMany(() => UserCustomField, (customField) => customField.author)
+    customFields: UserCustomField[];
+
+    @Field(() => UserBadge, { nullable: true })
+    @OneToOne(() => UserBadge, badge => badge.user)
+    badge: UserBadge;
 }

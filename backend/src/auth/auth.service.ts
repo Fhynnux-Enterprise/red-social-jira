@@ -148,7 +148,15 @@ export class AuthService {
         }
     }
     async getProfile(userId: string) {
-        const user = await this.userRepository.findOne({ where: { id: userId } });
+        const user = await this.userRepository.findOne({
+            where: { id: userId },
+            relations: ['customFields', 'badge', 'posts'],
+            order: {
+                posts: {
+                    createdAt: 'DESC'
+                }
+            }
+        });
         if (!user) {
             throw new UnauthorizedException('Usuario no encontrado');
         }

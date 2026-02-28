@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -12,14 +12,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { AuthService } from '../services/auth.service';
-import { colors } from '../../../theme/colors';
 import { useAuth } from '../context/AuthContext';
+import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 
 export default function LoginScreen({ navigation }: any) {
     const { signIn } = useAuth();
+    const { colors } = useTheme();
+    const styles = useMemo(() => getStyles(colors), [colors]);
+
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -36,6 +38,14 @@ export default function LoginScreen({ navigation }: any) {
             const { access_token } = await AuthService.loginWithGoogle();
             await signIn(access_token);
         } catch (error: any) {
+            if (error?.isCancelled) {
+                Toast.show({
+                    type: 'info',
+                    text1: 'Autenticación cancelada',
+                    text2: 'No seleccionaste ninguna cuenta de Google.',
+                });
+                return;
+            }
             Toast.show({
                 type: 'error',
                 text1: 'Error OAuth',
@@ -116,7 +126,7 @@ export default function LoginScreen({ navigation }: any) {
                             <TextInput
                                 style={[styles.input, errors.email ? styles.inputError : null]}
                                 placeholder="Correo electrónico"
-                                placeholderTextColor={colors.dark.textSecondary}
+                                placeholderTextColor={colors.textSecondary}
                                 keyboardType="email-address"
                                 autoCapitalize="none"
                                 value={email}
@@ -130,7 +140,7 @@ export default function LoginScreen({ navigation }: any) {
                             <TextInput
                                 style={[styles.input, errors.password ? styles.inputError : null]}
                                 placeholder="Contraseña"
-                                placeholderTextColor={colors.dark.textSecondary}
+                                placeholderTextColor={colors.textSecondary}
                                 secureTextEntry
                                 value={password}
                                 onChangeText={(text) => { setPassword(text); setErrors({ ...errors, password: undefined }); }}
@@ -166,7 +176,7 @@ export default function LoginScreen({ navigation }: any) {
                         activeOpacity={0.8}
                     >
                         {isLoadingGoogle ? (
-                            <ActivityIndicator color={colors.dark.text} />
+                            <ActivityIndicator color={colors.text} />
                         ) : (
                             <View style={styles.googleContent}>
                                 <Image
@@ -191,10 +201,10 @@ export default function LoginScreen({ navigation }: any) {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: colors.dark.background,
+        backgroundColor: colors.background,
     },
     container: {
         flex: 1,
@@ -216,13 +226,13 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 32,
         fontWeight: 'bold',
-        color: colors.dark.text,
+        color: colors.text,
         marginBottom: 8,
         textAlign: 'center',
     },
     subtitle: {
         fontSize: 16,
-        color: colors.dark.textSecondary,
+        color: colors.textSecondary,
         marginBottom: 40,
         textAlign: 'center',
     },
@@ -233,22 +243,22 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     errorText: {
-        color: colors.dark.error,
+        color: colors.error,
         fontSize: 12,
         marginBottom: 4,
         marginLeft: 4,
     },
     input: {
-        backgroundColor: colors.dark.surface,
+        backgroundColor: colors.surface,
         borderRadius: 12,
         padding: 16,
-        color: colors.dark.text,
+        color: colors.text,
         fontSize: 16,
         borderWidth: 1,
-        borderColor: colors.dark.border,
+        borderColor: colors.border,
     },
     inputError: {
-        borderColor: colors.dark.error,
+        borderColor: colors.error,
     },
     buttonContainer: {
         borderRadius: 12,
@@ -265,10 +275,10 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
     googleButton: {
-        backgroundColor: colors.dark.surface,
+        backgroundColor: colors.surface,
         marginTop: 16,
         borderWidth: 1,
-        borderColor: colors.dark.border,
+        borderColor: colors.border,
         paddingVertical: 16,
     },
     googleContent: {
@@ -278,7 +288,7 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     googleButtonText: {
-        color: colors.dark.text,
+        color: colors.text,
         fontSize: 16,
         fontWeight: 'bold',
     },

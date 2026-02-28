@@ -15,14 +15,31 @@ A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date
 """
 scalar DateTime
 
+type UserCustomField {
+  id: ID!
+  title: String!
+  value: String!
+  isVisible: Boolean!
+}
+
+type UserBadge {
+  id: ID!
+  title: String!
+  theme: String!
+}
+
 type User {
   id: ID!
   email: String!
   username: String!
   firstName: String!
   lastName: String!
+  phone: String
+  bio: String
   photoUrl: String
   posts: [Post!]
+  customFields: [UserCustomField!]
+  badge: UserBadge
 }
 
 type Query {
@@ -36,4 +53,9 @@ type Query {
 
 type Mutation {
   createPost(content: String!): Post!
+  addCustomField(title: String!, value: String!): UserCustomField!
+  updateCustomField(id: String!, title: String!, value: String!): UserCustomField!
+  deleteCustomField(id: String!): Boolean!
+  updateBadge(title: String!, theme: String = "default"): UserBadge!
+  updateProfile(firstName: String, lastName: String, bio: String, username: String, phone: String): User!
 }

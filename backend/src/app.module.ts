@@ -8,6 +8,7 @@ import { join } from 'path';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { PostsModule } from './posts/posts.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { PostsModule } from './posts/posts.module';
     HealthModule,
     AuthModule,
     PostsModule,
+    UsersModule,
   ],
   controllers: [],
   providers: [],

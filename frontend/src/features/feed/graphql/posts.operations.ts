@@ -10,6 +10,7 @@ export const GET_POSTS = gql`
                 firstName
                 lastName
                 username
+                photoUrl
             }
         }
     }
@@ -25,6 +26,7 @@ export const CREATE_POST = gql`
                 firstName
                 lastName
                 username
+                photoUrl
             }
         }
     }

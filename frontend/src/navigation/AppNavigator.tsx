@@ -1,21 +1,30 @@
 import React from 'react';
 import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import FeedScreen from '../features/feed/screens/FeedScreen';
 import ProfileScreen from '../features/profile/screens/ProfileScreen';
-import { colors } from '../theme/colors';
+import EditProfileScreen from '../features/profile/screens/EditProfileScreen';
+import { useTheme } from '../theme/ThemeContext';
+
+export type AppStackParamList = {
+    MainTabs: undefined;
+    EditProfile: undefined;
+};
 
 export type AppTabParamList = {
     Feed: undefined;
     Profile: undefined;
 };
 
+const Stack = createNativeStackNavigator<AppStackParamList>();
 const Tab = createBottomTabNavigator<AppTabParamList>();
 
-export default function AppNavigator() {
+function MainTabNavigator() {
     const insets = useSafeAreaInsets();
+    const { colors } = useTheme();
 
     return (
         <Tab.Navigator
@@ -33,10 +42,10 @@ export default function AppNavigator() {
                     return <Ionicons name={iconName} size={22} color={color} />;
                 },
                 tabBarActiveTintColor: colors.primary,
-                tabBarInactiveTintColor: colors.dark.textSecondary,
+                tabBarInactiveTintColor: colors.textSecondary,
                 tabBarStyle: {
-                    backgroundColor: colors.dark.surface,
-                    borderTopColor: colors.dark.border,
+                    backgroundColor: colors.surface,
+                    borderTopColor: colors.border,
                     minHeight: Platform.OS === 'ios' ? 85 : 67 + insets.bottom,
                     paddingBottom: Platform.OS === 'ios' ? 25 : Math.max(insets.bottom, 12) + 10,
                     paddingTop: 8,
@@ -55,5 +64,14 @@ export default function AppNavigator() {
             <Tab.Screen name="Feed" component={FeedScreen} options={{ tabBarLabel: 'Inicio' }} />
             <Tab.Screen name="Profile" component={ProfileScreen} options={{ tabBarLabel: 'Perfil' }} />
         </Tab.Navigator>
+    );
+}
+
+export default function AppNavigator() {
+    return (
+        <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+            <Stack.Screen name="MainTabs" component={MainTabNavigator} />
+            <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+        </Stack.Navigator>
     );
 }
