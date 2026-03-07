@@ -1,6 +1,7 @@
 import { ObjectType, Field, ID } from '@nestjs/graphql';
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
+import { PostLike } from './post-like.entity';
 
 @ObjectType()
 @Entity('posts')
@@ -22,7 +23,19 @@ export class Post {
     @Column({ name: 'id_user' })
     authorId: string;
 
+    @Field(() => [PostLike], { nullable: true })
+    @OneToMany(() => PostLike, like => like.post)
+    likes?: PostLike[];
+
     @Field()
     @CreateDateColumn({ type: 'timestamptz' })
     createdAt: Date;
+
+    @Field()
+    @UpdateDateColumn({ type: 'timestamptz' })
+    updatedAt: Date;
+
+    @Field({ nullable: true })
+    @DeleteDateColumn({ type: 'timestamptz', nullable: true })
+    deletedAt?: Date;
 }

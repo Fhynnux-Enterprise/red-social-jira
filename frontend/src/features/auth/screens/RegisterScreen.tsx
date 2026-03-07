@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -16,11 +16,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { AuthService } from '../services/auth.service';
-import { colors } from '../../../theme/colors';
 import { useAuth } from '../context/AuthContext';
+import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 
 export default function RegisterScreen({ navigation }: any) {
     const { signIn } = useAuth();
+    const { colors } = useTheme();
+    const styles = useMemo(() => getStyles(colors), [colors]);
+
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [username, setUsername] = useState('');
@@ -41,6 +44,14 @@ export default function RegisterScreen({ navigation }: any) {
             const { access_token } = await AuthService.loginWithGoogle();
             await signIn(access_token);
         } catch (error: any) {
+            if (error?.isCancelled) {
+                Toast.show({
+                    type: 'info',
+                    text1: 'Autenticación cancelada',
+                    text2: 'No seleccionaste ninguna cuenta de Google.',
+                });
+                return;
+            }
             Toast.show({
                 type: 'error',
                 text1: 'Error OAuth',
@@ -100,7 +111,6 @@ export default function RegisterScreen({ navigation }: any) {
             });
             navigation.navigate('Login'); // Devolver al usuario al login
         } catch (error: any) {
-            // Manejar el formato de error que NestJS class-validator arroja
             const errorMessage =
                 error.response?.data?.message ||
                 error.message ||
@@ -118,6 +128,16 @@ export default function RegisterScreen({ navigation }: any) {
 
     return (
         <SafeAreaView style={styles.safeArea}>
+            <View style={styles.header}>
+                <TouchableOpacity
+                    style={styles.backButton}
+                    onPress={() => navigation.navigate('Login')}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    <Ionicons name="arrow-back" size={28} color={colors.text} />
+                </TouchableOpacity>
+            </View>
+
             <KeyboardAvoidingView
                 style={styles.container}
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -140,7 +160,7 @@ export default function RegisterScreen({ navigation }: any) {
                             <TextInput
                                 style={[styles.input, errors.firstName ? styles.inputError : null]}
                                 placeholder="Nombre"
-                                placeholderTextColor={colors.dark.textSecondary}
+                                placeholderTextColor={colors.textSecondary}
                                 value={firstName}
                                 onChangeText={(text) => { setFirstName(text); setErrors({ ...errors, firstName: '' }); }}
                                 editable={!isLoading}
@@ -152,7 +172,7 @@ export default function RegisterScreen({ navigation }: any) {
                             <TextInput
                                 style={[styles.input, errors.lastName ? styles.inputError : null]}
                                 placeholder="Apellido"
-                                placeholderTextColor={colors.dark.textSecondary}
+                                placeholderTextColor={colors.textSecondary}
                                 value={lastName}
                                 onChangeText={(text) => { setLastName(text); setErrors({ ...errors, lastName: '' }); }}
                                 editable={!isLoading}
@@ -164,7 +184,7 @@ export default function RegisterScreen({ navigation }: any) {
                             <TextInput
                                 style={[styles.input, errors.username ? styles.inputError : null]}
                                 placeholder="Nombre de usuario"
-                                placeholderTextColor={colors.dark.textSecondary}
+                                placeholderTextColor={colors.textSecondary}
                                 autoCapitalize="none"
                                 value={username}
                                 onChangeText={(text) => { setUsername(text); setErrors({ ...errors, username: '' }); }}
@@ -177,7 +197,7 @@ export default function RegisterScreen({ navigation }: any) {
                             <TextInput
                                 style={[styles.input, errors.email ? styles.inputError : null]}
                                 placeholder="Correo electrónico"
-                                placeholderTextColor={colors.dark.textSecondary}
+                                placeholderTextColor={colors.textSecondary}
                                 keyboardType="email-address"
                                 autoCapitalize="none"
                                 value={email}
@@ -191,7 +211,7 @@ export default function RegisterScreen({ navigation }: any) {
                             <TextInput
                                 style={[styles.input, errors.password ? styles.inputError : null]}
                                 placeholder="Contraseña"
-                                placeholderTextColor={colors.dark.textSecondary}
+                                placeholderTextColor={colors.textSecondary}
                                 secureTextEntry
                                 value={password}
                                 onChangeText={(text) => { setPassword(text); setErrors({ ...errors, password: '' }); }}
@@ -204,7 +224,7 @@ export default function RegisterScreen({ navigation }: any) {
                             <TextInput
                                 style={[styles.input, errors.confirmPassword ? styles.inputError : null]}
                                 placeholder="Repetir Contraseña"
-                                placeholderTextColor={colors.dark.textSecondary}
+                                placeholderTextColor={colors.textSecondary}
                                 secureTextEntry
                                 value={confirmPassword}
                                 onChangeText={(text) => { setConfirmPassword(text); setErrors({ ...errors, confirmPassword: '' }); }}
@@ -240,7 +260,7 @@ export default function RegisterScreen({ navigation }: any) {
                         activeOpacity={0.8}
                     >
                         {isLoadingGoogle ? (
-                            <ActivityIndicator color={colors.dark.text} />
+                            <ActivityIndicator color={colors.text} />
                         ) : (
                             <View style={styles.googleContent}>
                                 <Image
@@ -265,13 +285,23 @@ export default function RegisterScreen({ navigation }: any) {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: colors.dark.background,
+        backgroundColor: colors.background,
     },
     container: {
         flex: 1,
+    },
+    header: {
+        paddingHorizontal: 16,
+        paddingTop: Platform.OS === 'android' ? 10 : 0,
+        paddingBottom: 4,
+        flexDirection: 'row',
+    },
+    backButton: {
+        padding: 4,
+        borderRadius: 20,
     },
     scrollContent: {
         flexGrow: 1,
@@ -291,13 +321,13 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 32,
         fontWeight: 'bold',
-        color: colors.dark.text,
+        color: colors.text,
         marginBottom: 8,
         textAlign: 'center',
     },
     subtitle: {
         fontSize: 16,
-        color: colors.dark.textSecondary,
+        color: colors.textSecondary,
         marginBottom: 40,
         textAlign: 'center',
     },
@@ -308,22 +338,22 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     errorText: {
-        color: colors.dark.error,
+        color: colors.error,
         fontSize: 12,
         marginBottom: 4,
         marginLeft: 4,
     },
     input: {
-        backgroundColor: colors.dark.surface,
+        backgroundColor: colors.surface,
         borderRadius: 12,
         padding: 16,
-        color: colors.dark.text,
+        color: colors.text,
         fontSize: 16,
         borderWidth: 1,
-        borderColor: colors.dark.border,
+        borderColor: colors.border,
     },
     inputError: {
-        borderColor: colors.dark.error,
+        borderColor: colors.error,
     },
     buttonContainer: {
         borderRadius: 12,
@@ -341,10 +371,10 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
     googleButton: {
-        backgroundColor: colors.dark.surface,
+        backgroundColor: colors.surface,
         marginTop: 1,
         borderWidth: 1,
-        borderColor: colors.dark.border,
+        borderColor: colors.border,
         paddingVertical: 16,
     },
     googleContent: {
@@ -354,7 +384,7 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     googleButtonText: {
-        color: colors.dark.text,
+        color: colors.text,
         fontSize: 16,
         fontWeight: 'bold',
     },

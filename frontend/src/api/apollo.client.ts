@@ -49,7 +49,5 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
 // Configure and export Apollo Client
 export const apolloClient = new ApolloClient({
     link: from([errorLink, authLink, httpLink]),
-    cache: new InMemoryCache({
-        addTypename: false // Optional: help to avoid cache.diff warnings locally
-    }),
+    cache: new InMemoryCache(),
 });

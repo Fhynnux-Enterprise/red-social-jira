@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     Modal,
     View,
@@ -14,17 +14,29 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation } from '@apollo/client';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
-import { CREATE_POST, GET_POSTS } from '../graphql/posts.operations';
-import { colors } from '../../../theme/colors';
+import { CREATE_POST, UPDATE_POST, GET_POSTS } from '../graphql/posts.operations';
+import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 
 interface CreatePostModalProps {
     visible: boolean;
     onClose: () => void;
+    initialContent?: string;
+    postId?: string;
 }
 
-export default function CreatePostModal({ visible, onClose }: CreatePostModalProps) {
-    const [content, setContent] = useState('');
+export default function CreatePostModal({ visible, onClose, initialContent = '', postId }: CreatePostModalProps) {
+    const { colors } = useTheme();
+    const [content, setContent] = React.useState(initialContent);
     const insets = useSafeAreaInsets();
+
+    React.useEffect(() => {
+        if (visible) {
+            setContent(initialContent);
+        }
+    }, [visible, initialContent]);
+
+    // Generamos estilos dinámicos que reaccionan al tema
+    const styles = useMemo(() => getStyles(colors), [colors]);
 
     const [createPost, { loading: creating }] = useMutation(CREATE_POST, {
         onCompleted: () => {
@@ -38,9 +50,27 @@ export default function CreatePostModal({ visible, onClose }: CreatePostModalPro
         refetchQueries: [{ query: GET_POSTS }],
     });
 
+    const [updatePost, { loading: updating }] = useMutation(UPDATE_POST, {
+        onCompleted: () => {
+            setContent('');
+            Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'La publicación fue modificada' });
+            onClose();
+        },
+        onError: (err) => {
+            Toast.show({ type: 'error', text1: 'Error', text2: err.message });
+        },
+        refetchQueries: [{ query: GET_POSTS }],
+    });
+
+    const isLoading = creating || updating;
+
     const handlePublish = async () => {
         if (!content.trim()) return;
-        await createPost({ variables: { content } });
+        if (postId) {
+            await updatePost({ variables: { id: postId, content } });
+        } else {
+            await createPost({ variables: { content } });
+        }
     };
 
     const handleClose = () => {
@@ -63,19 +93,18 @@ export default function CreatePostModal({ visible, onClose }: CreatePostModalPro
                     {/* Header */}
                     <View style={styles.header}>
                         <TouchableOpacity onPress={handleClose} style={styles.iconButton}>
-                            <Ionicons name="close" size={28} color={colors.dark.text} />
+                            <Ionicons name="close" size={28} color={colors.text} />
                         </TouchableOpacity>
-                        <Text style={styles.headerTitle}>Crear publicación</Text>
+                        <Text style={styles.headerTitle}>{postId ? 'Editar publicación' : 'Crear publicación'}</Text>
                         <TouchableOpacity
-                            style={[styles.publishButton, (!content.trim() || creating) && styles.publishButtonDisabled]}
+                            style={[styles.publishButton, (!content.trim() || isLoading) && styles.publishButtonDisabled]}
                             onPress={handlePublish}
-                            disabled={!content.trim() || creating}
-                            activeOpacity={0.8}
+                            disabled={!content.trim() || isLoading}
                         >
-                            {creating ? (
-                                <ActivityIndicator color="#FFF" size="small" />
+                            {isLoading ? (
+                                <ActivityIndicator size="small" color="#FFF" />
                             ) : (
-                                <Text style={styles.publishText}>Publicar</Text>
+                                <Text style={styles.publishText}>{postId ? 'Guardar' : 'Publicar'}</Text>
                             )}
                         </TouchableOpacity>
                     </View>
@@ -84,19 +113,19 @@ export default function CreatePostModal({ visible, onClose }: CreatePostModalPro
                     <View style={styles.editorContainer}>
                         <View style={styles.userInfo}>
                             <View style={styles.smallAvatarPlaceholder}>
-                                <Ionicons name="person" size={20} color={colors.dark.textSecondary} />
+                                <Ionicons name="person" size={20} color={colors.textSecondary} />
                             </View>
                             <Text style={styles.userName}>Tú</Text>
                         </View>
                         <TextInput
                             style={styles.input}
                             placeholder="¿Qué está pasando en Chunchi?"
-                            placeholderTextColor={colors.dark.textSecondary}
+                            placeholderTextColor={colors.textSecondary}
                             multiline
                             autoFocus={true}
                             value={content}
                             onChangeText={setContent}
-                            editable={!creating}
+                            editable={!isLoading}
                             textAlignVertical="top"
                         />
                     </View>
@@ -121,19 +150,19 @@ export default function CreatePostModal({ visible, onClose }: CreatePostModalPro
                         </TouchableOpacity>
                     </View>
                 </KeyboardAvoidingView>
-            </View>
-        </Modal>
+            </View >
+        </Modal >
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: colors.dark.background,
+        backgroundColor: colors.background,
     },
     container: {
         flex: 1,
-        backgroundColor: colors.dark.background,
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
@@ -142,7 +171,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: colors.dark.border,
+        borderBottomColor: colors.border,
     },
     iconButton: {
         padding: 4,
@@ -150,7 +179,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: colors.dark.text,
+        color: colors.text,
     },
     publishButton: {
         backgroundColor: colors.primary,
@@ -179,27 +208,27 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: colors.dark.surface,
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 12,
     },
     userName: {
-        color: colors.dark.text,
+        color: colors.text,
         fontWeight: 'bold',
         fontSize: 16,
     },
     input: {
         flex: 1,
-        color: colors.dark.text,
+        color: colors.text,
         fontSize: 18,
         lineHeight: 26,
     },
     toolbar: {
         borderTopWidth: 1,
-        borderTopColor: colors.dark.border,
-        backgroundColor: colors.dark.surface,
-        paddingBottom: 8, // Da un poco de respiro al final
+        borderTopColor: colors.border,
+        backgroundColor: colors.surface,
+        paddingBottom: 8,
     },
     toolbarOption: {
         flexDirection: 'row',
@@ -208,7 +237,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
     },
     toolbarOptionText: {
-        color: colors.dark.text,
+        color: colors.text,
         fontSize: 16,
         marginLeft: 12,
         fontWeight: '500',

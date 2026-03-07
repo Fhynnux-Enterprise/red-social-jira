@@ -2,9 +2,11 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { AuthService } from '../services/auth.service';
+import { ProfileService, UserProfile } from '../../profile/services/profile.service';
 
 type AuthContextData = {
     userToken: string | null;
+    user: UserProfile | null;
     isLoading: boolean;
     signIn: (token: string) => Promise<void>;
     signOut: () => Promise<void>;
@@ -14,11 +16,13 @@ const AuthContext = createContext<AuthContextData>({} as AuthContextData);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [userToken, setUserToken] = useState<string | null>(null);
+    const [user, setUser] = useState<UserProfile | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
     const signOut = async () => {
         await AuthService.logout();
         setUserToken(null);
+        setUser(null);
     };
 
     useEffect(() => {
@@ -27,9 +31,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 const token = await SecureStore.getItemAsync('access_token');
                 if (token) {
                     setUserToken(token);
+                    try {
+                        const profile = await ProfileService.getProfile();
+                        setUser(profile);
+                    } catch (e) {
+                        console.log('Error fetching profile in AuthContext - invalid token or network error');
+                        // Si falla, removemos el token inválido silenciosamente
+                        setUserToken(null);
+                        await SecureStore.deleteItemAsync('access_token');
+                    }
                 }
             } catch (error) {
-                console.error('Error al recuperar el token de SecureStore', error);
+                console.log('Error al recuperar el token de SecureStore', error);
             } finally {
                 setIsLoading(false);
             }
@@ -48,10 +61,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const signIn = async (token: string) => {
         await SecureStore.setItemAsync('access_token', token);
         setUserToken(token);
+        try {
+            const profile = await ProfileService.getProfile();
+            setUser(profile);
+        } catch (e) {
+            console.error('Error fetching profile on login');
+        }
     };
 
     return (
-        <AuthContext.Provider value={{ userToken, isLoading, signIn, signOut }}>
+        <AuthContext.Provider value={{ userToken, user, isLoading, signIn, signOut }}>
             {children}
         </AuthContext.Provider>
     );

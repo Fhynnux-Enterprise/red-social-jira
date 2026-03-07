@@ -1,83 +1,98 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, Image, Platform } from 'react-native';
+import React, { useState, useMemo, useCallback } from 'react';
+import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, Image, Platform, Alert, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQuery } from '@apollo/client';
-import { GET_POSTS } from '../graphql/posts.operations';
-import { colors } from '../../../theme/colors';
+import { useQuery, useMutation } from '@apollo/client';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { GET_POSTS, DELETE_POST } from '../graphql/posts.operations';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../auth/context/AuthContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import CreatePostModal from '../components/CreatePostModal';
+import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
+import { ProfileService, UserProfile } from '../../profile/services/profile.service';
+import Toast from 'react-native-toast-message';
+import PostCard from '../components/PostCard';
+import PostOptionsModal from '../components/PostOptionsModal';
 
 export default function FeedScreen() {
     const { signOut } = useAuth();
+    const { colors, isDark } = useTheme();
+    const navigation = useNavigation();
     const [isModalVisible, setIsModalVisible] = useState(false);
+    const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
-    const { data, loading, error, refetch } = useQuery(GET_POSTS);
+    const [editingPostId, setEditingPostId] = useState<string | undefined>(undefined);
+    const [editingPostContent, setEditingPostContent] = useState<string>('');
 
-    const formatDate = (isoString: string) => {
-        // Postgres envía la fecha UTC pero sin la 'Z' al final, por lo que JS la tomaba como local sumándole +5 horas de error.
-        const utcString = isoString.endsWith('Z') ? isoString : `${isoString}Z`;
-        const date = new Date(utcString);
+    const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
+    const [selectedPost, setSelectedPost] = useState<any>(null);
 
-        const hoy = new Date();
-        const ayer = new Date();
-        ayer.setDate(hoy.getDate() - 1);
+    const { data, loading, error, refetch } = useQuery(GET_POSTS, {
+        fetchPolicy: 'cache-and-network',
+    });
 
-        const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    useFocusEffect(
+        useCallback(() => {
+            const fetchProfile = async () => {
+                try {
+                    const profileData = await ProfileService.getProfile();
+                    setUserProfile(profileData);
+                } catch (err) {
+                    console.log('Error fetching profile for feed:', err);
+                }
+            };
+            fetchProfile();
 
-        if (date.toDateString() === hoy.toDateString()) {
-            return `Hoy a las ${timeString}`;
-        } else if (date.toDateString() === ayer.toDateString()) {
-            return `Ayer a las ${timeString}`;
-        } else {
-            return `${date.toLocaleDateString()} a las ${timeString}`;
+            const timeout = setTimeout(() => {
+                refetch().catch(e => console.log('Error refetching feed posts:', e));
+            }, 500);
+            return () => clearTimeout(timeout);
+        }, [refetch])
+    );
+
+    // Generamos estilos dinámicos que reaccionan al tema
+    const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
+
+    const [deletePost] = useMutation(DELETE_POST, {
+        refetchQueries: [{ query: GET_POSTS }],
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Eliminado', text2: 'Publicación borrada con éxito' });
+        },
+        onError: (err) => {
+            Toast.show({ type: 'error', text1: 'Error', text2: err.message });
         }
+    });
+
+    const handleOptionsPress = (item: any) => {
+        setSelectedPost(item);
+        setIsOptionsMenuVisible(true);
     };
 
-    // Render tarjeta individual
-    const renderPost = ({ item }: { item: any }) => (
-        <View style={styles.postCard}>
-            <View style={styles.postHeader}>
-                <View style={styles.avatarPlaceholder}>
-                    <Text style={styles.avatarText}>
-                        {item.author.firstName[0]}{item.author.lastName[0]}
-                    </Text>
-                </View>
-                <View style={styles.authorInfo}>
-                    <Text style={styles.authorName}>
-                        {item.author.firstName} {item.author.lastName}
-                    </Text>
-                    <Text style={styles.postDate}>
-                        {formatDate(item.createdAt)}
-                    </Text>
-                </View>
-            </View>
-            <Text style={styles.postContent}>{item.content}</Text>
+    const handleCreatePostPress = () => {
+        setEditingPostId(undefined);
+        setEditingPostContent('');
+        setIsModalVisible(true);
+    };
 
-            <View style={styles.postFooter}>
-                <TouchableOpacity style={styles.actionButton}>
-                    <Ionicons name="heart-outline" size={20} color={colors.dark.textSecondary} />
-                    <Text style={styles.actionText}>Me gusta</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton}>
-                    <Ionicons name="chatbubble-outline" size={20} color={colors.dark.textSecondary} />
-                    <Text style={styles.actionText}>Comentar</Text>
-                </TouchableOpacity>
-            </View>
-        </View>
+    const renderPost = ({ item }: { item: any }) => (
+        <PostCard
+            item={item}
+            currentUserId={userProfile?.id}
+            onOptionsPress={handleOptionsPress}
+        />
     );
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+            <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
             {/* Cabecera Tipo Facebook */}
             <View style={styles.topHeader}>
                 <View style={styles.brandContainer}>
-                    <Image
-                        source={require('../../../../assets/images/logo-palido-transparente.png')}
+                    {/* <Image
+                        source={require('../../../../assets/images/logo-transparente.png')}
                         style={styles.brandLogo}
-                    />
+                    /> */}
                     <MaskedView
                         style={{ flexDirection: 'row' }}
                         maskElement={
@@ -97,10 +112,10 @@ export default function FeedScreen() {
                 </View>
                 <View style={styles.headerIcons}>
                     <TouchableOpacity style={styles.iconButton}>
-                        <Ionicons name="search-outline" size={22} color={colors.dark.text} />
+                        <Ionicons name="search-outline" size={22} color={colors.text} />
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.iconButton}>
-                        <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.dark.text} />
+                        <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.text} />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -108,48 +123,82 @@ export default function FeedScreen() {
             {/* Input "Crear Publicación" Estilo Facebook */}
             <View style={styles.createPostContainer}>
                 <View style={styles.createPostRow}>
-                    <View style={styles.smallAvatarPlaceholder}>
-                        <Ionicons name="person" size={20} color={colors.dark.textSecondary} />
-                    </View>
+                    <TouchableOpacity
+                        style={[styles.smallAvatarPlaceholder, { overflow: 'hidden', backgroundColor: userProfile && !userProfile.photoUrl ? 'rgba(255, 101, 36, 0.15)' : colors.surface }]}
+                        onPress={() => navigation.navigate('Profile' as never)}
+                    >
+                        {userProfile?.photoUrl ? (
+                            <Image source={{ uri: userProfile.photoUrl }} style={{ width: '100%', height: '100%' }} />
+                        ) : userProfile ? (
+                            <Text style={[styles.avatarText, { fontSize: 14 }]}>
+                                {userProfile.firstName?.charAt(0) || ''}{userProfile.lastName?.charAt(0) || ''}
+                            </Text>
+                        ) : (
+                            <Ionicons name="person" size={20} color={colors.textSecondary} />
+                        )}
+                    </TouchableOpacity>
                     <TouchableOpacity
                         style={styles.fakeInput}
                         activeOpacity={0.7}
-                        onPress={() => setIsModalVisible(true)}
+                        onPress={handleCreatePostPress}
                     >
                         <Text style={styles.fakeInputText}>¿Qué está pasando en Chunchi?</Text>
                     </TouchableOpacity>
                 </View>
             </View>
 
-            {loading ? (
-                <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
-            ) : error ? (
-                <Text style={styles.errorText}>No se pudieron cargar los posts.</Text>
-            ) : (
-                <FlatList
-                    data={data?.getPosts || []}
-                    keyExtractor={(item) => item.id}
-                    renderItem={renderPost}
-                    contentContainerStyle={styles.listContainer}
-                    showsVerticalScrollIndicator={false}
-                    refreshing={loading}
-                    onRefresh={refetch}
-                />
-            )}
+            <View style={{ flex: 1, backgroundColor: colors.background }}>
+                {loading ? (
+                    <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
+                ) : error ? (
+                    <Text style={styles.errorText}>No se pudieron cargar los posts.</Text>
+                ) : (
+                    <FlatList
+                        data={data?.getPosts || []}
+                        extraData={data}
+                        keyExtractor={(item) => item.id}
+                        renderItem={renderPost}
+                        contentContainerStyle={styles.listContainer}
+                        showsVerticalScrollIndicator={false}
+                        refreshing={loading}
+                        onRefresh={refetch}
+                    />
+                )}
+            </View>
 
-            {/* Modal para Crear Publicación */}
+            {/* Modal para Crear/Editar Publicación */}
             <CreatePostModal
                 visible={isModalVisible}
                 onClose={() => setIsModalVisible(false)}
+                postId={editingPostId}
+                initialContent={editingPostContent}
+            />
+
+            {/* Modal Menú de Opciones de la Publicación Inferior */}
+            <PostOptionsModal
+                visible={isOptionsMenuVisible}
+                onClose={() => setIsOptionsMenuVisible(false)}
+                onEdit={() => {
+                    if (selectedPost) {
+                        setEditingPostId(selectedPost.id);
+                        setEditingPostContent(selectedPost.content);
+                        setIsModalVisible(true);
+                    }
+                }}
+                onDelete={() => {
+                    if (selectedPost) {
+                        deletePost({ variables: { id: selectedPost.id } })
+                    }
+                }}
             />
         </SafeAreaView>
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: colors.dark.background,
+        backgroundColor: colors.background,
     },
     topHeader: {
         flexDirection: 'row',
@@ -158,7 +207,8 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: colors.dark.border,
+        borderBottomColor: colors.border,
+        backgroundColor: colors.background,
     },
     brandContainer: {
         flexDirection: 'row',
@@ -167,8 +217,8 @@ const styles = StyleSheet.create({
     brandLogo: {
         width: 34,
         height: 34,
-        marginRight: 12,
-        borderRadius: 1,
+        marginRight: 10,
+        borderRadius: 8,
     },
     brandTitle: {
         fontSize: 26,
@@ -185,42 +235,49 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: colors.dark.surface,
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
     },
     createPostContainer: {
         padding: 16,
         borderBottomWidth: 6,
-        borderBottomColor: colors.dark.surface,
+        backgroundColor: colors.background,
+        borderBottomColor: colors.surface,
     },
     createPostRow: {
         flexDirection: 'row',
         alignItems: 'center',
     },
+    avatarText: {
+        color: colors.primary,
+        fontWeight: 'bold',
+        fontSize: 16,
+        textTransform: 'uppercase',
+    },
     smallAvatarPlaceholder: {
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: colors.dark.surface,
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 12,
         borderWidth: 1,
-        borderColor: colors.dark.border,
+        borderColor: colors.border,
     },
     fakeInput: {
         flex: 1,
-        backgroundColor: colors.dark.surface,
+        backgroundColor: colors.surface,
         borderRadius: 20,
         paddingHorizontal: 16,
         justifyContent: 'center',
         height: 40,
         borderWidth: 1,
-        borderColor: colors.dark.border,
+        borderColor: colors.border,
     },
     fakeInputText: {
-        color: colors.dark.textSecondary,
+        color: colors.textSecondary,
         fontSize: 16,
     },
     listContainer: {
@@ -231,77 +288,8 @@ const styles = StyleSheet.create({
         marginTop: 40,
     },
     errorText: {
-        color: colors.dark.error,
+        color: colors.error,
         textAlign: 'center',
         marginTop: 40,
-    },
-    postCard: {
-        backgroundColor: colors.dark.surface,
-        padding: 16,
-        marginBottom: 8,
-        borderTopWidth: 1,
-        borderBottomWidth: 1,
-        borderColor: colors.dark.border,
-    },
-    postHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    avatarPlaceholder: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: 'rgba(255, 101, 36, 0.15)', // Un fondo sutil primario
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 101, 36, 0.3)',
-    },
-    avatarText: {
-        color: colors.primary,
-        fontWeight: 'bold',
-        fontSize: 16,
-        textTransform: 'uppercase',
-    },
-    authorInfo: {
-        flex: 1,
-        justifyContent: 'center',
-    },
-    authorName: {
-        color: colors.dark.text,
-        fontWeight: 'bold',
-        fontSize: 16,
-        marginBottom: 2,
-    },
-    postDate: {
-        color: colors.dark.textSecondary,
-        fontSize: 13,
-    },
-    postContent: {
-        color: colors.dark.text,
-        fontSize: 16,
-        lineHeight: 24,
-        marginTop: 4,
-        marginBottom: 16,
-    },
-    postFooter: {
-        flexDirection: 'row',
-        paddingTop: 12,
-        borderTopWidth: 1,
-        borderTopColor: colors.dark.border,
-    },
-    actionButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginRight: 24,
-        paddingVertical: 4,
-    },
-    actionText: {
-        color: colors.dark.textSecondary,
-        marginLeft: 6,
-        fontSize: 14,
-        fontWeight: '500',
     },
 });
