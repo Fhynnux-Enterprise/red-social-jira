@@ -1,4 +1,4 @@
-import { Resolver, Mutation, Args } from '@nestjs/graphql';
+import { Resolver, Mutation, Query, Args } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UserCustomField } from './entities/user-custom-field.entity';
@@ -50,6 +50,14 @@ export class UsersResolver {
     @CurrentUser() user: any,
   ): Promise<UserBadge> {
     return this.usersService.upsertBadge(user.id, title, theme);
+  }
+
+  @Query(() => User)
+  @UseGuards(JwtGqlGuard)
+  async getUserProfile(
+    @Args('id') id: string,
+  ): Promise<User> {
+    return this.usersService.findById(id);
   }
 
   @Mutation(() => User)

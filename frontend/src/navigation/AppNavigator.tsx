@@ -16,7 +16,7 @@ export type AppStackParamList = {
 
 export type AppTabParamList = {
     Feed: undefined;
-    Profile: undefined;
+    Profile: { userId?: string } | undefined;
 };
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -62,7 +62,17 @@ function MainTabNavigator() {
             })}
         >
             <Tab.Screen name="Feed" component={FeedScreen} options={{ tabBarLabel: 'Inicio' }} />
-            <Tab.Screen name="Profile" component={ProfileScreen} options={{ tabBarLabel: 'Perfil' }} />
+            <Tab.Screen
+                name="Profile"
+                component={ProfileScreen}
+                options={{ tabBarLabel: 'Perfil' }}
+                listeners={({ navigation }) => ({
+                    tabPress: (e) => {
+                        e.preventDefault();
+                        navigation.navigate('Profile', { userId: undefined });
+                    },
+                })}
+            />
         </Tab.Navigator>
     );
 }

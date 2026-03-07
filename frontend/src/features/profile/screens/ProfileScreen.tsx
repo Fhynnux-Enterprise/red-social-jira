@@ -1,51 +1,94 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, ScrollView, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { useCallback } from 'react';
 import { useAuth } from '../../auth/context/AuthContext';
 import { ProfileService, UserProfile } from '../services/profile.service';
 import ThemeSelectorModal from '../../../components/ThemeSelectorModal';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import Toast from 'react-native-toast-message';
+import { useQuery, useMutation } from '@apollo/client';
+import { GET_USER_PROFILE } from '../graphql/profile.operations';
+import { DELETE_POST, GET_POSTS } from '../../feed/graphql/posts.operations';
+import CreatePostModal from '../../feed/components/CreatePostModal';
+import PostOptionsModal from '../../feed/components/PostOptionsModal';
+import PostCard from '../../feed/components/PostCard';
 
 export default function ProfileScreen() {
     const { signOut } = useAuth();
     const navigation = useNavigation();
     const { colors, themeMode, setThemeMode, isDark } = useTheme();
-    const [userData, setUserData] = useState<UserProfile | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const authContext = useAuth() as any;
+    const currentUserId = authContext.user?.id;
+    const [refreshing, setRefreshing] = useState(false);
     const [isMenuVisible, setIsMenuVisible] = useState(false);
     const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
+
+    // States para editar un post desde el perfil
+    const [isCreatePostVisible, setIsCreatePostVisible] = useState(false);
+    const [editingPostId, setEditingPostId] = useState<string | undefined>(undefined);
+    const [editingPostContent, setEditingPostContent] = useState<string>('');
+    const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
+    const [selectedPost, setSelectedPost] = useState<any>(null);
     const insets = useSafeAreaInsets();
 
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
 
+    const route = useRoute<any>();
+    const profileUserId = route.params?.userId || currentUserId;
+    const isMyProfile = profileUserId === currentUserId;
+
+    const { data: gqlData, loading: gqlLoading, error: gqlError, refetch: refetchProfile } = useQuery(GET_USER_PROFILE, {
+        variables: { id: profileUserId },
+        skip: !profileUserId,
+        fetchPolicy: 'cache-and-network',
+    });
+
+    const userData = gqlData?.getUserProfile || null;
+
     useFocusEffect(
         useCallback(() => {
-            const fetchProfile = async () => {
-                try {
-                    const data = await ProfileService.getProfile();
-                    setUserData(data);
-                } catch (error: any) {
-                    console.log('Error fetching profile:', error);
-                    Toast.show({
-                        type: 'error',
-                        text1: 'Error',
-                        text2: 'No se pudo cargar la información del perfil'
-                    });
-                } finally {
-                    setIsLoading(false);
-                }
-            };
-
-            fetchProfile();
-        }, [])
+            if (profileUserId) {
+                // Pequeño retraso para evitar que la recarga de la pantalla (condición de carrera) le gane
+                // al guardado en base de datos del 'Like' anterior que diste en el Feed.
+                const timeout = setTimeout(() => {
+                    refetchProfile().catch(e => console.log('Error refetching profile on focus', e));
+                }, 500);
+                return () => clearTimeout(timeout);
+            }
+        }, [profileUserId, refetchProfile])
     );
 
-    if (isLoading) {
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        try {
+            await refetchProfile();
+        } catch (error) {
+            console.error('Error refreshing profile:', error);
+        } finally {
+            setRefreshing(false);
+        }
+    }, [refetchProfile]);
+
+    const [deletePost] = useMutation(DELETE_POST, {
+        refetchQueries: [{ query: GET_POSTS }],
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Eliminado', text2: 'Publicación borrada con éxito' });
+            refetchProfile();
+        },
+        onError: (err) => {
+            Toast.show({ type: 'error', text1: 'Error', text2: err.message });
+        }
+    });
+
+    const handleOptionsPress = (post: any) => {
+        setSelectedPost(post);
+        setIsOptionsMenuVisible(true);
+    };
+    if (gqlLoading && !userData) {
         return (
             <SafeAreaView style={styles.centerContainer}>
                 <ActivityIndicator size="large" color={colors.primary} />
@@ -63,7 +106,14 @@ export default function ProfileScreen() {
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
-            <ScrollView bounces={false} style={styles.scrollView} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                bounces={true}
+                style={styles.scrollView}
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} tintColor={colors.primary} />
+                }
+            >
 
                 {/* Banner Header */}
                 <View style={styles.bannerContainer}>
@@ -75,17 +125,28 @@ export default function ProfileScreen() {
                     />
 
                     {/* Floating Header Over Banner */}
-                    <View style={styles.floatingHeader}>
-                        <TouchableOpacity
-                            onPress={() => navigation.navigate('EditProfile' as never)}
-                            style={styles.floatingEditButton}
-                        >
-                            <Text style={styles.floatingEditButtonText}>Editar perfil</Text>
-                        </TouchableOpacity>
+                    <View style={[styles.floatingHeader, !isMyProfile && { justifyContent: 'flex-start' }]}>
+                        {isMyProfile ? (
+                            <>
+                                <TouchableOpacity
+                                    onPress={() => navigation.navigate('EditProfile' as never)}
+                                    style={[styles.floatingMenuButton, { marginRight: 10 }]}
+                                >
+                                    <Ionicons name="pencil" size={20} color="#FFF" />
+                                </TouchableOpacity>
 
-                        <TouchableOpacity onPress={() => setIsMenuVisible(true)} style={styles.floatingMenuButton}>
-                            <Ionicons name="ellipsis-vertical" size={24} color="#FFF" />
-                        </TouchableOpacity>
+                                <TouchableOpacity onPress={() => setIsMenuVisible(true)} style={styles.floatingMenuButton}>
+                                    <Ionicons name="ellipsis-vertical" size={24} color="#FFF" />
+                                </TouchableOpacity>
+                            </>
+                        ) : (
+                            <TouchableOpacity
+                                onPress={() => navigation.goBack()}
+                                style={styles.floatingMenuButton}
+                            >
+                                <Ionicons name="arrow-back" size={24} color="#FFF" />
+                            </TouchableOpacity>
+                        )}
                     </View>
                 </View>
 
@@ -168,7 +229,7 @@ export default function ProfileScreen() {
                     {/* Custom Fields Card */}
                     {userData.customFields && userData.customFields.length > 0 && (
                         <View style={styles.infoCard}>
-                            {userData.customFields.map((field, index) => (
+                            {userData.customFields.map((field: any, index: number) => (
                                 <React.Fragment key={field.id}>
                                     <View style={styles.infoRow}>
                                         <Text style={styles.customFieldTitle}>{field.title}:</Text>
@@ -185,47 +246,13 @@ export default function ProfileScreen() {
                 <View style={styles.postsSection}>
                     <Text style={styles.postsSectionTitle}>Publicaciones</Text>
                     {userData.posts && userData.posts.length > 0 ? (
-                        userData.posts.map((post, index) => (
-                            <View key={post.id || index} style={styles.postCard}>
-                                {/* Author Info */}
-                                <View style={styles.postHeader}>
-                                    <View style={styles.postAuthorImagePlaceholder}>
-                                        {userData.photoUrl ? (
-                                            <Image source={{ uri: userData.photoUrl }} style={styles.postAuthorImage} />
-                                        ) : (
-                                            <Text style={styles.postAuthorImageText}>
-                                                {(userData.firstName?.charAt(0) || '')}{(userData.lastName?.charAt(0) || '')}
-                                            </Text>
-                                        )}
-                                    </View>
-                                    <View style={styles.postAuthorInfo}>
-                                        <Text style={styles.postAuthorName}>
-                                            {userData.firstName} {userData.lastName}
-                                        </Text>
-                                        <Text style={styles.postTime}>
-                                            {new Date(post.createdAt).toLocaleDateString()}
-                                        </Text>
-                                    </View>
-                                </View>
-
-                                {/* Content */}
-                                <Text style={styles.postContent}>{post.content}</Text>
-
-                                {/* Interaction Row Dummy */}
-                                <View style={styles.postInteractions}>
-                                    <TouchableOpacity style={styles.interactionBtn}>
-                                        <Ionicons name="heart-outline" size={20} color={colors.textSecondary} />
-                                        <Text style={styles.interactionText}>0</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity style={styles.interactionBtn}>
-                                        <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
-                                        <Text style={styles.interactionText}>0</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity style={styles.interactionBtn}>
-                                        <Ionicons name="share-social-outline" size={20} color={colors.textSecondary} />
-                                        <Text style={styles.interactionText}>0</Text>
-                                    </TouchableOpacity>
-                                </View>
+                        userData.posts.map((post: any, index: number) => (
+                            <View key={post.id || index}>
+                                <PostCard
+                                    item={{ ...post, author: userData }}
+                                    currentUserId={isMyProfile ? userData.id : undefined}
+                                    onOptionsPress={handleOptionsPress}
+                                />
                             </View>
                         ))
                     ) : (
@@ -292,6 +319,35 @@ export default function ProfileScreen() {
                 onClose={() => setIsThemeModalVisible(false)}
                 currentTheme={themeMode}
                 onSelectTheme={(theme) => setThemeMode(theme)}
+            />
+
+            {/* Modal para Editar Publicación */}
+            <CreatePostModal
+                visible={isCreatePostVisible}
+                onClose={() => {
+                    setIsCreatePostVisible(false);
+                    refetchProfile();
+                }}
+                postId={editingPostId}
+                initialContent={editingPostContent}
+            />
+
+            {/* Modal Menú de Opciones de la Publicación Inferior */}
+            <PostOptionsModal
+                visible={isOptionsMenuVisible}
+                onClose={() => setIsOptionsMenuVisible(false)}
+                onEdit={() => {
+                    if (selectedPost) {
+                        setEditingPostId(selectedPost.id);
+                        setEditingPostContent(selectedPost.content);
+                        setIsCreatePostVisible(true);
+                    }
+                }}
+                onDelete={() => {
+                    if (selectedPost) {
+                        deletePost({ variables: { id: selectedPost.id } })
+                    }
+                }}
             />
 
         </SafeAreaView>
@@ -539,75 +595,6 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         textAlign: 'center',
         paddingHorizontal: 30,
         lineHeight: 20,
-    },
-    postCard: {
-        backgroundColor: colors.surface,
-        padding: 16,
-        marginBottom: 8,
-        borderTopWidth: 1,
-        borderBottomWidth: 1,
-        borderColor: colors.border,
-    },
-    postHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    postAuthorImagePlaceholder: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255, 101, 36, 0.15)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 10,
-        overflow: 'hidden',
-    },
-    postAuthorImage: {
-        width: '100%',
-        height: '100%',
-    },
-    postAuthorImageText: {
-        color: colors.primary,
-        fontSize: 14,
-        fontWeight: 'bold',
-        textTransform: 'uppercase',
-    },
-    postAuthorInfo: {
-        flex: 1,
-    },
-    postAuthorName: {
-        fontSize: 15,
-        fontWeight: 'bold',
-        color: colors.text,
-    },
-    postTime: {
-        fontSize: 12,
-        color: colors.textSecondary,
-        marginTop: 2,
-    },
-    postContent: {
-        fontSize: 15,
-        lineHeight: 22,
-        color: colors.text,
-        marginBottom: 16,
-    },
-    postInteractions: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-around',
-        borderTopWidth: 1,
-        borderTopColor: colors.border,
-        paddingTop: 12,
-    },
-    interactionBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    interactionText: {
-        marginLeft: 6,
-        fontSize: 14,
-        color: colors.textSecondary,
     },
     spacer: {
         flex: 1,

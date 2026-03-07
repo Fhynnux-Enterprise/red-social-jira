@@ -50,3 +50,47 @@ export const UPDATE_BADGE = gql`
     }
   }
 `;
+
+export const GET_USER_PROFILE = gql`
+  query GetUserProfile($id: String!) {
+    getUserProfile(id: $id) {
+      id
+      firstName
+      lastName
+      username
+      email
+      bio
+      phone
+      photoUrl
+      customFields {
+        id
+        title
+        value
+        isVisible
+      }
+      badge {
+        id
+        title
+        theme
+      }
+      posts {
+        id
+        content
+        createdAt
+        updatedAt
+        likes {
+          id
+          user {
+            id
+          }
+        }
+        author {
+          id
+          firstName
+          lastName
+          photoUrl
+        }
+      }
+    }
+  }
+`;

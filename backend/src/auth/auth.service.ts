@@ -150,7 +150,7 @@ export class AuthService {
     async getProfile(userId: string) {
         const user = await this.userRepository.findOne({
             where: { id: userId },
-            relations: ['customFields', 'badge', 'posts'],
+            relations: ['customFields', 'badge', 'posts', 'posts.author', 'posts.likes', 'posts.likes.user'],
             order: {
                 posts: {
                     createdAt: 'DESC'

@@ -6,7 +6,15 @@ export const GET_POSTS = gql`
             id
             content
             createdAt
+            updatedAt
+            likes {
+                id
+                user {
+                    id
+                }
+            }
             author {
+                id
                 firstName
                 lastName
                 username
@@ -23,10 +31,48 @@ export const CREATE_POST = gql`
             content
             createdAt
             author {
+                id
                 firstName
                 lastName
                 username
                 photoUrl
+            }
+        }
+    }
+`;
+
+export const UPDATE_POST = gql`
+    mutation UpdatePost($id: String!, $content: String!) {
+        updatePost(id: $id, content: $content) {
+            id
+            content
+            createdAt
+            author {
+                id
+                firstName
+                lastName
+                username
+                photoUrl
+            }
+        }
+    }
+`;
+
+export const DELETE_POST = gql`
+    mutation DeletePost($id: String!) {
+        deletePost(id: $id)
+    }
+`;
+
+export const TOGGLE_LIKE = gql`
+    mutation ToggleLike($postId: String!) {
+        toggleLike(postId: $postId) {
+            id
+            likes {
+                id
+                user {
+                    id
+                }
             }
         }
     }

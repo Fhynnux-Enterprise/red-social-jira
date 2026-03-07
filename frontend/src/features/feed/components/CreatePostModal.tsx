@@ -14,18 +14,26 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation } from '@apollo/client';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
-import { CREATE_POST, GET_POSTS } from '../graphql/posts.operations';
+import { CREATE_POST, UPDATE_POST, GET_POSTS } from '../graphql/posts.operations';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 
 interface CreatePostModalProps {
     visible: boolean;
     onClose: () => void;
+    initialContent?: string;
+    postId?: string;
 }
 
-export default function CreatePostModal({ visible, onClose }: CreatePostModalProps) {
+export default function CreatePostModal({ visible, onClose, initialContent = '', postId }: CreatePostModalProps) {
     const { colors } = useTheme();
-    const [content, setContent] = useState('');
+    const [content, setContent] = React.useState(initialContent);
     const insets = useSafeAreaInsets();
+
+    React.useEffect(() => {
+        if (visible) {
+            setContent(initialContent);
+        }
+    }, [visible, initialContent]);
 
     // Generamos estilos dinámicos que reaccionan al tema
     const styles = useMemo(() => getStyles(colors), [colors]);
@@ -42,9 +50,27 @@ export default function CreatePostModal({ visible, onClose }: CreatePostModalPro
         refetchQueries: [{ query: GET_POSTS }],
     });
 
+    const [updatePost, { loading: updating }] = useMutation(UPDATE_POST, {
+        onCompleted: () => {
+            setContent('');
+            Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'La publicación fue modificada' });
+            onClose();
+        },
+        onError: (err) => {
+            Toast.show({ type: 'error', text1: 'Error', text2: err.message });
+        },
+        refetchQueries: [{ query: GET_POSTS }],
+    });
+
+    const isLoading = creating || updating;
+
     const handlePublish = async () => {
         if (!content.trim()) return;
-        await createPost({ variables: { content } });
+        if (postId) {
+            await updatePost({ variables: { id: postId, content } });
+        } else {
+            await createPost({ variables: { content } });
+        }
     };
 
     const handleClose = () => {
@@ -69,17 +95,16 @@ export default function CreatePostModal({ visible, onClose }: CreatePostModalPro
                         <TouchableOpacity onPress={handleClose} style={styles.iconButton}>
                             <Ionicons name="close" size={28} color={colors.text} />
                         </TouchableOpacity>
-                        <Text style={styles.headerTitle}>Crear publicación</Text>
+                        <Text style={styles.headerTitle}>{postId ? 'Editar publicación' : 'Crear publicación'}</Text>
                         <TouchableOpacity
-                            style={[styles.publishButton, (!content.trim() || creating) && styles.publishButtonDisabled]}
+                            style={[styles.publishButton, (!content.trim() || isLoading) && styles.publishButtonDisabled]}
                             onPress={handlePublish}
-                            disabled={!content.trim() || creating}
-                            activeOpacity={0.8}
+                            disabled={!content.trim() || isLoading}
                         >
-                            {creating ? (
-                                <ActivityIndicator color="#FFF" size="small" />
+                            {isLoading ? (
+                                <ActivityIndicator size="small" color="#FFF" />
                             ) : (
-                                <Text style={styles.publishText}>Publicar</Text>
+                                <Text style={styles.publishText}>{postId ? 'Guardar' : 'Publicar'}</Text>
                             )}
                         </TouchableOpacity>
                     </View>
@@ -100,7 +125,7 @@ export default function CreatePostModal({ visible, onClose }: CreatePostModalPro
                             autoFocus={true}
                             value={content}
                             onChangeText={setContent}
-                            editable={!creating}
+                            editable={!isLoading}
                             textAlignVertical="top"
                         />
                     </View>
@@ -125,8 +150,8 @@ export default function CreatePostModal({ visible, onClose }: CreatePostModalPro
                         </TouchableOpacity>
                     </View>
                 </KeyboardAvoidingView>
-            </View>
-        </Modal>
+            </View >
+        </Modal >
     );
 }
 

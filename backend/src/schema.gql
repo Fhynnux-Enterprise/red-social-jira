@@ -2,11 +2,12 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
-type Post {
+type PostLike {
   id: ID!
-  content: String!
-  author: User!
-  authorId: String!
+  user: User!
+  userId: String!
+  post: Post!
+  postId: String!
   createdAt: DateTime!
 }
 
@@ -14,6 +15,17 @@ type Post {
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
 scalar DateTime
+
+type Post {
+  id: ID!
+  content: String!
+  author: User!
+  authorId: String!
+  likes: [PostLike!]
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  deletedAt: DateTime
+}
 
 type UserCustomField {
   id: ID!
@@ -49,10 +61,14 @@ type Query {
   """Obtiene los datos del usuario logueado en base al token JWT"""
   me: String!
   getPosts: [Post!]!
+  getUserProfile(id: String!): User!
 }
 
 type Mutation {
   createPost(content: String!): Post!
+  updatePost(id: String!, content: String!): Post!
+  deletePost(id: String!): Boolean!
+  toggleLike(postId: String!): Post!
   addCustomField(title: String!, value: String!): UserCustomField!
   updateCustomField(id: String!, title: String!, value: String!): UserCustomField!
   deleteCustomField(id: String!): Boolean!

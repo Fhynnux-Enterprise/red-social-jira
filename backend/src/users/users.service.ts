@@ -57,6 +57,20 @@ export class UsersService {
     return this.customFieldRepository.save(field);
   }
 
+  async findById(id: string): Promise<User> {
+    const user = await this.userRepository.findOne({
+      where: { id },
+      relations: ['customFields', 'badge', 'posts', 'posts.author', 'posts.likes', 'posts.likes.user'],
+      order: {
+        posts: { createdAt: 'DESC' },
+      },
+    });
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado');
+    }
+    return user;
+  }
+
   async deleteCustomField(userId: string, id: string): Promise<boolean> {
     const result = await this.customFieldRepository.delete({
       id,
