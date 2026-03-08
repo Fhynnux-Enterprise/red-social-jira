@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, Image, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
@@ -10,10 +10,14 @@ import { TOGGLE_LIKE } from '../graphql/posts.operations';
 export interface PostCardProps {
     item: any;
     currentUserId?: string;
-    onOptionsPress: (item: any) => void;
+    onOptionsPress?: (post: any) => void;
+    onOpenComments?: (postId: string) => void;
+    isModalView?: boolean;
+    headerPanHandlers?: any;
+    onScroll?: (event: any) => void;
 }
 
-export default function PostCard({ item, currentUserId, onOptionsPress }: PostCardProps) {
+export default function PostCard({ item, currentUserId, onOptionsPress, onOpenComments, isModalView, headerPanHandlers, onScroll }: PostCardProps) {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
@@ -25,6 +29,7 @@ export default function PostCard({ item, currentUserId, onOptionsPress }: PostCa
     const isEdited = item.updatedAt && new Date(item.updatedAt).getTime() > new Date(item.createdAt).getTime() + 2000;
 
     const displayCount = item.likes?.length || 0;
+    const commentsCount = item.comments?.length || 0;
     const displayLiked = item.likes?.some((like: any) => like.user?.id === userId) || false;
 
     // Motor 1: Reacción Visual Inmediata (0ms)
@@ -105,7 +110,7 @@ export default function PostCard({ item, currentUserId, onOptionsPress }: PostCa
 
     return (
         <View style={styles.postCard}>
-            <View style={styles.postHeader}>
+            <View style={styles.postHeader} {...(headerPanHandlers || {})}>
                 <TouchableOpacity
                     style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
                     onPress={() => (navigation.navigate as any)('Profile', { userId: item.author.id === currentUserId ? undefined : item.author.id })}
@@ -138,13 +143,47 @@ export default function PostCard({ item, currentUserId, onOptionsPress }: PostCa
                     </View>
                 </TouchableOpacity>
                 {item.author.id === currentUserId && (
-                    <TouchableOpacity onPress={() => onOptionsPress(item)} style={{ padding: 8, paddingTop: 0, marginLeft: 8, marginTop: -2, alignSelf: 'flex-start' }}>
+                    <TouchableOpacity onPress={() => onOptionsPress?.(item)} style={{ padding: 8, paddingTop: 0, marginLeft: 8, marginTop: -2, alignSelf: 'flex-start' }}>
                         <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
                     </TouchableOpacity>
                 )}
             </View>
-            <Text style={styles.postContent}>{item.content}</Text>
+            
+            {isModalView ? (
+                <ScrollView 
+                    style={{ flexShrink: 1 }} 
+                    showsVerticalScrollIndicator={false}
+                    persistentScrollbar={true}
+                    indicatorStyle={isDark ? "white" : "black"}
+                    nestedScrollEnabled={true}
+                    onScroll={onScroll}
+                    onMomentumScrollEnd={onScroll}
+                    scrollEventThrottle={16}
+                    bounces={false}
+                >
+                    <Text style={styles.postContent}>{item.content}</Text>
+                </ScrollView>
+            ) : (
+                <Text style={styles.postContent}>{item.content}</Text>
+            )}
 
+            {/* Stats Bar Container (Like count & Comment count) */}
+            {(localCount > 0 || commentsCount > 0) && (
+                <View style={styles.statsContainer}>
+                    {localCount > 0 ? (
+                        <View style={styles.statsLeft}>
+                            <Ionicons name="heart" size={16} color="#FF3B30" />
+                            <Text style={styles.statsText}>{localCount}</Text>
+                        </View>
+                    ) : <View />}
+
+                    {commentsCount > 0 ? (
+                        <Text style={styles.statsText}>{commentsCount} {commentsCount === 1 ? 'comentario' : 'comentarios'}</Text>
+                    ) : <View />}
+                </View>
+            )}
+
+            {/* Acciones */}
             <View style={styles.postFooter}>
                 <TouchableOpacity style={styles.actionButton} onPress={handleLikePress}>
                     <Ionicons
@@ -153,10 +192,13 @@ export default function PostCard({ item, currentUserId, onOptionsPress }: PostCa
                         color={localLiked ? "#FF3B30" : colors.textSecondary}
                     />
                     <Text style={[styles.actionText, localLiked && { color: "#FF3B30", fontWeight: 'bold' }]}>
-                        {localCount > 0 ? localCount : 'Me gusta'}
+                        Me gusta
                     </Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton}>
+                <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={() => onOpenComments ? onOpenComments(item.id) : null}
+                >
                     <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
                     <Text style={styles.actionText}>Comentar</Text>
                 </TouchableOpacity>
@@ -173,6 +215,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         borderTopWidth: 1,
         borderBottomWidth: 1,
         borderColor: colors.border,
+        flexShrink: 1,
     },
     postHeader: {
         flexDirection: 'row',
@@ -241,13 +284,14 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         fontSize: 16,
         lineHeight: 24,
         marginTop: 4,
-        marginBottom: 16,
+        marginBottom: 8,
     },
     postFooter: {
         flexDirection: 'row',
         paddingTop: 12,
         borderTopWidth: 1,
         borderTopColor: colors.border,
+        paddingHorizontal: 8,
     },
     actionButton: {
         flexDirection: 'row',
@@ -260,5 +304,21 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         marginLeft: 6,
         fontSize: 14,
         fontWeight: '500',
+    },
+    statsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingBottom: 8,
+        marginHorizontal: 4,
+    },
+    statsLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    statsText: {
+        color: colors.textSecondary,
+        fontSize: 13,
+        marginLeft: 6,
     },
 });

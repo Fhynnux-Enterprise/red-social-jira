@@ -14,6 +14,7 @@ import { ProfileService, UserProfile } from '../../profile/services/profile.serv
 import Toast from 'react-native-toast-message';
 import PostCard from '../components/PostCard';
 import PostOptionsModal from '../components/PostOptionsModal';
+import CommentsModal from '../../comments/components/CommentsModal';
 
 export default function FeedScreen() {
     const { signOut } = useAuth();
@@ -27,6 +28,7 @@ export default function FeedScreen() {
 
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<any>(null);
+    const [selectedPostForComments, setSelectedPostForComments] = useState<any | null>(null);
 
     const { data, loading, error, refetch } = useQuery(GET_POSTS, {
         fetchPolicy: 'cache-and-network',
@@ -80,6 +82,7 @@ export default function FeedScreen() {
             item={item}
             currentUserId={userProfile?.id}
             onOptionsPress={handleOptionsPress}
+            onOpenComments={() => setSelectedPostForComments(item)}
         />
     );
 
@@ -190,6 +193,13 @@ export default function FeedScreen() {
                         deletePost({ variables: { id: selectedPost.id } })
                     }
                 }}
+            />
+
+            {/* Modal de Comentarios */}
+            <CommentsModal 
+                visible={!!selectedPostForComments} 
+                post={selectedPostForComments} 
+                onClose={() => setSelectedPostForComments(null)} 
             />
         </SafeAreaView>
     );

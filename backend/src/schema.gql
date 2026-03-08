@@ -16,6 +16,18 @@ A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date
 """
 scalar DateTime
 
+type Comment {
+  id: ID!
+  content: String!
+  user: User
+  userId: String!
+  post: Post
+  postId: String!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  deletedAt: DateTime
+}
+
 type Post {
   id: ID!
   content: String!
@@ -25,6 +37,7 @@ type Post {
   createdAt: DateTime!
   updatedAt: DateTime!
   deletedAt: DateTime
+  comments: [Comment!]
 }
 
 type UserCustomField {
@@ -52,6 +65,7 @@ type User {
   posts: [Post!]
   customFields: [UserCustomField!]
   badge: UserBadge
+  comments: [Comment!]
 }
 
 type Query {
@@ -62,6 +76,7 @@ type Query {
   me: String!
   getPosts: [Post!]!
   getUserProfile(id: String!): User!
+  getCommentsByPost(postId: String!): [Comment!]!
 }
 
 type Mutation {
@@ -74,4 +89,5 @@ type Mutation {
   deleteCustomField(id: String!): Boolean!
   updateBadge(title: String!, theme: String = "default"): UserBadge!
   updateProfile(firstName: String, lastName: String, bio: String, username: String, phone: String): User!
+  createComment(postId: String!, content: String!): Comment!
 }
