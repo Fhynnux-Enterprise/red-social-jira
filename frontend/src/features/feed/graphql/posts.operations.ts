@@ -13,6 +13,9 @@ export const GET_POSTS = gql`
                     id
                 }
             }
+            comments {
+                id
+            }
             author {
                 id
                 firstName
@@ -30,6 +33,9 @@ export const CREATE_POST = gql`
             id
             content
             createdAt
+            comments {
+                id
+            }
             author {
                 id
                 firstName
@@ -47,6 +53,9 @@ export const UPDATE_POST = gql`
             id
             content
             createdAt
+            comments {
+                id
+            }
             author {
                 id
                 firstName
@@ -73,6 +82,9 @@ export const TOGGLE_LIKE = gql`
                 user {
                     id
                 }
+            }
+            comments {
+                id
             }
         }
     }

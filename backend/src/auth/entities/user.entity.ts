@@ -3,6 +3,7 @@ import { ObjectType, Field, ID } from '@nestjs/graphql';
 import { Post } from '../../posts/entities/post.entity';
 import { UserCustomField } from '../../users/entities/user-custom-field.entity';
 import { UserBadge } from '../../users/entities/user-badge.entity';
+import { Comment } from '../../comments/entities/comment.entity';
 
 
 @ObjectType()
@@ -66,4 +67,8 @@ export class User {
     @Field(() => UserBadge, { nullable: true })
     @OneToOne(() => UserBadge, badge => badge.user)
     badge: UserBadge;
+
+    @Field(() => [Comment], { nullable: true })
+    @OneToMany(() => Comment, (comment) => comment.user)
+    comments: Comment[];
 }

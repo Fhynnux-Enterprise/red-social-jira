@@ -2,6 +2,7 @@ import { ObjectType, Field, ID } from '@nestjs/graphql';
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 import { PostLike } from './post-like.entity';
+import { Comment } from '../../comments/entities/comment.entity';
 
 @ObjectType()
 @Entity('posts')
@@ -38,4 +39,8 @@ export class Post {
     @Field({ nullable: true })
     @DeleteDateColumn({ type: 'timestamptz', nullable: true })
     deletedAt?: Date;
+
+    @Field(() => [Comment], { nullable: true })
+    @OneToMany(() => Comment, comment => comment.post)
+    comments: Comment[];
 }

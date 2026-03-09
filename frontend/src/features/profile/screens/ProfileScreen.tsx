@@ -16,6 +16,7 @@ import { DELETE_POST, GET_POSTS } from '../../feed/graphql/posts.operations';
 import CreatePostModal from '../../feed/components/CreatePostModal';
 import PostOptionsModal from '../../feed/components/PostOptionsModal';
 import PostCard from '../../feed/components/PostCard';
+import CommentsModal from '../../comments/components/CommentsModal';
 
 export default function ProfileScreen() {
     const { signOut } = useAuth();
@@ -33,6 +34,7 @@ export default function ProfileScreen() {
     const [editingPostContent, setEditingPostContent] = useState<string>('');
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<any>(null);
+    const [selectedPostForComments, setSelectedPostForComments] = useState<any | null>(null);
     const insets = useSafeAreaInsets();
 
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
@@ -252,6 +254,7 @@ export default function ProfileScreen() {
                                     item={{ ...post, author: userData }}
                                     currentUserId={isMyProfile ? userData.id : undefined}
                                     onOptionsPress={handleOptionsPress}
+                                    onOpenComments={() => setSelectedPostForComments({ ...post, author: userData })}
                                 />
                             </View>
                         ))
@@ -348,6 +351,13 @@ export default function ProfileScreen() {
                         deletePost({ variables: { id: selectedPost.id } })
                     }
                 }}
+            />
+
+            {/* Modal de Comentarios */}
+            <CommentsModal 
+                visible={!!selectedPostForComments} 
+                post={selectedPostForComments} 
+                onClose={() => setSelectedPostForComments(null)} 
             />
 
         </SafeAreaView>

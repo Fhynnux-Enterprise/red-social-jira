@@ -21,7 +21,7 @@ export class PostsService {
         const savedPost = await this.postsRepository.save(newPost);
         const fullyLoadedPost = await this.postsRepository.findOne({
             where: { id: savedPost.id },
-            relations: ['author', 'likes', 'likes.user'],
+            relations: ['author', 'likes', 'likes.user', 'comments'],
         });
         if (!fullyLoadedPost) {
             throw new Error('Error al recuperar el post creado');
@@ -34,12 +34,12 @@ export class PostsService {
             order: {
                 createdAt: 'DESC',
             },
-            relations: ['author', 'likes', 'likes.user'],
+            relations: ['author', 'likes', 'likes.user', 'comments'],
         });
     }
 
     async updatePost(id: string, content: string, userId: string): Promise<Post> {
-        const post = await this.postsRepository.findOne({ where: { id }, relations: ['author', 'likes', 'likes.user'] });
+        const post = await this.postsRepository.findOne({ where: { id }, relations: ['author', 'likes', 'likes.user', 'comments'] });
         if (!post) {
             throw new NotFoundException('Publicación no encontrada');
         }
@@ -84,7 +84,7 @@ export class PostsService {
 
         const fullyLoadedPost = await this.postsRepository.findOne({
             where: { id: postId },
-            relations: ['author', 'likes', 'likes.user']
+            relations: ['author', 'likes', 'likes.user', 'comments']
         });
 
         if (!fullyLoadedPost) {
