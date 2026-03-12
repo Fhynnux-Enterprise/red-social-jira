@@ -35,4 +35,15 @@ export class CommentsResolver {
         const userId = context.req.user.id;
         return this.commentsService.deleteComment(id, userId);
     }
+
+    @Mutation(() => Comment, { name: 'updateComment' })
+    @UseGuards(JwtGqlGuard)
+    async updateComment(
+        @Args('id') id: string,
+        @Args('content') content: string,
+        @Context() context: any,
+    ): Promise<Comment> {
+        const userId = context.req.user.id;
+        return this.commentsService.updateComment(id, content, userId);
+    }
 }

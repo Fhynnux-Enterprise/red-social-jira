@@ -8,7 +8,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useQuery, useMutation } from '@apollo/client';
 import { Ionicons } from '@expo/vector-icons';
-import { GET_COMMENTS, CREATE_COMMENT, DELETE_COMMENT } from '../graphql/comments.operations';
+import { GET_COMMENTS, CREATE_COMMENT, DELETE_COMMENT, UPDATE_COMMENT } from '../graphql/comments.operations';
 import { TOGGLE_LIKE } from '../../feed/graphql/posts.operations';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -58,8 +58,10 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
     const navigation = useNavigation();
     const [content, setContent] = useState('');
     const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
+    const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [isOptionsModalVisible, setIsOptionsModalVisible] = useState(false);
     const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
+    const inputRef = useRef<TextInput>(null);
     const postId = post?.id;
 
     const navigateToProfile = (userId: string) => {
@@ -283,36 +285,86 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
         }
     };
 
+    const [updateComment, { loading: updating }] = useMutation(UPDATE_COMMENT);
+
+    const handleCancelEdit = () => {
+        setContent('');
+        setEditingCommentId(null);
+        Keyboard.dismiss();
+    };
+
     const handleSend = async () => {
         if (!content.trim() || !postId || !currentUser) return;
         try {
             const commentText = content.trim();
-            setContent('');
-            await createComment({
-                variables: { postId, content: commentText },
-                optimisticResponse: {
-                    createComment: {
-                        __typename: 'Comment',
-                        id: `temp-${Date.now()}`,
-                        content: commentText,
-                        createdAt: new Date().toISOString(),
-                        user: {
-                            __typename: 'User',
-                            id: currentUser.id,
-                            username: currentUser.username || '',
-                            firstName: currentUser.firstName,
-                            lastName: currentUser.lastName,
-                            photoUrl: currentUser.photoUrl || null,
+            
+            if (editingCommentId) {
+                // Buscamos el comentario original para mantener su createdAt en el optimisticResponse
+                const originalComment = data?.getCommentsByPost?.find((c: any) => c.id === editingCommentId);
+                
+                await updateComment({
+                    variables: { id: editingCommentId, content: commentText },
+                    optimisticResponse: {
+                        updateComment: {
+                            __typename: 'Comment',
+                            id: editingCommentId,
+                            content: commentText,
+                            createdAt: originalComment?.createdAt || new Date().toISOString(),
+                            updatedAt: new Date().toISOString(),
+                        }
+                    },
+                    update(cache, { data: { updateComment: updated } }) {
+                        if (!updated || !postId) return;
+                        
+                        // Forzamos la actualización de la lista de comentarios en el cache
+                        const existing = cache.readQuery<{ getCommentsByPost: any[] }>({
+                            query: GET_COMMENTS,
+                            variables: { postId }
+                        });
+
+                        if (existing) {
+                            const newComments = existing.getCommentsByPost.map(c => 
+                                c.id === updated.id ? { ...c, content: updated.content } : c
+                            );
+                            cache.writeQuery({
+                                query: GET_COMMENTS,
+                                variables: { postId },
+                                data: { getCommentsByPost: newComments }
+                            });
+                        }
+                    }
+                });
+            } else {
+                await createComment({
+                    variables: { postId, content: commentText },
+                    optimisticResponse: {
+                        createComment: {
+                            __typename: 'Comment',
+                            id: `temp-${Date.now()}`,
+                            content: commentText,
+                            createdAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString(),
+                            user: {
+                                __typename: 'User',
+                                id: currentUser.id,
+                                username: currentUser.username || '',
+                                firstName: currentUser.firstName,
+                                lastName: currentUser.lastName,
+                                photoUrl: currentUser.photoUrl || null,
+                            },
                         },
                     },
-                },
-            });
+                });
+            }
+            
+            setContent('');
+            setEditingCommentId(null);
             Keyboard.dismiss();
         } catch (e) {
             console.error(e);
-            // Optionally handle error (e.g., restore content if it failed)
         }
     };
+
 
     // ── Render comentario ──────────────────────────────────────────────────
     const renderComment = (item: any) => {
@@ -356,6 +408,14 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                     <View style={styles.commentFooter}>
                         <Text style={[styles.dateText, { color: colors.textSecondary }]}>
                             {formatTimeAgo(new Date(item.createdAt))}
+                            {(() => {
+                                if (!item.createdAt || !item.updatedAt) return null;
+                                const created = new Date(item.createdAt).getTime();
+                                const updated = new Date(item.updatedAt).getTime();
+                                if (isNaN(created) || isNaN(updated)) return null;
+                                const isEdited = updated - created > 2000;
+                                return isEdited ? <Text style={{ fontStyle: 'italic' }}> • Editado</Text> : null;
+                            })()}
                         </Text>
                         <TouchableOpacity>
                             <Text style={[styles.replyText, { color: colors.textSecondary }]}>Responder</Text>
@@ -542,8 +602,20 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                             )}
                         </ScrollView>
 
+                        {editingCommentId && (
+                            <View style={[styles.editingBar, { borderTopColor: colors.border }]}>
+                                <Text style={[styles.editingText, { color: colors.textSecondary }]}>
+                                    Editando comentario...
+                                </Text>
+                                <TouchableOpacity onPress={handleCancelEdit} style={styles.cancelEditBtn}>
+                                    <Text style={[styles.cancelEditText, { color: colors.primary }]}>Cancelar</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+
                         <View style={[styles.inputContainer, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
                             <TextInput
+                                ref={inputRef}
                                 style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
                                 placeholder="Escribe un comentario..."
                                 placeholderTextColor={colors.textSecondary}
@@ -555,11 +627,11 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                             <TouchableOpacity
                                 style={[styles.sendButton, { opacity: content.trim() ? 1 : 0.5, backgroundColor: colors.primary }]}
                                 onPress={handleSend}
-                                disabled={!content.trim() || creating}
+                                disabled={!content.trim() || creating || updating}
                             >
-                                {creating
+                                {creating || updating
                                     ? <ActivityIndicator size="small" color="#FFF" />
-                                    : <Ionicons name="send" size={18} color="#FFF" />
+                                    : <Ionicons name={editingCommentId ? "checkmark" : "send"} size={editingCommentId ? 22 : 18} color="#FFF" />
                                 }
                             </TouchableOpacity>
                         </View>
@@ -571,7 +643,17 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                 visible={isOptionsModalVisible}
                 commentId={selectedCommentId}
                 onClose={() => setIsOptionsModalVisible(false)}
-                onEdit={(id) => console.log('Editar comentario:', id)}
+                onEdit={(id) => {
+                    const commentToEdit = data?.getCommentsByPost?.find((c: any) => c.id === id);
+                    if (commentToEdit) {
+                        setContent(commentToEdit.content);
+                        setEditingCommentId(id);
+                        setIsOptionsModalVisible(false);
+                        // Aumentamos el tiempo a 400ms para asegurar que el modal anterior se cierre 
+                        // y el sistema permita abrir el teclado correctamente.
+                        setTimeout(() => inputRef.current?.focus(), 400);
+                    }
+                }}
                 onDelete={handleDeleteComment}
             />
 
@@ -724,5 +806,26 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     sendButton: {
         width: 44, height: 44, borderRadius: 22,
         justifyContent: 'center', alignItems: 'center',
+    },
+    editingBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
+        borderTopWidth: StyleSheet.hairlineWidth,
+    },
+    editingText: {
+        fontSize: 13,
+        fontStyle: 'italic',
+    },
+    cancelEditBtn: {
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+    },
+    cancelEditText: {
+        fontSize: 13,
+        fontWeight: 'bold',
     },
 });

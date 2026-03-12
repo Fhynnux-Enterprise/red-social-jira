@@ -91,4 +91,5 @@ type Mutation {
   updateProfile(firstName: String, lastName: String, bio: String, username: String, phone: String): User!
   createComment(postId: String!, content: String!): Comment!
   deleteComment(id: String!): Boolean!
+  updateComment(id: String!, content: String!): Comment!
 }
