@@ -33,3 +33,9 @@ export const CREATE_COMMENT = gql`
     }
   }
 `;
+
+export const DELETE_COMMENT = gql`
+  mutation DeleteComment($id: String!) {
+    deleteComment(id: $id)
+  }
+`;
