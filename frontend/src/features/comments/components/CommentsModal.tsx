@@ -1,11 +1,20 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, Keyboard, KeyboardAvoidingView, Platform, StyleSheet, Image, ActivityIndicator, Modal, TouchableWithoutFeedback, Animated, Dimensions, Easing, PanResponder } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+    View, Text, TouchableOpacity, Platform, StyleSheet,
+    Image, ActivityIndicator, TouchableWithoutFeedback,
+    Alert, Pressable, Keyboard, ScrollView, Modal,
+    Dimensions, TextInput,
+    PanResponder, Animated,
+} from 'react-native';
 import { useQuery, useMutation } from '@apollo/client';
 import { Ionicons } from '@expo/vector-icons';
 import { GET_COMMENTS, CREATE_COMMENT } from '../graphql/comments.operations';
+import { TOGGLE_LIKE } from '../../feed/graphql/posts.operations';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import PostCard from '../../feed/components/PostCard';
+import { useAuth } from '../../auth/context/AuthContext';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const formatTimeAgo = (date: Date) => {
     const now = new Date();
@@ -13,16 +22,21 @@ const formatTimeAgo = (date: Date) => {
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMins / 60);
     const diffDays = Math.floor(diffHours / 24);
+    if (diffMins < 60) return `${Math.max(1, diffMins)} min`;
+    if (diffHours < 24) return `${diffHours} h`;
+    if (diffDays <= 30) return `Hace ${diffDays} día(s)`;
+    return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+};
 
-    if (diffMins < 60) {
-        return `${Math.max(1, diffMins)} min`;
-    } else if (diffHours < 24) {
-        return `${diffHours} h`;
-    } else if (diffDays <= 30) {
-        return `Hace ${diffDays} día(s)`;
-    } else {
-        return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
-    }
+const formatDate = (isoString: string) => {
+    const utcString = isoString.endsWith('Z') ? isoString : `${isoString}Z`;
+    const date = new Date(utcString);
+    const hoy = new Date();
+    const ayer = new Date(); ayer.setDate(hoy.getDate() - 1);
+    const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (date.toDateString() === hoy.toDateString()) return `Hoy a las ${timeString}`;
+    if (date.toDateString() === ayer.toDateString()) return `Ayer a las ${timeString}`;
+    return `${date.toLocaleDateString()} a las ${timeString}`;
 };
 
 export interface CommentsModalProps {
@@ -34,128 +48,104 @@ export interface CommentsModalProps {
 export default function CommentsModal({ visible, post, onClose }: CommentsModalProps) {
     const { colors } = useTheme();
     const insets = useSafeAreaInsets();
-
+    const { user: currentUser } = useAuth();
     const [content, setContent] = useState('');
-    const [touchY, setTouchY] = useState(0);
     const postId = post?.id;
 
-    const { height: screenHeight } = Dimensions.get('window');
-    const slideAnim = useRef(new Animated.Value(screenHeight)).current;
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-    const [localVisible, setLocalVisible] = useState(visible);
+    // ── Animación entrada/salida + drag ────────────────────────────────────
+    // panY=0 → abierto, panY=SCREEN_HEIGHT → fuera de pantalla (cerrado)
+    const panY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
 
-    const inputRef = useRef<TextInput>(null);
+    const closeWithAnimation = () => {
+        Animated.timing(panY, {
+            toValue: SCREEN_HEIGHT,
+            duration: 260,
+            useNativeDriver: true,
+        }).start(() => {
+            panY.setValue(SCREEN_HEIGHT);
+            onClose();
+        });
+    };
 
-    const [isKbVisible, setIsKbVisible] = useState(false);
-    const [kbHeight, setKbHeight] = useState(0);
+    React.useEffect(() => {
+        if (visible) {
+            panY.setValue(SCREEN_HEIGHT);
+            Animated.spring(panY, {
+                toValue: 0,
+                useNativeDriver: true,
+                bounciness: 4,
+                speed: 14,
+            }).start();
+        }
+    }, [visible]);
 
-    // Ajuste fino para Android: Si la barra queda un poco cubierta por el teclado o muy alta, cambia este valor.
-    // Ejemplos: 30, 45, 60... (Te faltaba ver el 85% de la caja, así que le sumaremos unos 40px por defecto)
-    const ANDROID_KEYBOARD_OFFSET = 45;
+    // ── Teclado: animar bottom para que el input no quede tapado ───────────────
+    const keyboardOffset = useRef(new Animated.Value(Math.max(insets.bottom, 16))).current;
 
     useEffect(() => {
-        const sub1 = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e) => {
-            setIsKbVisible(true);
-            setKbHeight(e.endCoordinates.height);
+        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+        const showSub = Keyboard.addListener(showEvent, (e) => {
+            Animated.timing(keyboardOffset, {
+                toValue: Math.max(insets.bottom, 16) + e.endCoordinates.height,
+                duration: Platform.OS === 'ios' ? e.duration || 250 : 200,
+                useNativeDriver: false,
+            }).start();
         });
-        const sub2 = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => {
-            setIsKbVisible(false);
-            setKbHeight(0);
+        const hideSub = Keyboard.addListener(hideEvent, (e) => {
+            Animated.timing(keyboardOffset, {
+                toValue: Math.max(insets.bottom, 16),
+                duration: Platform.OS === 'ios' ? e.duration || 250 : 200,
+                useNativeDriver: false,
+            }).start();
         });
-        return () => { sub1.remove(); sub2.remove(); };
+
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
     }, []);
 
-    const isCommentsScrolledToTop = useRef(true);
-    const isPostScrolledToTop = useRef(true);
-
-    const panResponder = useRef(
-        PanResponder.create({
-            onStartShouldSetPanResponder: () => false,
-            onMoveShouldSetPanResponder: (_, gestureState) => {
-                return gestureState.dy > 10 && isCommentsScrolledToTop.current && Math.abs(gestureState.vy) > Math.abs(gestureState.vx);
-            },
-            onMoveShouldSetPanResponderCapture: (_, gestureState) => {
-                return gestureState.dy > 10 && isCommentsScrolledToTop.current && Math.abs(gestureState.vy) > Math.abs(gestureState.vx);
-            },
-            onPanResponderMove: (_, gestureState) => {
-                if (gestureState.dy > 0) {
-                    slideAnim.setValue(gestureState.dy);
-                }
-            },
-            onPanResponderRelease: (_, gestureState) => {
-                // LÍMITE DE CIERRE: Aquí puedes modificar qué porcentaje de la pantalla debe bajar
-                // para que se cierre (0.5 = 50% de la pantalla, 0.3 = 30%, etc)
-                const SWIPE_CLOSE_THRESHOLD = screenHeight * 0.5;
-
-                // Cerrar solo si bajó más del Límite, o si el arrastre final fue un latigazo fuerte
-                if (gestureState.dy > SWIPE_CLOSE_THRESHOLD || gestureState.vy > 2.0) {
-                    Animated.parallel([
-                        Animated.timing(slideAnim, {
-                            toValue: screenHeight,
-                            duration: 250,
-                            easing: Easing.out(Easing.ease),
-                            useNativeDriver: true,
-                        }),
-                        Animated.timing(fadeAnim, {
-                            toValue: 0,
-                            duration: 250,
-                            useNativeDriver: true,
-                        })
-                    ]).start(() => {
-                        onClose();
-                    });
-                } else {
-                    Animated.spring(slideAnim, {
-                        toValue: 0,
-                        bounciness: 6,
-                        useNativeDriver: true,
-                    }).start();
-                }
+    const makeDragPan = () => PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 5 && g.dy > 0,
+        onPanResponderMove: (_, g) => {
+            if (g.dy > 0) panY.setValue(g.dy);
+        },
+        onPanResponderRelease: (_, g) => {
+            const shouldClose = g.dy > 80 || g.vy > 0.8;
+            if (shouldClose) {
+                closeWithAnimation();
+            } else {
+                Animated.spring(panY, {
+                    toValue: 0, useNativeDriver: true, bounciness: 6,
+                }).start();
             }
-        })
-    ).current;
+        },
+    });
 
-    useEffect(() => {
-        if (visible) {
-            setLocalVisible(true);
-            slideAnim.setValue(screenHeight);
-            Animated.parallel([
-                Animated.timing(slideAnim, {
-                    toValue: 0,
-                    duration: 400,
-                    easing: Easing.out(Easing.poly(3)),
-                    useNativeDriver: true,
-                }),
-                Animated.timing(fadeAnim, {
-                    toValue: 1,
-                    duration: 400,
-                    useNativeDriver: true,
-                })
-            ]).start(() => {
-                // Focus automatizado en el Text Input cuando la animación termina
-                setTimeout(() => {
-                    inputRef.current?.focus();
-                }, 100);
-            });
-        } else {
-            Animated.parallel([
-                Animated.timing(slideAnim, {
-                    toValue: screenHeight,
-                    duration: 300,
-                    easing: Easing.in(Easing.poly(3)),
-                    useNativeDriver: true,
-                }),
-                Animated.timing(fadeAnim, {
-                    toValue: 0,
-                    duration: 300,
-                    useNativeDriver: true,
-                })
-            ]).start(() => {
-                setLocalVisible(false);
-            });
-        }
-    }, [visible, slideAnim, fadeAnim, screenHeight]);
+    const postHeaderPan = useRef(makeDragPan()).current;
+    const commentsHeaderPan = useRef(makeDragPan()).current;
 
+
+    // ── Likes ────────────────────────────────────────────────────────────────
+    const displayLiked = post?.likes?.some((l: any) => l.user?.id === currentUser?.id) || false;
+    const [localLiked, setLocalLiked] = useState(displayLiked);
+    const [localCount, setLocalCount] = useState<number>(post?.likes?.length || 0);
+    const [toggleLikeMutation] = useMutation(TOGGLE_LIKE);
+
+    const handleLike = () => {
+        const next = !localLiked;
+        setLocalLiked(next);
+        setLocalCount((c) => next ? c + 1 : Math.max(0, c - 1));
+        toggleLikeMutation({ variables: { postId } }).catch(() => {
+            setLocalLiked(!next);
+            setLocalCount((c) => !next ? c + 1 : Math.max(0, c - 1));
+        });
+    };
+
+    // ── Comments ─────────────────────────────────────────────────────────────
     const { data, loading, error, refetch } = useQuery(GET_COMMENTS, {
         variables: { postId },
         skip: !postId,
@@ -163,19 +153,15 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
     });
 
     const [createComment, { loading: creating }] = useMutation(CREATE_COMMENT, {
-        update(cache, { data: { createComment } }) {
+        update(cache, { data: { createComment: newComment } }) {
             if (!postId) return;
-            const existingData = cache.readQuery<{ getCommentsByPost: any[] }>({
-                query: GET_COMMENTS,
-                variables: { postId },
+            const existing = cache.readQuery<{ getCommentsByPost: any[] }>({
+                query: GET_COMMENTS, variables: { postId },
             });
-            if (existingData) {
+            if (existing) {
                 cache.writeQuery({
-                    query: GET_COMMENTS,
-                    variables: { postId },
-                    data: {
-                        getCommentsByPost: [...existingData.getCommentsByPost, createComment],
-                    },
+                    query: GET_COMMENTS, variables: { postId },
+                    data: { getCommentsByPost: [...existing.getCommentsByPost, newComment] },
                 });
             }
         },
@@ -184,41 +170,50 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
     const handleSend = async () => {
         if (!content.trim() || !postId) return;
         try {
-            await createComment({
-                variables: { postId, content: content.trim() },
-            });
+            await createComment({ variables: { postId, content: content.trim() } });
             setContent('');
-        } catch (e) {
-            console.error("Error creating comment:", e);
-        }
+            Keyboard.dismiss();
+        } catch (e) { console.error(e); }
     };
 
-    const renderItem = ({ item }: { item: any }) => {
+    // ── Render comentario ────────────────────────────────────────────────────
+    const renderComment = (item: any) => {
         const author = item.user;
-        const date = new Date(item.createdAt);
-        const timeAgo = formatTimeAgo(date);
+        const isMyComment = author?.id === currentUser?.id;
+
+        const handleLongPress = () => {
+            if (!isMyComment) return;
+            Alert.alert('Opciones del comentario', '', [
+                { text: 'Eliminar', style: 'destructive', onPress: () => console.log('Eliminar:', item.id) },
+                { text: 'Editar', onPress: () => console.log('Editar:', item.id) },
+                { text: 'Cancelar', style: 'cancel' },
+            ]);
+        };
 
         return (
-            <View style={styles.commentCard}>
-                <View style={[styles.avatarPlaceholder]}>
-                    {author?.photoUrl ? (
-                        <Image source={{ uri: author.photoUrl }} style={styles.avatarImage} />
-                    ) : (
-                        <Text style={styles.avatarText}>
-                            {author?.firstName?.[0] || ''}{author?.lastName?.[0] || ''}
-                        </Text>
-                    )}
+            <Pressable
+                key={item.id}
+                onLongPress={handleLongPress}
+                delayLongPress={250}
+                style={({ pressed }) => [
+                    styles.commentCard,
+                    { backgroundColor: pressed ? 'rgba(0,0,0,0.05)' : 'transparent', borderRadius: 8, padding: 4 },
+                ]}
+            >
+                <View style={styles.avatarPlaceholder}>
+                    {author?.photoUrl
+                        ? <Image source={{ uri: author.photoUrl }} style={styles.avatarImage} />
+                        : <Text style={styles.avatarText}>{author?.firstName?.[0] || ''}{author?.lastName?.[0] || ''}</Text>
+                    }
                 </View>
-                <View style={[styles.commentContent]}>
+                <View style={styles.commentContent}>
                     <Text style={[styles.authorName, { color: colors.textSecondary }]}>
                         {author?.firstName} {author?.lastName}
                     </Text>
-                    <Text style={[styles.textContent, { color: colors.text }]}>
-                        {item.content}
-                    </Text>
+                    <Text style={[styles.textContent, { color: colors.text }]}>{item.content}</Text>
                     <View style={styles.commentFooter}>
                         <Text style={[styles.dateText, { color: colors.textSecondary }]}>
-                            {timeAgo}
+                            {formatTimeAgo(new Date(item.createdAt))}
                         </Text>
                         <TouchableOpacity>
                             <Text style={[styles.replyText, { color: colors.textSecondary }]}>Responder</Text>
@@ -228,194 +223,304 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                 <TouchableOpacity style={styles.likeContainer}>
                     <Ionicons name="heart-outline" size={20} color={colors.textSecondary} />
                 </TouchableOpacity>
-            </View>
+            </Pressable>
         );
     };
 
+    if (!visible) return null;
+
+    const commentsCount = post?.comments?.length || 0;
+    const isEdited = post?.updatedAt &&
+        new Date(post.updatedAt).getTime() > new Date(post.createdAt).getTime() + 2000;
+
     return (
-        <Modal
-            visible={localVisible}
-            transparent={true}
-            animationType="none"
-            onRequestClose={onClose}
-            hardwareAccelerated={true}
-        >
-            <View style={{ flex: 1 }} pointerEvents="box-none">
+        <Modal visible={visible} transparent animationType="none" onRequestClose={closeWithAnimation} statusBarTranslucent>
 
-                {/* Capa 1: Burbujas Estáticas (No se mueven con el teclado) */}
-                <View style={[StyleSheet.absoluteFillObject]} pointerEvents="box-none">
-                    {/* Fondo semitransparente oscuro q responde a toques para cerrar */}
-                    <TouchableWithoutFeedback onPress={onClose}>
-                        <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', opacity: fadeAnim }} />
-                    </TouchableWithoutFeedback>
+            {/* Fondo oscuro — cubre toda la pantalla */}
+            <TouchableWithoutFeedback onPress={closeWithAnimation}>
+                <View style={StyleSheet.absoluteFill}>
+                    <View style={styles.backdrop} />
+                </View>
+            </TouchableWithoutFeedback>
 
-                    <Animated.View
-                        style={{ flex: 1, paddingTop: Math.max(insets.top + 20, 60), transform: [{ translateY: slideAnim }] }}
-                        pointerEvents="box-none"
-                        {...panResponder.panHandlers}
-                    >
+            {/* Contenedor EXTERIOR: solo mueve bottom con el teclado (JS driver) */}
+            <Animated.View
+                style={[
+                    styles.container,
+                    {
+                        top: insets.top + 20,
+                        bottom: keyboardOffset,
+                    },
+                ]}
+                pointerEvents="box-none"
+            >
+            {/* Contenedor INTERIOR: sigue el dedo con translateY (native driver) */}
+            <Animated.View
+                style={[
+                    { flex: 1, gap: 8 },
+                    { transform: [{ translateY: panY }] },
+                ]}
+            >
+                    {/* ── BURBUJA SUPERIOR: Publicación ── */}
+                    {post && (
+                        <View style={[styles.postBubble, { backgroundColor: colors.surface }]}>
 
-                        {/* Globo Arriba: Publicación (max 40%) */}
-                        {post && (
-                            <View style={[styles.postBubble, { backgroundColor: colors.surface }]}>
-                                <PostCard
-                                    item={post}
-                                    onOptionsPress={() => { }}
-                                    isModalView={true}
-                                    headerPanHandlers={panResponder.panHandlers}
-                                    onScroll={(e) => {
-                                        isPostScrolledToTop.current = e.nativeEvent.contentOffset.y <= 30;
-                                    }}
-                                />
-                            </View>
-                        )}
-
-                        {/* Globo Abajo: Comentarios */}
-                        <View style={[styles.commentsBubble, { backgroundColor: colors.surface, marginBottom: isKbVisible ? 300 : Math.max(insets.bottom + 65, 80) }]}>
-                            {/* Barra Superior de la Burbuja */}
-                            <View style={[styles.commentsHeader, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-                                <Text style={[styles.headerTitle, { color: colors.text }]} pointerEvents="none">Comentarios</Text>
-                                <TouchableOpacity onPress={onClose} style={styles.closeModalButton} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                                    <Ionicons name="close" size={24} color={colors.textSecondary} />
-                                </TouchableOpacity>
-                            </View>
-
-                            <View style={{ flex: 1 }}>
-                                {loading && !data ? (
-                                    <View style={styles.center}>
-                                        <ActivityIndicator size="large" color={colors.primary} />
-                                    </View>
-                                ) : error ? (
-                                    <View style={styles.center}>
-                                        <Text style={{ color: colors.error }}>Error cargando comentarios</Text>
-                                        <TouchableOpacity onPress={() => refetch()} style={{ marginTop: 10 }}>
-                                            <Text style={{ color: colors.primary }}>Reintentar</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                ) : (
-                                    <FlatList
-                                        data={data?.getCommentsByPost || []}
-                                        keyExtractor={(item) => item.id}
-                                        renderItem={renderItem}
-                                        onScroll={(e) => {
-                                            isCommentsScrolledToTop.current = e.nativeEvent.contentOffset.y <= 30;
-                                        }}
-                                        onMomentumScrollEnd={(e) => {
-                                            isCommentsScrolledToTop.current = e.nativeEvent.contentOffset.y <= 30;
-                                        }}
-                                        scrollEventThrottle={16}
-                                        bounces={false}
-                                        showsVerticalScrollIndicator={false}
-                                        contentContainerStyle={styles.listContainer}
-                                        ListEmptyComponent={
-                                            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                                                No hay comentarios aún. ¡Sé el primero!
+                            {/* Cabecera FIJA — arrastrando aquí cierra */}
+                            <View
+                                style={[styles.postHeader, { borderBottomColor: colors.border }]}
+                                {...postHeaderPan.panHandlers}
+                            >
+                                <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
+                                <View style={styles.postAuthorRow}>
+                                    <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
+                                        {post.author?.photoUrl
+                                            ? <Image source={{ uri: post.author.photoUrl }} style={styles.avatarImage} />
+                                            : <Text style={styles.avatarText}>
+                                                {post.author?.firstName?.[0] || ''}{post.author?.lastName?.[0] || ''}
                                             </Text>
                                         }
-                                    />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.postAuthorName, { color: colors.text }]}>
+                                            {post.author?.firstName} {post.author?.lastName}
+                                        </Text>
+                                        <Text style={[styles.postDate, { color: colors.textSecondary }]}>
+                                            {formatDate(post.createdAt)}{isEdited ? ' · Editado' : ''}
+                                        </Text>
+                                    </View>
+                                </View>
+                            </View>
+
+                            {/* Contenido del Post — adaptable, con scrollbar visible */}
+                            <ScrollView
+                                nestedScrollEnabled
+                                showsVerticalScrollIndicator={true}
+                                bounces={false}
+                                contentContainerStyle={{ padding: 16, paddingTop: 10 }}
+                                style={{ flexShrink: 1 }}
+                            >
+                                <Text style={[styles.postContent, { color: colors.text }]}>{post.content}</Text>
+                            </ScrollView>
+
+                            {/* Stats + Acciones FIJAS al fondo */}
+                            <View style={[styles.postFooterFixed, { borderTopColor: colors.border }]}>
+                                {(localCount > 0 || commentsCount > 0) && (
+                                    <View style={styles.statsRow}>
+                                        {localCount > 0 && (
+                                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                <Ionicons name="heart" size={15} color="#FF3B30" />
+                                                <Text style={[styles.statsText, { color: colors.textSecondary }]}> {localCount}</Text>
+                                            </View>
+                                        )}
+                                        {commentsCount > 0 && (
+                                            <Text style={[styles.statsText, { color: colors.textSecondary }]}>
+                                                {commentsCount} {commentsCount === 1 ? 'comentario' : 'comentarios'}
+                                            </Text>
+                                        )}
+                                    </View>
                                 )}
+                                <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
+                                    <TouchableOpacity style={styles.actionBtn} onPress={handleLike}>
+                                        <Ionicons name={localLiked ? 'heart' : 'heart-outline'} size={20}
+                                            color={localLiked ? '#FF3B30' : colors.textSecondary} />
+                                        <Text style={[styles.actionText, { color: localLiked ? '#FF3B30' : colors.textSecondary },
+                                            localLiked && { fontWeight: 'bold' }]}>
+                                            Me gusta
+                                        </Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.actionBtn}>
+                                        <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
+                                        <Text style={[styles.actionText, { color: colors.textSecondary }]}>Comentar</Text>
+                                    </TouchableOpacity>
+                                </View>
                             </View>
                         </View>
-                    </Animated.View>
-                </View>
+                    )}
 
-                {/* Capa 2: Input Dinámico (Aislado, sube exactamente con el teclado usando el motor nativo de Android/iOS) */}
-                <KeyboardAvoidingView
-                    style={{ flex: 1 }}
-                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                    pointerEvents="box-none"
-                    keyboardVerticalOffset={0}
-                >
-                    <View style={{ flex: 1, justifyContent: 'flex-end' }} pointerEvents="box-none">
-                        <Animated.View style={{ transform: [{ translateY: slideAnim }], marginBottom: Platform.OS === 'android' && isKbVisible ? kbHeight + ANDROID_KEYBOARD_OFFSET : 0 }}>
-                            <View style={[styles.inputContainer, { backgroundColor: colors.surface, borderTopColor: colors.border, paddingBottom: isKbVisible ? 10 : Math.max(insets.bottom, 15) }]}>
-                                <TextInput
-                                    ref={inputRef}
-                                    style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-                                    placeholder="Escribe un comentario..."
-                                    placeholderTextColor={colors.textSecondary}
-                                    value={content}
-                                    onChangeText={setContent}
-                                    multiline
-                                    maxLength={500}
-                                />
-                                <TouchableOpacity
-                                    style={[styles.sendButton, { opacity: content.trim() ? 1 : 0.5, backgroundColor: colors.primary }]}
-                                    onPress={handleSend}
-                                    disabled={!content.trim() || creating}
-                                >
-                                    {creating ? (
-                                        <ActivityIndicator size="small" color="#FFF" />
-                                    ) : (
-                                        <Ionicons name="send" size={18} color="#FFF" />
-                                    )}
-                                </TouchableOpacity>
-                            </View>
-                        </Animated.View>
+                    {/* ── BURBUJA INFERIOR: Comentarios ── */}
+                    <View style={[styles.commentsBubble, { backgroundColor: colors.surface }]}>
+
+                        {/* Cabecera FIJA — arrastrando aquí también cierra */}
+                        <View
+                            style={[styles.commentsHeader, { borderBottomColor: colors.border }]}
+                            {...commentsHeaderPan.panHandlers}
+                        >
+                            <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
+                            <Text style={[styles.headerTitle, { color: colors.text }]}>Comentarios</Text>
+                            <TouchableOpacity onPress={closeWithAnimation} style={styles.closeBtn}
+                                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                                <Ionicons name="close" size={24} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Lista SCROLLABLE */}
+                        <ScrollView
+                            style={{ flex: 1 }}
+                            contentContainerStyle={styles.listContainer}
+                            nestedScrollEnabled
+                            showsVerticalScrollIndicator={false}
+                            bounces={false}
+                            keyboardShouldPersistTaps="handled"
+                        >
+                            {loading && !data ? (
+                                <View style={styles.center}>
+                                    <ActivityIndicator size="large" color={colors.primary} />
+                                </View>
+                            ) : error ? (
+                                <View style={styles.center}>
+                                    <Text style={{ color: colors.error }}>Error cargando comentarios</Text>
+                                    <TouchableOpacity onPress={() => refetch()} style={{ marginTop: 10 }}>
+                                        <Text style={{ color: colors.primary }}>Reintentar</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            ) : (!data?.getCommentsByPost || data.getCommentsByPost.length === 0) ? (
+                                <View style={styles.center}>
+                                    <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                                        No hay comentarios aún. ¡Sé el primero!
+                                    </Text>
+                                </View>
+                            ) : (
+                                data.getCommentsByPost.map((item: any) => renderComment(item))
+                            )}
+                        </ScrollView>
+
+                        {/* Input FIJO */}
+                        <View style={[styles.inputContainer, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
+                            <TextInput
+                                style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                                placeholder="Escribe un comentario..."
+                                placeholderTextColor={colors.textSecondary}
+                                value={content}
+                                onChangeText={setContent}
+                                multiline
+                                maxLength={500}
+                            />
+                            <TouchableOpacity
+                                style={[styles.sendButton, { opacity: content.trim() ? 1 : 0.5, backgroundColor: colors.primary }]}
+                                onPress={handleSend}
+                                disabled={!content.trim() || creating}
+                            >
+                                {creating
+                                    ? <ActivityIndicator size="small" color="#FFF" />
+                                    : <Ionicons name="send" size={18} color="#FFF" />
+                                }
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                </KeyboardAvoidingView>
-            </View>
+                </Animated.View>
+            </Animated.View>
         </Modal>
     );
 }
 
 const styles = StyleSheet.create({
-    postBubble: {
-        maxHeight: '40%',
-        marginHorizontal: 6,
-        marginBottom: 4,
-        borderRadius: 24,
-        overflow: 'hidden',
-        elevation: 6,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 6,
+    backdrop: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.55)',
     },
-    commentsBubble: {
-        flex: 1,
-        marginHorizontal: 6,
+    container: {
+        // Posicionado absolutamente: top se calcula inline con insets.top + 20
+        position: 'absolute',
+        left: 8,
+        right: 8,
+        // top y bottom se inyectan inline desde el componente
+        gap: 8,
+    },
+    // ── Post bubble ──────────────────────────────────────────────────────────
+    postBubble: {
+        // Adaptable hasta un máximo de 35% de pantalla
+        maxHeight: SCREEN_HEIGHT * 0.35,
         borderRadius: 24,
         overflow: 'hidden',
-        elevation: 6,
+        elevation: 8,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
-        shadowRadius: 6,
+        shadowRadius: 8,
+    },
+    postHeader: {
+        paddingTop: 14,
+        paddingBottom: 10,
+        paddingHorizontal: 16,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        alignItems: 'center',
+    },
+    postAuthorRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        width: '100%',
+        marginTop: 4,
+    },
+    postAuthorName: {
+        fontWeight: 'bold',
+        fontSize: 15,
+        marginBottom: 2,
+    },
+    postDate: { fontSize: 12 },
+    postContent: { fontSize: 15, lineHeight: 23 },
+    postFooterFixed: {
+        borderTopWidth: StyleSheet.hairlineWidth,
+    },
+    statsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingHorizontal: 14,
+        paddingVertical: 6,
+    },
+    statsText: { fontSize: 13 },
+    actionsRow: {
+        flexDirection: 'row',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderTopWidth: StyleSheet.hairlineWidth,
+    },
+    actionBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginRight: 24,
+        paddingVertical: 2,
+    },
+    actionText: { marginLeft: 6, fontSize: 14, fontWeight: '500' },
+    // ── Comments bubble ──────────────────────────────────────────────────────
+    commentsBubble: {
+        // Toma todo el espacio restante después de la burbuja del post
+        flex: 1,
+        borderRadius: 24,
+        overflow: 'hidden',
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
     },
     commentsHeader: {
         alignItems: 'center',
-        paddingVertical: 14,
-        borderBottomWidth: 1,
         justifyContent: 'center',
+        paddingTop: 16,
+        paddingBottom: 12,
+        borderBottomWidth: StyleSheet.hairlineWidth,
     },
-    closeModalButton: {
+    dragHandle: {
+        width: 36,
+        height: 4,
+        borderRadius: 2,
         position: 'absolute',
-        right: 16,
-        top: 14,
-        zIndex: 10,
+        top: 7,
     },
-    headerTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
+    headerTitle: { fontSize: 16, fontWeight: 'bold', marginTop: 4 },
+    closeBtn: { position: 'absolute', right: 14, top: 12, zIndex: 10 },
+    listContainer: { flexGrow: 1, padding: 14, paddingBottom: 8 },
     center: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        paddingVertical: 40,
     },
-    listContainer: {
-        padding: 16,
-        paddingBottom: 20,
-    },
-    emptyText: {
-        textAlign: 'center',
-        marginTop: 40,
-        fontSize: 16,
-    },
+    emptyText: { textAlign: 'center', fontSize: 15 },
+    // ── Comment item ─────────────────────────────────────────────────────────
     commentCard: {
         flexDirection: 'row',
-        marginBottom: 16,
+        marginBottom: 14,
         alignItems: 'flex-start',
     },
     avatarPlaceholder: {
@@ -430,53 +535,25 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255, 101, 36, 0.3)',
         overflow: 'hidden',
     },
-    avatarImage: {
-        width: '100%',
-        height: '100%',
-    },
-    avatarText: {
-        color: '#FF6524',
-        fontWeight: 'bold',
-        fontSize: 14,
-        textTransform: 'uppercase',
-    },
-    commentContent: {
-        flex: 1,
-        marginRight: 10,
-    },
-    commentFooter: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 4,
-    },
-    replyText: {
-        fontSize: 12,
-        fontWeight: 'bold',
-        marginLeft: 12,
-    },
-    likeContainer: {
-        alignItems: 'center',
-        paddingHorizontal: 5,
-    },
+    avatarImage: { width: '100%', height: '100%' },
+    avatarText: { color: '#FF6524', fontWeight: 'bold', fontSize: 13, textTransform: 'uppercase' },
+    commentContent: { flex: 1, marginRight: 8 },
+    commentFooter: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+    replyText: { fontSize: 12, fontWeight: 'bold', marginLeft: 12 },
+    likeContainer: { alignItems: 'center', paddingHorizontal: 4 },
     authorName: {
-        fontWeight: 'bold',
-        fontSize: 13,
-        marginBottom: 2,
+        fontWeight: 'bold', fontSize: 13, marginBottom: 2,
         marginTop: Platform.OS === 'android' ? -2 : 0,
     },
-    dateText: {
-        fontSize: 12,
-    },
-    textContent: {
-        fontSize: 14,
-        lineHeight: 20,
-    },
+    dateText: { fontSize: 12 },
+    textContent: { fontSize: 14, lineHeight: 20 },
+    // ── Input ────────────────────────────────────────────────────────────────
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
+        paddingHorizontal: 14,
         paddingVertical: 10,
-        borderTopWidth: 1,
+        borderTopWidth: StyleSheet.hairlineWidth,
     },
     input: {
         flex: 1,

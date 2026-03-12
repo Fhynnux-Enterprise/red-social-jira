@@ -150,19 +150,7 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
             </View>
             
             {isModalView ? (
-                <ScrollView 
-                    style={{ flexShrink: 1 }} 
-                    showsVerticalScrollIndicator={false}
-                    persistentScrollbar={true}
-                    indicatorStyle={isDark ? "white" : "black"}
-                    nestedScrollEnabled={true}
-                    onScroll={onScroll}
-                    onMomentumScrollEnd={onScroll}
-                    scrollEventThrottle={16}
-                    bounces={false}
-                >
-                    <Text style={styles.postContent}>{item.content}</Text>
-                </ScrollView>
+                <Text style={styles.postContent}>{item.content}</Text>
             ) : (
                 <Text style={styles.postContent}>{item.content}</Text>
             )}
