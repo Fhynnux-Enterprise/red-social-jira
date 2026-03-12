@@ -8,11 +8,13 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useQuery, useMutation } from '@apollo/client';
 import { Ionicons } from '@expo/vector-icons';
-import { GET_COMMENTS, CREATE_COMMENT } from '../graphql/comments.operations';
+import { GET_COMMENTS, CREATE_COMMENT, DELETE_COMMENT } from '../graphql/comments.operations';
 import { TOGGLE_LIKE } from '../../feed/graphql/posts.operations';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../auth/context/AuthContext';
+import CommentOptionsModal from './CommentOptionsModal';
+import ConfirmationModal from './ConfirmationModal';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -55,6 +57,9 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
     const { user: currentUser } = useAuth();
     const navigation = useNavigation();
     const [content, setContent] = useState('');
+    const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
+    const [isOptionsModalVisible, setIsOptionsModalVisible] = useState(false);
+    const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
     const postId = post?.id;
 
     const navigateToProfile = (userId: string) => {
@@ -234,6 +239,50 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
         },
     });
 
+    const [deleteComment] = useMutation(DELETE_COMMENT, {
+        update(cache, { data: { deleteComment: success } }, { variables }) {
+            if (!success || !postId) return;
+            const commentId = variables?.id;
+
+            // 1. Quitar de la lista de comentarios
+            const existing = cache.readQuery<{ getCommentsByPost: any[] }>({
+                query: GET_COMMENTS, variables: { postId },
+            });
+            if (existing) {
+                cache.writeQuery({
+                    query: GET_COMMENTS, variables: { postId },
+                    data: { getCommentsByPost: existing.getCommentsByPost.filter(c => c.id !== commentId) },
+                });
+            }
+
+            // 2. Actualizar el Post para que baje el contador
+            cache.modify({
+                id: cache.identify({ __typename: 'Post', id: postId }),
+                fields: {
+                    comments(existingRefs = [], { readField }) {
+                        return existingRefs.filter((ref: any) => readField('id', ref) !== commentId);
+                    }
+                }
+            });
+        }
+    });
+
+    const handleDeleteComment = (id: string) => {
+        setSelectedCommentId(id);
+        setIsDeleteConfirmVisible(true);
+    };
+
+    const onConfirmDelete = async () => {
+        if (!selectedCommentId) return;
+        try {
+            setIsDeleteConfirmVisible(false);
+            await deleteComment({ variables: { id: selectedCommentId } });
+        } catch (e) {
+            console.error('Error al eliminar comentario:', e);
+            Alert.alert('Error', 'No se pudo eliminar el comentario');
+        }
+    };
+
     const handleSend = async () => {
         if (!content.trim() || !postId || !currentUser) return;
         try {
@@ -270,12 +319,10 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
         const author = item.user;
         const isMyComment = author?.id === currentUser?.id;
         const handleLongPress = () => {
-            if (!isMyComment) return;
-            Alert.alert('Opciones del comentario', '', [
-                { text: 'Eliminar', style: 'destructive', onPress: () => console.log('Eliminar:', item.id) },
-                { text: 'Editar', onPress: () => console.log('Editar:', item.id) },
-                { text: 'Cancelar', style: 'cancel' },
-            ]);
+            if (isMyComment) {
+                setSelectedCommentId(item.id);
+                setIsOptionsModalVisible(true);
+            }
         };
         return (
             <Pressable
@@ -517,9 +564,26 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                             </TouchableOpacity>
                         </View>
                     </View>
-
                 </Animated.View>
             </Animated.View>
+
+            <CommentOptionsModal
+                visible={isOptionsModalVisible}
+                commentId={selectedCommentId}
+                onClose={() => setIsOptionsModalVisible(false)}
+                onEdit={(id) => console.log('Editar comentario:', id)}
+                onDelete={handleDeleteComment}
+            />
+
+            <ConfirmationModal
+                visible={isDeleteConfirmVisible}
+                title="Eliminar comentario"
+                message="¿Estás seguro de que quieres eliminar este comentario? Esta acción no se puede deshacer."
+                confirmText="Eliminar"
+                cancelText="Cancelar"
+                onConfirm={onConfirmDelete}
+                onCancel={() => setIsDeleteConfirmVisible(false)}
+            />
         </Modal>
     );
 }

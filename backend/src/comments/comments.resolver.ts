@@ -25,4 +25,14 @@ export class CommentsResolver {
     ): Promise<Comment[]> {
         return this.commentsService.getCommentsByPost(postId);
     }
+
+    @Mutation(() => Boolean, { name: 'deleteComment' })
+    @UseGuards(JwtGqlGuard)
+    async deleteComment(
+        @Args('id') id: string,
+        @Context() context: any,
+    ): Promise<boolean> {
+        const userId = context.req.user.id;
+        return this.commentsService.deleteComment(id, userId);
+    }
 }

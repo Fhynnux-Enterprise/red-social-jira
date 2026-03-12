@@ -31,4 +31,13 @@ export class CommentsService {
             order: { createdAt: 'DESC' }, // Newest first
         });
     }
+
+    async deleteComment(id: string, userId: string): Promise<boolean> {
+        const comment = await this.commentRepository.findOne({ where: { id, userId } });
+        if (!comment) {
+            throw new Error('Comentario no encontrado o no tienes permiso para eliminarlo');
+        }
+        await this.commentRepository.softDelete(id);
+        return true;
+    }
 }

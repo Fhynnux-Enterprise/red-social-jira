@@ -90,4 +90,5 @@ type Mutation {
   updateBadge(title: String!, theme: String = "default"): UserBadge!
   updateProfile(firstName: String, lastName: String, bio: String, username: String, phone: String): User!
   createComment(postId: String!, content: String!): Comment!
+  deleteComment(id: String!): Boolean!
 }
