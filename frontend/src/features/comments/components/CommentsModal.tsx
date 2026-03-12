@@ -146,6 +146,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
 
     // ── Scroll pull-to-close refs ──────────────────────────────────────────
     const scrollDragStartY = useRef(0);
+    const postScrollDragStartY = useRef(0);
 
     // ── Likes ──────────────────────────────────────────────────────────────
     const displayLiked = post?.likes?.some((l: any) => l.user?.id === currentUser?.id) || false;
@@ -241,11 +242,15 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                 ]}
             >
                 <View style={styles.avatarPlaceholder}>
-                    <TouchableOpacity onPress={() => author?.id && navigateToProfile(author.id)} activeOpacity={0.7}>
-                    {author?.photoUrl
-                        ? <Image source={{ uri: author.photoUrl }} style={styles.avatarImage} />
-                        : <Text style={styles.avatarText}>{author?.firstName?.[0] || ''}{author?.lastName?.[0] || ''}</Text>
-                    }
+                    <TouchableOpacity
+                        onPress={() => author?.id && navigateToProfile(author.id)}
+                        activeOpacity={0.7}
+                        style={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}
+                    >
+                        {author?.photoUrl
+                            ? <Image source={{ uri: author.photoUrl }} style={styles.avatarImage} />
+                            : <Text style={styles.avatarText}>{author?.firstName?.[0] || ''}{author?.lastName?.[0] || ''}</Text>
+                        }
                     </TouchableOpacity>
                 </View>
                 <View style={styles.commentContent}>
@@ -322,11 +327,23 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                         </View>
 
                         <ScrollView
-                            nestedScrollEnabled
-                            showsVerticalScrollIndicator={true}
-                            bounces={false}
+                            showsVerticalScrollIndicator={false}
+                            bounces={true}
                             contentContainerStyle={{ padding: 16, paddingTop: 10 }}
                             style={{ flexShrink: 1 }}
+                            scrollEventThrottle={8}
+                            onScrollBeginDrag={(e) => {
+                                postScrollDragStartY.current = e.nativeEvent.contentOffset.y;
+                            }}
+                            onScrollEndDrag={(e) => {
+                                const endY = e.nativeEvent.contentOffset.y;
+                                const vy = e.nativeEvent.velocity?.y ?? 0;
+                                if (postScrollDragStartY.current <= 2 && endY <= 2 && vy > 0.3) {
+                                    closeWithAnimation();
+                                } else {
+                                    Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+                                }
+                            }}
                         >
                             <Text style={[styles.postContent, { color: colors.text }]}>{post.content}</Text>
                         </ScrollView>

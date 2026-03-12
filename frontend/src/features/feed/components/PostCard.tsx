@@ -35,9 +35,12 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
 
     const [localCount, setLocalCount] = useState<number>(displayCount);
     const [localLiked, setLocalLiked] = useState<boolean>(displayLiked);
+    const [isExpanded, setIsExpanded] = useState(false);
 
-    // "Ver más" — confiable: comparación de longitud de caracteres
-    const isTruncatable = !isModalView && item.content?.length > MAX_CHARS;
+    const isTruncatable = !isModalView && (item.content?.length ?? 0) > MAX_CHARS;
+    const displayContent = isTruncatable && !isExpanded
+        ? item.content.slice(0, MAX_CHARS).trimEnd() + '...'
+        : (item.content ?? '');
 
     useEffect(() => {
         setLocalCount(displayCount);
@@ -79,16 +82,12 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
     const formatDate = (isoString: string) => {
         const utcString = isoString.endsWith('Z') ? isoString : `${isoString}Z`;
         const date = new Date(utcString);
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMins / 60);
-        const diffDays = Math.floor(diffHours / 24);
-        if (diffMins < 1) return 'ahora';
-        if (diffMins < 60) return `${diffMins}m`;
-        if (diffHours < 24) return `${diffHours}h`;
-        if (diffDays < 7) return `${diffDays}d`;
-        return date.toLocaleDateString('es', { day: 'numeric', month: 'short' });
+        const hoy = new Date();
+        const ayer = new Date(); ayer.setDate(hoy.getDate() - 1);
+        const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (date.toDateString() === hoy.toDateString()) return `Hoy a las ${timeString}`;
+        if (date.toDateString() === ayer.toDateString()) return `Ayer a las ${timeString}`;
+        return `${date.toLocaleDateString()} a las ${timeString}`;
     };
 
     const goToProfile = () => {
@@ -117,11 +116,10 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
                     </View>
                     {/* Name + date */}
                     <View style={{ flex: 1 }}>
-                        <View style={styles.nameRow}>
-                            <Text style={styles.authorName} numberOfLines={1}>
-                                {item.author?.firstName} {item.author?.lastName}
-                            </Text>
-                            <Text style={styles.dot}>·</Text>
+                        <Text style={styles.authorName} numberOfLines={1}>
+                            {item.author?.firstName} {item.author?.lastName}
+                        </Text>
+                        <View style={styles.dateRow}>
                             <Text style={styles.dateText}>{formatDate(item.createdAt)}</Text>
                             {isEdited && <Text style={styles.editedBadge}> · editado</Text>}
                         </View>
@@ -141,18 +139,25 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
             </View>
 
             {/* ── Contenido ── */}
-            <Text style={styles.content}>
-                {truncatedContent}
-                {isTruncatable && (
-                    <Text
-                        style={styles.verMas}
-                        onPress={() => onOpenComments?.(item.id)}
-                    >
-                        {'... '}
-                        <Text style={styles.verMasLink}>ver más</Text>
-                    </Text>
-                )}
-            </Text>
+            <Text style={styles.content}>{displayContent}</Text>
+            {isTruncatable && !isExpanded && (
+                <TouchableOpacity
+                    onPress={() => setIsExpanded(true)}
+                    style={styles.verMasBtn}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                    <Text style={styles.verMasLink}>Ver más.</Text>
+                </TouchableOpacity>
+            )}
+            {isTruncatable && isExpanded && (
+                <TouchableOpacity
+                    onPress={() => setIsExpanded(false)}
+                    style={styles.verMasBtn}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                    <Text style={styles.verMasLink}>Ver menos.</Text>
+                </TouchableOpacity>
+            )}
 
             {/* ── Divider ── */}
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
@@ -183,11 +188,6 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
                     {commentsCount > 0 && (
                         <Text style={styles.actionCount}>{commentsCount}</Text>
                     )}
-                </TouchableOpacity>
-
-                {/* Compartir (placeholder) */}
-                <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
-                    <Ionicons name="arrow-redo-outline" size={19} color={colors.textSecondary} />
                 </TouchableOpacity>
             </View>
         </View>
@@ -248,13 +248,17 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     nameRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        flexWrap: 'nowrap',
     },
     authorName: {
         color: colors.text,
         fontWeight: '700',
         fontSize: 15,
         flexShrink: 1,
+    },
+    dateRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 1,
     },
     dot: {
         color: colors.textSecondary,
@@ -263,7 +267,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     },
     dateText: {
         color: colors.textSecondary,
-        fontSize: 13,
+        fontSize: 12,
     },
     editedBadge: {
         color: colors.textSecondary,
@@ -279,15 +283,21 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         fontSize: 15,
         lineHeight: 23,
         paddingHorizontal: 14,
-        marginBottom: 12,
+        marginBottom: 4,
     },
     verMas: {
         color: colors.text,
         fontSize: 15,
     },
+    verMasBtn: {
+        paddingHorizontal: 14,
+        paddingVertical: 2,
+        marginBottom: 10,
+    },
     verMasLink: {
         color: '#1877F2',
         fontWeight: '500',
+        fontSize: 14,
     },
     divider: {
         height: StyleSheet.hairlineWidth,
