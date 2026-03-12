@@ -17,11 +17,10 @@ import PostOptionsModal from '../components/PostOptionsModal';
 import CommentsModal from '../../comments/components/CommentsModal';
 
 export default function FeedScreen() {
-    const { signOut } = useAuth();
+    const { signOut, user: userProfile } = useAuth();
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
     const [isModalVisible, setIsModalVisible] = useState(false);
-    const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
     const [editingPostId, setEditingPostId] = useState<string | undefined>(undefined);
     const [editingPostContent, setEditingPostContent] = useState<string>('');
@@ -36,16 +35,6 @@ export default function FeedScreen() {
 
     useFocusEffect(
         useCallback(() => {
-            const fetchProfile = async () => {
-                try {
-                    const profileData = await ProfileService.getProfile();
-                    setUserProfile(profileData);
-                } catch (err) {
-                    console.log('Error fetching profile for feed:', err);
-                }
-            };
-            fetchProfile();
-
             const timeout = setTimeout(() => {
                 refetch().catch(e => console.log('Error refetching feed posts:', e));
             }, 500);
