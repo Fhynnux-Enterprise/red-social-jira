@@ -3,8 +3,7 @@ import {
     View, Text, TouchableOpacity, Platform, StyleSheet,
     Image, ActivityIndicator, TouchableWithoutFeedback,
     Alert, Pressable, Keyboard, ScrollView, Modal,
-    Dimensions, TextInput,
-    PanResponder, Animated,
+    Dimensions, TextInput, PanResponder, Animated,
 } from 'react-native';
 import { useQuery, useMutation } from '@apollo/client';
 import { Ionicons } from '@expo/vector-icons';
@@ -53,7 +52,6 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
     const postId = post?.id;
 
     // ── Animación entrada/salida + drag ────────────────────────────────────
-    // panY=0 → abierto, panY=SCREEN_HEIGHT → fuera de pantalla (cerrado)
     const panY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
 
     const closeWithAnimation = () => {
@@ -67,7 +65,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
         });
     };
 
-    React.useEffect(() => {
+    useEffect(() => {
         if (visible) {
             panY.setValue(SCREEN_HEIGHT);
             Animated.spring(panY, {
@@ -79,13 +77,12 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
         }
     }, [visible]);
 
-    // ── Teclado: animar bottom para que el input no quede tapado ───────────────
+    // ── Teclado ────────────────────────────────────────────────────────────
     const keyboardOffset = useRef(new Animated.Value(Math.max(insets.bottom, 16))).current;
 
     useEffect(() => {
         const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
         const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
         const showSub = Keyboard.addListener(showEvent, (e) => {
             Animated.timing(keyboardOffset, {
                 toValue: Math.max(insets.bottom, 16) + e.endCoordinates.height,
@@ -100,36 +97,50 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                 useNativeDriver: false,
             }).start();
         });
-
-        return () => {
-            showSub.remove();
-            hideSub.remove();
-        };
+        return () => { showSub.remove(); hideSub.remove(); };
     }, []);
 
+    // ── PanResponder: arrastra headers para cerrar ─────────────────────────
     const makeDragPan = () => PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 5 && g.dy > 0,
-        onPanResponderMove: (_, g) => {
-            if (g.dy > 0) panY.setValue(g.dy);
-        },
+        onPanResponderMove: (_, g) => { if (g.dy > 0) panY.setValue(g.dy); },
         onPanResponderRelease: (_, g) => {
-            const shouldClose = g.dy > 80 || g.vy > 0.8;
+            const shouldClose = g.dy > SCREEN_HEIGHT * 0.45 || g.vy > 1.2;
             if (shouldClose) {
                 closeWithAnimation();
             } else {
-                Animated.spring(panY, {
-                    toValue: 0, useNativeDriver: true, bounciness: 6,
-                }).start();
+                Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
             }
         },
     });
 
     const postHeaderPan = useRef(makeDragPan()).current;
     const commentsHeaderPan = useRef(makeDragPan()).current;
+
+    // ── PanResponder: espacio vacío dentro del ScrollView ─────────────────
+    // onStartShouldSetPanResponder:true → reclama el gesto ANTES que el ScrollView
+    const emptyAreaPan = useRef(PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderMove: (_, g) => { if (g.dy > 0) panY.setValue(g.dy); },
+        onPanResponderRelease: (_, g) => {
+            const shouldClose = g.dy > SCREEN_HEIGHT * 0.45 || g.vy > 1.2;
+            if (shouldClose) {
+                closeWithAnimation();
+            } else {
+                Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+            }
+        },
+        onPanResponderTerminate: () => {
+            Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+        },
+    })).current;
+
+    // ── Scroll pull-to-close refs ──────────────────────────────────────────
     const scrollDragStartY = useRef(0);
 
-    // ── Likes ────────────────────────────────────────────────────────────────
+    // ── Likes ──────────────────────────────────────────────────────────────
     const displayLiked = post?.likes?.some((l: any) => l.user?.id === currentUser?.id) || false;
     const [localLiked, setLocalLiked] = useState(displayLiked);
     const [localCount, setLocalCount] = useState<number>(post?.likes?.length || 0);
@@ -145,7 +156,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
         });
     };
 
-    // ── Comments ─────────────────────────────────────────────────────────────
+    // ── Comments query ─────────────────────────────────────────────────────
     const { data, loading, error, refetch } = useQuery(GET_COMMENTS, {
         variables: { postId },
         skip: !postId,
@@ -176,11 +187,10 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
         } catch (e) { console.error(e); }
     };
 
-    // ── Render comentario ────────────────────────────────────────────────────
+    // ── Render comentario ──────────────────────────────────────────────────
     const renderComment = (item: any) => {
         const author = item.user;
         const isMyComment = author?.id === currentUser?.id;
-
         const handleLongPress = () => {
             if (!isMyComment) return;
             Alert.alert('Opciones del comentario', '', [
@@ -189,7 +199,6 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                 { text: 'Cancelar', style: 'cancel' },
             ]);
         };
-
         return (
             <Pressable
                 key={item.id}
@@ -236,187 +245,167 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
     return (
         <Modal visible={visible} transparent animationType="none" onRequestClose={closeWithAnimation} statusBarTranslucent>
 
-            {/* Fondo oscuro — cubre toda la pantalla */}
             <TouchableWithoutFeedback onPress={closeWithAnimation}>
-                <View style={StyleSheet.absoluteFill}>
-                    <View style={styles.backdrop} />
-                </View>
+                <View style={styles.backdrop} />
             </TouchableWithoutFeedback>
 
-            {/* Contenedor EXTERIOR: solo mueve bottom con el teclado (JS driver) */}
+            {/* Exterior: mueve bottom con el teclado (JS driver) */}
             <Animated.View
-                style={[
-                    styles.container,
-                    {
-                        top: insets.top + 20,
-                        bottom: keyboardOffset,
-                    },
-                ]}
+                style={[styles.container, { top: insets.top + 20, bottom: keyboardOffset }]}
                 pointerEvents="box-none"
             >
-            {/* Contenedor INTERIOR: sigue el dedo con translateY (native driver) */}
-            <Animated.View
-                style={[
-                    { flex: 1, gap: 8 },
-                    { transform: [{ translateY: panY }] },
-                ]}
-            >
-                    {/* ── BURBUJA SUPERIOR: Publicación ── */}
-                    {post && (
-                        <View style={[styles.postBubble, { backgroundColor: colors.surface }]}>
+            {/* Interior: drag translateY (native driver) */}
+            <Animated.View style={[{ flex: 1, gap: 8 }, { transform: [{ translateY: panY }] }]}>
 
-                            {/* Cabecera FIJA — arrastrando aquí cierra */}
-                            <View
-                                style={[styles.postHeader, { borderBottomColor: colors.border }]}
-                                {...postHeaderPan.panHandlers}
-                            >
-                                <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
-                                <View style={styles.postAuthorRow}>
-                                    <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
-                                        {post.author?.photoUrl
-                                            ? <Image source={{ uri: post.author.photoUrl }} style={styles.avatarImage} />
-                                            : <Text style={styles.avatarText}>
-                                                {post.author?.firstName?.[0] || ''}{post.author?.lastName?.[0] || ''}
-                                            </Text>
-                                        }
-                                    </View>
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={[styles.postAuthorName, { color: colors.text }]}>
-                                            {post.author?.firstName} {post.author?.lastName}
-                                        </Text>
-                                        <Text style={[styles.postDate, { color: colors.textSecondary }]}>
-                                            {formatDate(post.createdAt)}{isEdited ? ' · Editado' : ''}
-                                        </Text>
-                                    </View>
-                                </View>
-                            </View>
-
-                            {/* Contenido del Post — adaptable, con scrollbar visible */}
-                            <ScrollView
-                                nestedScrollEnabled
-                                showsVerticalScrollIndicator={true}
-                                bounces={false}
-                                contentContainerStyle={{ padding: 16, paddingTop: 10 }}
-                                style={{ flexShrink: 1 }}
-                            >
-                                <Text style={[styles.postContent, { color: colors.text }]}>{post.content}</Text>
-                            </ScrollView>
-
-                            {/* Stats + Acciones FIJAS al fondo */}
-                            <View style={[styles.postFooterFixed, { borderTopColor: colors.border }]}>
-                                {(localCount > 0 || commentsCount > 0) && (
-                                    <View style={styles.statsRow}>
-                                        {localCount > 0 && (
-                                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                                <Ionicons name="heart" size={15} color="#FF3B30" />
-                                                <Text style={[styles.statsText, { color: colors.textSecondary }]}> {localCount}</Text>
-                                            </View>
-                                        )}
-                                        {commentsCount > 0 && (
-                                            <Text style={[styles.statsText, { color: colors.textSecondary }]}>
-                                                {commentsCount} {commentsCount === 1 ? 'comentario' : 'comentarios'}
-                                            </Text>
-                                        )}
-                                    </View>
-                                )}
-                                <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
-                                    <TouchableOpacity style={styles.actionBtn} onPress={handleLike}>
-                                        <Ionicons name={localLiked ? 'heart' : 'heart-outline'} size={20}
-                                            color={localLiked ? '#FF3B30' : colors.textSecondary} />
-                                        <Text style={[styles.actionText, { color: localLiked ? '#FF3B30' : colors.textSecondary },
-                                            localLiked && { fontWeight: 'bold' }]}>
-                                            Me gusta
-                                        </Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity style={styles.actionBtn}>
-                                        <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
-                                        <Text style={[styles.actionText, { color: colors.textSecondary }]}>Comentar</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        </View>
-                    )}
-
-                    {/* ── BURBUJA INFERIOR: Comentarios ── */}
-                    <View style={[styles.commentsBubble, { backgroundColor: colors.surface }]}>
-
-                        {/* Cabecera FIJA — arrastrando aquí también cierra */}
-                        <View
-                            style={[styles.commentsHeader, { borderBottomColor: colors.border }]}
-                            {...commentsHeaderPan.panHandlers}
-                        >
+                {/* ── BURBUJA PUBLICACIÓN ── */}
+                {post && (
+                    <View style={[styles.postBubble, { backgroundColor: colors.surface }]}>
+                        <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
                             <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
-                            <Text style={[styles.headerTitle, { color: colors.text }]}>Comentarios</Text>
-                            <TouchableOpacity onPress={closeWithAnimation} style={styles.closeBtn}
-                                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                                <Ionicons name="close" size={24} color={colors.textSecondary} />
-                            </TouchableOpacity>
+                            <View style={styles.postAuthorRow}>
+                                <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
+                                    {post.author?.photoUrl
+                                        ? <Image source={{ uri: post.author.photoUrl }} style={styles.avatarImage} />
+                                        : <Text style={styles.avatarText}>
+                                            {post.author?.firstName?.[0] || ''}{post.author?.lastName?.[0] || ''}
+                                        </Text>
+                                    }
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={[styles.postAuthorName, { color: colors.text }]}>
+                                        {post.author?.firstName} {post.author?.lastName}
+                                    </Text>
+                                    <Text style={[styles.postDate, { color: colors.textSecondary }]}>
+                                        {formatDate(post.createdAt)}{isEdited ? ' · Editado' : ''}
+                                    </Text>
+                                </View>
+                            </View>
                         </View>
 
                         <ScrollView
-                            style={{ flex: 1 }}
-                            contentContainerStyle={styles.listContainer}
                             nestedScrollEnabled
-                            showsVerticalScrollIndicator={false}
-                            bounces={true}
-                            keyboardShouldPersistTaps="handled"
-                            onScrollBeginDrag={(e) => {
-                                scrollDragStartY.current = e.nativeEvent.contentOffset.y;
-                            }}
-                            onScrollEndDrag={(e) => {
-                                const endY = e.nativeEvent.contentOffset.y;
-                                const vy = e.nativeEvent.velocity?.y ?? 0;
-                                if (scrollDragStartY.current <= 2 && endY <= 2 && vy > 0.3) {
-                                    closeWithAnimation();
-                                }
-                            }}
+                            showsVerticalScrollIndicator={true}
+                            bounces={false}
+                            contentContainerStyle={{ padding: 16, paddingTop: 10 }}
+                            style={{ flexShrink: 1 }}
                         >
-                            {loading && !data ? (
-                                <View style={styles.center}>
-                                    <ActivityIndicator size="large" color={colors.primary} />
-                                </View>
-                            ) : error ? (
-                                <View style={styles.center}>
-                                    <Text style={{ color: colors.error }}>Error cargando comentarios</Text>
-                                    <TouchableOpacity onPress={() => refetch()} style={{ marginTop: 10 }}>
-                                        <Text style={{ color: colors.primary }}>Reintentar</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            ) : (!data?.getCommentsByPost || data.getCommentsByPost.length === 0) ? (
-                                <View style={styles.center}>
-                                    <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                                        No hay comentarios aún. ¡Sé el primero!
-                                    </Text>
-                                </View>
-                            ) : (
-                                data.getCommentsByPost.map((item: any) => renderComment(item))
-                            )}
+                            <Text style={[styles.postContent, { color: colors.text }]}>{post.content}</Text>
                         </ScrollView>
 
-                        {/* Input FIJO */}
-                        <View style={[styles.inputContainer, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
-                            <TextInput
-                                style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-                                placeholder="Escribe un comentario..."
-                                placeholderTextColor={colors.textSecondary}
-                                value={content}
-                                onChangeText={setContent}
-                                multiline
-                                maxLength={500}
-                            />
-                            <TouchableOpacity
-                                style={[styles.sendButton, { opacity: content.trim() ? 1 : 0.5, backgroundColor: colors.primary }]}
-                                onPress={handleSend}
-                                disabled={!content.trim() || creating}
-                            >
-                                {creating
-                                    ? <ActivityIndicator size="small" color="#FFF" />
-                                    : <Ionicons name="send" size={18} color="#FFF" />
-                                }
-                            </TouchableOpacity>
+                        <View style={[styles.postFooterFixed, { borderTopColor: colors.border }]}>
+                            {(localCount > 0 || commentsCount > 0) && (
+                                <View style={styles.statsRow}>
+                                    {localCount > 0 && (
+                                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                            <Ionicons name="heart" size={15} color="#FF3B30" />
+                                            <Text style={[styles.statsText, { color: colors.textSecondary }]}> {localCount}</Text>
+                                        </View>
+                                    )}
+                                    {commentsCount > 0 && (
+                                        <Text style={[styles.statsText, { color: colors.textSecondary }]}>
+                                            {commentsCount} {commentsCount === 1 ? 'comentario' : 'comentarios'}
+                                        </Text>
+                                    )}
+                                </View>
+                            )}
+                            <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
+                                <TouchableOpacity style={styles.actionBtn} onPress={handleLike}>
+                                    <Ionicons name={localLiked ? 'heart' : 'heart-outline'} size={20}
+                                        color={localLiked ? '#FF3B30' : colors.textSecondary} />
+                                    <Text style={[styles.actionText, { color: localLiked ? '#FF3B30' : colors.textSecondary },
+                                        localLiked && { fontWeight: 'bold' }]}>Me gusta</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.actionBtn}>
+                                    <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
+                                    <Text style={[styles.actionText, { color: colors.textSecondary }]}>Comentar</Text>
+                                </TouchableOpacity>
+                            </View>
                         </View>
                     </View>
-                </Animated.View>
+                )}
+
+                {/* ── BURBUJA COMENTARIOS ── */}
+                <View style={[styles.commentsBubble, { backgroundColor: colors.surface }]}>
+
+                    <View style={[styles.commentsHeader, { borderBottomColor: colors.border }]} {...commentsHeaderPan.panHandlers}>
+                        <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
+                        <Text style={[styles.headerTitle, { color: colors.text }]}>Comentarios</Text>
+                        <TouchableOpacity onPress={closeWithAnimation} style={styles.closeBtn}
+                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                            <Ionicons name="close" size={24} color={colors.textSecondary} />
+                        </TouchableOpacity>
+                    </View>
+
+                    <ScrollView
+                        style={{ flex: 1 }}
+                        contentContainerStyle={styles.listContainer}
+                        showsVerticalScrollIndicator={false}
+                        bounces={true}
+                        keyboardShouldPersistTaps="handled"
+                        scrollEventThrottle={8}
+                        onScrollBeginDrag={(e) => {
+                            scrollDragStartY.current = e.nativeEvent.contentOffset.y;
+                        }}
+                        onScrollEndDrag={(e) => {
+                            const endY = e.nativeEvent.contentOffset.y;
+                            const vy = e.nativeEvent.velocity?.y ?? 0;
+                            if (scrollDragStartY.current <= 2 && endY <= 2 && vy > 0.3) {
+                                closeWithAnimation();
+                            } else {
+                                Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+                            }
+                        }}
+                    >
+                        {loading && !data ? (
+                            <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
+                                <ActivityIndicator size="large" color={colors.primary} />
+                            </View>
+                        ) : error ? (
+                            <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
+                                <Text style={{ color: colors.error }}>Error cargando comentarios</Text>
+                                <TouchableOpacity onPress={() => refetch()} style={{ marginTop: 10 }}>
+                                    <Text style={{ color: colors.primary }}>Reintentar</Text>
+                                </TouchableOpacity>
+                            </View>
+                        ) : (!data?.getCommentsByPost || data.getCommentsByPost.length === 0) ? (
+                            <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
+                                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                                    No hay comentarios aún. ¡Sé el primero!
+                                </Text>
+                            </View>
+                        ) : (
+                            <>
+                                {data.getCommentsByPost.map((item: any) => renderComment(item))}
+                                {/* Zona arrastrable en espacio vacío bajo los últimos comentarios */}
+                                <View style={{ flex: 1, minHeight: 80 }} {...emptyAreaPan.panHandlers} />
+                            </>
+                        )}
+                    </ScrollView>
+
+                    <View style={[styles.inputContainer, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
+                        <TextInput
+                            style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                            placeholder="Escribe un comentario..."
+                            placeholderTextColor={colors.textSecondary}
+                            value={content}
+                            onChangeText={setContent}
+                            multiline
+                            maxLength={500}
+                        />
+                        <TouchableOpacity
+                            style={[styles.sendButton, { opacity: content.trim() ? 1 : 0.5, backgroundColor: colors.primary }]}
+                            onPress={handleSend}
+                            disabled={!content.trim() || creating}
+                        >
+                            {creating
+                                ? <ActivityIndicator size="small" color="#FFF" />
+                                : <Ionicons name="send" size={18} color="#FFF" />
+                            }
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+            </Animated.View>
             </Animated.View>
         </Modal>
     );
@@ -428,16 +417,11 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0,0,0,0.55)',
     },
     container: {
-        // Posicionado absolutamente: top se calcula inline con insets.top + 20
         position: 'absolute',
         left: 8,
         right: 8,
-        // top y bottom se inyectan inline desde el componente
-        gap: 8,
     },
-    // ── Post bubble ──────────────────────────────────────────────────────────
     postBubble: {
-        // Adaptable hasta un máximo de 35% de pantalla
         maxHeight: SCREEN_HEIGHT * 0.35,
         borderRadius: 24,
         overflow: 'hidden',
@@ -460,16 +444,10 @@ const styles = StyleSheet.create({
         width: '100%',
         marginTop: 4,
     },
-    postAuthorName: {
-        fontWeight: 'bold',
-        fontSize: 15,
-        marginBottom: 2,
-    },
+    postAuthorName: { fontWeight: 'bold', fontSize: 15, marginBottom: 2 },
     postDate: { fontSize: 12 },
     postContent: { fontSize: 15, lineHeight: 23 },
-    postFooterFixed: {
-        borderTopWidth: StyleSheet.hairlineWidth,
-    },
+    postFooterFixed: { borderTopWidth: StyleSheet.hairlineWidth },
     statsRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -483,16 +461,9 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         borderTopWidth: StyleSheet.hairlineWidth,
     },
-    actionBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginRight: 24,
-        paddingVertical: 2,
-    },
+    actionBtn: { flexDirection: 'row', alignItems: 'center', marginRight: 24, paddingVertical: 2 },
     actionText: { marginLeft: 6, fontSize: 14, fontWeight: '500' },
-    // ── Comments bubble ──────────────────────────────────────────────────────
     commentsBubble: {
-        // Toma todo el espacio restante después de la burbuja del post
         flex: 1,
         borderRadius: 24,
         overflow: 'hidden',
@@ -519,29 +490,15 @@ const styles = StyleSheet.create({
     headerTitle: { fontSize: 16, fontWeight: 'bold', marginTop: 4 },
     closeBtn: { position: 'absolute', right: 14, top: 12, zIndex: 10 },
     listContainer: { flexGrow: 1, padding: 14, paddingBottom: 8 },
-    center: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingVertical: 40,
-    },
+    center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 },
     emptyText: { textAlign: 'center', fontSize: 15 },
-    // ── Comment item ─────────────────────────────────────────────────────────
-    commentCard: {
-        flexDirection: 'row',
-        marginBottom: 14,
-        alignItems: 'flex-start',
-    },
+    commentCard: { flexDirection: 'row', marginBottom: 14, alignItems: 'flex-start' },
     avatarPlaceholder: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        width: 36, height: 36, borderRadius: 18,
         backgroundColor: 'rgba(255, 101, 36, 0.15)',
-        justifyContent: 'center',
-        alignItems: 'center',
+        justifyContent: 'center', alignItems: 'center',
         marginRight: 10,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 101, 36, 0.3)',
+        borderWidth: 1, borderColor: 'rgba(255, 101, 36, 0.3)',
         overflow: 'hidden',
     },
     avatarImage: { width: '100%', height: '100%' },
@@ -550,13 +507,9 @@ const styles = StyleSheet.create({
     commentFooter: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
     replyText: { fontSize: 12, fontWeight: 'bold', marginLeft: 12 },
     likeContainer: { alignItems: 'center', paddingHorizontal: 4 },
-    authorName: {
-        fontWeight: 'bold', fontSize: 13, marginBottom: 2,
-        marginTop: Platform.OS === 'android' ? -2 : 0,
-    },
+    authorName: { fontWeight: 'bold', fontSize: 13, marginBottom: 2, marginTop: Platform.OS === 'android' ? -2 : 0 },
     dateText: { fontSize: 12 },
     textContent: { fontSize: 14, lineHeight: 20 },
-    // ── Input ────────────────────────────────────────────────────────────────
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -565,22 +518,13 @@ const styles = StyleSheet.create({
         borderTopWidth: StyleSheet.hairlineWidth,
     },
     input: {
-        flex: 1,
-        minHeight: 40,
-        maxHeight: 100,
-        borderWidth: 1,
-        borderRadius: 20,
-        paddingHorizontal: 16,
-        paddingTop: 10,
-        paddingBottom: 10,
-        marginRight: 10,
-        fontSize: 14,
+        flex: 1, minHeight: 40, maxHeight: 100,
+        borderWidth: 1, borderRadius: 20,
+        paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10,
+        marginRight: 10, fontSize: 14,
     },
     sendButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        justifyContent: 'center',
-        alignItems: 'center',
+        width: 44, height: 44, borderRadius: 22,
+        justifyContent: 'center', alignItems: 'center',
     },
 });
