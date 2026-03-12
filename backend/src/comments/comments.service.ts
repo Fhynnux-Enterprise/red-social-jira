@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Comment } from './entities/comment.entity';
@@ -39,5 +39,17 @@ export class CommentsService {
         }
         await this.commentRepository.softDelete(id);
         return true;
+    }
+
+    async updateComment(id: string, content: string, userId: string): Promise<Comment> {
+        const comment = await this.commentRepository.findOne({ where: { id }, relations: ['user'] });
+        if (!comment) {
+            throw new Error('Comentario no encontrado');
+        }
+        if (comment.userId !== userId) {
+            throw new UnauthorizedException('No tienes permiso para editar este comentario');
+        }
+        comment.content = content;
+        return this.commentRepository.save(comment);
     }
 }

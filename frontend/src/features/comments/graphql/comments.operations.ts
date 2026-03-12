@@ -6,6 +6,7 @@ export const GET_COMMENTS = gql`
       id
       content
       createdAt
+      updatedAt
       user {
         id
         username
@@ -23,6 +24,7 @@ export const CREATE_COMMENT = gql`
       id
       content
       createdAt
+      updatedAt
       user {
         id
         username
@@ -37,5 +39,16 @@ export const CREATE_COMMENT = gql`
 export const DELETE_COMMENT = gql`
   mutation DeleteComment($id: String!) {
     deleteComment(id: $id)
+  }
+`;
+
+export const UPDATE_COMMENT = gql`
+  mutation UpdateComment($id: String!, $content: String!) {
+    updateComment(id: $id, content: $content) {
+      id
+      content
+      createdAt
+      updatedAt
+    }
   }
 `;
