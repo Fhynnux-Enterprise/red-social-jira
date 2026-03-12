@@ -127,7 +127,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
 
     const postHeaderPan = useRef(makeDragPan()).current;
     const commentsHeaderPan = useRef(makeDragPan()).current;
-
+    const scrollDragStartY = useRef(0);
 
     // ── Likes ────────────────────────────────────────────────────────────────
     const displayLiked = post?.likes?.some((l: any) => l.user?.id === currentUser?.id) || false;
@@ -360,10 +360,15 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                             showsVerticalScrollIndicator={false}
                             bounces={true}
                             keyboardShouldPersistTaps="handled"
+                            onScrollBeginDrag={(e) => {
+                                scrollDragStartY.current = e.nativeEvent.contentOffset.y;
+                            }}
                             onScrollEndDrag={(e) => {
-                                const y = e.nativeEvent.contentOffset.y;
+                                const endY = e.nativeEvent.contentOffset.y;
                                 const vy = e.nativeEvent.velocity?.y ?? 0;
-                                if (y <= 2 && vy > 0.3) closeWithAnimation();
+                                if (scrollDragStartY.current <= 2 && endY <= 2 && vy > 0.3) {
+                                    closeWithAnimation();
+                                }
                             }}
                         >
                             {loading && !data ? (
