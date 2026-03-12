@@ -353,14 +353,18 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                             </TouchableOpacity>
                         </View>
 
-                        {/* Lista SCROLLABLE */}
                         <ScrollView
                             style={{ flex: 1 }}
                             contentContainerStyle={styles.listContainer}
                             nestedScrollEnabled
                             showsVerticalScrollIndicator={false}
-                            bounces={false}
+                            bounces={true}
                             keyboardShouldPersistTaps="handled"
+                            onScrollEndDrag={(e) => {
+                                const y = e.nativeEvent.contentOffset.y;
+                                const vy = e.nativeEvent.velocity?.y ?? 0;
+                                if (y <= 2 && vy > 0.3) closeWithAnimation();
+                            }}
                         >
                             {loading && !data ? (
                                 <View style={styles.center}>
