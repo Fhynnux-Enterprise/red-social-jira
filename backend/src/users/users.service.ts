@@ -60,7 +60,7 @@ export class UsersService {
   async findById(id: string): Promise<User> {
     const user = await this.userRepository.findOne({
       where: { id },
-      relations: ['customFields', 'badge', 'posts', 'posts.author', 'posts.likes', 'posts.likes.user'],
+      relations: ['customFields', 'badge', 'posts', 'posts.author', 'posts.likes', 'posts.likes.user', 'comments', 'posts.comments'],
       order: {
         posts: { createdAt: 'DESC' },
       },
