@@ -199,6 +199,8 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
         fetchPolicy: 'cache-and-network',
     });
 
+    const commentsCount = data?.getCommentsByPost?.length ?? post?.comments?.length ?? 0;
+
     const [createComment, { loading: creating }] = useMutation(CREATE_COMMENT, {
         update(cache, { data: { createComment: newComment } }) {
             if (!postId) return;
@@ -215,6 +217,20 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                     });
                 }
             }
+
+            // Actualizamos la lista de comentarios del POST para que el conteo se vea en todo el app
+            cache.modify({
+                id: cache.identify({ __typename: 'Post', id: postId }),
+                fields: {
+                    comments(existingComments = []) {
+                        // Evitar duplicados si ya se agregó
+                        if (existingComments.some((c: any) => c.__ref === cache.identify(newComment) || c.id === newComment.id)) {
+                            return existingComments;
+                        }
+                        return [newComment, ...existingComments];
+                    }
+                }
+            });
         },
     });
 
@@ -308,7 +324,6 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
 
     if (!visible) return null;
 
-    const commentsCount = post?.comments?.length || 0;
     const isEdited = post?.updatedAt &&
         new Date(post.updatedAt).getTime() > new Date(post.createdAt).getTime() + 2000;
 
@@ -384,17 +399,24 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                             <View style={[styles.postFooterFixed, { borderTopColor: colors.border }]}>
                                 {(localCount > 0 || commentsCount > 0) && (
                                     <View style={styles.statsRow}>
-                                        {localCount > 0 && (
-                                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                                <Ionicons name="heart" size={15} color="#FF3B30" />
-                                                <Text style={[styles.statsText, { color: colors.textSecondary }]}> {localCount}</Text>
-                                            </View>
-                                        )}
-                                        {commentsCount > 0 && (
-                                            <Text style={[styles.statsText, { color: colors.textSecondary }]}>
-                                                {commentsCount} {commentsCount === 1 ? 'comentario' : 'comentarios'}
-                                            </Text>
-                                        )}
+                                        {/* Comentarios a la izquierda */}
+                                        <View>
+                                            {commentsCount > 0 && (
+                                                <Text style={[styles.statsText, { color: colors.textSecondary }]}>
+                                                    {commentsCount} {commentsCount === 1 ? 'comentario' : 'comentarios'}
+                                                </Text>
+                                            )}
+                                        </View>
+
+                                        {/* Likes a la derecha */}
+                                        <View>
+                                            {localCount > 0 && (
+                                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                    <Ionicons name="heart" size={15} color="#FF3B30" />
+                                                    <Text style={[styles.statsText, { color: colors.textSecondary }]}> {localCount}</Text>
+                                                </View>
+                                            )}
+                                        </View>
                                     </View>
                                 )}
                                 <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
