@@ -87,7 +87,10 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
         const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         if (date.toDateString() === hoy.toDateString()) return `Hoy a las ${timeString}`;
         if (date.toDateString() === ayer.toDateString()) return `Ayer a las ${timeString}`;
-        return `${date.toLocaleDateString()} a las ${timeString}`;
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        return `${day}/${month}/${year} a las ${timeString}`;
     };
 
     const goToProfile = () => {

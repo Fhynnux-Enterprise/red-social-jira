@@ -36,7 +36,10 @@ const formatDate = (isoString: string) => {
     const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     if (date.toDateString() === hoy.toDateString()) return `Hoy a las ${timeString}`;
     if (date.toDateString() === ayer.toDateString()) return `Ayer a las ${timeString}`;
-    return `${date.toLocaleDateString()} a las ${timeString}`;
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year} a las ${timeString}`;
 };
 
 export interface CommentsModalProps {
@@ -204,7 +207,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
             if (existing) {
                 cache.writeQuery({
                     query: GET_COMMENTS, variables: { postId },
-                    data: { getCommentsByPost: [...existing.getCommentsByPost, newComment] },
+                    data: { getCommentsByPost: [newComment, ...existing.getCommentsByPost] },
                 });
             }
         },
@@ -431,7 +434,9 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                             </View>
                         ) : (
                             <>
-                                {data.getCommentsByPost.map((item: any) => renderComment(item))}
+                                {[...(data?.getCommentsByPost || [])]
+                                    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                                    .map((item: any) => renderComment(item))}
                                 {/* Zona arrastrable en espacio vacío bajo los últimos comentarios */}
                                 <View style={{ flex: 1, minHeight: 80 }} {...emptyAreaPan.panHandlers} />
                             </>
