@@ -16,14 +16,19 @@ export class CommentsService {
             content,
             userId,
         });
-        return this.commentRepository.save(comment);
+        const saved = await this.commentRepository.save(comment);
+        // Load the user relation so the frontend can display the author immediately
+        return this.commentRepository.findOne({
+            where: { id: saved.id },
+            relations: ['user'],
+        }) as Promise<Comment>;
     }
 
     async getCommentsByPost(postId: string): Promise<Comment[]> {
         return this.commentRepository.find({
             where: { postId },
             relations: ['user'], // Join with User table to fetch author data
-            order: { createdAt: 'ASC' }, // Oldest first (or top of the thread)
+            order: { createdAt: 'DESC' }, // Newest first
         });
     }
 }

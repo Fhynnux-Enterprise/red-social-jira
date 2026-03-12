@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
     View, Text, TouchableOpacity, Platform, StyleSheet,
     Image, ActivityIndicator, TouchableWithoutFeedback,
@@ -49,7 +49,8 @@ export interface CommentsModalProps {
 }
 
 export default function CommentsModal({ visible, post, onClose }: CommentsModalProps) {
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
+    const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const insets = useSafeAreaInsets();
     const { user: currentUser } = useAuth();
     const navigation = useNavigation();
@@ -205,21 +206,47 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                 query: GET_COMMENTS, variables: { postId },
             });
             if (existing) {
-                cache.writeQuery({
-                    query: GET_COMMENTS, variables: { postId },
-                    data: { getCommentsByPost: [newComment, ...existing.getCommentsByPost] },
-                });
+                // Evitamos duplicados si el optimisticResponse ya escribió en el cache
+                const isDuplicate = existing.getCommentsByPost.some((c: any) => c.id === newComment.id);
+                if (!isDuplicate) {
+                    cache.writeQuery({
+                        query: GET_COMMENTS, variables: { postId },
+                        data: { getCommentsByPost: [newComment, ...existing.getCommentsByPost] },
+                    });
+                }
             }
         },
     });
 
     const handleSend = async () => {
-        if (!content.trim() || !postId) return;
+        if (!content.trim() || !postId || !currentUser) return;
         try {
-            await createComment({ variables: { postId, content: content.trim() } });
+            const commentText = content.trim();
             setContent('');
+            await createComment({
+                variables: { postId, content: commentText },
+                optimisticResponse: {
+                    createComment: {
+                        __typename: 'Comment',
+                        id: `temp-${Date.now()}`,
+                        content: commentText,
+                        createdAt: new Date().toISOString(),
+                        user: {
+                            __typename: 'User',
+                            id: currentUser.id,
+                            username: currentUser.username || '',
+                            firstName: currentUser.firstName,
+                            lastName: currentUser.lastName,
+                            photoUrl: currentUser.photoUrl || null,
+                        },
+                    },
+                },
+            });
             Keyboard.dismiss();
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error(e);
+            // Optionally handle error (e.g., restore content if it failed)
+        }
     };
 
     // ── Render comentario ──────────────────────────────────────────────────
@@ -258,9 +285,9 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                 </View>
                 <View style={styles.commentContent}>
                     <TouchableOpacity onPress={() => author?.id && navigateToProfile(author.id)} activeOpacity={0.7}>
-                    <Text style={[styles.authorName, { color: colors.textSecondary }]}>
-                        {author?.firstName} {author?.lastName}
-                    </Text>
+                        <Text style={[styles.authorName, { color: colors.textSecondary }]}>
+                            {author?.firstName} {author?.lastName}
+                        </Text>
                     </TouchableOpacity>
                     <Text style={[styles.textContent, { color: colors.text }]}>{item.content}</Text>
                     <View style={styles.commentFooter}>
@@ -297,182 +324,185 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                 style={[styles.container, { top: insets.top + 20, bottom: keyboardOffset }]}
                 pointerEvents="box-none"
             >
-            {/* Interior: drag translateY (native driver) */}
-            <Animated.View style={[{ flex: 1, gap: 8 }, { transform: [{ translateY: panY }] }]}>
+                {/* Interior: drag translateY (native driver) */}
+                <Animated.View style={[{ flex: 1, gap: 8 }, { transform: [{ translateY: panY }] }]}>
 
-                {/* ── BURBUJA PUBLICACIÓN ── */}
-                {post && (
-                    <View style={[styles.postBubble, { backgroundColor: colors.surface }]}>
-                        <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
-                            <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
-                            <TouchableOpacity
-                                style={styles.postAuthorRow}
-                                onPress={() => post.author?.id && navigateToProfile(post.author.id)}
-                                activeOpacity={0.7}
-                            >
-                                <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
-                                    {post.author?.photoUrl
-                                        ? <Image source={{ uri: post.author.photoUrl }} style={styles.avatarImage} />
-                                        : <Text style={styles.avatarText}>
-                                            {post.author?.firstName?.[0] || ''}{post.author?.lastName?.[0] || ''}
+                    {/* ── BURBUJA PUBLICACIÓN ── */}
+                    {post && (
+                        <View style={styles.postBubble}>
+                            <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
+                                <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
+                                <TouchableOpacity
+                                    style={styles.postAuthorRow}
+                                    onPress={() => post.author?.id && navigateToProfile(post.author.id)}
+                                    activeOpacity={0.7}
+                                >
+                                    <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
+                                        {post.author?.photoUrl
+                                            ? <Image source={{ uri: post.author.photoUrl }} style={styles.avatarImage} />
+                                            : <Text style={styles.avatarText}>
+                                                {post.author?.firstName?.[0] || ''}{post.author?.lastName?.[0] || ''}
+                                            </Text>
+                                        }
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.postAuthorName, { color: colors.text }]}>
+                                            {post.author?.firstName} {post.author?.lastName}
                                         </Text>
+                                        <Text style={[styles.postDate, { color: colors.textSecondary }]}>
+                                            {formatDate(post.createdAt)}{isEdited ? ' · Editado' : ''}
+                                        </Text>
+                                    </View>
+                                </TouchableOpacity>
+                            </View>
+
+                            <ScrollView
+                                showsVerticalScrollIndicator={true}
+                                persistentScrollbar={true}
+                                indicatorStyle={isDark ? 'white' : 'black'}
+                                nestedScrollEnabled={true}
+                                bounces={true}
+                                contentContainerStyle={styles.postScrollContent}
+                                style={styles.postScrollView}
+                                scrollEventThrottle={8}
+                                onScrollBeginDrag={(e) => {
+                                    postScrollDragStartY.current = e.nativeEvent.contentOffset.y;
+                                }}
+                                onScrollEndDrag={(e) => {
+                                    const endY = e.nativeEvent.contentOffset.y;
+                                    const vy = e.nativeEvent.velocity?.y ?? 0;
+                                    if (postScrollDragStartY.current <= 2 && endY <= 2 && vy > 0.3) {
+                                        closeWithAnimation();
+                                    } else {
+                                        Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
                                     }
+                                }}
+                            >
+                                <Text style={[styles.postContent, { color: colors.text }]}>{post.content}</Text>
+                            </ScrollView>
+
+                            <View style={[styles.postFooterFixed, { borderTopColor: colors.border }]}>
+                                {(localCount > 0 || commentsCount > 0) && (
+                                    <View style={styles.statsRow}>
+                                        {localCount > 0 && (
+                                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                <Ionicons name="heart" size={15} color="#FF3B30" />
+                                                <Text style={[styles.statsText, { color: colors.textSecondary }]}> {localCount}</Text>
+                                            </View>
+                                        )}
+                                        {commentsCount > 0 && (
+                                            <Text style={[styles.statsText, { color: colors.textSecondary }]}>
+                                                {commentsCount} {commentsCount === 1 ? 'comentario' : 'comentarios'}
+                                            </Text>
+                                        )}
+                                    </View>
+                                )}
+                                <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
+                                    <TouchableOpacity style={styles.actionBtn} onPress={handleLike}>
+                                        <Ionicons name={localLiked ? 'heart' : 'heart-outline'} size={20}
+                                            color={localLiked ? '#FF3B30' : colors.textSecondary} />
+                                        <Text style={[styles.actionText, { color: localLiked ? '#FF3B30' : colors.textSecondary },
+                                        localLiked && { fontWeight: 'bold' }]}>Me gusta</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.actionBtn}>
+                                        <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
+                                        <Text style={[styles.actionText, { color: colors.textSecondary }]}>Comentar</Text>
+                                    </TouchableOpacity>
                                 </View>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={[styles.postAuthorName, { color: colors.text }]}>
-                                        {post.author?.firstName} {post.author?.lastName}
-                                    </Text>
-                                    <Text style={[styles.postDate, { color: colors.textSecondary }]}>
-                                        {formatDate(post.createdAt)}{isEdited ? ' · Editado' : ''}
-                                    </Text>
-                                </View>
+                            </View>
+                        </View>
+                    )}
+
+                    {/* ── BURBUJA COMENTARIOS ── */}
+                    <View style={[styles.commentsBubble, { backgroundColor: colors.surface }]}>
+
+                        <View style={[styles.commentsHeader, { borderBottomColor: colors.border }]} {...commentsHeaderPan.panHandlers}>
+                            <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
+                            <Text style={[styles.headerTitle, { color: colors.text }]}>Comentarios</Text>
+                            <TouchableOpacity onPress={closeWithAnimation} style={styles.closeBtn}
+                                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                                <Ionicons name="close" size={24} color={colors.textSecondary} />
                             </TouchableOpacity>
                         </View>
 
                         <ScrollView
+                            style={{ flex: 1 }}
+                            contentContainerStyle={styles.listContainer}
                             showsVerticalScrollIndicator={false}
                             bounces={true}
-                            contentContainerStyle={{ padding: 16, paddingTop: 10 }}
-                            style={{ flexShrink: 1 }}
+                            keyboardShouldPersistTaps="handled"
                             scrollEventThrottle={8}
                             onScrollBeginDrag={(e) => {
-                                postScrollDragStartY.current = e.nativeEvent.contentOffset.y;
+                                scrollDragStartY.current = e.nativeEvent.contentOffset.y;
                             }}
                             onScrollEndDrag={(e) => {
                                 const endY = e.nativeEvent.contentOffset.y;
                                 const vy = e.nativeEvent.velocity?.y ?? 0;
-                                if (postScrollDragStartY.current <= 2 && endY <= 2 && vy > 0.3) {
+                                if (scrollDragStartY.current <= 2 && endY <= 2 && vy > 0.3) {
                                     closeWithAnimation();
                                 } else {
                                     Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
                                 }
                             }}
                         >
-                            <Text style={[styles.postContent, { color: colors.text }]}>{post.content}</Text>
+                            {loading && !data ? (
+                                <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
+                                    <ActivityIndicator size="large" color={colors.primary} />
+                                </View>
+                            ) : error ? (
+                                <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
+                                    <Text style={{ color: colors.error }}>Error cargando comentarios</Text>
+                                    <TouchableOpacity onPress={() => refetch()} style={{ marginTop: 10 }}>
+                                        <Text style={{ color: colors.primary }}>Reintentar</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            ) : (!data?.getCommentsByPost || data.getCommentsByPost.length === 0) ? (
+                                <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
+                                    <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                                        No hay comentarios aún. ¡Sé el primero!
+                                    </Text>
+                                </View>
+                            ) : (
+                                <>
+                                    {[...(data?.getCommentsByPost || [])]
+                                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                                        .map((item: any) => renderComment(item))}
+                                    {/* Zona arrastrable en espacio vacío bajo los últimos comentarios */}
+                                    <View style={{ flex: 1, minHeight: 80 }} {...emptyAreaPan.panHandlers} />
+                                </>
+                            )}
                         </ScrollView>
 
-                        <View style={[styles.postFooterFixed, { borderTopColor: colors.border }]}>
-                            {(localCount > 0 || commentsCount > 0) && (
-                                <View style={styles.statsRow}>
-                                    {localCount > 0 && (
-                                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                            <Ionicons name="heart" size={15} color="#FF3B30" />
-                                            <Text style={[styles.statsText, { color: colors.textSecondary }]}> {localCount}</Text>
-                                        </View>
-                                    )}
-                                    {commentsCount > 0 && (
-                                        <Text style={[styles.statsText, { color: colors.textSecondary }]}>
-                                            {commentsCount} {commentsCount === 1 ? 'comentario' : 'comentarios'}
-                                        </Text>
-                                    )}
-                                </View>
-                            )}
-                            <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
-                                <TouchableOpacity style={styles.actionBtn} onPress={handleLike}>
-                                    <Ionicons name={localLiked ? 'heart' : 'heart-outline'} size={20}
-                                        color={localLiked ? '#FF3B30' : colors.textSecondary} />
-                                    <Text style={[styles.actionText, { color: localLiked ? '#FF3B30' : colors.textSecondary },
-                                        localLiked && { fontWeight: 'bold' }]}>Me gusta</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={styles.actionBtn}>
-                                    <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
-                                    <Text style={[styles.actionText, { color: colors.textSecondary }]}>Comentar</Text>
-                                </TouchableOpacity>
-                            </View>
+                        <View style={[styles.inputContainer, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
+                            <TextInput
+                                style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                                placeholder="Escribe un comentario..."
+                                placeholderTextColor={colors.textSecondary}
+                                value={content}
+                                onChangeText={setContent}
+                                multiline
+                                maxLength={500}
+                            />
+                            <TouchableOpacity
+                                style={[styles.sendButton, { opacity: content.trim() ? 1 : 0.5, backgroundColor: colors.primary }]}
+                                onPress={handleSend}
+                                disabled={!content.trim() || creating}
+                            >
+                                {creating
+                                    ? <ActivityIndicator size="small" color="#FFF" />
+                                    : <Ionicons name="send" size={18} color="#FFF" />
+                                }
+                            </TouchableOpacity>
                         </View>
                     </View>
-                )}
 
-                {/* ── BURBUJA COMENTARIOS ── */}
-                <View style={[styles.commentsBubble, { backgroundColor: colors.surface }]}>
-
-                    <View style={[styles.commentsHeader, { borderBottomColor: colors.border }]} {...commentsHeaderPan.panHandlers}>
-                        <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
-                        <Text style={[styles.headerTitle, { color: colors.text }]}>Comentarios</Text>
-                        <TouchableOpacity onPress={closeWithAnimation} style={styles.closeBtn}
-                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                            <Ionicons name="close" size={24} color={colors.textSecondary} />
-                        </TouchableOpacity>
-                    </View>
-
-                    <ScrollView
-                        style={{ flex: 1 }}
-                        contentContainerStyle={styles.listContainer}
-                        showsVerticalScrollIndicator={false}
-                        bounces={true}
-                        keyboardShouldPersistTaps="handled"
-                        scrollEventThrottle={8}
-                        onScrollBeginDrag={(e) => {
-                            scrollDragStartY.current = e.nativeEvent.contentOffset.y;
-                        }}
-                        onScrollEndDrag={(e) => {
-                            const endY = e.nativeEvent.contentOffset.y;
-                            const vy = e.nativeEvent.velocity?.y ?? 0;
-                            if (scrollDragStartY.current <= 2 && endY <= 2 && vy > 0.3) {
-                                closeWithAnimation();
-                            } else {
-                                Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
-                            }
-                        }}
-                    >
-                        {loading && !data ? (
-                            <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
-                                <ActivityIndicator size="large" color={colors.primary} />
-                            </View>
-                        ) : error ? (
-                            <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
-                                <Text style={{ color: colors.error }}>Error cargando comentarios</Text>
-                                <TouchableOpacity onPress={() => refetch()} style={{ marginTop: 10 }}>
-                                    <Text style={{ color: colors.primary }}>Reintentar</Text>
-                                </TouchableOpacity>
-                            </View>
-                        ) : (!data?.getCommentsByPost || data.getCommentsByPost.length === 0) ? (
-                            <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
-                                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                                    No hay comentarios aún. ¡Sé el primero!
-                                </Text>
-                            </View>
-                        ) : (
-                            <>
-                                {[...(data?.getCommentsByPost || [])]
-                                    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                                    .map((item: any) => renderComment(item))}
-                                {/* Zona arrastrable en espacio vacío bajo los últimos comentarios */}
-                                <View style={{ flex: 1, minHeight: 80 }} {...emptyAreaPan.panHandlers} />
-                            </>
-                        )}
-                    </ScrollView>
-
-                    <View style={[styles.inputContainer, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
-                        <TextInput
-                            style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-                            placeholder="Escribe un comentario..."
-                            placeholderTextColor={colors.textSecondary}
-                            value={content}
-                            onChangeText={setContent}
-                            multiline
-                            maxLength={500}
-                        />
-                        <TouchableOpacity
-                            style={[styles.sendButton, { opacity: content.trim() ? 1 : 0.5, backgroundColor: colors.primary }]}
-                            onPress={handleSend}
-                            disabled={!content.trim() || creating}
-                        >
-                            {creating
-                                ? <ActivityIndicator size="small" color="#FFF" />
-                                : <Ionicons name="send" size={18} color="#FFF" />
-                            }
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-            </Animated.View>
+                </Animated.View>
             </Animated.View>
         </Modal>
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     backdrop: {
         ...StyleSheet.absoluteFillObject,
         backgroundColor: 'rgba(0,0,0,0.55)',
@@ -491,6 +521,20 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
+        // Fondo gris un poco más oscuro en light mode para resaltar el scrollbar
+        backgroundColor: isDark ? colors.surface : '#EBEBEB',
+    },
+    postScrollView: {
+        flexShrink: 1,
+        // Un borde sutil a la derecha que simula el rail del scroll
+        borderRightWidth: 1.5,
+        borderRightColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+    },
+    postScrollContent: { 
+        paddingLeft: 16, 
+        paddingRight: 12, 
+        paddingTop: 10, 
+        paddingBottom: 16 
     },
     postHeader: {
         paddingTop: 14,
@@ -533,6 +577,7 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
+        backgroundColor: colors.surface,
     },
     commentsHeader: {
         alignItems: 'center',
@@ -540,6 +585,7 @@ const styles = StyleSheet.create({
         paddingTop: 16,
         paddingBottom: 12,
         borderBottomWidth: StyleSheet.hairlineWidth,
+        backgroundColor: colors.surface,
     },
     dragHandle: {
         width: 36,
@@ -547,12 +593,13 @@ const styles = StyleSheet.create({
         borderRadius: 2,
         position: 'absolute',
         top: 7,
+        backgroundColor: colors.border,
     },
-    headerTitle: { fontSize: 16, fontWeight: 'bold', marginTop: 4 },
+    headerTitle: { fontSize: 16, fontWeight: 'bold', marginTop: 4, color: colors.text },
     closeBtn: { position: 'absolute', right: 14, top: 12, zIndex: 10 },
     listContainer: { flexGrow: 1, padding: 14, paddingBottom: 8 },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 },
-    emptyText: { textAlign: 'center', fontSize: 15 },
+    emptyText: { textAlign: 'center', fontSize: 15, color: colors.textSecondary },
     commentCard: { flexDirection: 'row', marginBottom: 14, alignItems: 'flex-start' },
     avatarPlaceholder: {
         width: 36, height: 36, borderRadius: 18,
@@ -577,12 +624,16 @@ const styles = StyleSheet.create({
         paddingHorizontal: 14,
         paddingVertical: 10,
         borderTopWidth: StyleSheet.hairlineWidth,
+        backgroundColor: colors.surface,
     },
     input: {
         flex: 1, minHeight: 40, maxHeight: 100,
         borderWidth: 1, borderRadius: 20,
         paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10,
         marginRight: 10, fontSize: 14,
+        backgroundColor: colors.background,
+        color: colors.text,
+        borderColor: colors.border,
     },
     sendButton: {
         width: 44, height: 44, borderRadius: 22,
