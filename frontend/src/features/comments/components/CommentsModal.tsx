@@ -5,6 +5,7 @@ import {
     Alert, Pressable, Keyboard, ScrollView, Modal,
     Dimensions, TextInput, PanResponder, Animated,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useQuery, useMutation } from '@apollo/client';
 import { Ionicons } from '@expo/vector-icons';
 import { GET_COMMENTS, CREATE_COMMENT } from '../graphql/comments.operations';
@@ -48,8 +49,14 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
     const { colors } = useTheme();
     const insets = useSafeAreaInsets();
     const { user: currentUser } = useAuth();
+    const navigation = useNavigation();
     const [content, setContent] = useState('');
     const postId = post?.id;
+
+    const navigateToProfile = (userId: string) => {
+        onClose();
+        setTimeout(() => (navigation.navigate as any)('Profile', { userId }), 320);
+    };
 
     // ── Animación entrada/salida + drag ────────────────────────────────────
     const panY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -102,7 +109,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
 
     // ── PanResponder: arrastra headers para cerrar ─────────────────────────
     const makeDragPan = () => PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 5 && g.dy > 0,
         onPanResponderMove: (_, g) => { if (g.dy > 0) panY.setValue(g.dy); },
         onPanResponderRelease: (_, g) => {
@@ -146,11 +153,35 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
     const [localCount, setLocalCount] = useState<number>(post?.likes?.length || 0);
     const [toggleLikeMutation] = useMutation(TOGGLE_LIKE);
 
+    useEffect(() => {
+        setLocalLiked(post?.likes?.some((l: any) => l.user?.id === currentUser?.id) || false);
+        setLocalCount(post?.likes?.length || 0);
+    }, [post?.likes]);
+
     const handleLike = () => {
+        if (!currentUser?.id || !postId) return;
         const next = !localLiked;
         setLocalLiked(next);
         setLocalCount((c) => next ? c + 1 : Math.max(0, c - 1));
-        toggleLikeMutation({ variables: { postId } }).catch(() => {
+
+        let optimisticLikes = [...(post?.likes || [])];
+        if (localLiked) {
+            optimisticLikes = optimisticLikes.filter((l: any) => l.user?.id !== currentUser.id);
+        } else {
+            optimisticLikes.push({ __typename: 'PostLike', id: `temp-${Date.now()}`, user: { __typename: 'User', id: currentUser.id } });
+        }
+
+        toggleLikeMutation({
+            variables: { postId },
+            optimisticResponse: {
+                toggleLike: {
+                    __typename: 'Post',
+                    id: postId,
+                    likes: optimisticLikes,
+                    comments: post?.comments || [],
+                },
+            },
+        }).catch(() => {
             setLocalLiked(!next);
             setLocalCount((c) => !next ? c + 1 : Math.max(0, c - 1));
         });
@@ -210,15 +241,19 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                 ]}
             >
                 <View style={styles.avatarPlaceholder}>
+                    <TouchableOpacity onPress={() => author?.id && navigateToProfile(author.id)} activeOpacity={0.7}>
                     {author?.photoUrl
                         ? <Image source={{ uri: author.photoUrl }} style={styles.avatarImage} />
                         : <Text style={styles.avatarText}>{author?.firstName?.[0] || ''}{author?.lastName?.[0] || ''}</Text>
                     }
+                    </TouchableOpacity>
                 </View>
                 <View style={styles.commentContent}>
+                    <TouchableOpacity onPress={() => author?.id && navigateToProfile(author.id)} activeOpacity={0.7}>
                     <Text style={[styles.authorName, { color: colors.textSecondary }]}>
                         {author?.firstName} {author?.lastName}
                     </Text>
+                    </TouchableOpacity>
                     <Text style={[styles.textContent, { color: colors.text }]}>{item.content}</Text>
                     <View style={styles.commentFooter}>
                         <Text style={[styles.dateText, { color: colors.textSecondary }]}>
@@ -262,7 +297,11 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                     <View style={[styles.postBubble, { backgroundColor: colors.surface }]}>
                         <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
                             <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
-                            <View style={styles.postAuthorRow}>
+                            <TouchableOpacity
+                                style={styles.postAuthorRow}
+                                onPress={() => post.author?.id && navigateToProfile(post.author.id)}
+                                activeOpacity={0.7}
+                            >
                                 <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
                                     {post.author?.photoUrl
                                         ? <Image source={{ uri: post.author.photoUrl }} style={styles.avatarImage} />
@@ -279,7 +318,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                                         {formatDate(post.createdAt)}{isEdited ? ' · Editado' : ''}
                                     </Text>
                                 </View>
-                            </View>
+                            </TouchableOpacity>
                         </View>
 
                         <ScrollView

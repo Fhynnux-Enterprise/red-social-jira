@@ -84,6 +84,9 @@ export const GET_USER_PROFILE = gql`
             id
           }
         }
+        comments {
+          id
+        }
         author {
           id
           firstName
