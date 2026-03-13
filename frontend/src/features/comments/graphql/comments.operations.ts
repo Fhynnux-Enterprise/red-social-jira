@@ -7,6 +7,8 @@ export const GET_COMMENTS = gql`
       content
       createdAt
       updatedAt
+      likesCount
+      isLikedByMe
       user {
         id
         username
@@ -25,6 +27,8 @@ export const CREATE_COMMENT = gql`
       content
       createdAt
       updatedAt
+      likesCount
+      isLikedByMe
       user {
         id
         username
@@ -49,6 +53,18 @@ export const UPDATE_COMMENT = gql`
       content
       createdAt
       updatedAt
+      likesCount
+      isLikedByMe
+    }
+  }
+`;
+
+export const TOGGLE_LIKE_COMMENT = gql`
+  mutation ToggleCommentLike($commentId: String!) {
+    toggleCommentLike(commentId: $commentId) {
+      id
+      likesCount
+      isLikedByMe
     }
   }
 `;

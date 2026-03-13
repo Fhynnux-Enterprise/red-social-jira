@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../auth/context/AuthContext';
 import CommentOptionsModal from './CommentOptionsModal';
 import ConfirmationModal from './ConfirmationModal';
+import CommentItem from './CommentItem';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -367,67 +368,21 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
 
 
     // ── Render comentario ──────────────────────────────────────────────────
-    const renderComment = (item: any) => {
-        const author = item.user;
-        const isMyComment = author?.id === currentUser?.id;
-        const handleLongPress = () => {
-            if (isMyComment) {
-                setSelectedCommentId(item.id);
-                setIsOptionsModalVisible(true);
-            }
-        };
-        return (
-            <Pressable
-                key={item.id}
-                onLongPress={handleLongPress}
-                delayLongPress={250}
-                style={({ pressed }) => [
-                    styles.commentCard,
-                    { backgroundColor: pressed ? 'rgba(0,0,0,0.05)' : 'transparent', borderRadius: 8, padding: 4 },
-                ]}
-            >
-                <View style={styles.avatarPlaceholder}>
-                    <TouchableOpacity
-                        onPress={() => author?.id && navigateToProfile(author.id)}
-                        activeOpacity={0.7}
-                        style={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}
-                    >
-                        {author?.photoUrl
-                            ? <Image source={{ uri: author.photoUrl }} style={styles.avatarImage} />
-                            : <Text style={styles.avatarText}>{author?.firstName?.[0] || ''}{author?.lastName?.[0] || ''}</Text>
-                        }
-                    </TouchableOpacity>
-                </View>
-                <View style={styles.commentContent}>
-                    <TouchableOpacity onPress={() => author?.id && navigateToProfile(author.id)} activeOpacity={0.7}>
-                        <Text style={[styles.authorName, { color: colors.textSecondary }]}>
-                            {author?.firstName} {author?.lastName}
-                        </Text>
-                    </TouchableOpacity>
-                    <Text style={[styles.textContent, { color: colors.text }]}>{item.content}</Text>
-                    <View style={styles.commentFooter}>
-                        <Text style={[styles.dateText, { color: colors.textSecondary }]}>
-                            {formatTimeAgo(new Date(item.createdAt))}
-                            {(() => {
-                                if (!item.createdAt || !item.updatedAt) return null;
-                                const created = new Date(item.createdAt).getTime();
-                                const updated = new Date(item.updatedAt).getTime();
-                                if (isNaN(created) || isNaN(updated)) return null;
-                                const isEdited = updated - created > 2000;
-                                return isEdited ? <Text style={{ fontStyle: 'italic' }}> • Editado</Text> : null;
-                            })()}
-                        </Text>
-                        <TouchableOpacity>
-                            <Text style={[styles.replyText, { color: colors.textSecondary }]}>Responder</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-                <TouchableOpacity style={styles.likeContainer}>
-                    <Ionicons name="heart-outline" size={20} color={colors.textSecondary} />
-                </TouchableOpacity>
-            </Pressable>
-        );
-    };
+    const renderComment = (item: any) => (
+        <CommentItem
+            key={item.id}
+            item={item}
+            currentUser={currentUser}
+            onLongPress={() => {
+                const authorId = item.user?.id;
+                if (authorId === currentUser?.id) {
+                    setSelectedCommentId(item.id);
+                    setIsOptionsModalVisible(true);
+                }
+            }}
+            onNavigateToProfile={navigateToProfile}
+        />
+    );
 
     if (!visible) return null;
 
@@ -768,7 +723,6 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     listContainer: { flexGrow: 1, padding: 14, paddingBottom: 8 },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 },
     emptyText: { textAlign: 'center', fontSize: 15, color: colors.textSecondary },
-    commentCard: { flexDirection: 'row', marginBottom: 14, alignItems: 'flex-start' },
     avatarPlaceholder: {
         width: 36, height: 36, borderRadius: 18,
         backgroundColor: 'rgba(255, 101, 36, 0.15)',
@@ -779,13 +733,6 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     },
     avatarImage: { width: '100%', height: '100%' },
     avatarText: { color: '#FF6524', fontWeight: 'bold', fontSize: 13, textTransform: 'uppercase' },
-    commentContent: { flex: 1, marginRight: 8 },
-    commentFooter: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-    replyText: { fontSize: 12, fontWeight: 'bold', marginLeft: 12 },
-    likeContainer: { alignItems: 'center', paddingHorizontal: 4 },
-    authorName: { fontWeight: 'bold', fontSize: 13, marginBottom: 2, marginTop: Platform.OS === 'android' ? -2 : 0 },
-    dateText: { fontSize: 12 },
-    textContent: { fontSize: 14, lineHeight: 20 },
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',

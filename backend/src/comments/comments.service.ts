@@ -1,13 +1,16 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Comment } from './entities/comment.entity';
+import { CommentLike } from './entities/comment-like.entity';
 
 @Injectable()
 export class CommentsService {
     constructor(
         @InjectRepository(Comment)
         private commentRepository: Repository<Comment>,
+        @InjectRepository(CommentLike)
+        private commentLikeRepository: Repository<CommentLike>,
     ) {}
 
     async createComment(postId: string, content: string, userId: string): Promise<Comment> {
@@ -17,19 +20,20 @@ export class CommentsService {
             userId,
         });
         const saved = await this.commentRepository.save(comment);
-        // Load the user relation so the frontend can display the author immediately
-        return this.commentRepository.findOne({
+        const result = await this.commentRepository.findOne({
             where: { id: saved.id },
-            relations: ['user'],
-        }) as Promise<Comment>;
+            relations: ['user', 'likes'],
+        });
+        return this.mapComment(result!, userId);
     }
 
-    async getCommentsByPost(postId: string): Promise<Comment[]> {
-        return this.commentRepository.find({
+    async getCommentsByPost(postId: string, userId?: string): Promise<Comment[]> {
+        const comments = await this.commentRepository.find({
             where: { postId },
-            relations: ['user'], // Join with User table to fetch author data
-            order: { createdAt: 'DESC' }, // Newest first
+            relations: ['user', 'likes'],
+            order: { createdAt: 'DESC' },
         });
+        return comments.map(comment => this.mapComment(comment, userId));
     }
 
     async deleteComment(id: string, userId: string): Promise<boolean> {
@@ -42,7 +46,7 @@ export class CommentsService {
     }
 
     async updateComment(id: string, content: string, userId: string): Promise<Comment> {
-        const comment = await this.commentRepository.findOne({ where: { id }, relations: ['user'] });
+        const comment = await this.commentRepository.findOne({ where: { id }, relations: ['user', 'likes'] });
         if (!comment) {
             throw new Error('Comentario no encontrado');
         }
@@ -50,6 +54,41 @@ export class CommentsService {
             throw new UnauthorizedException('No tienes permiso para editar este comentario');
         }
         comment.content = content;
-        return this.commentRepository.save(comment);
+        const saved = await this.commentRepository.save(comment);
+        return this.mapComment(saved, userId);
+    }
+
+    async toggleCommentLike(commentId: string, userId: string): Promise<Comment> {
+        const comment = await this.commentRepository.findOne({ where: { id: commentId } });
+        if (!comment) {
+            throw new NotFoundException('Comentario no encontrado');
+        }
+
+        const existingLike = await this.commentLikeRepository.findOne({
+            where: { commentId, userId }
+        });
+
+        if (existingLike) {
+            await this.commentLikeRepository.remove(existingLike);
+        } else {
+            const newLike = this.commentLikeRepository.create({ commentId, userId });
+            await this.commentLikeRepository.save(newLike);
+        }
+
+        const updatedComment = await this.commentRepository.findOne({
+            where: { id: commentId },
+            relations: ['user', 'likes']
+        });
+
+        return this.mapComment(updatedComment!, userId);
+    }
+
+    private mapComment(comment: Comment, userId?: string): Comment {
+        return {
+            ...comment,
+            likesCount: comment.likes?.length || 0,
+            isLikedByMe: userId ? comment.likes?.some(like => like.userId === userId) : false,
+        };
     }
 }
+
