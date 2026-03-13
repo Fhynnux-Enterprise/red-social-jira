@@ -49,5 +49,18 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
 // Configure and export Apollo Client
 export const apolloClient = new ApolloClient({
     link: from([errorLink, authLink, httpLink]),
-    cache: new InMemoryCache(),
+    cache: new InMemoryCache({
+        //canonizeResults: false,
+        typePolicies: {
+            Query: {
+                fields: {
+                    getCommentsByPost: {
+                        merge(existing, incoming) {
+                            return incoming;
+                        },
+                    },
+                },
+            },
+        },
+    }),
 });
