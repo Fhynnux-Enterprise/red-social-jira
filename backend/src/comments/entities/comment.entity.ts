@@ -1,7 +1,8 @@
 import { ObjectType, Field, ID } from '@nestjs/graphql';
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 import { Post } from '../../posts/entities/post.entity';
+import { CommentLike } from './comment-like.entity';
 
 @ObjectType()
 @Entity('comments')
@@ -18,6 +19,10 @@ export class Comment {
     @ManyToOne(() => User, user => user.comments, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'id_user' })
     user: User;
+
+    @Field(() => [CommentLike], { nullable: true })
+    @OneToMany(() => CommentLike, like => like.comment)
+    likes: CommentLike[];
 
     @Field()
     @Column({ name: 'id_user' })
@@ -43,4 +48,10 @@ export class Comment {
     @Field({ nullable: true })
     @DeleteDateColumn({ type: 'timestamptz', nullable: true })
     deletedAt?: Date;
+
+    @Field(() => Number, { defaultValue: 0 })
+    likesCount?: number;
+
+    @Field(() => Boolean, { defaultValue: false })
+    isLikedByMe?: boolean;
 }

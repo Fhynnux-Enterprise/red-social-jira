@@ -20,10 +20,13 @@ export class CommentsResolver {
     }
 
     @Query(() => [Comment], { name: 'getCommentsByPost' })
+    @UseGuards(JwtGqlGuard)
     async getCommentsByPost(
         @Args('postId') postId: string,
+        @Context() context: any,
     ): Promise<Comment[]> {
-        return this.commentsService.getCommentsByPost(postId);
+        const userId = context.req?.user?.id;
+        return this.commentsService.getCommentsByPost(postId, userId);
     }
 
     @Mutation(() => Boolean, { name: 'deleteComment' })
@@ -45,5 +48,15 @@ export class CommentsResolver {
     ): Promise<Comment> {
         const userId = context.req.user.id;
         return this.commentsService.updateComment(id, content, userId);
+    }
+
+    @Mutation(() => Comment, { name: 'toggleCommentLike' })
+    @UseGuards(JwtGqlGuard)
+    async toggleCommentLike(
+        @Args('commentId') commentId: string,
+        @Context() context: any,
+    ): Promise<Comment> {
+        const userId = context.req.user.id;
+        return this.commentsService.toggleCommentLike(commentId, userId);
     }
 }

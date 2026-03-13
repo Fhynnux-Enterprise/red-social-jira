@@ -16,16 +16,28 @@ A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date
 """
 scalar DateTime
 
+type CommentLike {
+  id: ID!
+  user: User!
+  userId: String!
+  comment: Comment!
+  commentId: String!
+  createdAt: DateTime!
+}
+
 type Comment {
   id: ID!
   content: String!
   user: User
+  likes: [CommentLike!]
   userId: String!
   post: Post
   postId: String!
   createdAt: DateTime!
   updatedAt: DateTime!
   deletedAt: DateTime
+  likesCount: Float!
+  isLikedByMe: Boolean!
 }
 
 type Post {
@@ -92,4 +104,5 @@ type Mutation {
   createComment(postId: String!, content: String!): Comment!
   deleteComment(id: String!): Boolean!
   updateComment(id: String!, content: String!): Comment!
+  toggleCommentLike(commentId: String!): Comment!
 }
