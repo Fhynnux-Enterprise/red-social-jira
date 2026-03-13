@@ -37,6 +37,19 @@ export class Comment {
     @Column({ name: 'id_post' })
     postId: string;
 
+    @Field({ nullable: true })
+    @Column({ name: 'id_parent', nullable: true })
+    parentId?: string;
+
+    @Field(() => Comment, { nullable: true })
+    @ManyToOne(() => Comment, comment => comment.replies, { onDelete: 'CASCADE' })
+    @JoinColumn({ name: 'id_parent' })
+    parent?: Comment;
+
+    @Field(() => [Comment], { nullable: true })
+    @OneToMany(() => Comment, comment => comment.parent)
+    replies?: Comment[];
+
     @Field()
     @CreateDateColumn({ type: 'timestamptz' })
     createdAt: Date;

@@ -1,4 +1,4 @@
-import { Resolver, Query, Mutation, Args, Context } from '@nestjs/graphql';
+import { Resolver, Query, Mutation, Args, Context, ResolveField, Parent } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { CommentsService } from './comments.service';
 import { Comment } from './entities/comment.entity';
@@ -13,10 +13,11 @@ export class CommentsResolver {
     async createComment(
         @Args('postId') postId: string,
         @Args('content') content: string,
+        @Args('parentId', { nullable: true }) parentId: string,
         @Context() context: any,
     ): Promise<Comment> {
         const userId = context.req.user.id;
-        return this.commentsService.createComment(postId, content, userId);
+        return this.commentsService.createComment(postId, content, userId, parentId);
     }
 
     @Query(() => [Comment], { name: 'getCommentsByPost' })
@@ -59,4 +60,14 @@ export class CommentsResolver {
         const userId = context.req.user.id;
         return this.commentsService.toggleCommentLike(commentId, userId);
     }
+
+    @ResolveField(() => [Comment])
+    async replies(
+        @Parent() comment: Comment,
+        @Context() context: any,
+    ): Promise<Comment[]> {
+        const userId = context.req?.user?.id;
+        return this.commentsService.getReplies(comment.id, userId);
+    }
 }
+

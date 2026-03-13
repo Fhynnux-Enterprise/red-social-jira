@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import {
     View,
     Text,
@@ -17,8 +17,11 @@ import { useTheme } from '../../../theme/ThemeContext';
 interface CommentItemProps {
     item: any;
     currentUser: any;
-    onLongPress: () => void;
+    onLongPress: (comment: any, isReply: boolean) => void;
     onNavigateToProfile: (userId: string) => void;
+    onReply: (commentId: string, userName: string) => void;
+    isReply?: boolean;
+    isNestedReply?: boolean;
 }
 
 const formatTimeAgo = (date: Date) => {
@@ -33,12 +36,20 @@ const formatTimeAgo = (date: Date) => {
     return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
 };
 
-export default function CommentItem({ item, currentUser, onLongPress, onNavigateToProfile }: CommentItemProps) {
+export default function CommentItem({ 
+    item, 
+    currentUser, 
+    onLongPress, 
+    onNavigateToProfile,
+    onReply,
+    isReply = false,
+    isNestedReply = false,
+}: CommentItemProps) {
     const { colors, isDark } = useTheme();
     const styles = getStyles(colors, isDark);
     const author = item.user;
 
-    // Animación de escala para el corazón
+    const [showReplies, setShowReplies] = useState(false);
     const scaleAnim = useRef(new Animated.Value(1)).current;
 
     const [toggleLike] = useMutation(TOGGLE_LIKE_COMMENT, {
@@ -53,18 +64,9 @@ export default function CommentItem({ item, currentUser, onLongPress, onNavigate
     });
 
     const handleLike = () => {
-        // Disparamos la animación
         Animated.sequence([
-            Animated.timing(scaleAnim, {
-                toValue: 1.3,
-                duration: 100,
-                useNativeDriver: true,
-            }),
-            Animated.spring(scaleAnim, {
-                toValue: 1,
-                friction: 4,
-                useNativeDriver: true,
-            }),
+            Animated.timing(scaleAnim, { toValue: 1.3, duration: 100, useNativeDriver: true }),
+            Animated.spring(scaleAnim, { toValue: 1, friction: 4, useNativeDriver: true }),
         ]).start();
 
         toggleLike({ variables: { commentId: item.id } });
@@ -79,71 +81,120 @@ export default function CommentItem({ item, currentUser, onLongPress, onNavigate
     })();
 
     return (
-        <Pressable
-            onLongPress={onLongPress}
-            delayLongPress={250}
-            style={({ pressed }) => [
-                styles.commentCard,
-                { backgroundColor: pressed ? 'rgba(0,0,0,0.05)' : 'transparent', borderRadius: 8, padding: 4 },
-            ]}
-        >
-            <View style={styles.avatarPlaceholder}>
-                <TouchableOpacity
-                    onPress={() => author?.id && onNavigateToProfile(author.id)}
-                    activeOpacity={0.7}
-                    style={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}
-                >
-                    {author?.photoUrl
-                        ? <Image source={{ uri: author.photoUrl }} style={styles.avatarImage} />
-                        : <Text style={styles.avatarText}>{author?.firstName?.[0] || ''}{author?.lastName?.[0] || ''}</Text>
-                    }
-                </TouchableOpacity>
-            </View>
-            <View style={styles.commentContent}>
-                <TouchableOpacity onPress={() => author?.id && onNavigateToProfile(author.id)} activeOpacity={0.7}>
-                    <Text style={[styles.authorName, { color: colors.textSecondary }]}>
-                        {author?.firstName} {author?.lastName}
-                    </Text>
-                </TouchableOpacity>
-                <Text style={[styles.textContent, { color: colors.text }]}>{item.content}</Text>
-                
-                <View style={styles.commentFooter}>
-                    <Text style={[styles.dateText, { color: colors.textSecondary }]}>
-                        {formatTimeAgo(new Date(item.createdAt))}
-                        {isEdited && <Text style={{ fontStyle: 'italic' }}> • Editado</Text>}
-                    </Text>
-
-                    <TouchableOpacity style={styles.footerAction}>
-                        <Text style={[styles.replyText, { color: colors.textSecondary }]}>Responder</Text>
-                    </TouchableOpacity>
-
-                    {/* Nuevo contenedor de Like alineado en el footer */}
-                    <TouchableOpacity 
-                        style={styles.likeAction} 
-                        onPress={handleLike}
-                        activeOpacity={0.6}
+        <View style={[styles.mainContainer, (isReply || isNestedReply) && styles.replyWrapper]}>
+            <Pressable
+                onLongPress={() => onLongPress(item, !!(isReply || isNestedReply))}
+                delayLongPress={250}
+                style={({ pressed }) => [
+                    styles.commentCard,
+                    { backgroundColor: pressed ? 'rgba(0,0,0,0.05)' : 'transparent', borderRadius: 8, padding: 4 },
+                ]}
+            >
+                <View style={[styles.avatarPlaceholder, (isReply || isNestedReply) && styles.replyAvatar]}>
+                    <TouchableOpacity
+                        onPress={() => author?.id && onNavigateToProfile(author.id)}
+                        activeOpacity={0.7}
+                        style={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}
                     >
-                        <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-                            <Ionicons 
-                                name={item.isLikedByMe ? "heart" : "heart-outline"} 
-                                size={17} 
-                                color={item.isLikedByMe ? "#FF3B30" : colors.textSecondary} 
-                            />
-                        </Animated.View>
-                        {item.likesCount > 0 && (
-                            <Text style={[styles.likesCountText, { color: item.isLikedByMe ? "#FF3B30" : colors.textSecondary, fontWeight: item.isLikedByMe ? 'bold' : 'normal' }]}>
-                                {item.likesCount}
-                            </Text>
-                        )}
+                        {author?.photoUrl
+                            ? <Image source={{ uri: author.photoUrl }} style={styles.avatarImage} />
+                            : <Text style={[styles.avatarText, (isReply || isNestedReply) && { fontSize: 10 }]}>
+                                {author?.firstName?.[0] || ''}{author?.lastName?.[0] || ''}
+                              </Text>
+                        }
                     </TouchableOpacity>
                 </View>
-            </View>
-        </Pressable>
+                <View style={styles.commentContent}>
+                    <TouchableOpacity onPress={() => author?.id && onNavigateToProfile(author.id)} activeOpacity={0.7}>
+                        <Text style={[styles.authorName, { color: colors.textSecondary }]}>
+                            {author?.firstName} {author?.lastName}
+                        </Text>
+                    </TouchableOpacity>
+                    <Text style={[styles.textContent, { color: colors.text }]}>{item.content}</Text>
+                    
+                    <View style={styles.commentFooter}>
+                        <View style={styles.footerLeft}>
+                            <Text style={[styles.dateText, { color: colors.textSecondary }]}>
+                                {formatTimeAgo(new Date(item.createdAt))}
+                            </Text>
+                            {isEdited && (
+                                <View style={styles.editedBadge}>
+                                    <View style={[styles.dot, { backgroundColor: colors.textSecondary }]} />
+                                    <Text style={[styles.editedText, { color: colors.textSecondary }]}>Editado</Text>
+                                </View>
+                            )}
+                        </View>
+
+                        {!(isReply || isNestedReply) && (
+                            <TouchableOpacity style={styles.footerAction} onPress={() => onReply(item.id, author?.firstName || '')}>
+                                <Text style={[styles.replyText, { color: colors.textSecondary }]}>Responder</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity 
+                            style={styles.likeAction} 
+                            onPress={handleLike}
+                            activeOpacity={0.6}
+                        >
+                            <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+                                <Ionicons 
+                                    name={item.isLikedByMe ? "heart" : "heart-outline"} 
+                                    size={17} 
+                                    color={item.isLikedByMe ? "#FF3B30" : colors.textSecondary} 
+                                />
+                            </Animated.View>
+                            {item.likesCount > 0 && (
+                                <Text style={[styles.likesCountText, { 
+                                    color: item.isLikedByMe ? "#FF3B30" : colors.textSecondary, 
+                                    fontWeight: item.isLikedByMe ? 'bold' : 'normal' 
+                                }]}>
+                                    {item.likesCount}
+                                </Text>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Pressable>
+
+            {/* Botón para mostrar/ocultar respuestas */}
+            {item.replies && item.replies.length > 0 && (
+                <TouchableOpacity 
+                    style={styles.toggleRepliesBtn} 
+                    onPress={() => setShowReplies(!showReplies)}
+                >
+                    <Text style={[styles.toggleRepliesText, { color: colors.textSecondary }]}>
+                        {showReplies 
+                            ? `— Ocultar respuestas` 
+                            : `— Ver ${item.replies.length} respuestas`}
+                    </Text>
+                </TouchableOpacity>
+            )}
+
+            {/* Renderizado recursivo de respuestas */}
+            {showReplies && item.replies && item.replies.length > 0 && (
+                <View style={[styles.repliesList, { borderColor: colors.border }]}>
+                    {item.replies.map((reply: any) => (
+                        <CommentItem 
+                            key={reply.id}
+                            item={reply}
+                            currentUser={currentUser}
+                            onLongPress={onLongPress}
+                            onNavigateToProfile={onNavigateToProfile}
+                            onReply={onReply}
+                            isNestedReply={true}
+                        />
+                    ))}
+                </View>
+            )}
+        </View>
     );
 }
 
 const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
-    commentCard: { flexDirection: 'row', marginBottom: 14, alignItems: 'flex-start' },
+    mainContainer: {
+        marginBottom: 14, 
+    },
+    commentCard: { flexDirection: 'row', marginBottom: 1, alignItems: 'flex-start' },
     avatarPlaceholder: {
         width: 32, height: 32, borderRadius: 16,
         backgroundColor: 'rgba(255, 101, 36, 0.15)',
@@ -151,6 +202,9 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         marginRight: 10,
         borderWidth: 1, borderColor: 'rgba(255, 101, 36, 0.3)',
         overflow: 'hidden',
+    },
+    replyAvatar: {
+        width: 24, height: 24, borderRadius: 12,
     },
     avatarImage: { width: '100%', height: '100%' },
     avatarText: { color: '#FF6524', fontWeight: 'bold', fontSize: 12, textTransform: 'uppercase' },
@@ -168,4 +222,44 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     authorName: { fontWeight: 'bold', fontSize: 13, marginBottom: 2, marginTop: Platform.OS === 'android' ? -2 : 0 },
     dateText: { fontSize: 12 },
     textContent: { fontSize: 14, lineHeight: 20 },
+    replyWrapper: {
+        marginTop: 4,
+        marginBottom: 8,
+    },
+    repliesList: {
+        marginLeft: 40,
+        borderLeftWidth: 1,
+        paddingLeft: 10,
+        marginTop: 2,
+    },
+    toggleRepliesBtn: {
+        marginLeft: 40,
+        marginTop: 10,
+        marginBottom: 12, // Más espacio abajo para evitar el amontonamiento
+    },
+    toggleRepliesText: {
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    footerLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    editedBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginLeft: 6,
+    },
+    dot: {
+        width: 2.5,
+        height: 2.5,
+        borderRadius: 1.25,
+        marginRight: 4,
+        opacity: 0.5,
+    },
+    editedText: {
+        fontSize: 11,
+        fontStyle: 'italic',
+        opacity: 0.8,
+    },
 });
