@@ -33,6 +33,9 @@ type Comment {
   userId: String!
   post: Post
   postId: String!
+  parentId: String
+  parent: Comment
+  replies: [Comment!]
   createdAt: DateTime!
   updatedAt: DateTime!
   deletedAt: DateTime
@@ -101,7 +104,7 @@ type Mutation {
   deleteCustomField(id: String!): Boolean!
   updateBadge(title: String!, theme: String = "default"): UserBadge!
   updateProfile(firstName: String, lastName: String, bio: String, username: String, phone: String): User!
-  createComment(postId: String!, content: String!): Comment!
+  createComment(postId: String!, content: String!, parentId: String): Comment!
   deleteComment(id: String!): Boolean!
   updateComment(id: String!, content: String!): Comment!
   toggleCommentLike(commentId: String!): Comment!

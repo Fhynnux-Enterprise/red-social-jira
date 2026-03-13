@@ -58,10 +58,11 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
     const { user: currentUser } = useAuth();
     const navigation = useNavigation();
     const [content, setContent] = useState('');
-    const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
+    const [selectedCommentData, setSelectedCommentData] = useState<{ id: string, isMine: boolean, isReply: boolean } | null>(null);
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [isOptionsModalVisible, setIsOptionsModalVisible] = useState(false);
     const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
+    const [replyingTo, setReplyingTo] = useState<{ id: string, name: string } | null>(null);
     const inputRef = useRef<TextInput>(null);
     const postId = post?.id;
 
@@ -210,28 +211,14 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
     const commentsCount = data?.getCommentsByPost?.length ?? post?.comments?.length ?? 0;
 
     const [createComment, { loading: creating }] = useMutation(CREATE_COMMENT, {
+        refetchQueries: [{ query: GET_COMMENTS, variables: { postId } }],
         update(cache, { data: { createComment: newComment } }) {
             if (!postId) return;
-            const existing = cache.readQuery<{ getCommentsByPost: any[] }>({
-                query: GET_COMMENTS, variables: { postId },
-            });
-            if (existing) {
-                // Evitamos duplicados si el optimisticResponse ya escribió en el cache
-                const isDuplicate = existing.getCommentsByPost.some((c: any) => c.id === newComment.id);
-                if (!isDuplicate) {
-                    cache.writeQuery({
-                        query: GET_COMMENTS, variables: { postId },
-                        data: { getCommentsByPost: [newComment, ...existing.getCommentsByPost] },
-                    });
-                }
-            }
-
-            // Actualizamos la lista de comentarios del POST para que el conteo se vea en todo el app
+            // Solo actualizamos el conteo del post, el cache de comentarios se refresca vía refetchQueries
             cache.modify({
                 id: cache.identify({ __typename: 'Post', id: postId }),
                 fields: {
                     comments(existingComments = []) {
-                        // Evitar duplicados si ya se agregó
                         if (existingComments.some((c: any) => c.__ref === cache.identify(newComment) || c.id === newComment.id)) {
                             return existingComments;
                         }
@@ -244,46 +231,45 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
 
     const [deleteComment] = useMutation(DELETE_COMMENT, {
         update(cache, { data: { deleteComment: success } }, { variables }) {
-            if (!success || !postId) return;
+            if (!success) return;
             const commentId = variables?.id;
 
-            // 1. Quitar de la lista de comentarios
-            const existing = cache.readQuery<{ getCommentsByPost: any[] }>({
-                query: GET_COMMENTS, variables: { postId },
-            });
-            if (existing) {
-                cache.writeQuery({
-                    query: GET_COMMENTS, variables: { postId },
-                    data: { getCommentsByPost: existing.getCommentsByPost.filter(c => c.id !== commentId) },
+            // Eliminamos el objeto del caché globalmente (funciona para raíz y respuestas)
+            cache.evict({ id: cache.identify({ __typename: 'Comment', id: commentId }) });
+            cache.gc();
+
+            // Actualizamos la relación en el Post para el conteo de comentarios
+            if (postId) {
+                cache.modify({
+                    id: cache.identify({ __typename: 'Post', id: postId }),
+                    fields: {
+                        comments(existingRefs = [], { readField }) {
+                            return existingRefs.filter((ref: any) => readField('id', ref) !== commentId);
+                        }
+                    }
                 });
             }
-
-            // 2. Actualizar el Post para que baje el contador
-            cache.modify({
-                id: cache.identify({ __typename: 'Post', id: postId }),
-                fields: {
-                    comments(existingRefs = [], { readField }) {
-                        return existingRefs.filter((ref: any) => readField('id', ref) !== commentId);
-                    }
-                }
-            });
         }
     });
 
     const handleDeleteComment = (id: string) => {
-        setSelectedCommentId(id);
+        // El id ya viene en selectedCommentData.id, pero lo recibimos por si acaso desde el modal
         setIsDeleteConfirmVisible(true);
     };
 
     const onConfirmDelete = async () => {
-        if (!selectedCommentId) return;
+        if (!selectedCommentData?.id) return;
         try {
             setIsDeleteConfirmVisible(false);
-            await deleteComment({ variables: { id: selectedCommentId } });
+            await deleteComment({ variables: { id: selectedCommentData.id } });
         } catch (e) {
             console.error('Error al eliminar comentario:', e);
             Alert.alert('Error', 'No se pudo eliminar el comentario');
         }
+    };
+
+    const handleReport = (id: string) => {
+        Alert.alert('Reportar', 'Gracias por tu reporte. Lo revisaremos pronto.');
     };
 
     const [updateComment, { loading: updating }] = useMutation(UPDATE_COMMENT);
@@ -291,6 +277,11 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
     const handleCancelEdit = () => {
         setContent('');
         setEditingCommentId(null);
+        Keyboard.dismiss();
+    };
+
+    const handleCancelReply = () => {
+        setReplyingTo(null);
         Keyboard.dismiss();
     };
 
@@ -312,6 +303,9 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                             content: commentText,
                             createdAt: originalComment?.createdAt || new Date().toISOString(),
                             updatedAt: new Date().toISOString(),
+                            likesCount: originalComment?.likesCount || 0,
+                            isLikedByMe: originalComment?.isLikedByMe || false,
+                            replies: originalComment?.replies || [],
                         }
                     },
                     update(cache, { data: { updateComment: updated } }) {
@@ -337,7 +331,11 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                 });
             } else {
                 await createComment({
-                    variables: { postId, content: commentText },
+                    variables: { 
+                        postId, 
+                        content: commentText,
+                        parentId: replyingTo?.id 
+                    },
                     optimisticResponse: {
                         createComment: {
                             __typename: 'Comment',
@@ -345,6 +343,9 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                             content: commentText,
                             createdAt: new Date().toISOString(),
                             updatedAt: new Date().toISOString(),
+                            parentId: replyingTo?.id || null,
+                            likesCount: 0,
+                            isLikedByMe: false,
                             user: {
                                 __typename: 'User',
                                 id: currentUser.id,
@@ -353,6 +354,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                                 lastName: currentUser.lastName,
                                 photoUrl: currentUser.photoUrl || null,
                             },
+                            replies: [],
                         },
                     },
                 });
@@ -360,6 +362,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
             
             setContent('');
             setEditingCommentId(null);
+            setReplyingTo(null);
             Keyboard.dismiss();
         } catch (e) {
             console.error(e);
@@ -373,14 +376,16 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
             key={item.id}
             item={item}
             currentUser={currentUser}
-            onLongPress={() => {
-                const authorId = item.user?.id;
-                if (authorId === currentUser?.id) {
-                    setSelectedCommentId(item.id);
-                    setIsOptionsModalVisible(true);
-                }
+            onLongPress={(pressedItem, isReply) => {
+                const isMine = pressedItem.user?.id === currentUser?.id;
+                setSelectedCommentData({ id: pressedItem.id, isMine, isReply });
+                setIsOptionsModalVisible(true);
             }}
             onNavigateToProfile={navigateToProfile}
+            onReply={(id: string, name: string) => {
+                setReplyingTo({ id, name });
+                setTimeout(() => inputRef.current?.focus(), 100);
+            }}
         />
     );
 
@@ -568,6 +573,17 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                             </View>
                         )}
 
+                        {replyingTo && (
+                            <View style={[styles.replyBar, { borderTopColor: colors.border }]}>
+                                <Text style={[styles.replyBarText, { color: colors.textSecondary }]}>
+                                    Respondiendo a <Text style={{ fontWeight: 'bold' }}>{replyingTo.name}</Text>
+                                </Text>
+                                <TouchableOpacity onPress={handleCancelReply} style={styles.cancelReplyBtn}>
+                                    <Ionicons name="close-circle" size={20} color={colors.primary} />
+                                </TouchableOpacity>
+                            </View>
+                        )}
+
                         <View style={[styles.inputContainer, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
                             <TextInput
                                 ref={inputRef}
@@ -596,7 +612,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
 
             <CommentOptionsModal
                 visible={isOptionsModalVisible}
-                commentId={selectedCommentId}
+                commentData={selectedCommentData}
                 onClose={() => setIsOptionsModalVisible(false)}
                 onEdit={(id) => {
                     const commentToEdit = data?.getCommentsByPost?.find((c: any) => c.id === id);
@@ -610,6 +626,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                     }
                 }}
                 onDelete={handleDeleteComment}
+                onReport={handleReport}
             />
 
             <ConfirmationModal
@@ -774,5 +791,20 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     cancelEditText: {
         fontSize: 13,
         fontWeight: 'bold',
+    },
+    replyBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        backgroundColor: isDark ? 'rgba(255,101,36,0.08)' : 'rgba(255,101,36,0.05)',
+        borderTopWidth: StyleSheet.hairlineWidth,
+    },
+    replyBarText: {
+        fontSize: 13,
+    },
+    cancelReplyBtn: {
+        padding: 4,
     },
 });

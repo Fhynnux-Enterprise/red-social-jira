@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { Comment } from './entities/comment.entity';
 import { CommentLike } from './entities/comment-like.entity';
 
@@ -13,11 +13,12 @@ export class CommentsService {
         private commentLikeRepository: Repository<CommentLike>,
     ) {}
 
-    async createComment(postId: string, content: string, userId: string): Promise<Comment> {
+    async createComment(postId: string, content: string, userId: string, parentId?: string): Promise<Comment> {
         const comment = this.commentRepository.create({
             postId,
             content,
             userId,
+            parentId,
         });
         const saved = await this.commentRepository.save(comment);
         const result = await this.commentRepository.findOne({
@@ -29,11 +30,20 @@ export class CommentsService {
 
     async getCommentsByPost(postId: string, userId?: string): Promise<Comment[]> {
         const comments = await this.commentRepository.find({
-            where: { postId },
+            where: { postId, parentId: IsNull() },
             relations: ['user', 'likes'],
             order: { createdAt: 'DESC' },
         });
         return comments.map(comment => this.mapComment(comment, userId));
+    }
+
+    async getReplies(commentId: string, userId?: string): Promise<Comment[]> {
+        const replies = await this.commentRepository.find({
+            where: { parentId: commentId },
+            relations: ['user', 'likes'],
+            order: { createdAt: 'ASC' },
+        });
+        return replies.map(reply => this.mapComment(reply, userId));
     }
 
     async deleteComment(id: string, userId: string): Promise<boolean> {

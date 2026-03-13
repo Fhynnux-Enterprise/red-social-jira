@@ -16,25 +16,44 @@ export const GET_COMMENTS = gql`
         lastName
         photoUrl
       }
+      replies {
+        id
+        content
+        createdAt
+        updatedAt
+        likesCount
+        isLikedByMe
+        user {
+          id
+          username
+          firstName
+          lastName
+          photoUrl
+        }
+      }
     }
   }
 `;
 
 export const CREATE_COMMENT = gql`
-  mutation CreateComment($postId: String!, $content: String!) {
-    createComment(postId: $postId, content: $content) {
+  mutation CreateComment($postId: String!, $content: String!, $parentId: String) {
+    createComment(postId: $postId, content: $content, parentId: $parentId) {
       id
       content
       createdAt
       updatedAt
       likesCount
       isLikedByMe
+      parentId
       user {
         id
         username
         firstName
         lastName
         photoUrl
+      }
+      replies {
+        id
       }
     }
   }
@@ -55,6 +74,9 @@ export const UPDATE_COMMENT = gql`
       updatedAt
       likesCount
       isLikedByMe
+      replies {
+        id
+      }
     }
   }
 `;

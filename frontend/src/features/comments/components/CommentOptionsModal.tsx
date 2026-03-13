@@ -11,22 +11,24 @@ import { useTheme } from '../../../theme/ThemeContext';
 
 interface CommentOptionsModalProps {
     visible: boolean;
-    commentId: string | null;
+    commentData: { id: string, isMine: boolean, isReply: boolean } | null;
     onClose: () => void;
     onEdit: (id: string) => void;
     onDelete: (id: string) => void;
+    onReport: (id: string) => void;
 }
 
 export default function CommentOptionsModal({
     visible,
-    commentId,
+    commentData,
     onClose,
     onEdit,
     onDelete,
+    onReport,
 }: CommentOptionsModalProps) {
     const { colors } = useTheme();
 
-    if (!commentId) return null;
+    if (!commentData) return null;
 
     return (
         <Modal
@@ -41,25 +43,56 @@ export default function CommentOptionsModal({
                         <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
                             <Text style={[styles.title, { color: colors.text }]}>Opciones</Text>
                             
-                            <TouchableOpacity 
-                                style={[styles.button, { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]} 
-                                onPress={() => {
-                                    onEdit(commentId);
-                                    onClose();
-                                }}
-                            >
-                                <Text style={[styles.buttonText, { color: colors.text }]}>Editar</Text>
-                            </TouchableOpacity>
+                            {/* Caso 1: Mi comentario RAÍZ (Editar, Eliminar) */}
+                            {commentData.isMine && !commentData.isReply && (
+                                <>
+                                    <TouchableOpacity 
+                                        style={[styles.button, { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]} 
+                                        onPress={() => {
+                                            onEdit(commentData.id);
+                                            onClose();
+                                        }}
+                                    >
+                                        <Text style={[styles.buttonText, { color: colors.text }]}>Editar</Text>
+                                    </TouchableOpacity>
 
-                            <TouchableOpacity 
-                                style={[styles.button, { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]} 
-                                onPress={() => {
-                                    onDelete(commentId);
-                                    onClose();
-                                }}
-                            >
-                                <Text style={[styles.buttonText, { color: '#FF3B30', fontWeight: 'bold' }]}>Eliminar</Text>
-                            </TouchableOpacity>
+                                    <TouchableOpacity 
+                                        style={[styles.button, { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]} 
+                                        onPress={() => {
+                                            onDelete(commentData.id);
+                                            onClose();
+                                        }}
+                                    >
+                                        <Text style={[styles.buttonText, { color: '#FF3B30', fontWeight: 'bold' }]}>Eliminar</Text>
+                                    </TouchableOpacity>
+                                </>
+                            )}
+
+                            {/* Caso 2: Mi RESPUESTA (Solo Eliminar) */}
+                            {commentData.isMine && commentData.isReply && (
+                                <TouchableOpacity 
+                                    style={[styles.button, { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]} 
+                                    onPress={() => {
+                                        onDelete(commentData.id);
+                                        onClose();
+                                    }}
+                                >
+                                    <Text style={[styles.buttonText, { color: '#FF3B30', fontWeight: 'bold' }]}>Eliminar</Text>
+                                </TouchableOpacity>
+                            )}
+
+                            {/* Caso 3: Comentario ajeno (Reportar) */}
+                            {!commentData.isMine && (
+                                <TouchableOpacity 
+                                    style={[styles.button, { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]} 
+                                    onPress={() => {
+                                        onReport(commentData.id);
+                                        onClose();
+                                    }}
+                                >
+                                    <Text style={[styles.buttonText, { color: '#FF9500' }]}>Reportar</Text>
+                                </TouchableOpacity>
+                            )}
 
                             <TouchableOpacity 
                                 style={styles.button} 
