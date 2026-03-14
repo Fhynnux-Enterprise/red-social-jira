@@ -34,7 +34,7 @@ export default function ProfileScreen() {
     const [editingPostContent, setEditingPostContent] = useState<string>('');
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<any>(null);
-    const [selectedPostForComments, setSelectedPostForComments] = useState<any | null>(null);
+    const [selectedPostForComments, setSelectedPostForComments] = useState<{ post: any, minimize: boolean } | null>(null);
     const insets = useSafeAreaInsets();
 
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
@@ -254,7 +254,7 @@ export default function ProfileScreen() {
                                     item={{ ...post, author: userData }}
                                     currentUserId={isMyProfile ? userData.id : undefined}
                                     onOptionsPress={handleOptionsPress}
-                                    onOpenComments={() => setSelectedPostForComments({ ...post, author: userData })}
+                                    onOpenComments={(_, minimize) => setSelectedPostForComments({ post: { ...post, author: userData }, minimize: !!minimize })}
                                 />
                             </View>
                         ))
@@ -356,8 +356,9 @@ export default function ProfileScreen() {
             {/* Modal de Comentarios */}
             <CommentsModal 
                 visible={!!selectedPostForComments} 
-                post={selectedPostForComments} 
+                post={selectedPostForComments?.post} 
                 onClose={() => setSelectedPostForComments(null)} 
+                initialMinimized={selectedPostForComments?.minimize}
             />
 
         </SafeAreaView>

@@ -27,7 +27,7 @@ export default function FeedScreen() {
 
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<any>(null);
-    const [selectedPostForComments, setSelectedPostForComments] = useState<any | null>(null);
+    const [selectedPostForComments, setSelectedPostForComments] = useState<{ post: any, minimize: boolean } | null>(null);
 
     const { data, loading, error, refetch } = useQuery(GET_POSTS, {
         fetchPolicy: 'cache-and-network',
@@ -71,7 +71,7 @@ export default function FeedScreen() {
             item={item}
             currentUserId={userProfile?.id}
             onOptionsPress={handleOptionsPress}
-            onOpenComments={() => setSelectedPostForComments(item)}
+            onOpenComments={(_, minimize) => setSelectedPostForComments({ post: item, minimize: !!minimize })}
         />
     );
 
@@ -187,8 +187,9 @@ export default function FeedScreen() {
             {/* Modal de Comentarios */}
             <CommentsModal 
                 visible={!!selectedPostForComments} 
-                post={selectedPostForComments} 
+                post={selectedPostForComments?.post} 
                 onClose={() => setSelectedPostForComments(null)} 
+                initialMinimized={selectedPostForComments?.minimize}
             />
         </SafeAreaView>
     );

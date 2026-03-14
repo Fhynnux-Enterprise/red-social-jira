@@ -4,7 +4,12 @@ import {
     Image, ActivityIndicator, TouchableWithoutFeedback,
     Alert, Pressable, Keyboard, ScrollView, Modal,
     Dimensions, TextInput, PanResponder, Animated,
+    LayoutAnimation, UIManager
 } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { useNavigation } from '@react-navigation/native';
 import { useQuery, useMutation } from '@apollo/client';
 import { Ionicons } from '@expo/vector-icons';
@@ -49,9 +54,10 @@ export interface CommentsModalProps {
     visible: boolean;
     post: any | null;
     onClose: () => void;
+    initialMinimized?: boolean;
 }
 
-export default function CommentsModal({ visible, post, onClose }: CommentsModalProps) {
+export default function CommentsModal({ visible, post, onClose, initialMinimized = false }: CommentsModalProps) {
     const { colors, isDark } = useTheme();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const insets = useSafeAreaInsets();
@@ -63,12 +69,21 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
     const [isOptionsModalVisible, setIsOptionsModalVisible] = useState(false);
     const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
     const [replyingTo, setReplyingTo] = useState<{ id: string, name: string } | null>(null);
+    const [isMinimized, setIsMinimized] = useState(false);
     const inputRef = useRef<TextInput>(null);
     const postId = post?.id;
 
     const navigateToProfile = (userId: string) => {
         onClose();
         setTimeout(() => (navigation.navigate as any)('Profile', { userId }), 320);
+    };
+
+    const toggleMinimize = () => {
+        if (!isMinimized) {
+            Keyboard.dismiss();
+        }
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setIsMinimized(!isMinimized);
     };
 
     // ── Animación entrada/salida + drag ────────────────────────────────────
@@ -88,6 +103,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
     useEffect(() => {
         if (visible) {
             panY.setValue(SCREEN_HEIGHT);
+            setIsMinimized(initialMinimized);
             Animated.spring(panY, {
                 toValue: 0,
                 useNativeDriver: true,
@@ -95,7 +111,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                 speed: 14,
             }).start();
         }
-    }, [visible]);
+    }, [visible, initialMinimized]);
 
     // ── Teclado ────────────────────────────────────────────────────────────
     const keyboardOffset = useRef(new Animated.Value(Math.max(insets.bottom, 16))).current;
@@ -289,11 +305,11 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
         if (!content.trim() || !postId || !currentUser) return;
         try {
             const commentText = content.trim();
-            
+
             if (editingCommentId) {
                 // Buscamos el comentario original para mantener su createdAt en el optimisticResponse
                 const originalComment = data?.getCommentsByPost?.find((c: any) => c.id === editingCommentId);
-                
+
                 await updateComment({
                     variables: { id: editingCommentId, content: commentText },
                     optimisticResponse: {
@@ -310,7 +326,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                     },
                     update(cache, { data: { updateComment: updated } }) {
                         if (!updated || !postId) return;
-                        
+
                         // Forzamos la actualización de la lista de comentarios en el cache
                         const existing = cache.readQuery<{ getCommentsByPost: any[] }>({
                             query: GET_COMMENTS,
@@ -318,7 +334,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                         });
 
                         if (existing) {
-                            const newComments = existing.getCommentsByPost.map(c => 
+                            const newComments = existing.getCommentsByPost.map(c =>
                                 c.id === updated.id ? { ...c, content: updated.content } : c
                             );
                             cache.writeQuery({
@@ -331,10 +347,10 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                 });
             } else {
                 await createComment({
-                    variables: { 
-                        postId, 
+                    variables: {
+                        postId,
                         content: commentText,
-                        parentId: replyingTo?.id 
+                        parentId: replyingTo?.id
                     },
                     optimisticResponse: {
                         createComment: {
@@ -359,7 +375,7 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                     },
                 });
             }
-            
+
             setContent('');
             setEditingCommentId(null);
             setReplyingTo(null);
@@ -409,9 +425,11 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                 {/* Interior: drag translateY (native driver) */}
                 <Animated.View style={[{ flex: 1, gap: 8 }, { transform: [{ translateY: panY }] }]}>
 
+                    {isMinimized && <View style={{ flex: 1 }} />}
+
                     {/* ── BURBUJA PUBLICACIÓN ── */}
                     {post && (
-                        <View style={styles.postBubble}>
+                        <View style={[styles.postBubble, { maxHeight: isMinimized ? SCREEN_HEIGHT * 0.75 : SCREEN_HEIGHT * 0.35 }]}>
                             <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
                                 <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
                                 <TouchableOpacity
@@ -435,6 +453,11 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                                             {formatDate(post.createdAt)}{isEdited ? ' · Editado' : ''}
                                         </Text>
                                     </View>
+                                </TouchableOpacity>
+                                
+                                <TouchableOpacity onPress={closeWithAnimation} style={styles.postCloseBtn}
+                                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                                    <Ionicons name="close" size={24} color={colors.textSecondary} />
                                 </TouchableOpacity>
                             </View>
 
@@ -502,19 +525,30 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                         </View>
                     )}
 
+                    {isMinimized && <View style={{ flex: 1 }} />}
+
                     {/* ── BURBUJA COMENTARIOS ── */}
-                    <View style={[styles.commentsBubble, { backgroundColor: colors.surface }]}>
+                    <View style={[styles.commentsBubble, { backgroundColor: colors.surface }, isMinimized ? { flex: 0 } : { flex: 1 }]}>
 
                         <View style={[styles.commentsHeader, { borderBottomColor: colors.border }]} {...commentsHeaderPan.panHandlers}>
                             <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
+                            
+                            <TouchableOpacity onPress={toggleMinimize} style={styles.minimizeBtn}
+                                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                                <Ionicons name={isMinimized ? "chevron-forward" : "chevron-down"} size={24} color={colors.textSecondary} />
+                            </TouchableOpacity>
+
                             <Text style={[styles.headerTitle, { color: colors.text }]}>Comentarios</Text>
+                            
                             <TouchableOpacity onPress={closeWithAnimation} style={styles.closeBtn}
                                 hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
                                 <Ionicons name="close" size={24} color={colors.textSecondary} />
                             </TouchableOpacity>
                         </View>
 
-                        <ScrollView
+                        {!isMinimized && (
+                            <>
+                                <ScrollView
                             style={{ flex: 1 }}
                             contentContainerStyle={styles.listContainer}
                             showsVerticalScrollIndicator={false}
@@ -606,6 +640,8 @@ export default function CommentsModal({ visible, post, onClose }: CommentsModalP
                                 }
                             </TouchableOpacity>
                         </View>
+                            </>
+                        )}
                     </View>
                 </Animated.View>
             </Animated.View>
@@ -653,7 +689,6 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         right: 8,
     },
     postBubble: {
-        maxHeight: SCREEN_HEIGHT * 0.35,
         borderRadius: 24,
         overflow: 'hidden',
         elevation: 8,
@@ -670,11 +705,11 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         borderRightWidth: 1.5,
         borderRightColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
     },
-    postScrollContent: { 
-        paddingLeft: 16, 
-        paddingRight: 12, 
-        paddingTop: 10, 
-        paddingBottom: 16 
+    postScrollContent: {
+        paddingLeft: 16,
+        paddingRight: 12,
+        paddingTop: 10,
+        paddingBottom: 16
     },
     postHeader: {
         paddingTop: 14,
@@ -688,6 +723,7 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         alignItems: 'center',
         width: '100%',
         marginTop: 4,
+        paddingRight: 24,
     },
     postAuthorName: { fontWeight: 'bold', fontSize: 15, marginBottom: 2 },
     postDate: { fontSize: 12 },
@@ -736,6 +772,8 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         backgroundColor: colors.border,
     },
     headerTitle: { fontSize: 16, fontWeight: 'bold', marginTop: 4, color: colors.text },
+    postCloseBtn: { position: 'absolute', right: 14, top: 14, zIndex: 10 },
+    minimizeBtn: { position: 'absolute', left: 14, top: 12, zIndex: 10 },
     closeBtn: { position: 'absolute', right: 14, top: 12, zIndex: 10 },
     listContainer: { flexGrow: 1, padding: 14, paddingBottom: 8 },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 },

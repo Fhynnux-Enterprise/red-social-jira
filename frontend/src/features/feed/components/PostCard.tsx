@@ -13,7 +13,7 @@ export interface PostCardProps {
     item: any;
     currentUserId?: string;
     onOptionsPress?: (post: any) => void;
-    onOpenComments?: (postId: string) => void;
+    onOpenComments?: (postId: string, minimize?: boolean) => void;
     isModalView?: boolean;
     headerPanHandlers?: any;
     onScroll?: (event: any) => void;
@@ -142,7 +142,9 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
             </View>
 
             {/* ── Contenido ── */}
-            <Text style={styles.content}>{displayContent}</Text>
+            <TouchableOpacity activeOpacity={0.8} onPress={() => onOpenComments?.(item.id, true)}>
+                <Text style={styles.content}>{displayContent}</Text>
+            </TouchableOpacity>
             {isTruncatable && !isExpanded && (
                 <TouchableOpacity
                     onPress={() => setIsExpanded(true)}
@@ -184,7 +186,7 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
                 {/* Comentar */}
                 <TouchableOpacity
                     style={styles.actionBtn}
-                    onPress={() => onOpenComments?.(item.id)}
+                    onPress={() => onOpenComments?.(item.id, false)}
                     activeOpacity={0.7}
                 >
                     <Ionicons name="chatbubble-outline" size={19} color={colors.textSecondary} />
