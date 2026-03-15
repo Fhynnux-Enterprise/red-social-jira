@@ -27,7 +27,7 @@ export default function FeedScreen() {
 
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<any>(null);
-    const [selectedPostForComments, setSelectedPostForComments] = useState<{ post: any, minimize: boolean } | null>(null);
+    const [selectedPostForComments, setSelectedPostForComments] = useState<{ post: any, minimize: boolean, initialTab?: 'comments' | 'likes' } | null>(null);
 
     const { data, loading, error, refetch } = useQuery(GET_POSTS, {
         fetchPolicy: 'cache-and-network',
@@ -71,7 +71,7 @@ export default function FeedScreen() {
             item={item}
             currentUserId={userProfile?.id}
             onOptionsPress={handleOptionsPress}
-            onOpenComments={(_, minimize) => setSelectedPostForComments({ post: item, minimize: !!minimize })}
+            onOpenComments={(_, initialTab, minimize) => setSelectedPostForComments({ post: item, minimize: !!minimize, initialTab })}
         />
     );
 
@@ -89,7 +89,7 @@ export default function FeedScreen() {
                         style={{ flexDirection: 'row' }}
                         maskElement={
                             <View style={{ backgroundColor: 'transparent', flex: 1, justifyContent: 'center' }}>
-                                <Text style={styles.brandTitle}>Chunchi City</Text>
+                                <Text style={styles.brandTitle}>Chunchi City App</Text>
                             </View>
                         }
                     >
@@ -98,7 +98,7 @@ export default function FeedScreen() {
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
                         >
-                            <Text style={[styles.brandTitle, { opacity: 0 }]}>Chunchi City</Text>
+                            <Text style={[styles.brandTitle, { opacity: 0 }]}>Chunchi City App</Text>
                         </LinearGradient>
                     </MaskedView>
                 </View>
@@ -190,18 +190,19 @@ export default function FeedScreen() {
                 post={selectedPostForComments?.post} 
                 onClose={() => setSelectedPostForComments(null)} 
                 initialMinimized={selectedPostForComments?.minimize}
+                initialTab={selectedPostForComments?.initialTab}
                 onNextPost={() => {
                     const posts = data?.getPosts || [];
                     const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     if (currentIndex !== -1 && currentIndex < posts.length - 1) {
-                        setSelectedPostForComments({ post: posts[currentIndex + 1], minimize: !!selectedPostForComments?.minimize });
+                        setSelectedPostForComments({ post: posts[currentIndex + 1], minimize: !!selectedPostForComments?.minimize, initialTab: selectedPostForComments?.initialTab });
                     }
                 }}
                 onPrevPost={() => {
                     const posts = data?.getPosts || [];
                     const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     if (currentIndex > 0) {
-                        setSelectedPostForComments({ post: posts[currentIndex - 1], minimize: !!selectedPostForComments?.minimize });
+                        setSelectedPostForComments({ post: posts[currentIndex - 1], minimize: !!selectedPostForComments?.minimize, initialTab: selectedPostForComments?.initialTab });
                     }
                 }}
             />

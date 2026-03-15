@@ -55,11 +55,12 @@ export interface CommentsModalProps {
     post: any | null;
     onClose: () => void;
     initialMinimized?: boolean;
+    initialTab?: 'comments' | 'likes';
     onNextPost?: () => void;
     onPrevPost?: () => void;
 }
 
-export default function CommentsModal({ visible, post, onClose, initialMinimized = false, onNextPost, onPrevPost }: CommentsModalProps) {
+export default function CommentsModal({ visible, post, onClose, initialMinimized = false, initialTab = 'comments', onNextPost, onPrevPost }: CommentsModalProps) {
     const { colors, isDark } = useTheme();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const insets = useSafeAreaInsets();
@@ -72,6 +73,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
     const [replyingTo, setReplyingTo] = useState<{ id: string, name: string } | null>(null);
     const [isMinimized, setIsMinimized] = useState(false);
+    const [activeTab, setActiveTab] = useState<'comments' | 'likes'>(initialTab);
     const inputRef = useRef<TextInput>(null);
     const postId = post?.id;
 
@@ -134,6 +136,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         if (visible) {
             panY.setValue(SCREEN_HEIGHT);
             setIsMinimized(initialMinimized);
+            setActiveTab(initialTab);
             Animated.spring(panY, {
                 toValue: 0,
                 useNativeDriver: true,
@@ -141,7 +144,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                 speed: 14,
             }).start();
         }
-    }, [visible, initialMinimized]);
+    }, [visible, initialMinimized, initialTab]);
 
     // ── Teclado ────────────────────────────────────────────────────────────
     const keyboardOffset = useRef(new Animated.Value(Math.max(insets.bottom, 16))).current;
@@ -547,23 +550,23 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                 {(localCount > 0 || commentsCount > 0) && (
                                     <View style={styles.statsRow}>
                                         {/* Comentarios a la izquierda */}
-                                        <View>
+                                        <TouchableOpacity onPress={() => { setActiveTab('comments'); if (isMinimized) toggleMinimize(); }}>
                                             {commentsCount > 0 && (
                                                 <Text style={[styles.statsText, { color: colors.textSecondary }]}>
                                                     {commentsCount} {commentsCount === 1 ? 'comentario' : 'comentarios'}
                                                 </Text>
                                             )}
-                                        </View>
+                                        </TouchableOpacity>
 
                                         {/* Likes a la derecha */}
-                                        <View>
+                                        <TouchableOpacity onPress={() => { setActiveTab('likes'); if (isMinimized) toggleMinimize(); }}>
                                             {localCount > 0 && (
                                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                                     <Ionicons name="heart" size={15} color="#FF3B30" />
                                                     <Text style={[styles.statsText, { color: colors.textSecondary }]}> {localCount}</Text>
                                                 </View>
                                             )}
-                                        </View>
+                                        </TouchableOpacity>
                                     </View>
                                 )}
                                 <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
@@ -574,6 +577,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                         localLiked && { fontWeight: 'bold' }]}>Me gusta</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity style={styles.actionBtn} onPress={() => {
+                                        setActiveTab('comments');
                                         if (isMinimized) {
                                             toggleMinimize();
                                         }
@@ -589,26 +593,26 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                     {/* Vacío inferior que mantiene la simetría */}
                     {isMinimized && <View style={{ flex: 1 }} pointerEvents="none" />}
 
-                    {/* ── BURBUJA COMENTARIOS ── */}
-                    <View style={[styles.commentsBubble, { backgroundColor: colors.surface }, isMinimized ? { flex: 0 } : { flex: 1 }]}>
+                    {/* ── BUBBLE COMENTARIOS NORMAL (Visible cuando maximizado) ── */}
+                    {!isMinimized && (
+                        <View style={[styles.commentsBubble, { backgroundColor: colors.surface, flex: 1 }]}>
 
-                        <View style={[styles.commentsHeader, { borderBottomColor: colors.border }]} {...commentsHeaderPan.panHandlers}>
-                            <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
-                            
-                            <TouchableOpacity onPress={toggleMinimize} style={styles.minimizeBtn}
-                                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                                <Ionicons name={isMinimized ? "chevron-forward" : "chevron-down"} size={24} color={colors.textSecondary} />
-                            </TouchableOpacity>
+                            <View style={[styles.commentsHeader, { borderBottomColor: colors.border }]} {...commentsHeaderPan.panHandlers}>
+                                <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
+                                
+                                <TouchableOpacity onPress={toggleMinimize} style={styles.minimizeBtn}
+                                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                                    <Ionicons name="chevron-down" size={24} color={colors.textSecondary} />
+                                </TouchableOpacity>
 
-                            <Text style={[styles.headerTitle, { color: colors.text }]}>Comentarios</Text>
-                            
-                            <TouchableOpacity onPress={closeWithAnimation} style={styles.closeBtn}
-                                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                                <Ionicons name="close" size={24} color={colors.textSecondary} />
-                            </TouchableOpacity>
-                        </View>
+                                <Text style={[styles.headerTitle, { color: colors.text }]}>{activeTab === 'comments' ? 'Comentarios' : 'Me gusta'}</Text>
+                                
+                                <TouchableOpacity onPress={closeWithAnimation} style={styles.closeBtn}
+                                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                                    <Ionicons name="close" size={24} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                            </View>
 
-                        {!isMinimized && (
                             <Animated.View style={{ flex: 1 }} {...commentsListSwipeDownPan.panHandlers}>
                                 <ScrollView
                             style={{ flex: 1 }}
@@ -635,35 +639,68 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                 }
                             }}
                         >
-                            {loading && !data ? (
-                                <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
-                                    <ActivityIndicator size="large" color={colors.primary} />
-                                </View>
-                            ) : error ? (
-                                <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
-                                    <Text style={{ color: colors.error }}>Error cargando comentarios</Text>
-                                    <TouchableOpacity onPress={() => refetch()} style={{ marginTop: 10 }}>
-                                        <Text style={{ color: colors.primary }}>Reintentar</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            ) : (!data?.getCommentsByPost || data.getCommentsByPost.length === 0) ? (
-                                <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
-                                    <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                                        No hay comentarios aún. ¡Sé el primero!
-                                    </Text>
-                                </View>
+                            {activeTab === 'likes' ? (
+                                (!post?.likes || post.likes.length === 0) ? (
+                                    <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
+                                        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                                            Nadie le ha dado like a esta publicación aún.
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    <>
+                                        {[...post.likes]
+                                            .sort((a, b) => new Date(b.createdAt || Date.now()).getTime() - new Date(a.createdAt || Date.now()).getTime())
+                                            .map((like: any) => (
+                                                <TouchableOpacity key={like.id || like.user?.id} style={[styles.likeItemContainer, { borderBottomColor: colors.border }]} onPress={() => navigateToProfile(like.user?.id)}>
+                                                    <View style={[styles.likeAvatarWrap, { borderColor: 'rgba(255, 101, 36, 0.35)', borderWidth: 1.5 }]}>
+                                                        {like.user?.photoUrl ? (
+                                                            <Image source={{ uri: like.user.photoUrl }} style={styles.likeAvatarImg} />
+                                                        ) : (
+                                                            <Text style={styles.likeAvatarInitials}>
+                                                                {like.user?.firstName?.[0] || ''}{like.user?.lastName?.[0] || ''}
+                                                            </Text>
+                                                        )}
+                                                    </View>
+                                                    <Text style={[styles.likeUserName, { color: colors.text }]}>
+                                                        {like.user?.firstName} {like.user?.lastName}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            ))
+                                        }
+                                        <View style={{ flex: 1, minHeight: 80 }} {...emptyAreaPan.panHandlers} />
+                                    </>
+                                )
                             ) : (
-                                <>
-                                    {[...(data?.getCommentsByPost || [])]
-                                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                                        .map((item: any) => renderComment(item))}
-                                    {/* Zona arrastrable en espacio vacío bajo los últimos comentarios */}
-                                    <View style={{ flex: 1, minHeight: 80 }} {...emptyAreaPan.panHandlers} />
-                                </>
+                                loading && !data ? (
+                                    <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
+                                        <ActivityIndicator size="large" color={colors.primary} />
+                                    </View>
+                                ) : error ? (
+                                    <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
+                                        <Text style={{ color: colors.error }}>Error cargando comentarios</Text>
+                                        <TouchableOpacity onPress={() => refetch()} style={{ marginTop: 10 }}>
+                                            <Text style={{ color: colors.primary }}>Reintentar</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                ) : (!data?.getCommentsByPost || data.getCommentsByPost.length === 0) ? (
+                                    <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
+                                        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                                            No hay comentarios aún. ¡Sé el primero!
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    <>
+                                        {[...(data?.getCommentsByPost || [])]
+                                            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                                            .map((item: any) => renderComment(item))}
+                                        {/* Zona arrastrable en espacio vacío bajo los últimos comentarios */}
+                                        <View style={{ flex: 1, minHeight: 80 }} {...emptyAreaPan.panHandlers} />
+                                    </>
+                                )
                             )}
                         </ScrollView>
 
-                        {editingCommentId && (
+                        {activeTab === 'comments' && editingCommentId && (
                             <View style={[styles.editingBar, { borderTopColor: colors.border }]}>
                                 <Text style={[styles.editingText, { color: colors.textSecondary }]}>
                                     Editando comentario...
@@ -674,7 +711,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                             </View>
                         )}
 
-                        {replyingTo && (
+                        {activeTab === 'comments' && replyingTo && (
                             <View style={[styles.replyBar, { borderTopColor: colors.border }]}>
                                 <Text style={[styles.replyBarText, { color: colors.textSecondary }]}>
                                     Respondiendo a <Text style={{ fontWeight: 'bold' }}>{replyingTo.name}</Text>
@@ -685,31 +722,58 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                             </View>
                         )}
 
-                        <View style={[styles.inputContainer, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
-                            <TextInput
-                                ref={inputRef}
-                                style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-                                placeholder="Escribe un comentario..."
-                                placeholderTextColor={colors.textSecondary}
-                                value={content}
-                                onChangeText={setContent}
-                                multiline
-                                maxLength={500}
-                            />
-                            <TouchableOpacity
-                                style={[styles.sendButton, { opacity: content.trim() ? 1 : 0.5, backgroundColor: colors.primary }]}
-                                onPress={handleSend}
-                                disabled={!content.trim() || creating || updating}
-                            >
-                                {creating || updating
-                                    ? <ActivityIndicator size="small" color="#FFF" />
-                                    : <Ionicons name={editingCommentId ? "checkmark" : "send"} size={editingCommentId ? 22 : 18} color="#FFF" />
-                                }
-                            </TouchableOpacity>
-                        </View>
-                                </Animated.View>
+                        {activeTab === 'comments' && (
+                            <View style={[styles.inputContainer, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
+                                <TextInput
+                                    ref={inputRef}
+                                    style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                                    placeholder="Escribe un comentario..."
+                                    placeholderTextColor={colors.textSecondary}
+                                    value={content}
+                                    onChangeText={setContent}
+                                    multiline
+                                    maxLength={500}
+                                />
+                                <TouchableOpacity
+                                    style={[styles.sendButton, { opacity: content.trim() ? 1 : 0.5, backgroundColor: colors.primary }]}
+                                    onPress={handleSend}
+                                    disabled={!content.trim() || creating || updating}
+                                >
+                                    {creating || updating
+                                        ? <ActivityIndicator size="small" color="#FFF" />
+                                        : <Ionicons name={editingCommentId ? "checkmark" : "send"} size={editingCommentId ? 22 : 18} color="#FFF" />
+                                    }
+                                </TouchableOpacity>
+                            </View>
                         )}
-                    </View>
+                            </Animated.View>
+                        </View>
+                    )}
+
+                    {/* ── NAV BAR INFERIOR CUADRADA NEGRA (Minimizado) ── */}
+                    {isMinimized && (
+                        <View style={{
+                            backgroundColor: '#000000',
+                            marginLeft: -8,
+                            marginRight: -8,
+                            marginBottom: -Math.max(insets.bottom, 16),
+                            paddingBottom: Math.max(insets.bottom, 16) + 12,
+                            paddingTop: 16,
+                            borderTopWidth: StyleSheet.hairlineWidth,
+                            borderTopColor: '#222222'
+                        }}>
+                            <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-around', alignItems: 'center' }}>
+                                <TouchableOpacity onPress={() => { setActiveTab('comments'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
+                                    <Ionicons name="chatbubbles-outline" size={26} color={activeTab === 'comments' ? colors.primary : "#FFFFFF"} />
+                                    <Text style={{ color: activeTab === 'comments' ? colors.primary : '#FFFFFF', marginTop: 4, fontSize: 13, fontWeight: '500' }}>Comentarios</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => { setActiveTab('likes'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
+                                    <Ionicons name="heart-outline" size={26} color={activeTab === 'likes' ? colors.primary : "#FFFFFF"} />
+                                    <Text style={{ color: activeTab === 'likes' ? colors.primary : '#FFFFFF', marginTop: 4, fontSize: 13, fontWeight: '500' }}>Likes</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    )}
                 </Animated.View>
             </Animated.View>
 
@@ -911,5 +975,32 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     },
     cancelReplyBtn: {
         padding: 4,
+    },
+    likeItemContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    likeAvatarWrap: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: 'rgba(255, 101, 36, 0.12)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+        overflow: 'hidden',
+    },
+    likeAvatarImg: { width: '100%', height: '100%' },
+    likeAvatarInitials: {
+        color: '#FF6524',
+        fontWeight: 'bold',
+        fontSize: 16,
+    },
+    likeUserName: {
+        fontSize: 16,
+        fontWeight: '600',
     },
 });

@@ -34,7 +34,7 @@ export default function ProfileScreen() {
     const [editingPostContent, setEditingPostContent] = useState<string>('');
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<any>(null);
-    const [selectedPostForComments, setSelectedPostForComments] = useState<{ post: any, minimize: boolean } | null>(null);
+    const [selectedPostForComments, setSelectedPostForComments] = useState<{ post: any, minimize: boolean, initialTab?: 'comments' | 'likes' } | null>(null);
     const insets = useSafeAreaInsets();
 
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
@@ -254,7 +254,7 @@ export default function ProfileScreen() {
                                     item={{ ...post, author: userData }}
                                     currentUserId={isMyProfile ? userData.id : undefined}
                                     onOptionsPress={handleOptionsPress}
-                                    onOpenComments={(_, minimize) => setSelectedPostForComments({ post: { ...post, author: userData }, minimize: !!minimize })}
+                                    onOpenComments={(_, initialTab, minimize) => setSelectedPostForComments({ post: { ...post, author: userData }, minimize: !!minimize, initialTab })}
                                 />
                             </View>
                         ))
@@ -353,24 +353,24 @@ export default function ProfileScreen() {
                 }}
             />
 
-            {/* Modal de Comentarios */}
             <CommentsModal 
                 visible={!!selectedPostForComments} 
                 post={selectedPostForComments?.post} 
                 onClose={() => setSelectedPostForComments(null)} 
                 initialMinimized={selectedPostForComments?.minimize}
+                initialTab={selectedPostForComments?.initialTab}
                 onNextPost={() => {
                     const posts = userData?.posts || [];
                     const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     if (currentIndex !== -1 && currentIndex < posts.length - 1) {
-                        setSelectedPostForComments({ post: { ...posts[currentIndex + 1], author: userData }, minimize: !!selectedPostForComments?.minimize });
+                        setSelectedPostForComments({ post: { ...posts[currentIndex + 1], author: userData }, minimize: !!selectedPostForComments?.minimize, initialTab: selectedPostForComments?.initialTab });
                     }
                 }}
                 onPrevPost={() => {
                     const posts = userData?.posts || [];
                     const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     if (currentIndex > 0) {
-                        setSelectedPostForComments({ post: { ...posts[currentIndex - 1], author: userData }, minimize: !!selectedPostForComments?.minimize });
+                        setSelectedPostForComments({ post: { ...posts[currentIndex - 1], author: userData }, minimize: !!selectedPostForComments?.minimize, initialTab: selectedPostForComments?.initialTab });
                     }
                 }}
             />

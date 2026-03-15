@@ -13,7 +13,7 @@ export interface PostCardProps {
     item: any;
     currentUserId?: string;
     onOptionsPress?: (post: any) => void;
-    onOpenComments?: (postId: string, minimize?: boolean) => void;
+    onOpenComments?: (postId: string, initialTab?: 'comments' | 'likes', minimize?: boolean) => void;
     isModalView?: boolean;
     headerPanHandlers?: any;
     onScroll?: (event: any) => void;
@@ -142,7 +142,7 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
             </View>
 
             {/* ── Contenido ── */}
-            <TouchableOpacity activeOpacity={0.8} onPress={() => onOpenComments?.(item.id, true)}>
+            <TouchableOpacity activeOpacity={0.8} onPress={() => onOpenComments?.(item.id, 'comments', true)}>
                 <Text style={styles.content}>{displayContent}</Text>
             </TouchableOpacity>
             {isTruncatable && !isExpanded && (
@@ -170,23 +170,27 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
             {/* ── Actions + stats ── */}
             <View style={styles.actionsRow}>
                 {/* Like */}
-                <TouchableOpacity style={styles.actionBtn} onPress={handleLikePress} activeOpacity={0.7}>
-                    <Ionicons
-                        name={localLiked ? 'heart' : 'heart-outline'}
-                        size={21}
-                        color={localLiked ? '#FF3B30' : colors.textSecondary}
-                    />
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <TouchableOpacity style={styles.actionBtn} onPress={handleLikePress} activeOpacity={0.7}>
+                        <Ionicons
+                            name={localLiked ? 'heart' : 'heart-outline'}
+                            size={21}
+                            color={localLiked ? '#FF3B30' : colors.textSecondary}
+                        />
+                    </TouchableOpacity>
                     {localCount > 0 && (
-                        <Text style={[styles.actionCount, localLiked && { color: '#FF3B30' }]}>
-                            {localCount}
-                        </Text>
+                        <TouchableOpacity onPress={() => onOpenComments?.(item.id, 'likes', false)} activeOpacity={0.7} style={{ marginLeft: -8, paddingHorizontal: 8, height: 36, justifyContent: 'center' }}>
+                            <Text style={[styles.actionCount, localLiked && { color: '#FF3B30' }]}>
+                                {localCount}
+                            </Text>
+                        </TouchableOpacity>
                     )}
-                </TouchableOpacity>
+                </View>
 
                 {/* Comentar */}
                 <TouchableOpacity
                     style={styles.actionBtn}
-                    onPress={() => onOpenComments?.(item.id, false)}
+                    onPress={() => onOpenComments?.(item.id, 'comments', false)}
                     activeOpacity={0.7}
                 >
                     <Ionicons name="chatbubble-outline" size={19} color={colors.textSecondary} />
