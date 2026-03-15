@@ -4,7 +4,7 @@ import {
     Image, ActivityIndicator, TouchableWithoutFeedback,
     Alert, Pressable, Keyboard, ScrollView, Modal,
     Dimensions, TextInput, PanResponder, Animated,
-    LayoutAnimation, UIManager
+    LayoutAnimation, UIManager, BackHandler
 } from 'react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -60,7 +60,6 @@ export interface CommentsModalProps {
     onNextPost?: () => void;
     onPrevPost?: () => void;
 }
-
 export default function CommentsModal({ visible, post, onClose, initialMinimized = false, initialTab = 'comments', onNextPost, onPrevPost }: CommentsModalProps) {
     const { colors, isDark } = useTheme();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
@@ -94,9 +93,14 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         if (!isMinimized) {
             Keyboard.dismiss();
         }
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        if (bubbleAnimReady.current) {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
+        }
         setIsMinimized(!isMinimized);
     };
+
+    // Flag: solo habilita LayoutAnimation tras la animación de entrada del modal
+    const bubbleAnimReady = useRef(false);
 
     // ── PanResponder para el fondo transparente (Swipe para Next/Prev/Close) ──
     const backgroundSwipePan = useRef(PanResponder.create({
@@ -107,14 +111,16 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
             if (isTap) {
                 // Es un toque seco (Tap), cierra la pantalla
                 closeWithAnimation();
-            } else if (g.dx > 60 && Math.abs(g.dy) < 60) {
-                // Deslizar fuertemente de IZQUIERDA a DERECHA -> Cerrar modal
+            } else if (g.dx < -60 && Math.abs(g.dy) < 60) {
+                // Deslizar fuertemente de DERECHA a IZQUIERDA -> Cerrar modal
                 closeWithAnimation();
             } else if (g.dy < -30 || g.vy < -0.3) {
                 // Desplazamiento hacia ARRIBA (Dedo de abajo a arriba) -> Siguiente post
+                lastSwipeDir.current = 'up';
                 callbacksRef.current.onNextPost?.();
             } else if (g.dy > 30 || g.vy > 0.3) {
                 // Desplazamiento hacia ABAJO (Dedo de arriba a abajo) -> Post anterior
+                lastSwipeDir.current = 'down';
                 callbacksRef.current.onPrevPost?.();
             }
         }
@@ -134,8 +140,33 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         });
     };
 
+    // ── Animación cambio de publicación ────────────────────────────────────
+    const postTransition = useRef(new Animated.Value(1)).current;
+    const lastSwipeDir = useRef<'up' | 'down'>('up');
+    const prevPostId = useRef(post?.id);
+
+    useEffect(() => {
+        if (visible && post?.id && prevPostId.current !== post.id) {
+            postTransition.setValue(0);
+            Animated.timing(postTransition, {
+                toValue: 1,
+                duration: 250,
+                useNativeDriver: true,
+            }).start();
+            prevPostId.current = post.id;
+        } else if (visible && post?.id) {
+            prevPostId.current = post.id;
+        }
+    }, [post?.id, visible, postTransition]);
+
+    const slideY = postTransition.interpolate({
+        inputRange: [0, 1],
+        outputRange: lastSwipeDir.current === 'down' ? [-40, 0] : [40, 0]
+    });
+
     useEffect(() => {
         if (visible) {
+            bubbleAnimReady.current = false;
             panY.setValue(SCREEN_HEIGHT);
             setIsMinimized(initialMinimized);
             setActiveTab(initialTab);
@@ -145,8 +176,23 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                 bounciness: 4,
                 speed: 14,
             }).start();
+            // Habilitar el spring effect interno solo después de que termina la entrada
+            const timer = setTimeout(() => {
+                bubbleAnimReady.current = true;
+            }, 400);
+            return () => clearTimeout(timer);
         }
     }, [visible, initialMinimized, initialTab]);
+
+    // ── Manejo del botón físico Back (Android) ────────────────────────────────
+    useEffect(() => {
+        if (!visible) return;
+        const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+            closeWithAnimation();
+            return true; // consume el evento para que no cierre la pantalla anterior
+        });
+        return () => sub.remove();
+    }, [visible]);
 
     // ── Teclado ────────────────────────────────────────────────────────────
     const keyboardOffset = useRef(new Animated.Value(Math.max(insets.bottom, 16))).current;
@@ -194,7 +240,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         onPanResponderRelease: (_, g) => {
             const shouldMinimize = g.dy > SCREEN_HEIGHT * 0.15 || g.vy > 0.8;
             if (shouldMinimize && !isMinimized) {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                if (bubbleAnimReady.current) LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
                 setIsMinimized(true);
                 Keyboard.dismiss();
             }
@@ -210,7 +256,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         onPanResponderRelease: (_, g) => {
             const shouldMinimize = g.dy > SCREEN_HEIGHT * 0.15 || g.vy > 0.8;
             if (shouldMinimize && !isMinimized) {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                if (bubbleAnimReady.current) LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
                 setIsMinimized(true);
                 Keyboard.dismiss();
             }
@@ -225,7 +271,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         onPanResponderRelease: (_, g) => {
             const shouldMinimize = g.dy > SCREEN_HEIGHT * 0.15 || g.vy > 0.8;
             if (shouldMinimize && !isMinimized) {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                if (bubbleAnimReady.current) LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
                 setIsMinimized(true);
                 Keyboard.dismiss();
             }
@@ -245,7 +291,8 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     // ── PanResponder para contenido corto en la publicación ─────────────────
     const shortContentPan = useRef(PanResponder.create({
         onMoveShouldSetPanResponder: (_, g) => {
-            // Solo actuar si es un contenido "corto" (no genera scroll propio suficiente) y es un drag vertical evidente
+            // Activar para swipe horizontal (cerrar) o vertical en contenido corto
+            if (g.dx < -15 && Math.abs(g.dy) < Math.abs(g.dx)) return true;
             if (postScrollContentHeight.current <= postScrollHeight.current + 5) {
                 return Math.abs(g.dy) > 15;
             }
@@ -254,11 +301,17 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         onPanResponderRelease: (_, g) => {
             const vy = g.vy;
             const dy = g.dy;
-            if (dy > 40 || vy > 0.5) {
+            const dx = g.dx;
+            // Swipe derecha a izquierda -> Cerrar modal
+            if (dx < -60 && Math.abs(dy) < 60) {
+                closeWithAnimation();
+            } else if (dy > 40 || vy > 0.5) {
                 // Hacia abajo -> Anterior
+                lastSwipeDir.current = 'down';
                 callbacksRef.current.onPrevPost?.();
             } else if (dy < -40 || vy < -0.5) {
                 // Hacia arriba -> Siguiente
+                lastSwipeDir.current = 'up';
                 callbacksRef.current.onNextPost?.();
             }
         }
@@ -498,7 +551,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         new Date(post.updatedAt).getTime() > new Date(post.createdAt).getTime() + 2000;
 
     return (
-        <Modal visible={visible} transparent animationType="none" onRequestClose={closeWithAnimation} statusBarTranslucent>
+        <Modal visible={visible} transparent animationType="none" onRequestClose={() => {}} statusBarTranslucent>
 
             {/* Este fondo atrapará los taps y los deslizamientos en toda su superficie libre */}
             <Animated.View
@@ -519,7 +572,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
 
                     {/* ── BURBUJA PUBLICACIÓN ── */}
                     {post && (
-                        <View style={[styles.postBubble, { maxHeight: isMinimized ? SCREEN_HEIGHT * 0.75 : SCREEN_HEIGHT * 0.35 }]}>
+                        <Animated.View style={[styles.postBubble, { maxHeight: isMinimized ? SCREEN_HEIGHT * 0.75 : SCREEN_HEIGHT * 0.35 }, { opacity: postTransition, transform: [{ translateY: slideY }] }]}>
                             <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
                                 <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
                                 <TouchableOpacity
@@ -574,17 +627,19 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                 onScrollEndDrag={(e) => {
                                     const endY = e.nativeEvent.contentOffset.y;
                                     const vy = e.nativeEvent.velocity?.y ?? 0;
-                                    
+
                                     // Drag hacia abajo desde arriba del todo -> Post Anterior
                                     if (postScrollDragStartY.current <= 5 && endY <= 5 && vy > 0.3) {
+                                        lastSwipeDir.current = 'down';
                                         callbacksRef.current.onPrevPost?.();
-                                    } 
+                                    }
                                     // Drag hacia arriba desde el fondo del todo -> Post Siguiente
                                     else if (
-                                        postScrollDragStartY.current + postScrollHeight.current >= postScrollContentHeight.current - 5 && 
-                                        endY + postScrollHeight.current >= postScrollContentHeight.current - 5 && 
+                                        postScrollDragStartY.current + postScrollHeight.current >= postScrollContentHeight.current - 5 &&
+                                        endY + postScrollHeight.current >= postScrollContentHeight.current - 5 &&
                                         vy < -0.3
                                     ) {
+                                        lastSwipeDir.current = 'up';
                                         callbacksRef.current.onNextPost?.();
                                     } else {
                                         Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
@@ -639,7 +694,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                     </TouchableOpacity>
                                 </View>
                             </View>
-                        </View>
+                        </Animated.View>
                     )}
 
                     {/* Vacío inferior que mantiene la simetría */}
@@ -647,21 +702,16 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
 
                     {/* ── BUBBLE COMENTARIOS NORMAL (Visible cuando maximizado) ── */}
                     {!isMinimized && (
-                        <View style={[styles.commentsBubble, { backgroundColor: colors.surface, flex: 1 }]}>
+                        <Animated.View style={[styles.commentsBubble, { backgroundColor: colors.surface, flex: 1 }, { opacity: postTransition, transform: [{ translateY: slideY }] }]}>
 
                             <View style={[styles.commentsHeader, { borderBottomColor: colors.border }]} {...commentsHeaderPan.panHandlers}>
                                 <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
 
-                                <TouchableOpacity onPress={toggleMinimize} style={styles.minimizeBtn}
-                                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                                    <Ionicons name="chevron-down" size={24} color={colors.textSecondary} />
-                                </TouchableOpacity>
-
                                 <Text style={[styles.headerTitle, { color: colors.text }]}>{activeTab === 'comments' ? 'Comentarios' : 'Me gusta'}</Text>
 
-                                <TouchableOpacity onPress={closeWithAnimation} style={styles.closeBtn}
+                                <TouchableOpacity onPress={toggleMinimize} style={styles.closeBtn}
                                     hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                                    <Ionicons name="close" size={24} color={colors.textSecondary} />
+                                    <Ionicons name="chevron-down" size={24} color={colors.textSecondary} />
                                 </TouchableOpacity>
                             </View>
 
@@ -692,7 +742,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                         const vy = e.nativeEvent.velocity?.y ?? 0;
                                         if (scrollDragStartY.current <= 2 && endY <= 2 && vy > 0.3) {
                                             if (!isMinimized) {
-                                                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                                                if (bubbleAnimReady.current) LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
                                                 setIsMinimized(true);
                                                 Keyboard.dismiss();
                                             }
@@ -807,7 +857,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                     </View>
                                 )}
                             </Animated.View>
-                        </View>
+                        </Animated.View>
                     )}
 
                     {/* ── NAV BAR INFERIOR CUADRADA NEGRA (Minimizado) ── */}
