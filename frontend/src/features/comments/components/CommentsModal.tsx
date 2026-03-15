@@ -182,25 +182,49 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     });
 
     const postHeaderPan = useRef(makeDragPan()).current;
-    const commentsHeaderPan = useRef(makeDragPan()).current;
+    
+    const commentsHeaderPan = useRef(PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 5 && g.dy > 0,
+        onPanResponderRelease: (_, g) => {
+            const shouldMinimize = g.dy > SCREEN_HEIGHT * 0.15 || g.vy > 0.8;
+            if (shouldMinimize && !isMinimized) {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setIsMinimized(true);
+                Keyboard.dismiss();
+            }
+        },
+    })).current;
+
+    const commentsScrollY = useRef(0);
+    const commentsListSwipeDownPan = useRef(PanResponder.create({
+        onMoveShouldSetPanResponderCapture: (_, g) => {
+            // Robo táctil: si deslizan hacia abajo y la lista está en tope, forzamos minimizar aunque haya pocos elementos o no tenga scroll bar
+            return g.dy > 15 && commentsScrollY.current <= 2;
+        },
+        onPanResponderRelease: (_, g) => {
+            const shouldMinimize = g.dy > SCREEN_HEIGHT * 0.15 || g.vy > 0.8;
+            if (shouldMinimize && !isMinimized) {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setIsMinimized(true);
+                Keyboard.dismiss();
+            }
+        }
+    })).current;
 
     // ── PanResponder: espacio vacío dentro del ScrollView ─────────────────
     // onStartShouldSetPanResponder:true → reclama el gesto ANTES que el ScrollView
     const emptyAreaPan = useRef(PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderMove: (_, g) => { if (g.dy > 0) panY.setValue(g.dy); },
+        onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 10,
         onPanResponderRelease: (_, g) => {
-            const shouldClose = g.dy > SCREEN_HEIGHT * 0.45 || g.vy > 1.2;
-            if (shouldClose) {
-                closeWithAnimation();
-            } else {
-                Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+            const shouldMinimize = g.dy > SCREEN_HEIGHT * 0.15 || g.vy > 0.8;
+            if (shouldMinimize && !isMinimized) {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setIsMinimized(true);
+                Keyboard.dismiss();
             }
-        },
-        onPanResponderTerminate: () => {
-            Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
-        },
+        }
     })).current;
 
     // ── Scroll pull-to-close refs ──────────────────────────────────────────
@@ -549,7 +573,11 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                         <Text style={[styles.actionText, { color: localLiked ? '#FF3B30' : colors.textSecondary },
                                         localLiked && { fontWeight: 'bold' }]}>Me gusta</Text>
                                     </TouchableOpacity>
-                                    <TouchableOpacity style={styles.actionBtn}>
+                                    <TouchableOpacity style={styles.actionBtn} onPress={() => {
+                                        if (isMinimized) {
+                                            toggleMinimize();
+                                        }
+                                    }}>
                                         <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
                                         <Text style={[styles.actionText, { color: colors.textSecondary }]}>Comentar</Text>
                                     </TouchableOpacity>
@@ -581,7 +609,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                         </View>
 
                         {!isMinimized && (
-                            <>
+                            <Animated.View style={{ flex: 1 }} {...commentsListSwipeDownPan.panHandlers}>
                                 <ScrollView
                             style={{ flex: 1 }}
                             contentContainerStyle={styles.listContainer}
@@ -589,6 +617,9 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                             bounces={true}
                             keyboardShouldPersistTaps="handled"
                             scrollEventThrottle={8}
+                            onScroll={(e) => {
+                                commentsScrollY.current = e.nativeEvent.contentOffset.y;
+                            }}
                             onScrollBeginDrag={(e) => {
                                 scrollDragStartY.current = e.nativeEvent.contentOffset.y;
                             }}
@@ -596,9 +627,11 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                 const endY = e.nativeEvent.contentOffset.y;
                                 const vy = e.nativeEvent.velocity?.y ?? 0;
                                 if (scrollDragStartY.current <= 2 && endY <= 2 && vy > 0.3) {
-                                    closeWithAnimation();
-                                } else {
-                                    Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+                                    if (!isMinimized) {
+                                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                                        setIsMinimized(true);
+                                        Keyboard.dismiss();
+                                    }
                                 }
                             }}
                         >
@@ -674,7 +707,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                 }
                             </TouchableOpacity>
                         </View>
-                            </>
+                                </Animated.View>
                         )}
                     </View>
                 </Animated.View>
