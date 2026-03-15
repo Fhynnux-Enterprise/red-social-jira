@@ -190,6 +190,20 @@ export default function FeedScreen() {
                 post={selectedPostForComments?.post} 
                 onClose={() => setSelectedPostForComments(null)} 
                 initialMinimized={selectedPostForComments?.minimize}
+                onNextPost={() => {
+                    const posts = data?.getPosts || [];
+                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
+                    if (currentIndex !== -1 && currentIndex < posts.length - 1) {
+                        setSelectedPostForComments({ post: posts[currentIndex + 1], minimize: !!selectedPostForComments?.minimize });
+                    }
+                }}
+                onPrevPost={() => {
+                    const posts = data?.getPosts || [];
+                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
+                    if (currentIndex > 0) {
+                        setSelectedPostForComments({ post: posts[currentIndex - 1], minimize: !!selectedPostForComments?.minimize });
+                    }
+                }}
             />
         </SafeAreaView>
     );

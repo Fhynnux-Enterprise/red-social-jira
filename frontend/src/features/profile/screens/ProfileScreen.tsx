@@ -359,6 +359,20 @@ export default function ProfileScreen() {
                 post={selectedPostForComments?.post} 
                 onClose={() => setSelectedPostForComments(null)} 
                 initialMinimized={selectedPostForComments?.minimize}
+                onNextPost={() => {
+                    const posts = userData?.posts || [];
+                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
+                    if (currentIndex !== -1 && currentIndex < posts.length - 1) {
+                        setSelectedPostForComments({ post: { ...posts[currentIndex + 1], author: userData }, minimize: !!selectedPostForComments?.minimize });
+                    }
+                }}
+                onPrevPost={() => {
+                    const posts = userData?.posts || [];
+                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
+                    if (currentIndex > 0) {
+                        setSelectedPostForComments({ post: { ...posts[currentIndex - 1], author: userData }, minimize: !!selectedPostForComments?.minimize });
+                    }
+                }}
             />
 
         </SafeAreaView>

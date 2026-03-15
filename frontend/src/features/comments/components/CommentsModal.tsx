@@ -55,9 +55,11 @@ export interface CommentsModalProps {
     post: any | null;
     onClose: () => void;
     initialMinimized?: boolean;
+    onNextPost?: () => void;
+    onPrevPost?: () => void;
 }
 
-export default function CommentsModal({ visible, post, onClose, initialMinimized = false }: CommentsModalProps) {
+export default function CommentsModal({ visible, post, onClose, initialMinimized = false, onNextPost, onPrevPost }: CommentsModalProps) {
     const { colors, isDark } = useTheme();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const insets = useSafeAreaInsets();
@@ -78,6 +80,12 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         setTimeout(() => (navigation.navigate as any)('Profile', { userId }), 320);
     };
 
+    // Almacenamos los callbacks actualizados en una referencia porque el PanResponder guarda las variables del primer render
+    const callbacksRef = useRef({ onNextPost, onPrevPost });
+    useEffect(() => {
+        callbacksRef.current = { onNextPost, onPrevPost };
+    }, [onNextPost, onPrevPost]);
+
     const toggleMinimize = () => {
         if (!isMinimized) {
             Keyboard.dismiss();
@@ -85,6 +93,28 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         setIsMinimized(!isMinimized);
     };
+
+    // ── PanResponder para el fondo transparente (Swipe para Next/Prev/Close) ──
+    const backgroundSwipePan = useRef(PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderRelease: (_, g) => {
+            const isTap = Math.abs(g.dx) < 15 && Math.abs(g.dy) < 15;
+            if (isTap) {
+                // Es un toque seco (Tap), cierra la pantalla
+                closeWithAnimation();
+            } else if (g.dx > 60 && Math.abs(g.dy) < 60) {
+                // Deslizar fuertemente de IZQUIERDA a DERECHA -> Cerrar modal
+                closeWithAnimation();
+            } else if (g.dy < -30 || g.vy < -0.3) {
+                // Desplazamiento hacia ARRIBA (Dedo de abajo a arriba) -> Siguiente post
+                callbacksRef.current.onNextPost?.();
+            } else if (g.dy > 30 || g.vy > 0.3) {
+                // Desplazamiento hacia ABAJO (Dedo de arriba a abajo) -> Post anterior
+                callbacksRef.current.onPrevPost?.();
+            }
+        }
+    })).current;
 
     // ── Animación entrada/salida + drag ────────────────────────────────────
     const panY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -413,9 +443,11 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     return (
         <Modal visible={visible} transparent animationType="none" onRequestClose={closeWithAnimation} statusBarTranslucent>
 
-            <TouchableWithoutFeedback onPress={closeWithAnimation}>
-                <View style={styles.backdrop} />
-            </TouchableWithoutFeedback>
+            {/* Este fondo atrapará los taps y los deslizamientos en toda su superficie libre */}
+            <Animated.View 
+                style={styles.backdrop} 
+                {...backgroundSwipePan.panHandlers} 
+            />
 
             {/* Exterior: mueve bottom con el teclado (JS driver) */}
             <Animated.View
@@ -423,9 +455,10 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                 pointerEvents="box-none"
             >
                 {/* Interior: drag translateY (native driver) */}
-                <Animated.View style={[{ flex: 1, gap: 8 }, { transform: [{ translateY: panY }] }]}>
-
-                    {isMinimized && <View style={{ flex: 1 }} />}
+                <Animated.View style={[{ flex: 1, gap: 8 }, { transform: [{ translateY: panY }] }]} pointerEvents="box-none">
+                    
+                    {/* Vacío superior flexible que empuja al medio */}
+                    {isMinimized && <View style={{ flex: 1 }} pointerEvents="none" />}
 
                     {/* ── BURBUJA PUBLICACIÓN ── */}
                     {post && (
@@ -525,7 +558,8 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                         </View>
                     )}
 
-                    {isMinimized && <View style={{ flex: 1 }} />}
+                    {/* Vacío inferior que mantiene la simetría */}
+                    {isMinimized && <View style={{ flex: 1 }} pointerEvents="none" />}
 
                     {/* ── BURBUJA COMENTARIOS ── */}
                     <View style={[styles.commentsBubble, { backgroundColor: colors.surface }, isMinimized ? { flex: 0 } : { flex: 1 }]}>
