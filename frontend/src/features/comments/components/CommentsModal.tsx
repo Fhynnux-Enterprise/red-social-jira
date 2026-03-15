@@ -690,19 +690,12 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                     onScrollEndDrag={(e) => {
                                         const endY = e.nativeEvent.contentOffset.y;
                                         const vy = e.nativeEvent.velocity?.y ?? 0;
-                                        
-                                        // Drag hacia abajo desde arriba del todo -> Post Anterior
-                                        if (scrollDragStartY.current <= 5 && endY <= 5 && vy > 0.3 && !isMinimized) {
-                                            callbacksRef.current.onPrevPost?.();
-                                        } 
-                                        // Drag hacia arriba desde el fondo del todo -> Post Siguiente
-                                        else if (
-                                            scrollDragStartY.current + scrollViewHeight.current >= scrollContentHeight.current - 5 && 
-                                            endY + scrollViewHeight.current >= scrollContentHeight.current - 5 && 
-                                            vy < -0.3 && 
-                                            !isMinimized
-                                        ) {
-                                            callbacksRef.current.onNextPost?.();
+                                        if (scrollDragStartY.current <= 2 && endY <= 2 && vy > 0.3) {
+                                            if (!isMinimized) {
+                                                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                                                setIsMinimized(true);
+                                                Keyboard.dismiss();
+                                            }
                                         }
                                     }}
                                 >
@@ -830,13 +823,13 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                             borderTopColor: '#222222'
                         }}>
                             <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-around', alignItems: 'center' }}>
-                                <TouchableOpacity onPress={() => { setActiveTab('comments'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
-                                    <Ionicons name="chatbubbles-outline" size={26} color={activeTab === 'comments' ? colors.primary : "#FFFFFF"} />
-                                    <Text style={{ color: activeTab === 'comments' ? colors.primary : '#FFFFFF', marginTop: 4, fontSize: 13, fontWeight: '500' }}>Comentarios</Text>
-                                </TouchableOpacity>
                                 <TouchableOpacity onPress={() => { setActiveTab('likes'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
                                     <Ionicons name="heart-outline" size={26} color={activeTab === 'likes' ? colors.primary : "#FFFFFF"} />
                                     <Text style={{ color: activeTab === 'likes' ? colors.primary : '#FFFFFF', marginTop: 4, fontSize: 13, fontWeight: '500' }}>Likes</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => { setActiveTab('comments'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
+                                    <Ionicons name="chatbubbles-outline" size={26} color={activeTab === 'comments' ? colors.primary : "#FFFFFF"} />
+                                    <Text style={{ color: activeTab === 'comments' ? colors.primary : '#FFFFFF', marginTop: 4, fontSize: 13, fontWeight: '500' }}>Comentarios</Text>
                                 </TouchableOpacity>
                             </View>
                         </View>

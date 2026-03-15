@@ -82,6 +82,9 @@ export const GET_USER_PROFILE = gql`
           id
           user {
             id
+            firstName
+            lastName
+            photoUrl
           }
         }
         comments {
