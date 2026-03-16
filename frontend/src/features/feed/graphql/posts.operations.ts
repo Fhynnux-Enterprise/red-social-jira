@@ -87,7 +87,6 @@ export const TOGGLE_LIKE = gql`
                     id
                     firstName
                     lastName
-                    username
                     photoUrl
                 }
             }

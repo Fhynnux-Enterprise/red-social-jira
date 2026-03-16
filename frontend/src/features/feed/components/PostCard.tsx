@@ -62,7 +62,17 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
         if (displayLiked) {
             optimisticLikes = optimisticLikes.filter((like: any) => like.user?.id !== userId);
         } else {
-            optimisticLikes.push({ __typename: 'PostLike', id: `temp-${Date.now()}`, user: { __typename: 'User', id: userId } });
+        optimisticLikes.push({
+            __typename: 'PostLike',
+            id: `temp-${Date.now()}`,
+            user: {
+                __typename: 'User',
+                id: userId,
+                firstName: authContext.user?.firstName || '',
+                lastName: authContext.user?.lastName || '',
+                photoUrl: authContext.user?.photoUrl || null,
+            }
+        });
         }
 
         toggleLikeMutation({

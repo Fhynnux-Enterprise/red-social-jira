@@ -355,7 +355,14 @@ export default function ProfileScreen() {
 
             <CommentsModal 
                 visible={!!selectedPostForComments} 
-                post={selectedPostForComments?.post} 
+                post={
+                    // Siempre usar el post VIVO del caché de Apollo (no el snapshot)
+                    selectedPostForComments
+                        ? (userData?.posts?.find((p: any) => p.id === selectedPostForComments.post?.id) 
+                            ? { ...userData.posts.find((p: any) => p.id === selectedPostForComments.post?.id), author: userData }
+                            : selectedPostForComments.post)
+                        : null
+                }
                 onClose={() => setSelectedPostForComments(null)} 
                 initialMinimized={selectedPostForComments?.minimize}
                 initialTab={selectedPostForComments?.initialTab}

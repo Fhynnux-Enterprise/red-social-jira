@@ -23,7 +23,7 @@ import ConfirmationModal from './ConfirmationModal';
 import CommentItem from './CommentItem';
 import CopyTextModal from '../../../components/CopyTextModal';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const formatTimeAgo = (date: Date) => {
     const now = new Date();
@@ -106,28 +106,43 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     const backgroundSwipePan = useRef(PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
+        onPanResponderMove: (_, g) => {
+            // Seguir el dedo solo hacia la izquierda
+            if (g.dx < 0 && Math.abs(g.dx) > Math.abs(g.dy)) {
+                panX.setValue(g.dx);
+            }
+        },
         onPanResponderRelease: (_, g) => {
             const isTap = Math.abs(g.dx) < 15 && Math.abs(g.dy) < 15;
             if (isTap) {
-                // Es un toque seco (Tap), cierra la pantalla
+                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
                 closeWithAnimation();
-            } else if (g.dx < -60 && Math.abs(g.dy) < 60) {
-                // Deslizar fuertemente de DERECHA a IZQUIERDA -> Cerrar modal
-                closeWithAnimation();
+            } else if (g.dx < -80 && Math.abs(g.dy) < 80) {
+                // Cerrar deslizando de derecha a izquierda
+                closeWithXAnimation();
+            } else if (g.vx < -0.8 && Math.abs(g.vy) < 0.8 && g.dx < -20) {
+                // Cerrar por velocidad horizontal
+                closeWithXAnimation();
             } else if (g.dy < -30 || g.vy < -0.3) {
-                // Desplazamiento hacia ARRIBA (Dedo de abajo a arriba) -> Siguiente post
+                // Desplazamiento hacia ARRIBA -> Siguiente post
+                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
                 lastSwipeDir.current = 'up';
                 callbacksRef.current.onNextPost?.();
             } else if (g.dy > 30 || g.vy > 0.3) {
-                // Desplazamiento hacia ABAJO (Dedo de arriba a abajo) -> Post anterior
+                // Desplazamiento hacia ABAJO -> Post anterior
+                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
                 lastSwipeDir.current = 'down';
                 callbacksRef.current.onPrevPost?.();
+            } else {
+                // Spring de regreso
+                Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
             }
         }
     })).current;
 
     // ── Animación entrada/salida + drag ────────────────────────────────────
     const panY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+    const panX = useRef(new Animated.Value(0)).current;
 
     const closeWithAnimation = () => {
         Animated.timing(panY, {
@@ -136,6 +151,16 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
             useNativeDriver: true,
         }).start(() => {
             panY.setValue(SCREEN_HEIGHT);
+            onClose();
+        });
+    };
+
+    const closeWithXAnimation = () => {
+        Animated.timing(panX, {
+            toValue: -SCREEN_WIDTH,
+            duration: 220,
+            useNativeDriver: true,
+        }).start(() => {
             onClose();
         });
     };
@@ -168,8 +193,10 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         if (visible) {
             bubbleAnimReady.current = false;
             panY.setValue(SCREEN_HEIGHT);
+            panX.setValue(0);
             setIsMinimized(initialMinimized);
             setActiveTab(initialTab);
+            activeTabRef.current = initialTab;
             Animated.spring(panY, {
                 toValue: 0,
                 useNativeDriver: true,
@@ -278,6 +305,28 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         }
     })).current;
 
+    // ── Ref para activeTab (evita stale closure en PanResponders) ─────────
+    const activeTabRef = useRef<'comments' | 'likes'>(initialTab);
+    useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+
+    // ── PanResponder: swipe horizontal para cambiar de tab ────────────────
+    const tabSwipePan = useRef(PanResponder.create({
+        // Solo captura gestos claramente horizontales (dx >> dy)
+        onMoveShouldSetPanResponderCapture: (_, g) =>
+            Math.abs(g.dx) > 25 && Math.abs(g.dx) > 2.5 * Math.abs(g.dy),
+        onPanResponderRelease: (_, g) => {
+            if (Math.abs(g.dx) > 50 && Math.abs(g.dx) > Math.abs(g.dy)) {
+                if (g.dx < -50 && activeTabRef.current === 'likes') {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
+                    setActiveTab('comments');
+                } else if (g.dx > 50 && activeTabRef.current === 'comments') {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
+                    setActiveTab('likes');
+                }
+            }
+        }
+    })).current;
+
     // ── Scroll pull-to-close refs ──────────────────────────────────────────
     const scrollViewHeight = useRef(0);
     const scrollContentHeight = useRef(0);
@@ -298,21 +347,32 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
             }
             return false;
         },
+        onPanResponderMove: (_, g) => {
+            // Seguir el dedo hacia la izquierda en tiempo real
+            if (g.dx < 0 && Math.abs(g.dx) > Math.abs(g.dy)) {
+                panX.setValue(g.dx);
+            }
+        },
         onPanResponderRelease: (_, g) => {
             const vy = g.vy;
             const dy = g.dy;
             const dx = g.dx;
+            const vx = g.vx;
             // Swipe derecha a izquierda -> Cerrar modal
-            if (dx < -60 && Math.abs(dy) < 60) {
-                closeWithAnimation();
+            if ((dx < -80 && Math.abs(dy) < 80) || (vx < -0.8 && Math.abs(g.vy) < 0.8 && dx < -20)) {
+                closeWithXAnimation();
             } else if (dy > 40 || vy > 0.5) {
                 // Hacia abajo -> Anterior
+                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
                 lastSwipeDir.current = 'down';
                 callbacksRef.current.onPrevPost?.();
             } else if (dy < -40 || vy < -0.5) {
                 // Hacia arriba -> Siguiente
+                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
                 lastSwipeDir.current = 'up';
                 callbacksRef.current.onNextPost?.();
+            } else {
+                Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
             }
         }
     })).current;
@@ -338,7 +398,17 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         if (localLiked) {
             optimisticLikes = optimisticLikes.filter((l: any) => l.user?.id !== currentUser.id);
         } else {
-            optimisticLikes.push({ __typename: 'PostLike', id: `temp-${Date.now()}`, user: { __typename: 'User', id: currentUser.id } });
+            optimisticLikes.push({
+                __typename: 'PostLike',
+                id: `temp-${Date.now()}`,
+                user: {
+                    __typename: 'User',
+                    id: currentUser.id,
+                    firstName: currentUser.firstName || '',
+                    lastName: currentUser.lastName || '',
+                    photoUrl: currentUser.photoUrl || null,
+                }
+            });
         }
 
         toggleLikeMutation({
@@ -551,7 +621,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         new Date(post.updatedAt).getTime() > new Date(post.createdAt).getTime() + 2000;
 
     return (
-        <Modal visible={visible} transparent animationType="none" onRequestClose={() => {}} statusBarTranslucent>
+        <Modal visible={visible} transparent animationType="none" onRequestClose={() => { }} statusBarTranslucent>
 
             {/* Este fondo atrapará los taps y los deslizamientos en toda su superficie libre */}
             <Animated.View
@@ -572,7 +642,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
 
                     {/* ── BURBUJA PUBLICACIÓN ── */}
                     {post && (
-                        <Animated.View style={[styles.postBubble, { maxHeight: isMinimized ? SCREEN_HEIGHT * 0.75 : SCREEN_HEIGHT * 0.35 }, { opacity: postTransition, transform: [{ translateY: slideY }] }]}>
+                        <Animated.View style={[styles.postBubble, { maxHeight: isMinimized ? SCREEN_HEIGHT * 0.75 : SCREEN_HEIGHT * 0.35 }, { opacity: postTransition, transform: [{ translateY: slideY }, { translateX: panX }] }]}>
                             <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
                                 <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
                                 <TouchableOpacity
@@ -702,7 +772,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
 
                     {/* ── BUBBLE COMENTARIOS NORMAL (Visible cuando maximizado) ── */}
                     {!isMinimized && (
-                        <Animated.View style={[styles.commentsBubble, { backgroundColor: colors.surface, flex: 1 }, { opacity: postTransition, transform: [{ translateY: slideY }] }]}>
+                        <Animated.View style={[styles.commentsBubble, { backgroundColor: colors.surface, flex: 1 }, { opacity: postTransition, transform: [{ translateY: slideY }] }]} {...tabSwipePan.panHandlers}>
 
                             <View style={[styles.commentsHeader, { borderBottomColor: colors.border }]} {...commentsHeaderPan.panHandlers}>
                                 <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
