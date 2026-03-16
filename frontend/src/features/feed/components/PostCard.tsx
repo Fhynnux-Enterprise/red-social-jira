@@ -188,7 +188,11 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
             <View style={styles.actionsRow}>
                 {/* Like */}
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <TouchableOpacity style={styles.actionBtn} onPress={handleLikePress} activeOpacity={0.7}>
+                    <TouchableOpacity 
+                        style={[styles.actionBtn, { paddingRight: 6 }]} 
+                        onPress={handleLikePress} 
+                        activeOpacity={0.7}
+                    >
                         <Ionicons
                             name={localLiked ? 'heart' : 'heart-outline'}
                             size={21}
@@ -196,8 +200,12 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
                         />
                     </TouchableOpacity>
                     {localCount > 0 && (
-                        <TouchableOpacity onPress={() => onOpenComments?.(item.id, 'likes', false)} activeOpacity={0.7} style={{ marginLeft: -8, paddingHorizontal: 8, height: 36, justifyContent: 'center' }}>
-                            <Text style={[styles.actionCount, localLiked && { color: '#FF3B30' }]}>
+                        <TouchableOpacity 
+                            onPress={() => onOpenComments?.(item.id, 'likes', false)} 
+                            activeOpacity={0.7} 
+                            style={{ marginLeft: -4, paddingRight: 8, height: 36, justifyContent: 'center' }}
+                        >
+                            <Text style={[styles.actionCount, { marginLeft: 0 }, localLiked && { color: '#FF3B30' }]}>
                                 {localCount}
                             </Text>
                         </TouchableOpacity>

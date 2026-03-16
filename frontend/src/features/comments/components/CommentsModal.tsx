@@ -740,7 +740,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                             {localCount > 0 && (
                                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                                     <Ionicons name="heart" size={15} color="#FF3B30" />
-                                                    <Text style={[styles.statsText, { color: colors.textSecondary }]}> {localCount}</Text>
+                                                    <Text style={[styles.statsText, { color: colors.textSecondary, marginLeft: 4 }]}>{localCount}</Text>
                                                 </View>
                                             )}
                                         </TouchableOpacity>

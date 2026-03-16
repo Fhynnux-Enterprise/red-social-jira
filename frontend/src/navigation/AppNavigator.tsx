@@ -7,15 +7,19 @@ import { Ionicons } from '@expo/vector-icons';
 import FeedScreen from '../features/feed/screens/FeedScreen';
 import ProfileScreen from '../features/profile/screens/ProfileScreen';
 import EditProfileScreen from '../features/profile/screens/EditProfileScreen';
+import ChatListScreen from '../features/chat/screens/ChatListScreen';
+import ChatRoomScreen from '../features/chat/screens/ChatRoomScreen';
 import { useTheme } from '../theme/ThemeContext';
 
 export type AppStackParamList = {
     MainTabs: undefined;
     EditProfile: undefined;
+    ChatRoom: { chatId?: string; userId?: string };
 };
 
 export type AppTabParamList = {
     Feed: undefined;
+    ChatList: undefined;
     Profile: { userId?: string } | undefined;
 };
 
@@ -35,6 +39,8 @@ function MainTabNavigator() {
 
                     if (route.name === 'Feed') {
                         iconName = focused ? 'home' : 'home-outline';
+                    } else if (route.name === 'ChatList') {
+                        iconName = focused ? 'chatbubble-ellipses' : 'chatbubble-outline';
                     } else if (route.name === 'Profile') {
                         iconName = focused ? 'person' : 'person-outline';
                     }
@@ -62,6 +68,7 @@ function MainTabNavigator() {
             })}
         >
             <Tab.Screen name="Feed" component={FeedScreen} options={{ tabBarLabel: 'Inicio' }} />
+            <Tab.Screen name="ChatList" component={ChatListScreen} options={{ tabBarLabel: 'Mensajes' }} />
             <Tab.Screen
                 name="Profile"
                 component={ProfileScreen}
@@ -82,6 +89,7 @@ export default function AppNavigator() {
         <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
             <Stack.Screen name="MainTabs" component={MainTabNavigator} />
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+            <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
         </Stack.Navigator>
     );
 }
