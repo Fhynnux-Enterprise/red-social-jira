@@ -6,6 +6,7 @@ import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
 import { useMutation } from '@apollo/client';
 import { TOGGLE_LIKE } from '../graphql/posts.operations';
+import CopyTextModal from '../../../components/CopyTextModal';
 
 const MAX_CHARS = 220;
 
@@ -13,7 +14,7 @@ export interface PostCardProps {
     item: any;
     currentUserId?: string;
     onOptionsPress?: (post: any) => void;
-    onOpenComments?: (postId: string) => void;
+    onOpenComments?: (postId: string, initialTab?: 'comments' | 'likes', minimize?: boolean) => void;
     isModalView?: boolean;
     headerPanHandlers?: any;
     onScroll?: (event: any) => void;
@@ -36,6 +37,7 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
     const [localCount, setLocalCount] = useState<number>(displayCount);
     const [localLiked, setLocalLiked] = useState<boolean>(displayLiked);
     const [isExpanded, setIsExpanded] = useState(false);
+    const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
 
     const isTruncatable = !isModalView && (item.content?.length ?? 0) > MAX_CHARS;
     const displayContent = isTruncatable && !isExpanded
@@ -60,7 +62,17 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
         if (displayLiked) {
             optimisticLikes = optimisticLikes.filter((like: any) => like.user?.id !== userId);
         } else {
-            optimisticLikes.push({ __typename: 'PostLike', id: `temp-${Date.now()}`, user: { __typename: 'User', id: userId } });
+        optimisticLikes.push({
+            __typename: 'PostLike',
+            id: `temp-${Date.now()}`,
+            user: {
+                __typename: 'User',
+                id: userId,
+                firstName: authContext.user?.firstName || '',
+                lastName: authContext.user?.lastName || '',
+                photoUrl: authContext.user?.photoUrl || null,
+            }
+        });
         }
 
         toggleLikeMutation({
@@ -142,7 +154,14 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
             </View>
 
             {/* ── Contenido ── */}
-            <Text style={styles.content}>{displayContent}</Text>
+            <TouchableOpacity 
+                activeOpacity={0.8} 
+                onPress={() => onOpenComments?.(item.id, 'comments', true)}
+                onLongPress={() => setIsCopyModalVisible(true)}
+                delayLongPress={250}
+            >
+                <Text style={styles.content}>{displayContent}</Text>
+            </TouchableOpacity>
             {isTruncatable && !isExpanded && (
                 <TouchableOpacity
                     onPress={() => setIsExpanded(true)}
@@ -168,23 +187,27 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
             {/* ── Actions + stats ── */}
             <View style={styles.actionsRow}>
                 {/* Like */}
-                <TouchableOpacity style={styles.actionBtn} onPress={handleLikePress} activeOpacity={0.7}>
-                    <Ionicons
-                        name={localLiked ? 'heart' : 'heart-outline'}
-                        size={21}
-                        color={localLiked ? '#FF3B30' : colors.textSecondary}
-                    />
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <TouchableOpacity style={styles.actionBtn} onPress={handleLikePress} activeOpacity={0.7}>
+                        <Ionicons
+                            name={localLiked ? 'heart' : 'heart-outline'}
+                            size={21}
+                            color={localLiked ? '#FF3B30' : colors.textSecondary}
+                        />
+                    </TouchableOpacity>
                     {localCount > 0 && (
-                        <Text style={[styles.actionCount, localLiked && { color: '#FF3B30' }]}>
-                            {localCount}
-                        </Text>
+                        <TouchableOpacity onPress={() => onOpenComments?.(item.id, 'likes', false)} activeOpacity={0.7} style={{ marginLeft: -8, paddingHorizontal: 8, height: 36, justifyContent: 'center' }}>
+                            <Text style={[styles.actionCount, localLiked && { color: '#FF3B30' }]}>
+                                {localCount}
+                            </Text>
+                        </TouchableOpacity>
                     )}
-                </TouchableOpacity>
+                </View>
 
                 {/* Comentar */}
                 <TouchableOpacity
                     style={styles.actionBtn}
-                    onPress={() => onOpenComments?.(item.id)}
+                    onPress={() => onOpenComments?.(item.id, 'comments', false)}
                     activeOpacity={0.7}
                 >
                     <Ionicons name="chatbubble-outline" size={19} color={colors.textSecondary} />
@@ -193,6 +216,11 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
                     )}
                 </TouchableOpacity>
             </View>
+            <CopyTextModal
+                visible={isCopyModalVisible}
+                textToCopy={displayContent}
+                onClose={() => setIsCopyModalVisible(false)}
+            />
         </View>
     );
 }

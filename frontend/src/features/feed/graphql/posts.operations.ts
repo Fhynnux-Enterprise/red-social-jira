@@ -11,6 +11,10 @@ export const GET_POSTS = gql`
                 id
                 user {
                     id
+                    firstName
+                    lastName
+                    username
+                    photoUrl
                 }
             }
             comments {
@@ -81,6 +85,9 @@ export const TOGGLE_LIKE = gql`
                 id
                 user {
                     id
+                    firstName
+                    lastName
+                    photoUrl
                 }
             }
             comments {
