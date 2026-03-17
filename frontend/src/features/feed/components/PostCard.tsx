@@ -64,7 +64,7 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
         } else {
         optimisticLikes.push({
             __typename: 'PostLike',
-            id: `temp-${Date.now()}`,
+            id_post_like: `temp-${Date.now()}`,
             user: {
                 __typename: 'User',
                 id: userId,

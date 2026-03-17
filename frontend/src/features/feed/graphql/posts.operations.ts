@@ -8,7 +8,7 @@ export const GET_POSTS = gql`
             createdAt
             updatedAt
             likes {
-                id
+                id_post_like
                 user {
                     id
                     firstName
@@ -82,7 +82,7 @@ export const TOGGLE_LIKE = gql`
         toggleLike(postId: $postId) {
             id
             likes {
-                id
+                id_post_like
                 user {
                     id
                     firstName

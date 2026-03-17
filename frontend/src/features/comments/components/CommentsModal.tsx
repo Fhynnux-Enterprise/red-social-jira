@@ -400,7 +400,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         } else {
             optimisticLikes.push({
                 __typename: 'PostLike',
-                id: `temp-${Date.now()}`,
+                id_post_like: `temp-${Date.now()}`,
                 user: {
                     __typename: 'User',
                     id: currentUser.id,
