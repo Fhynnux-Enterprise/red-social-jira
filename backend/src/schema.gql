@@ -96,6 +96,14 @@ type Participant {
   conversation: Conversation!
 }
 
+type Follow {
+  id_follow: ID!
+  id_follower: String!
+  id_following: String!
+  follower: User!
+  following: User!
+}
+
 type User {
   id: ID!
   email: String!
@@ -111,6 +119,8 @@ type User {
   comments: [Comment!]
   participations: [Participant!]
   sentMessages: [Message!]
+  followers: [Follow!]
+  following: [Follow!]
 }
 
 type Query {
@@ -125,6 +135,9 @@ type Query {
   getUserConversations: [Conversation!]!
   getChatMessages(id_conversation: String!): [Message!]!
   getConversation(id_conversation: String!): Conversation
+  isFollowing(id_following: String!): Boolean!
+  getFollowers(id_user: String!): [User!]!
+  getFollowing(id_user: String!): [User!]!
 }
 
 type Mutation {
@@ -143,4 +156,5 @@ type Mutation {
   toggleCommentLike(commentId: String!): Comment!
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
   sendMessage(id_conversation: String!, content: String!): Message!
+  toggleFollow(id_following: String!): Boolean!
 }

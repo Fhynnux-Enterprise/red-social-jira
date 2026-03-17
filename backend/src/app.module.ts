@@ -11,6 +11,7 @@ import { PostsModule } from './posts/posts.module';
 import { UsersModule } from './users/users.module';
 import { CommentsModule } from './comments/comments.module';
 import { ChatModule } from './chat/chat.module';
+import { FollowsModule } from './follows/follows.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { ChatModule } from './chat/chat.module';
     UsersModule,
     CommentsModule,
     ChatModule,
+    FollowsModule,
   ],
   controllers: [],
   providers: [],

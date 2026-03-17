@@ -73,6 +73,12 @@ export const GET_USER_PROFILE = gql`
         title
         theme
       }
+      followers {
+        id_follow
+      }
+      following {
+        id_follow
+      }
       posts {
         id
         content

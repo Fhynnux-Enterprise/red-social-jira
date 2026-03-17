@@ -13,10 +13,12 @@ import Toast from 'react-native-toast-message';
 import { useQuery, useMutation } from '@apollo/client';
 import { GET_USER_PROFILE } from '../graphql/profile.operations';
 import { DELETE_POST, GET_POSTS } from '../../feed/graphql/posts.operations';
+import { TOGGLE_FOLLOW, IS_FOLLOWING } from '../../follows/graphql/follows.operations';
 import CreatePostModal from '../../feed/components/CreatePostModal';
 import PostOptionsModal from '../../feed/components/PostOptionsModal';
 import PostCard from '../../feed/components/PostCard';
 import CommentsModal from '../../comments/components/CommentsModal';
+import ProfileStats from '../components/ProfileStats';
 import { GET_OR_CREATE_CHAT } from '../../chat/graphql/chat.operations';
 
 export default function ProfileScreen() {
@@ -48,6 +50,63 @@ export default function ProfileScreen() {
         variables: { id: profileUserId },
         skip: !profileUserId,
         fetchPolicy: 'cache-and-network',
+    });
+
+    const { data: followData } = useQuery(IS_FOLLOWING, {
+        variables: { id_following: profileUserId },
+        skip: !profileUserId || isMyProfile,
+        fetchPolicy: 'cache-and-network',
+    });
+
+    const isFollowing = followData?.isFollowing || false;
+
+    const [toggleFollow] = useMutation(TOGGLE_FOLLOW, {
+        variables: { id_following: profileUserId },
+        update(cache, { data: { toggleFollow: newValue } }) {
+            // 1. Actualizar estado del botón (Query isFollowing)
+            cache.writeQuery({
+                query: IS_FOLLOWING,
+                variables: { id_following: profileUserId },
+                data: { isFollowing: newValue },
+            });
+
+            // 2. Actualizar lista de FOLLOWERS del perfil visitado
+            const targetProfileId = cache.identify({ __typename: 'User', id: profileUserId });
+            if (targetProfileId) {
+                cache.modify({
+                    id: targetProfileId,
+                    fields: {
+                        followers(existing = []) {
+                            // Usamos (existing || []) para evitar el error "Cannot convert null to object"
+                            const current = existing || [];
+                            if (newValue) {
+                                return [...current, { __typename: 'Follow', id_follow: `temp-f-${Date.now()}` }];
+                            } else {
+                                return current.length > 0 ? current.slice(0, -1) : [];
+                            }
+                        }
+                    }
+                });
+            }
+
+            // 3. Actualizar lista de FOLLOWING del usuario actual (Yo)
+            const myProfileId = cache.identify({ __typename: 'User', id: currentUserId });
+            if (myProfileId) {
+                cache.modify({
+                    id: myProfileId,
+                    fields: {
+                        following(existing = []) {
+                            const current = existing || [];
+                            if (newValue) {
+                                return [...current, { __typename: 'Follow', id_follow: `temp-fng-${Date.now()}` }];
+                            } else {
+                                return current.length > 0 ? current.slice(0, -1) : [];
+                            }
+                        }
+                    }
+                });
+            }
+        },
     });
 
     const userData = gqlData?.getUserProfile || null;
@@ -198,29 +257,47 @@ export default function ProfileScreen() {
                             <Text style={styles.badgeText}>{userData.badge.title}</Text>
                         </View>
                     )}
+
+                    {/* Botones de Acción (Si no es mi perfil) */}
+                    {!isMyProfile && (
+                        <View style={styles.profileActions}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.followBtn,
+                                    isFollowing ? styles.followingBtn : styles.followBtnActive
+                                ]}
+                                onPress={() => toggleFollow()}
+                                activeOpacity={0.7}
+                            >
+                                <Text style={[
+                                    styles.followBtnText,
+                                    isFollowing ? styles.followingBtnText : styles.followBtnActiveText
+                                ]}>
+                                    {isFollowing ? 'Siguiendo' : 'Seguir'}
+                                </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                                style={styles.messageBtn}
+                                activeOpacity={0.7}
+                                onPress={() => {
+                                    // Aquí iría la lógica para abrir chat, por ahora solo UI
+                                    Toast.show({ type: 'info', text1: 'Próximamente', text2: 'El chat directo estará disponible pronto.' });
+                                }}
+                            >
+                                <Text style={styles.messageBtnText}>Mensaje</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
                 </View>
 
                 {/* Tarjetas Informativas Contenedor */}
                 <View style={styles.cardsContainer}>
-                    {/* Stats Card */}
-                    <View style={styles.statsCardWrapper}>
-                        <View style={styles.statsCard}>
-                            <View style={styles.statItem}>
-                                <Text style={styles.statNumber}>0</Text>
-                                <Text style={styles.statLabel}>Seguidores</Text>
-                            </View>
-                            <View style={styles.statDivider} />
-                            <View style={styles.statItem}>
-                                <Text style={styles.statNumber}>0</Text>
-                                <Text style={styles.statLabel}>Siguiendo</Text>
-                            </View>
-                            <View style={styles.statDivider} />
-                            <View style={styles.statItem}>
-                                <Text style={styles.statNumber}>{userData.posts?.length || 0}</Text>
-                                <Text style={styles.statLabel}>Publicaciones</Text>
-                            </View>
-                        </View>
-                    </View>
+                    <ProfileStats 
+                        followersCount={userData.followers?.length || 0}
+                        followingCount={userData.following?.length || 0}
+                        postsCount={userData.posts?.length || 0}
+                    />
 
                     {/* Botón de Mensaje (Solo si no es mi perfil) */}
                     {!isMyProfile && (
@@ -517,6 +594,54 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         marginBottom: 2,
         textAlign: 'center',
     },
+    profileActions: {
+        flexDirection: 'row',
+        paddingHorizontal: 16,
+        marginBottom: 8,
+        justifyContent: 'center',
+        gap: 10,
+    },
+    followBtn: {
+        flex: 1,
+        height: 38,
+        borderRadius: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+    },
+    followBtnActive: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
+    },
+    followingBtn: {
+        backgroundColor: 'transparent',
+        borderColor: colors.border,
+    },
+    followBtnText: {
+        fontWeight: 'bold',
+        fontSize: 14,
+    },
+    followBtnActiveText: {
+        color: '#FFF',
+    },
+    followingBtnText: {
+        color: colors.text,
+    },
+    messageBtn: {
+        flex: 1,
+        height: 38,
+        borderRadius: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    messageBtnText: {
+        color: colors.text,
+        fontWeight: 'bold',
+        fontSize: 14,
+    },
     username: {
         fontSize: 15,
         color: colors.textSecondary,
@@ -544,39 +669,6 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     // ---- TARJETAS Y CONTENEDORES GLOBALES ----
     cardsContainer: {
         marginBottom: 16,
-    },
-    statsCardWrapper: {
-        backgroundColor: colors.surface,
-        marginBottom: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.border,
-    },
-    statsCard: {
-        flexDirection: 'row',
-        paddingVertical: 16,
-        paddingHorizontal: 20, // Adjusted padding
-        justifyContent: 'space-around',
-        alignItems: 'center',
-        // Removed borderRadius, borderWidth, borderColor
-    },
-    statItem: {
-        alignItems: 'center',
-        flex: 1,
-    },
-    statNumber: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: colors.text,
-        marginBottom: 4,
-    },
-    statLabel: {
-        fontSize: 13,
-        color: colors.textSecondary,
-    },
-    statDivider: {
-        width: 1,
-        height: '70%',
-        backgroundColor: colors.border,
     },
     infoCard: {
         backgroundColor: colors.surface,
