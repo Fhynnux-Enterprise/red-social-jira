@@ -13,18 +13,6 @@ export class PostsService {
         private readonly postLikesRepository: Repository<PostLike>,
     ) { }
 
-    /**
-     * Mapeamos el post para incluir commentsCount = total de todos los comentarios
-     * (incluyendo respuestas), mientras que comments[] queda solo con los raíz
-     * para no inflar el payload innecesariamente.
-     */
-    private mapPostWithCounts(post: Post): Post {
-        return {
-            ...post,
-            commentsCount: post.comments?.length ?? 0,
-        };
-    }
-
     async createPost(content: string, authorId: string): Promise<Post> {
         const newPost = this.postsRepository.create({
             content,
@@ -38,17 +26,16 @@ export class PostsService {
         if (!fullyLoadedPost) {
             throw new Error('Error al recuperar el post creado');
         }
-        return this.mapPostWithCounts(fullyLoadedPost);
+        return fullyLoadedPost;
     }
 
     async findAll(): Promise<Post[]> {
-        const posts = await this.postsRepository.find({
+        return this.postsRepository.find({
             order: {
                 createdAt: 'DESC',
             },
             relations: ['author', 'likes', 'likes.user', 'comments'],
         });
-        return posts.map(p => this.mapPostWithCounts(p));
     }
 
     async updatePost(id: string, content: string, userId: string): Promise<Post> {
@@ -62,7 +49,7 @@ export class PostsService {
 
         post.content = content;
         await this.postsRepository.save(post);
-        return this.mapPostWithCounts(post);
+        return post;
     }
 
     async deletePost(id: string, userId: string): Promise<boolean> {
@@ -104,6 +91,6 @@ export class PostsService {
             throw new NotFoundException('Publicación no encontrada despúes de actualizar');
         }
 
-        return this.mapPostWithCounts(fullyLoadedPost);
+        return fullyLoadedPost;
     }
 }
