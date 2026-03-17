@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module';
 import { PostsModule } from './posts/posts.module';
 import { UsersModule } from './users/users.module';
 import { CommentsModule } from './comments/comments.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { CommentsModule } from './comments/comments.module';
     PostsModule,
     UsersModule,
     CommentsModule,
+    ChatModule,
   ],
   controllers: [],
   providers: [],

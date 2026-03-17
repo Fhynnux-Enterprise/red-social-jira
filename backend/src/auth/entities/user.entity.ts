@@ -4,6 +4,8 @@ import { Post } from '../../posts/entities/post.entity';
 import { UserCustomField } from '../../users/entities/user-custom-field.entity';
 import { UserBadge } from '../../users/entities/user-badge.entity';
 import { Comment } from '../../comments/entities/comment.entity';
+import { Participant } from '../../chat/entities/participant.entity';
+import { Message } from '../../chat/entities/message.entity';
 
 
 @ObjectType()
@@ -71,4 +73,12 @@ export class User {
     @Field(() => [Comment], { nullable: true })
     @OneToMany(() => Comment, (comment) => comment.user)
     comments: Comment[];
+
+    @Field(() => [Participant], { nullable: true })
+    @OneToMany(() => Participant, (participant) => participant.user)
+    participations: Participant[];
+
+    @Field(() => [Message], { nullable: true })
+    @OneToMany(() => Message, (message) => message.sender)
+    sentMessages: Message[];
 }

@@ -68,6 +68,33 @@ type UserBadge {
   theme: String!
 }
 
+type Message {
+  id_message: ID!
+  content: String!
+  isRead: Boolean!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  sender: User!
+  conversation: Conversation!
+}
+
+type Conversation {
+  id_conversation: ID!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  participants: [Participant!]
+  messages: [Message!]
+  lastMessage: Message
+}
+
+type Participant {
+  id_participant: ID!
+  id_last_read_message: ID
+  joinedAt: DateTime!
+  user: User!
+  conversation: Conversation!
+}
+
 type User {
   id: ID!
   email: String!
@@ -81,6 +108,8 @@ type User {
   customFields: [UserCustomField!]
   badge: UserBadge
   comments: [Comment!]
+  participations: [Participant!]
+  sentMessages: [Message!]
 }
 
 type Query {
@@ -92,6 +121,9 @@ type Query {
   getPosts: [Post!]!
   getUserProfile(id: String!): User!
   getCommentsByPost(postId: String!): [Comment!]!
+  getUserConversations: [Conversation!]!
+  getChatMessages(id_conversation: String!): [Message!]!
+  getConversation(id_conversation: String!): Conversation
 }
 
 type Mutation {
@@ -108,4 +140,6 @@ type Mutation {
   deleteComment(id: String!): Boolean!
   updateComment(id: String!, content: String!): Comment!
   toggleCommentLike(commentId: String!): Comment!
+  getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
+  sendMessage(id_conversation: String!, content: String!): Message!
 }

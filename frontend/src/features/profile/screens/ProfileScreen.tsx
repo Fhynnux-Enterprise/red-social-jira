@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, ScrollView, Alert, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, ScrollView, Alert, RefreshControl, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +17,7 @@ import CreatePostModal from '../../feed/components/CreatePostModal';
 import PostOptionsModal from '../../feed/components/PostOptionsModal';
 import PostCard from '../../feed/components/PostCard';
 import CommentsModal from '../../comments/components/CommentsModal';
+import { GET_OR_CREATE_CHAT } from '../../chat/graphql/chat.operations';
 
 export default function ProfileScreen() {
     const { signOut } = useAuth();
@@ -85,6 +86,26 @@ export default function ProfileScreen() {
             Toast.show({ type: 'error', text1: 'Error', text2: err.message });
         }
     });
+
+    const [getOrCreateChat, { loading: creatingChat }] = useMutation(GET_OR_CREATE_CHAT);
+
+    const handleMessagePress = async () => {
+        if (!profileUserId) return;
+        try {
+            const { data } = await getOrCreateChat({
+                variables: { targetUserId: profileUserId }
+            });
+            const id_conversation = data.getOrCreateOneOnOneChat.id_conversation;
+            (navigation as any).navigate('ChatRoom', { id_conversation });
+        } catch (error) {
+            console.error("Error al crear el chat:", error);
+            Toast.show({
+                type: 'error',
+                text1: 'Error',
+                text2: 'No se pudo abrir el chat'
+            });
+        }
+    };
 
     const handleOptionsPress = (post: any) => {
         setSelectedPost(post);
@@ -200,6 +221,24 @@ export default function ProfileScreen() {
                             </View>
                         </View>
                     </View>
+
+                    {/* Botón de Mensaje (Solo si no es mi perfil) */}
+                    {!isMyProfile && (
+                        <TouchableOpacity
+                            onPress={handleMessagePress}
+                            disabled={creatingChat}
+                            style={[styles.messageButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        >
+                            {creatingChat ? (
+                                <ActivityIndicator size="small" color={colors.primary} />
+                            ) : (
+                                <>
+                                    <Ionicons name="chatbubble-outline" size={20} color={colors.primary} />
+                                    <Text style={[styles.messageButtonText, { color: colors.text }]}>Mensaje</Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    )}
 
                     {/* Info Card (Phone and Bio) */}
                     {(userData.phone || userData.bio) && (
@@ -576,6 +615,33 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         color: colors.text,
         lineHeight: 22,
         marginLeft: 24, // alinea con el icono de arriba
+    },
+    messageButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginHorizontal: 16,
+        marginTop: 12,
+        marginBottom: 8,
+        paddingVertical: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 4,
+            },
+            android: {
+                elevation: 3,
+            },
+        }),
+    },
+    messageButtonText: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        marginLeft: 8,
     },
     divider: {
         height: 1,
