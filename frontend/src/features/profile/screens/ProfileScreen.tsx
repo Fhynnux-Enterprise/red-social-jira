@@ -19,6 +19,8 @@ import PostOptionsModal from '../../feed/components/PostOptionsModal';
 import PostCard from '../../feed/components/PostCard';
 import CommentsModal from '../../comments/components/CommentsModal';
 import ProfileStats from '../components/ProfileStats';
+import ProfileActions from '../components/ProfileActions';
+import ProfileBio from '../components/ProfileBio';
 import { GET_OR_CREATE_CHAT } from '../../chat/graphql/chat.operations';
 
 export default function ProfileScreen() {
@@ -63,45 +65,32 @@ export default function ProfileScreen() {
     const [toggleFollow] = useMutation(TOGGLE_FOLLOW, {
         variables: { id_following: profileUserId },
         update(cache, { data: { toggleFollow: newValue } }) {
-            // 1. Actualizar estado del botón (Query isFollowing)
+            // 1. Actualizar estado del botón
             cache.writeQuery({
                 query: IS_FOLLOWING,
                 variables: { id_following: profileUserId },
                 data: { isFollowing: newValue },
             });
 
-            // 2. Actualizar lista de FOLLOWERS del perfil visitado
-            const targetProfileId = cache.identify({ __typename: 'User', id: profileUserId });
-            if (targetProfileId) {
-                cache.modify({
-                    id: targetProfileId,
-                    fields: {
-                        followers(existing = []) {
-                            // Usamos (existing || []) para evitar el error "Cannot convert null to object"
-                            const current = existing || [];
-                            if (newValue) {
-                                return [...current, { __typename: 'Follow', id_follow: `temp-f-${Date.now()}` }];
-                            } else {
-                                return current.length > 0 ? current.slice(0, -1) : [];
-                            }
-                        }
+            // 2. Actualizar el contador de seguidores del perfil que estamos viendo
+            // GraphQL devuelve 'followersCount'. Lo incrementamos o decrementamos.
+            cache.modify({
+                id: cache.identify({ __typename: 'User', id: profileUserId }),
+                fields: {
+                    followersCount(existingCount = 0) {
+                        return newValue ? existingCount + 1 : Math.max(0, existingCount - 1);
                     }
-                });
-            }
+                }
+            });
 
-            // 3. Actualizar lista de FOLLOWING del usuario actual (Yo)
-            const myProfileId = cache.identify({ __typename: 'User', id: currentUserId });
-            if (myProfileId) {
+            // 3. Si eres TÚ quien está siguiendo, también actualizamos tu propio 'followingCount'
+            // para que se vea reflejado en tu perfil cuando vuelvas a él.
+            if (currentUserId) {
                 cache.modify({
-                    id: myProfileId,
+                    id: cache.identify({ __typename: 'User', id: currentUserId }),
                     fields: {
-                        following(existing = []) {
-                            const current = existing || [];
-                            if (newValue) {
-                                return [...current, { __typename: 'Follow', id_follow: `temp-fng-${Date.now()}` }];
-                            } else {
-                                return current.length > 0 ? current.slice(0, -1) : [];
-                            }
+                        followingCount(existingCount = 0) {
+                            return newValue ? existingCount + 1 : Math.max(0, existingCount - 1);
                         }
                     }
                 });
@@ -258,106 +247,29 @@ export default function ProfileScreen() {
                         </View>
                     )}
 
-                    {/* Botones de Acción (Si no es mi perfil) */}
-                    {!isMyProfile && (
-                        <View style={styles.profileActions}>
-                            <TouchableOpacity
-                                style={[
-                                    styles.followBtn,
-                                    isFollowing ? styles.followingBtn : styles.followBtnActive
-                                ]}
-                                onPress={() => toggleFollow()}
-                                activeOpacity={0.7}
-                            >
-                                <Text style={[
-                                    styles.followBtnText,
-                                    isFollowing ? styles.followingBtnText : styles.followBtnActiveText
-                                ]}>
-                                    {isFollowing ? 'Siguiendo' : 'Seguir'}
-                                </Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity 
-                                style={styles.messageBtn}
-                                activeOpacity={0.7}
-                                onPress={() => {
-                                    // Aquí iría la lógica para abrir chat, por ahora solo UI
-                                    Toast.show({ type: 'info', text1: 'Próximamente', text2: 'El chat directo estará disponible pronto.' });
-                                }}
-                            >
-                                <Text style={styles.messageBtnText}>Mensaje</Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
-                </View>
-
-                {/* Tarjetas Informativas Contenedor */}
-                <View style={styles.cardsContainer}>
+                    {/* Stats Section (New Placement) */}
                     <ProfileStats 
-                        followersCount={userData.followers?.length || 0}
-                        followingCount={userData.following?.length || 0}
+                        followersCount={userData.followersCount || 0}
+                        followingCount={userData.followingCount || 0}
                         postsCount={userData.posts?.length || 0}
                     />
 
-                    {/* Botón de Mensaje (Solo si no es mi perfil) */}
+                    {/* Botones de Acción */}
                     {!isMyProfile && (
-                        <TouchableOpacity
-                            onPress={handleMessagePress}
-                            disabled={creatingChat}
-                            style={[styles.messageButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                        >
-                            {creatingChat ? (
-                                <ActivityIndicator size="small" color={colors.primary} />
-                            ) : (
-                                <>
-                                    <Ionicons name="chatbubble-outline" size={20} color={colors.primary} />
-                                    <Text style={[styles.messageButtonText, { color: colors.text }]}>Mensaje</Text>
-                                </>
-                            )}
-                        </TouchableOpacity>
+                        <ProfileActions 
+                            isFollowing={isFollowing}
+                            onToggleFollow={() => toggleFollow()}
+                            onMessage={handleMessagePress}
+                        />
                     )}
 
-                    {/* Info Card (Phone and Bio) */}
-                    {(userData.phone || userData.bio) && (
-                        <View style={styles.infoCard}>
-                            {userData.phone ? (
-                                <View style={styles.infoBlock}>
-                                    <View style={styles.infoRowTitle}>
-                                        <Ionicons name="call-outline" size={18} color={colors.textSecondary} />
-                                        <Text style={styles.infoTitle}>Número Telefónico</Text>
-                                    </View>
-                                    <Text style={styles.infoText}>{userData.phone}</Text>
-                                </View>
-                            ) : null}
+                    {/* Biografía e Información */}
+                    <ProfileBio 
+                        bio={userData.bio}
+                        phone={userData.phone}
+                        customFields={userData.customFields}
+                    />
 
-                            {userData.phone && userData.bio ? <View style={styles.divider} /> : null}
-
-                            {userData.bio ? (
-                                <View style={styles.infoBlock}>
-                                    <View style={styles.infoRowTitle}>
-                                        <Ionicons name="information-circle-outline" size={18} color={colors.textSecondary} />
-                                        <Text style={styles.infoTitle}>Biografía</Text>
-                                    </View>
-                                    <Text style={styles.infoTextBio}>{userData.bio}</Text>
-                                </View>
-                            ) : null}
-                        </View>
-                    )}
-
-                    {/* Custom Fields Card */}
-                    {userData.customFields && userData.customFields.length > 0 && (
-                        <View style={styles.infoCard}>
-                            {userData.customFields.map((field: any, index: number) => (
-                                <React.Fragment key={field.id}>
-                                    <View style={styles.infoRow}>
-                                        <Text style={styles.customFieldTitle}>{field.title}:</Text>
-                                        <Text style={styles.customFieldValue}> {field.value}</Text>
-                                    </View>
-                                    {index < userData.customFields!.length - 1 && <View style={styles.divider} />}
-                                </React.Fragment>
-                            ))}
-                        </View>
-                    )}
                 </View>
 
                 {/* Seccion de Publicaciones */}
@@ -518,7 +430,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     },
     bannerContainer: {
         width: '100%',
-        height: 190,
+        height: 180, // Taller background for better impact
         position: 'relative',
     },
     bannerGradient: {
@@ -536,177 +448,91 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         right: 0,
     },
     floatingEditButton: {
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
         paddingHorizontal: 16,
         paddingVertical: 8,
-        borderRadius: 18,
+        borderRadius: 12,
         marginRight: 10,
     },
     floatingEditButtonText: {
         color: '#FFF',
-        fontWeight: 'bold',
-        fontSize: 14,
+        fontWeight: '600',
+        fontSize: 13,
     },
     floatingMenuButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
         justifyContent: 'center',
         alignItems: 'center',
     },
     content: {
-        // Removed paddingHorizontal and paddingBottom from here
+        paddingTop: 0,
     },
     avatarCenterContainer: {
         alignItems: 'center',
-        marginTop: -45, // Hace que solape el banner
-        marginBottom: 5,
+        marginTop: -48, // Balanced overlap for 96px avatar
+        marginBottom: 12,
     },
     avatarWrapper: {
         borderRadius: 50,
-        padding: 4, // Borde blanco o fondo de app
+        padding: 4, 
         backgroundColor: colors.background,
     },
     avatarImage: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
+        width: 96, // Elegant size
+        height: 96,
+        borderRadius: 48,
     },
     avatarPlaceholder: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: 'rgba(255, 101, 36, 0.15)',
+        width: 96,
+        height: 96,
+        borderRadius: 48,
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     avatarPlaceholderText: {
-        color: colors.primary,
-        fontSize: 32,
-        fontWeight: 'bold',
+        color: colors.textSecondary,
+        fontSize: 38,
+        fontWeight: '500',
         textTransform: 'uppercase',
     },
     fullName: {
         fontSize: 22,
-        fontWeight: '900',
+        fontWeight: '800',
         color: colors.text,
         marginBottom: 2,
         textAlign: 'center',
     },
-    profileActions: {
-        flexDirection: 'row',
-        paddingHorizontal: 16,
-        marginBottom: 8,
-        justifyContent: 'center',
-        gap: 10,
-    },
-    followBtn: {
-        flex: 1,
-        height: 38,
-        borderRadius: 10,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-    },
-    followBtnActive: {
-        backgroundColor: colors.primary,
-        borderColor: colors.primary,
-    },
-    followingBtn: {
-        backgroundColor: 'transparent',
-        borderColor: colors.border,
-    },
-    followBtnText: {
-        fontWeight: 'bold',
-        fontSize: 14,
-    },
-    followBtnActiveText: {
-        color: '#FFF',
-    },
-    followingBtnText: {
-        color: colors.text,
-    },
-    messageBtn: {
-        flex: 1,
-        height: 38,
-        borderRadius: 10,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: colors.surface,
-        borderWidth: 1,
-        borderColor: colors.border,
-    },
-    messageBtnText: {
-        color: colors.text,
-        fontWeight: 'bold',
-        fontSize: 14,
-    },
     username: {
-        fontSize: 15,
+        fontSize: 14,
         color: colors.textSecondary,
-        marginBottom: 18,
+        marginBottom: 12,
         textAlign: 'center',
     },
     badgeContainer: {
         alignSelf: 'center',
-        paddingVertical: 6,
-        paddingHorizontal: 16,
+        paddingVertical: 3,
+        paddingHorizontal: 10,
         backgroundColor: colors.surface,
-        borderRadius: 12,
+        borderRadius: 4, 
         borderWidth: 1,
-        borderColor: colors.primary,
-        marginBottom: 16,
-        marginTop: -6,
+        borderColor: colors.border,
+        marginBottom: 12,
     },
     badgeText: {
-        color: colors.primary,
-        fontWeight: 'bold',
-        fontSize: 13,
+        color: colors.text,
+        fontWeight: '700',
+        fontSize: 10,
         textTransform: 'uppercase',
-        letterSpacing: 0.5,
+        letterSpacing: 2,
     },
-    // ---- TARJETAS Y CONTENEDORES GLOBALES ----
     cardsContainer: {
-        marginBottom: 16,
-    },
-    infoCard: {
-        backgroundColor: colors.surface,
-        paddingHorizontal: 20,
-        paddingVertical: 18,
-        marginBottom: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.border,
-        // Removed borderRadius, borderWidth, borderColor
-    },
-    infoBlock: {
-        flexDirection: 'column',
-    },
-    infoRowTitle: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 4,
-    },
-    infoTitle: {
-        marginLeft: 6,
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: colors.textSecondary,
-    },
-    infoRow: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-    },
-    infoText: {
-        fontSize: 16,
-        color: colors.text,
-        marginLeft: 24, // alinea con el icono de arriba
-    },
-    infoTextBio: {
-        fontSize: 16,
-        color: colors.text,
-        lineHeight: 22,
-        marginLeft: 24, // alinea con el icono de arriba
+        marginBottom: 0,
     },
     messageButton: {
         flexDirection: 'row',

@@ -1,4 +1,4 @@
-import { Resolver, Mutation, Query, Args } from '@nestjs/graphql';
+import { Resolver, Mutation, Query, Args, ResolveField, Parent, Int } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UserCustomField } from './entities/user-custom-field.entity';
@@ -6,10 +6,24 @@ import { UserBadge } from './entities/user-badge.entity';
 import { User } from '../auth/entities/user.entity';
 import { JwtGqlGuard } from '../auth/guards/jwt-gql.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { FollowsService } from '../follows/follows.service';
 
-@Resolver(() => UserCustomField)
+@Resolver(() => User)
 export class UsersResolver {
-  constructor(private readonly usersService: UsersService) { }
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly followsService: FollowsService,
+  ) { }
+
+  @ResolveField(() => Int)
+  async followersCount(@Parent() user: User): Promise<number> {
+    return this.followsService.getFollowersCount(user.id);
+  }
+
+  @ResolveField(() => Int)
+  async followingCount(@Parent() user: User): Promise<number> {
+    return this.followsService.getFollowingCount(user.id);
+  }
 
   @Mutation(() => UserCustomField)
   @UseGuards(JwtGqlGuard)
@@ -18,7 +32,6 @@ export class UsersResolver {
     @Args('value') value: string,
     @CurrentUser() user: any,
   ): Promise<UserCustomField> {
-    // En nuestro JwtStrategy devolvemos el sub como req.user.id
     return this.usersService.addCustomField(user.id, title, value);
   }
 

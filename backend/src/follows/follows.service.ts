@@ -57,4 +57,12 @@ export class FollowsService {
         });
         return follows.map(f => f.following);
     }
+
+    async getFollowersCount(id_user: string): Promise<number> {
+        return this.followRepository.count({ where: { id_following: id_user } });
+    }
+
+    async getFollowingCount(id_user: string): Promise<number> {
+        return this.followRepository.count({ where: { id_follower: id_user } });
+    }
 }

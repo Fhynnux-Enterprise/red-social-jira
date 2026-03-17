@@ -5,9 +5,13 @@ import { UsersResolver } from './users.resolver';
 import { UserCustomField } from './entities/user-custom-field.entity';
 import { UserBadge } from './entities/user-badge.entity';
 import { User } from '../auth/entities/user.entity';
+import { FollowsModule } from '../follows/follows.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([UserCustomField, UserBadge, User])],
+  imports: [
+    TypeOrmModule.forFeature([UserCustomField, UserBadge, User]),
+    FollowsModule,
+  ],
   providers: [UsersService, UsersResolver],
   exports: [UsersService],
 })
