@@ -31,7 +31,7 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
     const isEdited = item.updatedAt && new Date(item.updatedAt).getTime() > new Date(item.createdAt).getTime() + 2000;
 
     const displayCount = item.likes?.length || 0;
-    const commentsCount = item.comments?.length || 0;
+    const commentsCount = item.commentsCount ?? item.comments?.length ?? 0;
     const displayLiked = item.likes?.some((like: any) => like.user?.id === userId) || false;
 
     const [localCount, setLocalCount] = useState<number>(displayCount);
@@ -64,7 +64,7 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
         } else {
         optimisticLikes.push({
             __typename: 'PostLike',
-            id: `temp-${Date.now()}`,
+            id_post_like: `temp-${Date.now()}`,
             user: {
                 __typename: 'User',
                 id: userId,
@@ -81,8 +81,8 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
                 toggleLike: {
                     __typename: 'Post',
                     id: item.id,
+                    commentsCount: item.commentsCount ?? item.comments?.length ?? 0,
                     likes: optimisticLikes,
-                    comments: item.comments || [],
                 }
             }
         }).catch(() => {
@@ -187,30 +187,22 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
             {/* ── Actions + stats ── */}
             <View style={styles.actionsRow}>
                 {/* Like */}
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <TouchableOpacity 
-                        style={[styles.actionBtn, { paddingRight: 6 }]} 
-                        onPress={handleLikePress} 
-                        activeOpacity={0.7}
-                    >
-                        <Ionicons
-                            name={localLiked ? 'heart' : 'heart-outline'}
-                            size={21}
-                            color={localLiked ? '#FF3B30' : colors.textSecondary}
-                        />
-                    </TouchableOpacity>
+                <TouchableOpacity 
+                    style={styles.actionBtn} 
+                    onPress={handleLikePress} 
+                    activeOpacity={0.7}
+                >
+                    <Ionicons
+                        name={localLiked ? 'heart' : 'heart-outline'}
+                        size={21}
+                        color={localLiked ? '#FF3B30' : colors.textSecondary}
+                    />
                     {localCount > 0 && (
-                        <TouchableOpacity 
-                            onPress={() => onOpenComments?.(item.id, 'likes', false)} 
-                            activeOpacity={0.7} 
-                            style={{ marginLeft: -4, paddingRight: 8, height: 36, justifyContent: 'center' }}
-                        >
-                            <Text style={[styles.actionCount, { marginLeft: 0 }, localLiked && { color: '#FF3B30' }]}>
-                                {localCount}
-                            </Text>
-                        </TouchableOpacity>
+                        <Text style={[styles.actionCount, localLiked && { color: '#FF3B30' }]}>
+                            {localCount}
+                        </Text>
                     )}
-                </View>
+                </TouchableOpacity>
 
                 {/* Comentar */}
                 <TouchableOpacity

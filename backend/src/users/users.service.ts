@@ -68,6 +68,7 @@ export class UsersService {
     if (!user) {
       throw new BadRequestException('Usuario no encontrado');
     }
+
     return user;
   }
 

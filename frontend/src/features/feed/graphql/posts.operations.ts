@@ -7,8 +7,9 @@ export const GET_POSTS = gql`
             content
             createdAt
             updatedAt
+            commentsCount
             likes {
-                id
+                id_post_like
                 user {
                     id
                     firstName
@@ -16,9 +17,6 @@ export const GET_POSTS = gql`
                     username
                     photoUrl
                 }
-            }
-            comments {
-                id
             }
             author {
                 id
@@ -81,17 +79,15 @@ export const TOGGLE_LIKE = gql`
     mutation ToggleLike($postId: String!) {
         toggleLike(postId: $postId) {
             id
+            commentsCount
             likes {
-                id
+                id_post_like
                 user {
                     id
                     firstName
                     lastName
                     photoUrl
                 }
-            }
-            comments {
-                id
             }
         }
     }

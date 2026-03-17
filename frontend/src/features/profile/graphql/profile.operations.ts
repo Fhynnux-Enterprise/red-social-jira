@@ -79,7 +79,7 @@ export const GET_USER_PROFILE = gql`
         createdAt
         updatedAt
         likes {
-          id
+          id_post_like
           user {
             id
             firstName
@@ -87,9 +87,7 @@ export const GET_USER_PROFILE = gql`
             photoUrl
           }
         }
-        comments {
-          id
-        }
+        commentsCount
         author {
           id
           firstName
