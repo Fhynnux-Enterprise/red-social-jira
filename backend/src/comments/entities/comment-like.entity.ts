@@ -8,8 +8,8 @@ import { Comment } from './comment.entity';
 @Unique(['userId', 'commentId'])
 export class CommentLike {
     @Field(() => ID)
-    @PrimaryGeneratedColumn('uuid')
-    id: string;
+    @PrimaryGeneratedColumn('uuid', { name: 'id_comment_like' })
+    id_comment_like: string;
 
     @Field(() => User)
     @ManyToOne(() => User, { onDelete: 'CASCADE' })

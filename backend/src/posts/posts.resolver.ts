@@ -1,4 +1,4 @@
-import { Resolver, Query, Mutation, Args, Context } from '@nestjs/graphql';
+import { Resolver, Query, Mutation, Args, Context, ResolveField, Parent, Int } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { PostsService } from './posts.service';
 import { Post } from './entities/post.entity';
@@ -7,6 +7,11 @@ import { JwtGqlGuard } from '../auth/guards/jwt-gql.guard';
 @Resolver(() => Post)
 export class PostsResolver {
     constructor(private readonly postsService: PostsService) { }
+
+    @ResolveField(() => Int)
+    async commentsCount(@Parent() post: Post): Promise<number> {
+        return post.comments?.length ?? 0;
+    }
 
     @Query(() => [Post], { name: 'getPosts' })
     @UseGuards(JwtGqlGuard)
