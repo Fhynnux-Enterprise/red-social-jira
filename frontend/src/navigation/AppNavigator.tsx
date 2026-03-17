@@ -9,12 +9,14 @@ import ProfileScreen from '../features/profile/screens/ProfileScreen';
 import EditProfileScreen from '../features/profile/screens/EditProfileScreen';
 import ChatListScreen from '../features/chat/screens/ChatListScreen';
 import ChatRoomScreen from '../features/chat/screens/ChatRoomScreen';
+import ChatDetailsScreen from '../features/chat/screens/ChatDetailsScreen';
 import { useTheme } from '../theme/ThemeContext';
 
 export type AppStackParamList = {
-    MainTabs: undefined;
+    MainTabs: { screen?: string; params?: any } | undefined;
     EditProfile: undefined;
-    ChatRoom: { chatId?: string; userId?: string };
+    ChatRoom: { id_conversation: string };
+    ChatDetails: { id_conversation: string };
 };
 
 export type AppTabParamList = {
@@ -90,6 +92,7 @@ export default function AppNavigator() {
             <Stack.Screen name="MainTabs" component={MainTabNavigator} />
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
+            <Stack.Screen name="ChatDetails" component={ChatDetailsScreen} />
         </Stack.Navigator>
     );
 }

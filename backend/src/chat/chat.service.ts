@@ -93,7 +93,11 @@ export class ChatService {
         conversation.updatedAt = new Date();
         await this.conversationRepository.save(conversation);
 
-        return savedMessage;
+        // Retornamos el mensaje cargando la relación 'sender' para cumplir con el esquema GraphQL
+        return this.messageRepository.findOneOrFail({
+            where: { id_message: savedMessage.id_message },
+            relations: ['sender']
+        });
     }
 
     async getUserConversations(userId: string): Promise<Conversation[]> {
@@ -118,6 +122,13 @@ export class ChatService {
             where: { id_conversation },
             relations: ['sender'],
             order: { createdAt: 'ASC' },
+        });
+    }
+
+    async getConversationById(id_conversation: string): Promise<Conversation | null> {
+        return this.conversationRepository.findOne({
+            where: { id_conversation },
+            relations: ['participants', 'participants.user', 'participants.user.badge'],
         });
     }
 }

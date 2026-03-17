@@ -40,6 +40,22 @@ export class ChatResolver {
         return this.chatService.getMessagesByConversation(id_conversation);
     }
 
+    @Query(() => Conversation, { name: 'getConversation', nullable: true })
+    async getConversation(
+        @CurrentUser() user: User,
+        @Args('id_conversation') id_conversation: string,
+    ) {
+        // Validación de seguridad
+        const conversations = await this.chatService.getUserConversations(user.id);
+        const isParticipant = conversations.some(c => c.id_conversation === id_conversation);
+
+        if (!isParticipant) {
+            throw new Error('No tienes permiso para ver esta conversación');
+        }
+
+        return this.chatService.getConversationById(id_conversation);
+    }
+
     @Mutation(() => Conversation, { name: 'getOrCreateOneOnOneChat' })
     async getOrCreateOneOnOneChat(
         @CurrentUser() user: User,

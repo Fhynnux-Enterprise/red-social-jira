@@ -1,5 +1,25 @@
 import { gql } from '@apollo/client';
 
+export const GET_CONVERSATION = gql`
+  query GetConversation($id_conversation: String!) {
+    getConversation(id_conversation: $id_conversation) {
+      id_conversation
+      participants {
+        user {
+          id
+          firstName
+          lastName
+          username
+          photoUrl
+          badge {
+            title
+          }
+        }
+      }
+    }
+  }
+`;
+
 export const GET_USER_CONVERSATIONS = gql`
   query GetUserConversations {
     getUserConversations {

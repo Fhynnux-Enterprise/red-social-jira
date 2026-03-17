@@ -123,6 +123,7 @@ type Query {
   getCommentsByPost(postId: String!): [Comment!]!
   getUserConversations: [Conversation!]!
   getChatMessages(id_conversation: String!): [Message!]!
+  getConversation(id_conversation: String!): Conversation
 }
 
 type Mutation {
