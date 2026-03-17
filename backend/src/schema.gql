@@ -53,6 +53,7 @@ type Post {
   updatedAt: DateTime!
   deletedAt: DateTime
   comments: [Comment!]
+  commentsCount: Float!
 }
 
 type UserCustomField {

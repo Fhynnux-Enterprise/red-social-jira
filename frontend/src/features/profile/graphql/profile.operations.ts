@@ -87,9 +87,7 @@ export const GET_USER_PROFILE = gql`
             photoUrl
           }
         }
-        comments {
-          id
-        }
+        commentsCount
         author {
           id
           firstName

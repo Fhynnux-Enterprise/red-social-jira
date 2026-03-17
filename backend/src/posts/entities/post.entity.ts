@@ -43,4 +43,7 @@ export class Post {
     @Field(() => [Comment], { nullable: true })
     @OneToMany(() => Comment, comment => comment.post)
     comments: Comment[];
+
+    @Field(() => Number, { defaultValue: 0 })
+    commentsCount?: number;
 }

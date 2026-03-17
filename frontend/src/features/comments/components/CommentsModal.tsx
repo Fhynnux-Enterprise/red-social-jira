@@ -417,8 +417,8 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                 toggleLike: {
                     __typename: 'Post',
                     id: postId,
+                    commentsCount: post?.commentsCount ?? post?.comments?.length ?? 0,
                     likes: optimisticLikes,
-                    comments: post?.comments || [],
                 },
             },
         }).catch(() => {
@@ -434,22 +434,20 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         fetchPolicy: 'cache-and-network',
     });
 
-    const commentsCount = data?.getCommentsByPost?.length ?? post?.comments?.length ?? 0;
+    // Preferimos post.commentsCount (total con respuestas, viene del feed)
+    // Si no está disponible, contamos los comentarios raíz de la query local
+    const commentsCount = post?.commentsCount ?? data?.getCommentsByPost?.length ?? 0;
 
     const [createComment, { loading: creating }] = useMutation(CREATE_COMMENT, {
         refetchQueries: [{ query: GET_COMMENTS, variables: { postId } }],
         update(cache, { data: { createComment: newComment } }) {
             if (!postId) return;
-            // Solo actualizamos el conteo del post, el cache de comentarios se refresca vía refetchQueries
             cache.modify({
                 id: cache.identify({ __typename: 'Post', id: postId }),
                 fields: {
-                    comments(existingComments = []) {
-                        if (existingComments.some((c: any) => c.__ref === cache.identify(newComment) || c.id === newComment.id)) {
-                            return existingComments;
-                        }
-                        return [newComment, ...existingComments];
-                    }
+                    commentsCount(current = 0) {
+                        return current + 1;
+                    },
                 }
             });
         },
@@ -464,14 +462,14 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
             cache.evict({ id: cache.identify({ __typename: 'Comment', id: commentId }) });
             cache.gc();
 
-            // Actualizamos la relación en el Post para el conteo de comentarios
+            // Decrementamos commentsCount en el Post
             if (postId) {
                 cache.modify({
                     id: cache.identify({ __typename: 'Post', id: postId }),
                     fields: {
-                        comments(existingRefs = [], { readField }) {
-                            return existingRefs.filter((ref: any) => readField('id', ref) !== commentId);
-                        }
+                        commentsCount(current = 0) {
+                            return Math.max(0, current - 1);
+                        },
                     }
                 });
             }
