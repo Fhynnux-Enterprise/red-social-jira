@@ -30,7 +30,7 @@ export default function ProfileActions({ isFollowing, onToggleFollow, onMessage 
                 </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
                 style={[styles.button, styles.secondaryBtn]}
                 onPress={onMessage}
                 activeOpacity={0.8}

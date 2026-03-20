@@ -248,7 +248,7 @@ export default function ProfileScreen() {
                     )}
 
                     {/* Stats Section (New Placement) */}
-                    <ProfileStats 
+                    <ProfileStats
                         followersCount={userData.followersCount || 0}
                         followingCount={userData.followingCount || 0}
                         postsCount={userData.posts?.length || 0}
@@ -256,7 +256,7 @@ export default function ProfileScreen() {
 
                     {/* Botones de Acción */}
                     {!isMyProfile && (
-                        <ProfileActions 
+                        <ProfileActions
                             isFollowing={isFollowing}
                             onToggleFollow={() => toggleFollow()}
                             onMessage={handleMessagePress}
@@ -264,7 +264,7 @@ export default function ProfileScreen() {
                     )}
 
                     {/* Biografía e Información */}
-                    <ProfileBio 
+                    <ProfileBio
                         bio={userData.bio}
                         phone={userData.phone}
                         customFields={userData.customFields}
@@ -381,17 +381,17 @@ export default function ProfileScreen() {
                 }}
             />
 
-            <CommentsModal 
-                visible={!!selectedPostForComments} 
+            <CommentsModal
+                visible={!!selectedPostForComments}
                 post={
                     // Siempre usar el post VIVO del caché de Apollo (no el snapshot)
                     selectedPostForComments
-                        ? (userData?.posts?.find((p: any) => p.id === selectedPostForComments.post?.id) 
+                        ? (userData?.posts?.find((p: any) => p.id === selectedPostForComments.post?.id)
                             ? { ...userData.posts.find((p: any) => p.id === selectedPostForComments.post?.id), author: userData }
                             : selectedPostForComments.post)
                         : null
                 }
-                onClose={() => setSelectedPostForComments(null)} 
+                onClose={() => setSelectedPostForComments(null)}
                 initialMinimized={selectedPostForComments?.minimize}
                 initialTab={selectedPostForComments?.initialTab}
                 onNextPost={() => {
@@ -477,7 +477,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     },
     avatarWrapper: {
         borderRadius: 50,
-        padding: 4, 
+        padding: 4,
         backgroundColor: colors.background,
     },
     avatarImage: {
@@ -519,7 +519,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         paddingVertical: 3,
         paddingHorizontal: 10,
         backgroundColor: colors.surface,
-        borderRadius: 4, 
+        borderRadius: 4,
         borderWidth: 1,
         borderColor: colors.border,
         marginBottom: 12,

@@ -48,7 +48,7 @@ export default function LoginScreen({ navigation }: any) {
             }
             Toast.show({
                 type: 'error',
-                text1: 'Error OAuth',
+                text1: 'Error',
                 text2: error.message || 'No se pudo iniciar sesión con Google',
             });
         } finally {
@@ -94,7 +94,7 @@ export default function LoginScreen({ navigation }: any) {
 
             Toast.show({
                 type: 'error',
-                text1: 'Error de Autenticación',
+                text1: 'Error',
                 text2: isInvalidCredentials ? 'Correo o contraseña incorrectos.' : errorMessage,
             });
         } finally {

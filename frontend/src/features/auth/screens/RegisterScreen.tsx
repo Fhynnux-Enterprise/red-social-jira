@@ -54,7 +54,7 @@ export default function RegisterScreen({ navigation }: any) {
             }
             Toast.show({
                 type: 'error',
-                text1: 'Error OAuth',
+                text1: 'Error',
                 text2: error.message || 'No se pudo iniciar sesión con Google',
             });
         } finally {
@@ -118,7 +118,7 @@ export default function RegisterScreen({ navigation }: any) {
 
             Toast.show({
                 type: 'error',
-                text1: 'Error de Registro',
+                text1: 'Error',
                 text2: Array.isArray(errorMessage) ? errorMessage[0] : errorMessage,
             });
         } finally {
