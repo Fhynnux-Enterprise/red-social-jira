@@ -6,6 +6,7 @@ import { UserBadge } from '../../users/entities/user-badge.entity';
 import { Comment } from '../../comments/entities/comment.entity';
 import { Participant } from '../../chat/entities/participant.entity';
 import { Message } from '../../chat/entities/message.entity';
+import { Follow } from '../../follows/entities/follow.entity';
 
 
 @ObjectType()
@@ -81,4 +82,12 @@ export class User {
     @Field(() => [Message], { nullable: true })
     @OneToMany(() => Message, (message) => message.sender)
     sentMessages: Message[];
+
+    @Field(() => [Follow], { nullable: true })
+    @OneToMany(() => Follow, follow => follow.following)
+    followers: Follow[];
+
+    @Field(() => [Follow], { nullable: true })
+    @OneToMany(() => Follow, follow => follow.follower)
+    following: Follow[];
 }

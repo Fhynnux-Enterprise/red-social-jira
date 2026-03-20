@@ -4,7 +4,7 @@ import { DeviceEventEmitter } from 'react-native';
 import Toast from 'react-native-toast-message';
 
 // Apuntamos usando la IP de tu PC para que un celular físico conectado al mismo Wi-Fi pueda acceder
-const BASE_URL = 'http://192.168.1.129:3000';
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 export const apiClient = axios.create({
     baseURL: BASE_URL,
@@ -31,13 +31,27 @@ apiClient.interceptors.request.use(
     }
 );
 
-// Response Interceptor: Atrapar 401 Unauthorized globally
+// Response Interceptor: Atrapar 401 Unauthorized globally o errores de red
 apiClient.interceptors.response.use(
-    (response) => {
-        return response;
-    },
+    (response) => response,
     (error) => {
-        if (error.response?.status === 401) {
+        // ERROR DE RED / SERVIDOR APAGADO
+        if (!error.response) {
+            const friendlyMessage = 'No se pudo establecer conexión con el servidor.';
+            
+            Toast.show({
+                type: 'error',
+                text1: 'Servidor no disponible',
+                text2: friendlyMessage,
+                visibilityTime: 5000,
+            });
+
+            // Sobrescribimos el mensaje técnico por uno amigable para que las pantallas lo usen
+            error.message = friendlyMessage;
+            error.isNetworkError = true;
+        } 
+        // ERROR 401: SESIÓN EXPIRADA
+        else if (error.response?.status === 401) {
             DeviceEventEmitter.emit('session_expired');
             Toast.show({
                 type: 'error',
@@ -45,6 +59,7 @@ apiClient.interceptors.response.use(
                 text2: 'Por favor, inicia sesión nuevamente.',
             });
         }
+        
         return Promise.reject(error);
     }
 );

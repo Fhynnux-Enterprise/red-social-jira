@@ -7,7 +7,7 @@ import Toast from 'react-native-toast-message';
 
 // Define the GraphQL endpoint connecting securely to the local NestJS server
 const httpLink = createHttpLink({
-    uri: 'http://192.168.1.129:3000/graphql',
+    uri: `${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'}/graphql`,
 });
 
 // Create authentication link to intercept requests and inject JWT
@@ -36,8 +36,18 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
         });
     }
 
-    if (networkError && 'statusCode' in networkError && networkError.statusCode === 401) {
-        isUnauthorized = true;
+    if (networkError) {
+        if ('statusCode' in networkError && networkError.statusCode === 401) {
+            isUnauthorized = true;
+        } else {
+            // Error de conexión (GraphQL) - IP incorrecta o servidor apagado
+            Toast.show({
+                type: 'error',
+                text1: 'Servidor no disponible',
+                text2: 'No se pudo conectar con el servidor.',
+                visibilityTime: 5000,
+            });
+        }
     }
 
     if (isUnauthorized) {
@@ -50,7 +60,6 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
 export const apolloClient = new ApolloClient({
     link: from([errorLink, authLink, httpLink]),
     cache: new InMemoryCache({
-        //canonizeResults: false,
         typePolicies: {
             Query: {
                 fields: {

@@ -96,6 +96,14 @@ type Participant {
   conversation: Conversation!
 }
 
+type Follow {
+  id_follow: ID!
+  id_follower: String!
+  id_following: String!
+  follower: User!
+  following: User!
+}
+
 type User {
   id: ID!
   email: String!
@@ -111,6 +119,10 @@ type User {
   comments: [Comment!]
   participations: [Participant!]
   sentMessages: [Message!]
+  followers: [Follow!]
+  following: [Follow!]
+  followersCount: Int!
+  followingCount: Int!
 }
 
 type Query {
@@ -121,6 +133,9 @@ type Query {
   me: String!
   getPosts: [Post!]!
   getUserProfile(id: String!): User!
+  isFollowing(id_following: String!): Boolean!
+  getFollowers(id_user: String!): [User!]!
+  getFollowing(id_user: String!): [User!]!
   getCommentsByPost(postId: String!): [Comment!]!
   getUserConversations: [Conversation!]!
   getChatMessages(id_conversation: String!): [Message!]!
@@ -137,6 +152,7 @@ type Mutation {
   deleteCustomField(id: String!): Boolean!
   updateBadge(title: String!, theme: String = "default"): UserBadge!
   updateProfile(firstName: String, lastName: String, bio: String, username: String, phone: String): User!
+  toggleFollow(id_following: String!): Boolean!
   createComment(postId: String!, content: String!, parentId: String): Comment!
   deleteComment(id: String!): Boolean!
   updateComment(id: String!, content: String!): Comment!

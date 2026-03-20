@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -15,24 +15,60 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { AuthService } from '../services/auth.service';
 import { useAuth } from '../context/AuthContext';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
+
+// --- Esquema de validación con Zod ---
+const registerSchema = z
+    .object({
+        firstName: z.string().min(1, 'El nombre es requerido'),
+        lastName: z.string().min(1, 'El apellido es requerido'),
+        username: z
+            .string()
+            .min(1, 'El nombre de usuario es requerido')
+            .regex(/^[a-zA-Z0-9_]+$/, 'Solo letras, números y guiones bajos (sin espacios)'),
+        email: z
+            .string()
+            .min(1, 'El correo es requerido')
+            .email('Dirección no válida'),
+        password: z
+            .string()
+            .min(6, 'Mínimo 6 caracteres'),
+        confirmPassword: z.string().min(1, 'Confirma tu contraseña'),
+    })
+    .refine((data) => data.password === data.confirmPassword, {
+        message: 'Las contraseñas no coinciden',
+        path: ['confirmPassword'],
+    });
+
+type RegisterFormData = z.infer<typeof registerSchema>;
 
 export default function RegisterScreen({ navigation }: any) {
     const { signIn } = useAuth();
     const { colors } = useTheme();
     const styles = useMemo(() => getStyles(colors), [colors]);
 
-    const [firstName, setFirstName] = useState('');
-    const [lastName, setLastName] = useState('');
-    const [username, setUsername] = useState('');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
-    const [errors, setErrors] = useState<{ [key: string]: string }>({});
+    const [isLoadingGoogle, setIsLoadingGoogle] = React.useState(false);
+
+    const {
+        control,
+        handleSubmit,
+        formState: { errors, isSubmitting },
+    } = useForm<RegisterFormData>({
+        resolver: zodResolver(registerSchema),
+        defaultValues: {
+            firstName: '',
+            lastName: '',
+            username: '',
+            email: '',
+            password: '',
+            confirmPassword: '',
+        },
+    });
 
     useEffect(() => {
         AuthService.initGoogleSignIn('382684798572-cbcfg6q5gu94pg140c9d2i2mjt9uu12n.apps.googleusercontent.com');
@@ -54,7 +90,7 @@ export default function RegisterScreen({ navigation }: any) {
             }
             Toast.show({
                 type: 'error',
-                text1: 'Error OAuth',
+                text1: 'Error',
                 text2: error.message || 'No se pudo iniciar sesión con Google',
             });
         } finally {
@@ -62,54 +98,16 @@ export default function RegisterScreen({ navigation }: any) {
         }
     };
 
-    const handleRegister = async () => {
-        let valid = true;
-        let newErrors: { [key: string]: string } = {};
-
-        if (!firstName) { newErrors.firstName = 'El nombre es requerido'; valid = false; }
-        if (!lastName) { newErrors.lastName = 'El apellido es requerido'; valid = false; }
-        if (!username) { newErrors.username = 'El nombre de usuario es requerido'; valid = false; }
-
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!email) {
-            newErrors.email = 'El correo es requerido';
-            valid = false;
-        } else if (!emailRegex.test(email)) {
-            newErrors.email = 'Dirección no válida';
-            valid = false;
-        }
-
-        if (!password) {
-            newErrors.password = 'La contraseña es requerida';
-            valid = false;
-        } else if (password.length < 6) {
-            newErrors.password = 'Mínimo 6 caracteres';
-            valid = false;
-        }
-
-        if (!confirmPassword) {
-            newErrors.confirmPassword = 'Confirma tu contraseña';
-            valid = false;
-        } else if (password !== confirmPassword) {
-            newErrors.confirmPassword = 'Las contraseñas no coinciden';
-            valid = false;
-        }
-
-        setErrors(newErrors);
-
-        if (!valid) {
-            return;
-        }
-
-        setIsLoading(true);
+    const onSubmit = async (data: RegisterFormData) => {
         try {
-            await AuthService.register({ email, password, firstName, lastName, username });
+            const { confirmPassword, ...registerData } = data;
+            await AuthService.register(registerData);
             Toast.show({
                 type: 'success',
                 text1: '¡Registro Exitoso!',
                 text2: 'Tu cuenta ha sido creada. Ahora puedes iniciar sesión.',
             });
-            navigation.navigate('Login'); // Devolver al usuario al login
+            navigation.navigate('Login');
         } catch (error: any) {
             const errorMessage =
                 error.response?.data?.message ||
@@ -118,11 +116,9 @@ export default function RegisterScreen({ navigation }: any) {
 
             Toast.show({
                 type: 'error',
-                text1: 'Error de Registro',
+                text1: 'Error',
                 text2: Array.isArray(errorMessage) ? errorMessage[0] : errorMessage,
             });
-        } finally {
-            setIsLoading(false);
         }
     };
 
@@ -155,88 +151,136 @@ export default function RegisterScreen({ navigation }: any) {
                     <Text style={styles.subtitle}>Únete a Chunchi City App</Text>
 
                     <View style={styles.inputContainer}>
-                        <View style={styles.inputWrapper}>
-                            {errors.firstName && <Text style={styles.errorText}>{errors.firstName}</Text>}
-                            <TextInput
-                                style={[styles.input, errors.firstName ? styles.inputError : null]}
-                                placeholder="Nombre"
-                                placeholderTextColor={colors.textSecondary}
-                                value={firstName}
-                                onChangeText={(text) => { setFirstName(text); setErrors({ ...errors, firstName: '' }); }}
-                                editable={!isLoading}
-                            />
-                        </View>
+                        {/* Nombre */}
+                        <Controller
+                            control={control}
+                            name="firstName"
+                            render={({ field: { onChange, onBlur, value } }) => (
+                                <View style={styles.inputWrapper}>
+                                    {errors.firstName && <Text style={styles.errorText}>{errors.firstName.message}</Text>}
+                                    <TextInput
+                                        style={[styles.input, errors.firstName ? styles.inputError : null]}
+                                        placeholder="Nombre"
+                                        placeholderTextColor={colors.textSecondary}
+                                        value={value}
+                                        onChangeText={onChange}
+                                        onBlur={onBlur}
+                                        editable={!isSubmitting}
+                                    />
+                                </View>
+                            )}
+                        />
 
-                        <View style={styles.inputWrapper}>
-                            {errors.lastName && <Text style={styles.errorText}>{errors.lastName}</Text>}
-                            <TextInput
-                                style={[styles.input, errors.lastName ? styles.inputError : null]}
-                                placeholder="Apellido"
-                                placeholderTextColor={colors.textSecondary}
-                                value={lastName}
-                                onChangeText={(text) => { setLastName(text); setErrors({ ...errors, lastName: '' }); }}
-                                editable={!isLoading}
-                            />
-                        </View>
+                        {/* Apellido */}
+                        <Controller
+                            control={control}
+                            name="lastName"
+                            render={({ field: { onChange, onBlur, value } }) => (
+                                <View style={styles.inputWrapper}>
+                                    {errors.lastName && <Text style={styles.errorText}>{errors.lastName.message}</Text>}
+                                    <TextInput
+                                        style={[styles.input, errors.lastName ? styles.inputError : null]}
+                                        placeholder="Apellido"
+                                        placeholderTextColor={colors.textSecondary}
+                                        value={value}
+                                        onChangeText={onChange}
+                                        onBlur={onBlur}
+                                        editable={!isSubmitting}
+                                    />
+                                </View>
+                            )}
+                        />
 
-                        <View style={styles.inputWrapper}>
-                            {errors.username && <Text style={styles.errorText}>{errors.username}</Text>}
-                            <TextInput
-                                style={[styles.input, errors.username ? styles.inputError : null]}
-                                placeholder="Nombre de usuario"
-                                placeholderTextColor={colors.textSecondary}
-                                autoCapitalize="none"
-                                value={username}
-                                onChangeText={(text) => { setUsername(text); setErrors({ ...errors, username: '' }); }}
-                                editable={!isLoading}
-                            />
-                        </View>
+                        {/* Nombre de usuario */}
+                        <Controller
+                            control={control}
+                            name="username"
+                            render={({ field: { onChange, onBlur, value } }) => (
+                                <View style={styles.inputWrapper}>
+                                    {errors.username && <Text style={styles.errorText}>{errors.username.message}</Text>}
+                                    <TextInput
+                                        style={[styles.input, errors.username ? styles.inputError : null]}
+                                        placeholder="Nombre de usuario"
+                                        placeholderTextColor={colors.textSecondary}
+                                        autoCapitalize="none"
+                                        value={value}
+                                        onChangeText={onChange}
+                                        onBlur={onBlur}
+                                        editable={!isSubmitting}
+                                    />
+                                </View>
+                            )}
+                        />
 
-                        <View style={styles.inputWrapper}>
-                            {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
-                            <TextInput
-                                style={[styles.input, errors.email ? styles.inputError : null]}
-                                placeholder="Correo electrónico"
-                                placeholderTextColor={colors.textSecondary}
-                                keyboardType="email-address"
-                                autoCapitalize="none"
-                                value={email}
-                                onChangeText={(text) => { setEmail(text); setErrors({ ...errors, email: '' }); }}
-                                editable={!isLoading}
-                            />
-                        </View>
+                        {/* Correo */}
+                        <Controller
+                            control={control}
+                            name="email"
+                            render={({ field: { onChange, onBlur, value } }) => (
+                                <View style={styles.inputWrapper}>
+                                    {errors.email && <Text style={styles.errorText}>{errors.email.message}</Text>}
+                                    <TextInput
+                                        style={[styles.input, errors.email ? styles.inputError : null]}
+                                        placeholder="Correo electrónico"
+                                        placeholderTextColor={colors.textSecondary}
+                                        keyboardType="email-address"
+                                        autoCapitalize="none"
+                                        value={value}
+                                        onChangeText={onChange}
+                                        onBlur={onBlur}
+                                        editable={!isSubmitting}
+                                    />
+                                </View>
+                            )}
+                        />
 
-                        <View style={styles.inputWrapper}>
-                            {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
-                            <TextInput
-                                style={[styles.input, errors.password ? styles.inputError : null]}
-                                placeholder="Contraseña"
-                                placeholderTextColor={colors.textSecondary}
-                                secureTextEntry
-                                value={password}
-                                onChangeText={(text) => { setPassword(text); setErrors({ ...errors, password: '' }); }}
-                                editable={!isLoading}
-                            />
-                        </View>
+                        {/* Contraseña */}
+                        <Controller
+                            control={control}
+                            name="password"
+                            render={({ field: { onChange, onBlur, value } }) => (
+                                <View style={styles.inputWrapper}>
+                                    {errors.password && <Text style={styles.errorText}>{errors.password.message}</Text>}
+                                    <TextInput
+                                        style={[styles.input, errors.password ? styles.inputError : null]}
+                                        placeholder="Contraseña"
+                                        placeholderTextColor={colors.textSecondary}
+                                        secureTextEntry
+                                        value={value}
+                                        onChangeText={onChange}
+                                        onBlur={onBlur}
+                                        editable={!isSubmitting}
+                                    />
+                                </View>
+                            )}
+                        />
 
-                        <View style={styles.inputWrapper}>
-                            {errors.confirmPassword && <Text style={styles.errorText}>{errors.confirmPassword}</Text>}
-                            <TextInput
-                                style={[styles.input, errors.confirmPassword ? styles.inputError : null]}
-                                placeholder="Repetir Contraseña"
-                                placeholderTextColor={colors.textSecondary}
-                                secureTextEntry
-                                value={confirmPassword}
-                                onChangeText={(text) => { setConfirmPassword(text); setErrors({ ...errors, confirmPassword: '' }); }}
-                                editable={!isLoading}
-                            />
-                        </View>
+                        {/* Repetir Contraseña */}
+                        <Controller
+                            control={control}
+                            name="confirmPassword"
+                            render={({ field: { onChange, onBlur, value } }) => (
+                                <View style={styles.inputWrapper}>
+                                    {errors.confirmPassword && <Text style={styles.errorText}>{errors.confirmPassword.message}</Text>}
+                                    <TextInput
+                                        style={[styles.input, errors.confirmPassword ? styles.inputError : null]}
+                                        placeholder="Repetir Contraseña"
+                                        placeholderTextColor={colors.textSecondary}
+                                        secureTextEntry
+                                        value={value}
+                                        onChangeText={onChange}
+                                        onBlur={onBlur}
+                                        editable={!isSubmitting}
+                                    />
+                                </View>
+                            )}
+                        />
                     </View>
 
                     <TouchableOpacity
                         style={styles.buttonContainer}
-                        onPress={handleRegister}
-                        disabled={isLoading || isLoadingGoogle}
+                        onPress={handleSubmit(onSubmit)}
+                        disabled={isSubmitting || isLoadingGoogle}
                         activeOpacity={0.8}
                     >
                         <LinearGradient
@@ -245,7 +289,7 @@ export default function RegisterScreen({ navigation }: any) {
                             end={{ x: 1, y: 0 }}
                             style={styles.gradient}
                         >
-                            {isLoading ? (
+                            {isSubmitting ? (
                                 <ActivityIndicator color="#FFF" />
                             ) : (
                                 <Text style={styles.buttonText}>Registrarse</Text>
@@ -256,7 +300,7 @@ export default function RegisterScreen({ navigation }: any) {
                     <TouchableOpacity
                         style={[styles.buttonContainer, styles.googleButton]}
                         onPress={handleGoogleLogin}
-                        disabled={isLoading || isLoadingGoogle}
+                        disabled={isSubmitting || isLoadingGoogle}
                         activeOpacity={0.8}
                     >
                         {isLoadingGoogle ? (
@@ -275,7 +319,7 @@ export default function RegisterScreen({ navigation }: any) {
                     <TouchableOpacity
                         style={styles.linkContainer}
                         onPress={() => navigation.navigate('Login')}
-                        disabled={isLoading}
+                        disabled={isSubmitting}
                     >
                         <Text style={styles.linkText}>¿Ya tienes cuenta? Inicia sesión aquí</Text>
                     </TouchableOpacity>
@@ -284,6 +328,8 @@ export default function RegisterScreen({ navigation }: any) {
         </SafeAreaView>
     );
 }
+
+
 
 const getStyles = (colors: ThemeColors) => StyleSheet.create({
     safeArea: {
