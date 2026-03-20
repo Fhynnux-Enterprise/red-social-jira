@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, TextInput, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Modal } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, TouchableOpacity, Image, TextInput, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { useMutation } from '@apollo/client';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { ProfileService, UserCustomField } from '../services/profile.service';
 import { UPDATE_PROFILE } from '../graphql/profile.operations';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
@@ -12,41 +15,70 @@ import Toast from 'react-native-toast-message';
 import EditBadgeSection from '../components/EditBadgeSection';
 import ManageCustomFieldsSection from '../components/ManageCustomFieldsSection';
 
+// --- Esquema de validación con Zod ---
+const editProfileSchema = z.object({
+    firstName: z.string().min(1, 'El nombre es requerido'),
+    lastName: z.string().min(1, 'El apellido es requerido'),
+    username: z
+        .string()
+        .min(2, 'El nombre de usuario debe tener mínimo 2 caracteres')
+        .regex(/^[a-zA-Z0-9_]+$/, 'Solo letras, números y guiones bajos (sin espacios)'),
+    phone: z.string().optional(),
+    bio: z
+        .string()
+        .max(250, 'La biografía no puede superar los 250 caracteres')
+        .optional(),
+});
+
+type EditProfileFormData = z.infer<typeof editProfileSchema>;
+
 export default function EditProfileScreen() {
     const { colors, isDark } = useTheme();
     const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const navigation = useNavigation();
-    const insets = useSafeAreaInsets();
 
     const [isLoading, setIsLoading] = useState(true);
-    const [isSaving, setIsSaving] = useState(false);
-    const [formData, setFormData] = useState({
-        firstName: '',
-        lastName: '',
-        username: '',
-        bio: '',
-        phone: '',
-        badgeTitle: '',
-        photoUrl: '', // This will be used when we implement photo uploading
-        customFields: [] as UserCustomField[],
-    });
+    const [photoUrl, setPhotoUrl] = useState('');
+    const [badgeTitle, setBadgeTitle] = useState('');
+    const [customFields, setCustomFields] = useState<UserCustomField[]>([]);
 
     const [updateProfileMutation] = useMutation(UPDATE_PROFILE);
+
+    const {
+        control,
+        handleSubmit,
+        reset,
+        watch,
+        formState: { errors, isSubmitting },
+    } = useForm<EditProfileFormData>({
+        resolver: zodResolver(editProfileSchema),
+        defaultValues: {
+            firstName: '',
+            lastName: '',
+            username: '',
+            phone: '',
+            bio: '',
+        },
+    });
+
+    // Para el contador de caracteres de la bio
+    const bioValue = watch('bio') || '';
 
     useEffect(() => {
         const fetchProfile = async () => {
             try {
                 const data = await ProfileService.getProfile();
-                setFormData({
+                // Cargamos los datos del perfil en el formulario
+                reset({
                     firstName: data.firstName || '',
                     lastName: data.lastName || '',
                     username: data.username || '',
-                    bio: data.bio || '',
                     phone: data.phone || '',
-                    badgeTitle: data.badge?.title || '',
-                    photoUrl: data.photoUrl || '',
-                    customFields: data.customFields || [],
+                    bio: data.bio || '',
                 });
+                setPhotoUrl(data.photoUrl || '');
+                setBadgeTitle(data.badge?.title || '');
+                setCustomFields(data.customFields || []);
             } catch (error) {
                 console.log('Error fetching profile for edit:', error);
                 Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudieron cargar los datos' });
@@ -54,54 +86,34 @@ export default function EditProfileScreen() {
                 setIsLoading(false);
             }
         };
-
         fetchProfile();
     }, []);
 
-    const handleSave = async () => {
-        if (!formData.firstName.trim() || !formData.lastName.trim()) {
-            Toast.show({ type: 'error', text1: 'Error', text2: 'El nombre y apellido son obligatorios' });
-            return;
-        }
-        if (!formData.username.trim() || formData.username.trim().length < 2) {
-            Toast.show({ type: 'error', text1: 'Error', text2: 'El nombre de usuario debe tener mínimo 2 caracteres' });
-            return;
-        }
-
-        setIsSaving(true);
+    const onSubmit = async (data: EditProfileFormData) => {
         try {
             await updateProfileMutation({
                 variables: {
-                    firstName: formData.firstName,
-                    lastName: formData.lastName,
-                    bio: formData.bio,
-                    username: formData.username,
-                    phone: formData.phone,
+                    firstName: data.firstName,
+                    lastName: data.lastName,
+                    bio: data.bio || '',
+                    username: data.username,
+                    phone: data.phone || '',
                 }
             });
-
             Toast.show({ type: 'success', text1: 'Éxito', text2: 'Perfil actualizado correctamente' });
             navigation.goBack();
         } catch (error: any) {
             const errorMessage = error.message || '';
-
             if (errorMessage.includes('El nombre de usuario ya está en uso') || errorMessage.includes('duplicate key value violates unique constraint')) {
                 Toast.show({ type: 'error', text1: 'Opción no disponible', text2: 'El nombre de usuario ya está en uso' });
             } else {
                 Toast.show({ type: 'error', text1: 'Error', text2: error.message || 'No se pudo guardar el perfil' });
             }
-        } finally {
-            setIsSaving(false);
         }
     };
 
-    const handleBadgeUpdated = (newTitle: string) => {
-        setFormData(prev => ({ ...prev, badgeTitle: newTitle }));
-    };
-
-    const handleCustomFieldsUpdated = (fields: UserCustomField[]) => {
-        setFormData(prev => ({ ...prev, customFields: fields }));
-    };
+    const handleBadgeUpdated = (newTitle: string) => setBadgeTitle(newTitle);
+    const handleCustomFieldsUpdated = (fields: UserCustomField[]) => setCustomFields(fields);
 
     if (isLoading) {
         return (
@@ -126,8 +138,8 @@ export default function EditProfileScreen() {
                         </TouchableOpacity>
                         <Text style={styles.appBarTitle}>Editar perfil</Text>
                     </View>
-                    <TouchableOpacity onPress={handleSave} disabled={isSaving}>
-                        {isSaving ? (
+                    <TouchableOpacity onPress={handleSubmit(onSubmit)} disabled={isSubmitting}>
+                        {isSubmitting ? (
                             <ActivityIndicator size="small" color={colors.text} />
                         ) : (
                             <Text style={styles.saveButtonText}>Guardar</Text>
@@ -147,7 +159,6 @@ export default function EditProfileScreen() {
                             end={{ x: 1, y: 1 }}
                             style={styles.bannerGradient}
                         />
-                        {/* Overlay Oscuro y Cámara para el Banner */}
                         <View style={styles.bannerOverlay}>
                             <TouchableOpacity style={styles.cameraIconWrapper}>
                                 <Ionicons name="camera-outline" size={24} color="#FFF" />
@@ -158,12 +169,12 @@ export default function EditProfileScreen() {
                     {/* Avatar superpuesto */}
                     <View style={styles.avatarRow}>
                         <View style={styles.avatarWrapper}>
-                            {formData.photoUrl ? (
-                                <Image source={{ uri: formData.photoUrl }} style={styles.avatarImage} />
+                            {photoUrl ? (
+                                <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
                             ) : (
                                 <View style={styles.avatarPlaceholder}>
                                     <Text style={styles.avatarPlaceholderText}>
-                                        {formData.firstName?.[0]}{formData.lastName?.[0]}
+                                        {watch('firstName')?.[0]}{watch('lastName')?.[0]}
                                     </Text>
                                 </View>
                             )}
@@ -178,74 +189,131 @@ export default function EditProfileScreen() {
 
                 {/* Formulario */}
                 <View style={styles.formContainer}>
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Nombre</Text>
-                        <TextInput
-                            style={styles.textInput}
-                            value={formData.firstName}
-                            onChangeText={(val) => setFormData({ ...formData, firstName: val })}
-                            placeholder="Tu nombre"
-                            placeholderTextColor={colors.textSecondary}
-                        />
-                    </View>
 
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Apellido</Text>
-                        <TextInput
-                            style={styles.textInput}
-                            value={formData.lastName}
-                            onChangeText={(val) => setFormData({ ...formData, lastName: val })}
-                            placeholder="Tu apellido"
-                            placeholderTextColor={colors.textSecondary}
-                        />
-                    </View>
+                    {/* Nombre */}
+                    <Controller
+                        control={control}
+                        name="firstName"
+                        render={({ field: { onChange, onBlur, value } }) => (
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.inputLabel}>Nombre</Text>
+                                <TextInput
+                                    style={[styles.textInput, errors.firstName && styles.textInputError]}
+                                    value={value}
+                                    onChangeText={onChange}
+                                    onBlur={onBlur}
+                                    placeholder="Tu nombre"
+                                    placeholderTextColor={colors.textSecondary}
+                                    editable={!isSubmitting}
+                                />
+                                {errors.firstName && <Text style={styles.errorText}>{errors.firstName.message}</Text>}
+                            </View>
+                        )}
+                    />
 
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Nombre de usuario</Text>
-                        <TextInput
-                            style={styles.textInput}
-                            value={formData.username}
-                            onChangeText={(val) => setFormData({ ...formData, username: val })}
-                            placeholder="@usuario"
-                            autoCapitalize="none"
-                            placeholderTextColor={colors.textSecondary}
-                        />
-                    </View>
+                    {/* Apellido */}
+                    <Controller
+                        control={control}
+                        name="lastName"
+                        render={({ field: { onChange, onBlur, value } }) => (
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.inputLabel}>Apellido</Text>
+                                <TextInput
+                                    style={[styles.textInput, errors.lastName && styles.textInputError]}
+                                    value={value}
+                                    onChangeText={onChange}
+                                    onBlur={onBlur}
+                                    placeholder="Tu apellido"
+                                    placeholderTextColor={colors.textSecondary}
+                                    editable={!isSubmitting}
+                                />
+                                {errors.lastName && <Text style={styles.errorText}>{errors.lastName.message}</Text>}
+                            </View>
+                        )}
+                    />
 
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Teléfono</Text>
-                        <TextInput
-                            style={styles.textInput}
-                            value={formData.phone}
-                            onChangeText={(val) => setFormData({ ...formData, phone: val })}
-                            placeholder="Ej: +593 99 999 9999"
-                            placeholderTextColor={colors.textSecondary}
-                            keyboardType="phone-pad"
-                        />
-                    </View>
+                    {/* Nombre de usuario */}
+                    <Controller
+                        control={control}
+                        name="username"
+                        render={({ field: { onChange, onBlur, value } }) => (
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.inputLabel}>Nombre de usuario</Text>
+                                <TextInput
+                                    style={[styles.textInput, errors.username && styles.textInputError]}
+                                    value={value}
+                                    onChangeText={onChange}
+                                    onBlur={onBlur}
+                                    placeholder="@usuario"
+                                    autoCapitalize="none"
+                                    placeholderTextColor={colors.textSecondary}
+                                    editable={!isSubmitting}
+                                />
+                                {errors.username && <Text style={styles.errorText}>{errors.username.message}</Text>}
+                            </View>
+                        )}
+                    />
 
-                    {/* Ahora bio es real */}
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Biografía</Text>
-                        <TextInput
-                            style={[styles.textInput, { minHeight: 60 }]}
-                            value={formData.bio}
-                            onChangeText={(val) => setFormData({ ...formData, bio: val })}
-                            multiline
-                            placeholder="Añade tu biografía"
-                            placeholderTextColor={colors.textSecondary}
-                        />
-                    </View>
+                    {/* Teléfono */}
+                    <Controller
+                        control={control}
+                        name="phone"
+                        render={({ field: { onChange, onBlur, value } }) => (
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.inputLabel}>Teléfono</Text>
+                                <TextInput
+                                    style={styles.textInput}
+                                    value={value}
+                                    onChangeText={onChange}
+                                    onBlur={onBlur}
+                                    placeholder="Ej: +593 99 999 9999"
+                                    placeholderTextColor={colors.textSecondary}
+                                    keyboardType="phone-pad"
+                                    editable={!isSubmitting}
+                                />
+                            </View>
+                        )}
+                    />
+
+                    {/* Biografía */}
+                    <Controller
+                        control={control}
+                        name="bio"
+                        render={({ field: { onChange, onBlur, value } }) => (
+                            <View style={styles.inputGroup}>
+                                <View style={styles.bioLabelRow}>
+                                    <Text style={styles.inputLabel}>Biografía</Text>
+                                    <Text style={[
+                                        styles.charCounter,
+                                        bioValue.length > 250 && styles.charCounterError
+                                    ]}>
+                                        {bioValue.length}/250
+                                    </Text>
+                                </View>
+                                <TextInput
+                                    style={[styles.textInput, { minHeight: 60 }, errors.bio && styles.textInputError]}
+                                    value={value}
+                                    onChangeText={onChange}
+                                    onBlur={onBlur}
+                                    multiline
+                                    placeholder="Añade tu biografía"
+                                    placeholderTextColor={colors.textSecondary}
+                                    editable={!isSubmitting}
+                                />
+                                {errors.bio && <Text style={styles.errorText}>{errors.bio.message}</Text>}
+                            </View>
+                        )}
+                    />
 
                     {/* SECCIÓN INSIGNIA (BADGE) */}
                     <EditBadgeSection
-                        initialBadgeTitle={formData.badgeTitle}
+                        initialBadgeTitle={badgeTitle}
                         onBadgeUpdated={handleBadgeUpdated}
                     />
 
                     {/* SECCIÓN CAMPOS PERSONALIZADOS (DINÁMICA) */}
                     <ManageCustomFieldsSection
-                        initialCustomFields={formData.customFields}
+                        initialCustomFields={customFields}
                         onCustomFieldsUpdated={handleCustomFieldsUpdated}
                     />
 
@@ -254,6 +322,8 @@ export default function EditProfileScreen() {
         </KeyboardAvoidingView >
     );
 }
+
+
 
 const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     container: {
@@ -384,5 +454,26 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: colors.border,
         paddingVertical: 8,
+    },
+    textInputError: {
+        borderBottomColor: colors.error,
+    },
+    errorText: {
+        color: colors.error,
+        fontSize: 12,
+        marginTop: 4,
+    },
+    bioLabelRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 6,
+    },
+    charCounter: {
+        fontSize: 12,
+        color: colors.textSecondary,
+    },
+    charCounterError: {
+        color: colors.error,
     },
 });

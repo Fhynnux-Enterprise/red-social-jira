@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -13,20 +13,41 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Toast from 'react-native-toast-message';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { AuthService } from '../services/auth.service';
 import { useAuth } from '../context/AuthContext';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
+
+// --- Esquema de validación con Zod ---
+const loginSchema = z.object({
+    email: z
+        .string()
+        .min(1, 'El correo es requerido')
+        .email('Dirección no válida'),
+    password: z
+        .string()
+        .min(1, 'La contraseña es requerida'),
+});
+
+type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginScreen({ navigation }: any) {
     const { signIn } = useAuth();
     const { colors } = useTheme();
     const styles = useMemo(() => getStyles(colors), [colors]);
 
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
-    const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+    const [isLoadingGoogle, setIsLoadingGoogle] = React.useState(false);
+
+    const {
+        control,
+        handleSubmit,
+        formState: { errors, isSubmitting },
+    } = useForm<LoginFormData>({
+        resolver: zodResolver(loginSchema),
+        defaultValues: { email: '', password: '' },
+    });
 
     useEffect(() => {
         AuthService.initGoogleSignIn('382684798572-cbcfg6q5gu94pg140c9d2i2mjt9uu12n.apps.googleusercontent.com');
@@ -56,33 +77,9 @@ export default function LoginScreen({ navigation }: any) {
         }
     };
 
-    const handleLogin = async () => {
-        let valid = true;
-        let newErrors: { email?: string; password?: string } = {};
-
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!email) {
-            newErrors.email = 'El correo es requerido';
-            valid = false;
-        } else if (!emailRegex.test(email)) {
-            newErrors.email = 'Dirección no válida';
-            valid = false;
-        }
-
-        if (!password) {
-            newErrors.password = 'La contraseña es requerida';
-            valid = false;
-        }
-
-        setErrors(newErrors);
-
-        if (!valid) {
-            return;
-        }
-
-        setIsLoading(true);
+    const onSubmit = async (data: LoginFormData) => {
         try {
-            const response = await AuthService.login({ email, password });
+            const response = await AuthService.login(data);
             await signIn(response.access_token);
         } catch (error: any) {
             const errorMessage =
@@ -97,8 +94,6 @@ export default function LoginScreen({ navigation }: any) {
                 text1: 'Error',
                 text2: isInvalidCredentials ? 'Correo o contraseña incorrectos.' : errorMessage,
             });
-        } finally {
-            setIsLoading(false);
         }
     };
 
@@ -121,38 +116,54 @@ export default function LoginScreen({ navigation }: any) {
                     <Text style={styles.subtitle}>Inicia sesión para continuar</Text>
 
                     <View style={styles.inputContainer}>
-                        <View style={styles.inputWrapper}>
-                            {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
-                            <TextInput
-                                style={[styles.input, errors.email ? styles.inputError : null]}
-                                placeholder="Correo electrónico"
-                                placeholderTextColor={colors.textSecondary}
-                                keyboardType="email-address"
-                                autoCapitalize="none"
-                                value={email}
-                                onChangeText={(text) => { setEmail(text); setErrors({ ...errors, email: undefined }); }}
-                                editable={!isLoading}
-                            />
-                        </View>
+                        {/* Campo Email */}
+                        <Controller
+                            control={control}
+                            name="email"
+                            render={({ field: { onChange, onBlur, value } }) => (
+                                <View style={styles.inputWrapper}>
+                                    {errors.email && <Text style={styles.errorText}>{errors.email.message}</Text>}
+                                    <TextInput
+                                        style={[styles.input, errors.email ? styles.inputError : null]}
+                                        placeholder="Correo electrónico"
+                                        placeholderTextColor={colors.textSecondary}
+                                        keyboardType="email-address"
+                                        autoCapitalize="none"
+                                        value={value}
+                                        onChangeText={onChange}
+                                        onBlur={onBlur}
+                                        editable={!isSubmitting}
+                                    />
+                                </View>
+                            )}
+                        />
 
-                        <View style={styles.inputWrapper}>
-                            {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
-                            <TextInput
-                                style={[styles.input, errors.password ? styles.inputError : null]}
-                                placeholder="Contraseña"
-                                placeholderTextColor={colors.textSecondary}
-                                secureTextEntry
-                                value={password}
-                                onChangeText={(text) => { setPassword(text); setErrors({ ...errors, password: undefined }); }}
-                                editable={!isLoading}
-                            />
-                        </View>
+                        {/* Campo Contraseña */}
+                        <Controller
+                            control={control}
+                            name="password"
+                            render={({ field: { onChange, onBlur, value } }) => (
+                                <View style={styles.inputWrapper}>
+                                    {errors.password && <Text style={styles.errorText}>{errors.password.message}</Text>}
+                                    <TextInput
+                                        style={[styles.input, errors.password ? styles.inputError : null]}
+                                        placeholder="Contraseña"
+                                        placeholderTextColor={colors.textSecondary}
+                                        secureTextEntry
+                                        value={value}
+                                        onChangeText={onChange}
+                                        onBlur={onBlur}
+                                        editable={!isSubmitting}
+                                    />
+                                </View>
+                            )}
+                        />
                     </View>
 
                     <TouchableOpacity
                         style={styles.buttonContainer}
-                        onPress={handleLogin}
-                        disabled={isLoading || isLoadingGoogle}
+                        onPress={handleSubmit(onSubmit)}
+                        disabled={isSubmitting || isLoadingGoogle}
                         activeOpacity={0.8}
                     >
                         <LinearGradient
@@ -161,7 +172,7 @@ export default function LoginScreen({ navigation }: any) {
                             end={{ x: 1, y: 0 }}
                             style={styles.gradient}
                         >
-                            {isLoading ? (
+                            {isSubmitting ? (
                                 <ActivityIndicator color="#FFF" />
                             ) : (
                                 <Text style={styles.buttonText}>Iniciar Sesión</Text>
@@ -172,7 +183,7 @@ export default function LoginScreen({ navigation }: any) {
                     <TouchableOpacity
                         style={[styles.buttonContainer, styles.googleButton]}
                         onPress={handleGoogleLogin}
-                        disabled={isLoading || isLoadingGoogle}
+                        disabled={isSubmitting || isLoadingGoogle}
                         activeOpacity={0.8}
                     >
                         {isLoadingGoogle ? (
@@ -191,7 +202,7 @@ export default function LoginScreen({ navigation }: any) {
                     <TouchableOpacity
                         style={styles.linkContainer}
                         onPress={() => navigation.navigate('Register')}
-                        disabled={isLoading}
+                        disabled={isSubmitting}
                     >
                         <Text style={styles.linkText}>¿No tienes cuenta? Regístrate aquí</Text>
                     </TouchableOpacity>
@@ -200,6 +211,7 @@ export default function LoginScreen({ navigation }: any) {
         </SafeAreaView>
     );
 }
+
 
 const getStyles = (colors: ThemeColors) => StyleSheet.create({
     safeArea: {
