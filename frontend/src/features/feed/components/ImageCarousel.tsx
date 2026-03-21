@@ -1,5 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, Image, StyleSheet, Dimensions, FlatList, TouchableOpacity, Modal, BackHandler } from 'react-native';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import {
+    View, Text, Image, StyleSheet, Dimensions, FlatList,
+    TouchableOpacity, Modal, BackHandler, PanResponder, Animated,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,9 +26,27 @@ interface ImageCarouselProps {
     customAspectRatio?: number;
     disableFullscreen?: boolean;
     dynamicAspectRatio?: boolean;
+    /** Llamado cuando el índice activo cambia (útil para el padre) */
+    onIndexChange?: (index: number) => void;
+    /**
+     * Llamado cuando el usuario hace swipe-to-close desde la imagen.
+     * - En imagen única: al arrastrar hacia la izquierda con suficiente recorrido.
+     * - En carrusel: solo si ya está en la última imagen.
+     */
+    onSwipeClose?: (panX: Animated.Value) => void;
 }
 
-export default function ImageCarousel({ media, onPress, containerWidth, imageResizeMode = 'cover', customAspectRatio, disableFullscreen = false, dynamicAspectRatio = false }: ImageCarouselProps) {
+export default function ImageCarousel({
+    media,
+    onPress,
+    containerWidth,
+    imageResizeMode = 'cover',
+    customAspectRatio,
+    disableFullscreen = false,
+    dynamicAspectRatio = false,
+    onIndexChange,
+    onSwipeClose,
+}: ImageCarouselProps) {
     const { colors } = useTheme();
     const insets = useSafeAreaInsets();
     const [activeIndex, setActiveIndex] = useState(0);
@@ -34,7 +55,16 @@ export default function ImageCarousel({ media, onPress, containerWidth, imageRes
     const [calculatedAspect, setCalculatedAspect] = useState<number | null>(null);
     const [isZoomed, setIsZoomed] = useState(false);
 
-    React.useEffect(() => {
+    // Ref para conocer el índice activo dentro del PanResponder (sin stale closure)
+    const activeIndexRef = useRef(0);
+    // Animated.Value que le pasamos al padre para el efecto visual de cierre
+    const slideX = useRef(new Animated.Value(0)).current;
+
+    const carouselRef = useRef<any>(null);
+    const flatListScrolling = useRef(false);
+
+    // ── Back-button en Android dentro del visor ──
+    useEffect(() => {
         if (!viewerVisible) return;
         const sub = BackHandler.addEventListener('hardwareBackPress', () => {
             setViewerVisible(false);
@@ -43,81 +73,162 @@ export default function ImageCarousel({ media, onPress, containerWidth, imageRes
         return () => sub.remove();
     }, [viewerVisible]);
 
-    React.useEffect(() => {
+    // ── Aspect ratio dinámico ──
+    useEffect(() => {
         if (dynamicAspectRatio && media && media.length > 0 && media[0].type !== 'video') {
-            Image.getSize(media[0].url, (width, height) => {
-                if (height > 0) {
-                    // Quitamos la restricción de 0.65 para permitir que tome su tamaño completo
-                    setCalculatedAspect(width / height);
-                }
-            }, () => {
-                // Ignore errors
-            });
+            Image.getSize(media[0].url, (w, h) => {
+                if (h > 0) setCalculatedAspect(w / h);
+            }, () => {});
         }
     }, [dynamicAspectRatio, media]);
 
-    // Volvemos a habilitar que tome el calculatedAspect si está en modo dinámico
-    const activeAspectRatio = dynamicAspectRatio && calculatedAspect ? calculatedAspect : (customAspectRatio || (4/5));
+    const activeAspectRatio = dynamicAspectRatio && calculatedAspect
+        ? calculatedAspect
+        : (customAspectRatio || (4 / 5));
 
-    // El ITEM_WIDTH usa el containerWidth si se proporciona (para cuando el modal tiene márgenes propios)
-    // De lo contrario usa SCREEN_WIDTH exacto para el feed
     const ITEM_WIDTH = containerWidth ?? SCREEN_WIDTH;
 
-    const carouselRef = useRef<any>(null);
-
+    // ── Reset al cambiar de post ──
     useEffect(() => {
-        // Resetear a la primera imagen cuando cambia el post
         if (carouselRef.current && media && media.length > 0) {
             carouselRef.current.scrollToOffset({ offset: 0, animated: false });
-            setActiveIndex(0);
         }
+        setActiveIndex(0);
+        activeIndexRef.current = 0;
+        slideX.setValue(0);
+        onIndexChange?.(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [media]);
 
-    // Prevent rendering if empty
     if (!media || media.length === 0) return null;
 
-    const handlePress = (index: number) => {
+    // ── Press ──
+    const handlePress = useCallback((index: number) => {
         if (!disableFullscreen) {
             setViewerInitialIndex(index);
             setViewerVisible(true);
-        } else if (onPress) {
-            onPress();
+        } else {
+            onPress?.();
         }
-    };
+    }, [disableFullscreen, onPress]);
 
-    const renderItem = ({ item, index }: { item: MediaItem, index: number }) => (
+    // ── PanResponder para imagen ÚNICA: gestiona el swipe-to-close localmente ──
+    const singleImagePan = useRef(PanResponder.create({
+        onMoveShouldSetPanResponder: (_, g) =>
+            g.dx < -8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+        onPanResponderMove: (_, g) => {
+            if (g.dx < 0) slideX.setValue(g.dx);
+        },
+        onPanResponderRelease: (_, g) => {
+            if (g.dx < -(SCREEN_WIDTH * 0.45) || g.vx < -0.9) {
+                onSwipeClose?.(slideX);
+            } else {
+                Animated.spring(slideX, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
+            }
+        },
+        onPanResponderTerminate: () => {
+            Animated.spring(slideX, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
+        },
+    })).current;
+
+    // ── PanResponder para CARRUSEL: solo activa en la última imagen ──
+    const carouselClosePan = useRef(PanResponder.create({
+        onMoveShouldSetPanResponder: (_, g) => {
+            // Solo si estamos en la última imagen Y el movimiento es claramente horizontal-izquierda
+            const isLastImage = activeIndexRef.current === media.length - 1;
+            const isLeftSwipe = g.dx < -12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5;
+            // No interrumpir si el FlatList ya está scrolleando entre páginas
+            return isLastImage && isLeftSwipe && !flatListScrolling.current;
+        },
+        onPanResponderMove: (_, g) => {
+            if (g.dx < 0) slideX.setValue(g.dx);
+        },
+        onPanResponderRelease: (_, g) => {
+            if (g.dx < -(SCREEN_WIDTH * 0.45) || g.vx < -0.9) {
+                onSwipeClose?.(slideX);
+            } else {
+                Animated.spring(slideX, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
+            }
+        },
+        onPanResponderTerminate: () => {
+            Animated.spring(slideX, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
+        },
+    })).current;
+
+    // ── renderItem (memoizado) ──
+    const renderItem = useCallback(({ item, index }: { item: MediaItem; index: number }) => (
         <TouchableOpacity activeOpacity={1} onPress={() => handlePress(index)}>
             <View style={{ width: ITEM_WIDTH, aspectRatio: activeAspectRatio, overflow: 'hidden' }}>
                 {item.type === 'video' ? (
-                    <View style={[styles.mediaItem, { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', backgroundColor: colors.surface }]}>
-                        <Ionicons name="play-circle" size={64} color="rgba(255,255,255,0.8)" style={{ position: 'absolute', zIndex: 10 }} />
-                        <Image source={{ uri: item.url }} style={[styles.mediaItem, { width: '100%', height: '100%' }]} resizeMode="cover" />
+                    <View style={[styles.mediaItem, {
+                        width: '100%', height: '100%',
+                        justifyContent: 'center', alignItems: 'center',
+                        backgroundColor: colors.surface,
+                    }]}>
+                        <Ionicons name="play-circle" size={64} color="rgba(255,255,255,0.8)"
+                            style={{ position: 'absolute', zIndex: 10 }} />
+                        <Image source={{ uri: item.url }}
+                            style={[styles.mediaItem, { width: '100%', height: '100%' }]}
+                            resizeMode="cover" />
                     </View>
                 ) : (
-                    <Image source={{ uri: item.url }} style={[styles.mediaItem, { width: '100%', height: '100%', backgroundColor: colors.surface }]} resizeMode="cover" />
+                    <Image source={{ uri: item.url }}
+                        style={[styles.mediaItem, { width: '100%', height: '100%', backgroundColor: colors.surface }]}
+                        resizeMode="cover" />
                 )}
             </View>
         </TouchableOpacity>
-    );
+    ), [ITEM_WIDTH, activeAspectRatio, colors, handlePress]);
 
+    // ────────────────────────────────────────────────────────────────────────
     return (
         <View style={styles.container}>
-            {/* Overflow hidden evita que se vea el borde de la imagen contigua */}
             <View style={{ width: ITEM_WIDTH, overflow: 'hidden' }}>
-                <FlatList
-                    ref={carouselRef}
-                    data={media}
-                    renderItem={renderItem}
-                    keyExtractor={(item, index) => `${item.url}-${index}`}
-                    horizontal
-                    pagingEnabled
-                    showsHorizontalScrollIndicator={false}
-                    getItemLayout={(_, index) => ({ length: ITEM_WIDTH, offset: ITEM_WIDTH * index, index })}
-                    onMomentumScrollEnd={(event) => {
-                        const newIndex = Math.round(event.nativeEvent.contentOffset.x / ITEM_WIDTH);
-                        setActiveIndex(newIndex);
-                    }}
-                />
+                {media.length === 1 ? (
+                    /* Imagen única: Animated.View controlado por singleImagePan */
+                    <Animated.View
+                        {...singleImagePan.panHandlers}
+                        style={{ transform: [{ translateX: slideX }] }}
+                    >
+                        {renderItem({ item: media[0], index: 0 })}
+                    </Animated.View>
+                ) : (
+                    /* Carrusel: cierre detectado en onScrollEndDrag cuando está en última imagen */
+                    <FlatList
+                        ref={carouselRef}
+                        data={media}
+                        renderItem={renderItem}
+                        keyExtractor={(item, index) => `${item.url}-${index}`}
+                        horizontal
+                        pagingEnabled
+                        showsHorizontalScrollIndicator={false}
+                        bounces={false}
+                        overScrollMode="never"
+                        getItemLayout={(_, index) => ({
+                            length: ITEM_WIDTH,
+                            offset: ITEM_WIDTH * index,
+                            index,
+                        })}
+                        onScrollBeginDrag={() => { flatListScrolling.current = true; }}
+                        onScrollEndDrag={(event) => {
+                            flatListScrolling.current = false;
+                            const { contentOffset, velocity } = event.nativeEvent;
+                            const currentIndex = Math.round(contentOffset.x / ITEM_WIDTH);
+                            const vx = velocity?.x ?? 0;
+                            // Si estamos en la última foto y el usuario sigue empujando hacia la izquierda
+                            if (currentIndex === media.length - 1 && vx < -0.3) {
+                                onSwipeClose?.(slideX);
+                            }
+                        }}
+                        onMomentumScrollEnd={(event) => {
+                            flatListScrolling.current = false;
+                            const newIndex = Math.round(event.nativeEvent.contentOffset.x / ITEM_WIDTH);
+                            setActiveIndex(newIndex);
+                            activeIndexRef.current = newIndex;
+                            onIndexChange?.(newIndex);
+                        }}
+                    />
+                )}
             </View>
 
             {/* Contador estilo Instagram – esquina superior derecha */}
@@ -135,20 +246,23 @@ export default function ImageCarousel({ media, onPress, containerWidth, imageRes
                             key={index}
                             style={[
                                 styles.dot,
-                                { backgroundColor: index === activeIndex ? colors.primary : 'rgba(255,255,255,0.5)' }
+                                { backgroundColor: index === activeIndex ? colors.primary : 'rgba(255,255,255,0.5)' },
                             ]}
                         />
                     ))}
                 </View>
             )}
 
-            {/* Modal de Pantalla Completa para ver las fotos/videos */}
-            <Modal visible={viewerVisible} transparent={true} animationType="fade" onRequestClose={() => setViewerVisible(false)}>
+            {/* Modal de Pantalla Completa */}
+            <Modal visible={viewerVisible} transparent animationType="fade"
+                onRequestClose={() => setViewerVisible(false)}>
                 <View style={styles.viewerContainer}>
-                    <TouchableOpacity style={[styles.closeViewerButton, { top: insets.top + 10 }]} onPress={() => setViewerVisible(false)}>
+                    <TouchableOpacity
+                        style={[styles.closeViewerButton, { top: insets.top + 10 }]}
+                        onPress={() => setViewerVisible(false)}
+                    >
                         <Ionicons name="close" size={28} color="#FFF" />
                     </TouchableOpacity>
-
                     <FlatList
                         data={media}
                         horizontal
@@ -156,23 +270,31 @@ export default function ImageCarousel({ media, onPress, containerWidth, imageRes
                         scrollEnabled={!isZoomed}
                         showsHorizontalScrollIndicator={false}
                         initialScrollIndex={viewerInitialIndex}
-                        getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
+                        getItemLayout={(_, index) => ({
+                            length: SCREEN_WIDTH,
+                            offset: SCREEN_WIDTH * index,
+                            index,
+                        })}
                         keyExtractor={(item, index) => `viewer-${item.url}-${index}`}
                         renderItem={({ item }) => (
                             <View style={[styles.viewerSlide, { width: SCREEN_WIDTH, height: SCREEN_HEIGHT }]}>
                                 {item.type === 'video' ? (
                                     <View style={[styles.viewerSlide, { width: SCREEN_WIDTH, height: SCREEN_HEIGHT }]}>
-                                        <Ionicons name="play-circle" size={80} color="rgba(255,255,255,0.8)" style={{ position: 'absolute', zIndex: 10 }} />
-                                        <Image source={{ uri: item.url }} style={styles.viewerImage} resizeMode="contain" />
+                                        <Ionicons name="play-circle" size={80}
+                                            color="rgba(255,255,255,0.8)"
+                                            style={{ position: 'absolute', zIndex: 10 }} />
+                                        <Image source={{ uri: item.url }}
+                                            style={styles.viewerImage} resizeMode="contain" />
                                     </View>
                                 ) : (
-                                    <ZoomableImageViewer url={item.url} onClose={() => setViewerVisible(false)} onZoomChange={setIsZoomed} />
+                                    <ZoomableImageViewer url={item.url}
+                                        onClose={() => setViewerVisible(false)}
+                                        onZoomChange={setIsZoomed} />
                                 )}
                             </View>
                         )}
                     />
                 </View>
-                {/* El Toast debe estar dentro del Modal para ser visible sobre el fondo negro */}
                 <Toast config={customToastConfig} position="top" topOffset={60} />
             </Modal>
         </View>
@@ -184,15 +306,10 @@ const styles = StyleSheet.create({
         width: '100%',
         marginTop: 6,
         marginBottom: 8,
-        position: 'relative'
+        position: 'relative',
     },
-    mediaContainer: {
-        width: '100%',
-    },
-    mediaItem: {
-        width: '100%',
-        height: '100%',
-    },
+    mediaContainer: { width: '100%' },
+    mediaItem: { width: '100%', height: '100%' },
     pagination: {
         flexDirection: 'row',
         position: 'absolute',
@@ -243,5 +360,5 @@ const styles = StyleSheet.create({
     viewerImage: {
         width: '100%',
         height: '100%',
-    }
+    },
 });

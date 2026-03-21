@@ -83,8 +83,8 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     // Lógica para determinar si el texto es largo
     const TEXT_LIMIT = 200;
     const isTextLong = (post?.content?.length || 0) > TEXT_LIMIT;
-    const displayContent = isTextLong && !isExpanded 
-        ? post?.content.substring(0, TEXT_LIMIT) + '...' 
+    const displayContent = isTextLong && !isExpanded
+        ? post?.content.substring(0, TEXT_LIMIT) + '...'
         : post?.content;
 
     const navigateToProfile = (userId: string) => {
@@ -352,36 +352,23 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     const postScrollDragStartY = useRef(0);
 
     // ── PanResponder para contenido corto en la publicación ─────────────────
+    // NOTA: ya NO intercepta gestos horizontales — el ImageCarousel los maneja internamente.
+    // Solo activamos para swipe vertical en contenido que no requiere scroll propio.
     const shortContentPan = useRef(PanResponder.create({
         onMoveShouldSetPanResponder: (_, g) => {
-            // Activar para swipe horizontal (cerrar) o vertical en contenido corto
-            if (g.dx < -15 && Math.abs(g.dy) < Math.abs(g.dx)) return true;
             if (postScrollContentHeight.current <= postScrollHeight.current + 5) {
-                return Math.abs(g.dy) > 15;
+                return Math.abs(g.dy) > 15 && Math.abs(g.dy) > Math.abs(g.dx);
             }
             return false;
-        },
-        onPanResponderMove: (_, g) => {
-            // Seguir el dedo hacia la izquierda en tiempo real
-            if (g.dx < 0 && Math.abs(g.dx) > Math.abs(g.dy)) {
-                panX.setValue(g.dx);
-            }
         },
         onPanResponderRelease: (_, g) => {
             const vy = g.vy;
             const dy = g.dy;
-            const dx = g.dx;
-            const vx = g.vx;
-            // Swipe derecha a izquierda -> Cerrar modal
-            if ((dx < -80 && Math.abs(dy) < 80) || (vx < -0.8 && Math.abs(g.vy) < 0.8 && dx < -20)) {
-                closeWithXAnimation();
-            } else if (dy > 40 || vy > 0.5) {
-                // Hacia abajo -> Anterior
+            if (dy > 40 || vy > 0.5) {
                 Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
                 lastSwipeDir.current = 'down';
                 callbacksRef.current.onPrevPost?.();
             } else if (dy < -40 || vy < -0.5) {
-                // Hacia arriba -> Siguiente
                 Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
                 lastSwipeDir.current = 'up';
                 callbacksRef.current.onNextPost?.();
@@ -390,6 +377,42 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
             }
         }
     })).current;
+
+    // ── PanResponder: Footer (cambiar post + cerrar) ─────────────────────────
+    const footerSwipePan = useRef(PanResponder.create({
+        onMoveShouldSetPanResponderCapture: (_, g) => {
+            // Swipe vertical: cambiar post
+            if (Math.abs(g.dy) > 10 && Math.abs(g.dy) > Math.abs(g.dx)) return true;
+            // Swipe horizontal izquierda: cerrar
+            if (g.dx < -15 && Math.abs(g.dy) < Math.abs(g.dx)) return true;
+            return false;
+        },
+        onPanResponderMove: (_, g) => {
+            if (g.dx < 0 && Math.abs(g.dx) > Math.abs(g.dy)) {
+                panX.setValue(g.dx);
+            }
+        },
+        onPanResponderRelease: (_, g) => {
+            const vy = g.vy; const dy = g.dy; const dx = g.dx; const vx = g.vx;
+            if ((dx < -(SCREEN_WIDTH * 0.45)) || (vx < -0.9 && dx < -50)) {
+                closeWithXAnimation();
+            } else if (dy > 40 || vy > 0.5) {
+                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
+                lastSwipeDir.current = 'down';
+                callbacksRef.current.onPrevPost?.();
+            } else if (dy < -40 || vy < -0.5) {
+                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
+                lastSwipeDir.current = 'up';
+                callbacksRef.current.onNextPost?.();
+            } else {
+                Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+            }
+        },
+        onPanResponderTerminate: () => {
+            Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+        },
+    })).current;
+
 
     // ── Likes ──────────────────────────────────────────────────────────────
     const displayLiked = post?.likes?.some((l: any) => l.user?.id === currentUser?.id) || false;
@@ -633,17 +656,17 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         new Date(post.updatedAt).getTime() > new Date(post.createdAt).getTime() + 2000;
 
     return (
-        <Modal 
-            visible={visible} 
-            transparent 
-            animationType="none" 
+        <Modal
+            visible={visible}
+            transparent
+            animationType="none"
             onRequestClose={() => {
                 if (!isMinimized) {
                     toggleMinimize();
                 } else {
                     closeWithAnimation();
                 }
-            }} 
+            }}
             statusBarTranslucent
         >
 
@@ -672,6 +695,37 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                     {/* ── BURBUJA PUBLICACIÓN ── */}
                     {post && (
                         <Animated.View style={[styles.postBubble, isMinimized ? { maxHeight: SCREEN_HEIGHT - insets.top - 6 - Math.max(insets.bottom, 72) } : { maxHeight: SCREEN_HEIGHT * 0.35 }, { opacity: postTransition, transform: [{ translateY: slideY }, { translateX: panX }] }]}>
+                            <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
+                                <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
+                                <TouchableOpacity
+                                    style={styles.postAuthorRow}
+                                    onPress={() => post.author?.id && navigateToProfile(post.author.id)}
+                                    activeOpacity={0.7}
+                                >
+                                    <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
+                                        {post.author?.photoUrl
+                                            ? <Image source={{ uri: post.author.photoUrl }} style={styles.avatarImage} />
+                                            : <Text style={styles.avatarText}>
+                                                {post.author?.firstName?.[0] || ''}{post.author?.lastName?.[0] || ''}
+                                            </Text>
+                                        }
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.postAuthorName, { color: colors.text }]}>
+                                            {post.author?.firstName} {post.author?.lastName}
+                                        </Text>
+                                        <Text style={[styles.postDate, { color: colors.textSecondary }]}>
+                                            {formatDate(post.createdAt)}{isEdited ? ' · Editado' : ''}
+                                        </Text>
+                                    </View>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity onPress={closeWithAnimation} style={styles.postCloseBtn}
+                                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                                    <Ionicons name="close" size={24} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                            </View>
+
                             <ScrollView
                                 showsVerticalScrollIndicator={true}
                                 persistentScrollbar={true}
@@ -714,50 +768,19 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                     }
                                 }}
                             >
-                                <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
-                                    <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
-                                    <TouchableOpacity
-                                        style={styles.postAuthorRow}
-                                        onPress={() => post.author?.id && navigateToProfile(post.author.id)}
-                                        activeOpacity={0.7}
-                                    >
-                                        <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
-                                            {post.author?.photoUrl
-                                                ? <Image source={{ uri: post.author.photoUrl }} style={styles.avatarImage} />
-                                                : <Text style={styles.avatarText}>
-                                                    {post.author?.firstName?.[0] || ''}{post.author?.lastName?.[0] || ''}
-                                                </Text>
-                                            }
-                                        </View>
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={[styles.postAuthorName, { color: colors.text }]}>
-                                                {post.author?.firstName} {post.author?.lastName}
-                                            </Text>
-                                            <Text style={[styles.postDate, { color: colors.textSecondary }]}>
-                                                {formatDate(post.createdAt)}{isEdited ? ' · Editado' : ''}
-                                            </Text>
-                                        </View>
-                                    </TouchableOpacity>
-
-                                    <TouchableOpacity onPress={closeWithAnimation} style={styles.postCloseBtn}
-                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                                        <Ionicons name="close" size={24} color={colors.textSecondary} />
-                                    </TouchableOpacity>
-                                </View>
-
                                 <Animated.View {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 10 }}>
                                     <View style={{ marginBottom: 4 }}>
-                                        <TouchableOpacity 
-                                            activeOpacity={0.8} 
+                                        <TouchableOpacity
+                                            activeOpacity={0.8}
                                             onPress={() => isTextLong && setIsExpanded(!isExpanded)}
-                                            onLongPress={() => setIsCopyModalVisible(true)} 
+                                            onLongPress={() => setIsCopyModalVisible(true)}
                                             delayLongPress={250}
                                         >
                                             <Text style={[styles.postContent, { color: colors.text }]}>{displayContent}</Text>
                                         </TouchableOpacity>
 
                                         {isTextLong && (
-                                            <TouchableOpacity 
+                                            <TouchableOpacity
                                                 onPress={() => setIsExpanded(!isExpanded)}
                                                 style={styles.seeMoreBtn}
                                             >
@@ -767,26 +790,31 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                             </TouchableOpacity>
                                         )}
                                     </View>
-                                    
+
                                     {/* ── Media Adjunta (Carrusel) dentro del Modal ── */}
                                     {post.media && post.media.length > 0 && (
                                         <View style={{ marginTop: 12, marginHorizontal: -16 }}>
-                                            <ImageCarousel 
+                                            <ImageCarousel
                                                 media={post.media}
-                                                // El ancho real disponible para el carrusel = SCREEN_WIDTH - 8 (márgenes del postBubble)
                                                 containerWidth={SCREEN_WIDTH - 8}
                                                 imageResizeMode="contain"
                                                 dynamicAspectRatio={true}
                                                 customAspectRatio={undefined}
+                                                onSwipeClose={(carouselPanX) => {
+                                                    // Sincronizamos el panX del modal con el que viene del carrusel
+                                                    // para que el efecto visual ya esté en marcha antes de cerrar
+                                                    carouselPanX.addListener(({ value }) => panX.setValue(value));
+                                                    closeWithXAnimation();
+                                                }}
                                             />
                                         </View>
                                     )}
                                 </Animated.View>
                             </ScrollView>
 
-                            <View style={[styles.postFooterFixed, { borderTopColor: colors.border }]}>
+                            <Animated.View {...footerSwipePan.panHandlers} style={[styles.postFooterFixed, { borderTopColor: colors.border }]}>
                                 {(localCount > 0 || commentsCount > 0) && (
-                                    <View style={styles.statsRow}>
+                                    <TouchableOpacity activeOpacity={1} style={styles.statsRow}>
                                         {/* Comentarios a la izquierda */}
                                         <TouchableOpacity onPress={() => { setActiveTab('comments'); if (isMinimized) toggleMinimize(); }}>
                                             {commentsCount > 0 && (
@@ -805,9 +833,10 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                                 </View>
                                             )}
                                         </TouchableOpacity>
-                                    </View>
+                                    </TouchableOpacity>
                                 )}
-                                <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
+                                {/* actionsRow como TouchableOpacity para capturar gestos en huecos */}
+                                <TouchableOpacity activeOpacity={1} style={[styles.actionsRow, { borderTopColor: colors.border }]}>
                                     <TouchableOpacity style={styles.actionBtn} onPress={handleLike}>
                                         <Ionicons name={localLiked ? 'heart' : 'heart-outline'} size={20}
                                             color={localLiked ? '#FF3B30' : colors.textSecondary} />
@@ -816,15 +845,13 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                     </TouchableOpacity>
                                     <TouchableOpacity style={styles.actionBtn} onPress={() => {
                                         setActiveTab('comments');
-                                        if (isMinimized) {
-                                            toggleMinimize();
-                                        }
+                                        if (isMinimized) toggleMinimize();
                                     }}>
                                         <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
                                         <Text style={[styles.actionText, { color: colors.textSecondary }]}>Comentar</Text>
                                     </TouchableOpacity>
-                                </View>
-                            </View>
+                                </TouchableOpacity>
+                            </Animated.View>
                         </Animated.View>
                     )}
 
