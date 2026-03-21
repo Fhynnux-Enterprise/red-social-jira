@@ -3,6 +3,9 @@ import { View, Image, StyleSheet, Dimensions, FlatList, TouchableOpacity, Modal,
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ZoomableImageViewer from './ZoomableImageViewer';
+import Toast from 'react-native-toast-message';
+import { customToastConfig } from '../../../components/CustomToast';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -29,6 +32,7 @@ export default function ImageCarousel({ media, onPress, containerWidth, imageRes
     const [viewerVisible, setViewerVisible] = useState(false);
     const [viewerInitialIndex, setViewerInitialIndex] = useState(0);
     const [calculatedAspect, setCalculatedAspect] = useState<number | null>(null);
+    const [isZoomed, setIsZoomed] = useState(false);
 
     React.useEffect(() => {
         if (!viewerVisible) return;
@@ -121,6 +125,7 @@ export default function ImageCarousel({ media, onPress, containerWidth, imageRes
                         data={media}
                         horizontal
                         pagingEnabled
+                        scrollEnabled={!isZoomed}
                         showsHorizontalScrollIndicator={false}
                         initialScrollIndex={viewerInitialIndex}
                         getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
@@ -133,12 +138,14 @@ export default function ImageCarousel({ media, onPress, containerWidth, imageRes
                                         <Image source={{ uri: item.url }} style={styles.viewerImage} resizeMode="contain" />
                                     </View>
                                 ) : (
-                                    <Image source={{ uri: item.url }} style={styles.viewerImage} resizeMode="contain" />
+                                    <ZoomableImageViewer url={item.url} onClose={() => setViewerVisible(false)} onZoomChange={setIsZoomed} />
                                 )}
                             </View>
                         )}
                     />
                 </View>
+                {/* El Toast debe estar dentro del Modal para ser visible sobre el fondo negro */}
+                <Toast config={customToastConfig} position="top" topOffset={60} />
             </Modal>
         </View>
     );
