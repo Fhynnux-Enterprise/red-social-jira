@@ -216,11 +216,15 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     useEffect(() => {
         if (!visible) return;
         const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-            closeWithAnimation();
+            if (!isMinimized) {
+                toggleMinimize();
+            } else {
+                closeWithAnimation();
+            }
             return true; // consume el evento para que no cierre la pantalla anterior
         });
         return () => sub.remove();
-    }, [visible]);
+    }, [visible, isMinimized]);
 
     // ── Teclado ────────────────────────────────────────────────────────────
     const keyboardOffset = useRef(new Animated.Value(Math.max(insets.bottom, 16))).current;
@@ -620,7 +624,19 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         new Date(post.updatedAt).getTime() > new Date(post.createdAt).getTime() + 2000;
 
     return (
-        <Modal visible={visible} transparent animationType="none" onRequestClose={() => { }} statusBarTranslucent>
+        <Modal 
+            visible={visible} 
+            transparent 
+            animationType="none" 
+            onRequestClose={() => {
+                if (!isMinimized) {
+                    toggleMinimize();
+                } else {
+                    closeWithAnimation();
+                }
+            }} 
+            statusBarTranslucent
+        >
 
             {/* Este fondo atrapará los taps y los deslizamientos en toda su superficie libre */}
             <Animated.View

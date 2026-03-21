@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Image, StyleSheet, Dimensions, FlatList, TouchableOpacity, Modal } from 'react-native';
+import { View, Image, StyleSheet, Dimensions, FlatList, TouchableOpacity, Modal, BackHandler } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +29,15 @@ export default function ImageCarousel({ media, onPress, containerWidth, imageRes
     const [viewerVisible, setViewerVisible] = useState(false);
     const [viewerInitialIndex, setViewerInitialIndex] = useState(0);
     const [calculatedAspect, setCalculatedAspect] = useState<number | null>(null);
+
+    React.useEffect(() => {
+        if (!viewerVisible) return;
+        const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+            setViewerVisible(false);
+            return true;
+        });
+        return () => sub.remove();
+    }, [viewerVisible]);
 
     React.useEffect(() => {
         if (dynamicAspectRatio && media && media.length > 0 && media[0].type !== 'video') {
