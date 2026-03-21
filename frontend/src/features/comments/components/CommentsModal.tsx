@@ -76,8 +76,16 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     const [isMinimized, setIsMinimized] = useState(false);
     const [activeTab, setActiveTab] = useState<'comments' | 'likes'>(initialTab);
     const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
     const inputRef = useRef<TextInput>(null);
     const postId = post?.id;
+
+    // Lógica para determinar si el texto es largo
+    const TEXT_LIMIT = 200;
+    const isTextLong = (post?.content?.length || 0) > TEXT_LIMIT;
+    const displayContent = isTextLong && !isExpanded 
+        ? post?.content.substring(0, TEXT_LIMIT) + '...' 
+        : post?.content;
 
     const navigateToProfile = (userId: string) => {
         onClose();
@@ -198,6 +206,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
             setIsMinimized(initialMinimized);
             setActiveTab(initialTab);
             activeTabRef.current = initialTab;
+            setIsExpanded(false); // Reset al abrir o cambiar
             Animated.spring(panY, {
                 toValue: 0,
                 useNativeDriver: true,
@@ -663,37 +672,6 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                     {/* ── BURBUJA PUBLICACIÓN ── */}
                     {post && (
                         <Animated.View style={[styles.postBubble, isMinimized ? { maxHeight: SCREEN_HEIGHT - insets.top - 6 - Math.max(insets.bottom, 72) } : { maxHeight: SCREEN_HEIGHT * 0.35 }, { opacity: postTransition, transform: [{ translateY: slideY }, { translateX: panX }] }]}>
-                            <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
-                                <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
-                                <TouchableOpacity
-                                    style={styles.postAuthorRow}
-                                    onPress={() => post.author?.id && navigateToProfile(post.author.id)}
-                                    activeOpacity={0.7}
-                                >
-                                    <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
-                                        {post.author?.photoUrl
-                                            ? <Image source={{ uri: post.author.photoUrl }} style={styles.avatarImage} />
-                                            : <Text style={styles.avatarText}>
-                                                {post.author?.firstName?.[0] || ''}{post.author?.lastName?.[0] || ''}
-                                            </Text>
-                                        }
-                                    </View>
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={[styles.postAuthorName, { color: colors.text }]}>
-                                            {post.author?.firstName} {post.author?.lastName}
-                                        </Text>
-                                        <Text style={[styles.postDate, { color: colors.textSecondary }]}>
-                                            {formatDate(post.createdAt)}{isEdited ? ' · Editado' : ''}
-                                        </Text>
-                                    </View>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity onPress={closeWithAnimation} style={styles.postCloseBtn}
-                                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                                    <Ionicons name="close" size={24} color={colors.textSecondary} />
-                                </TouchableOpacity>
-                            </View>
-
                             <ScrollView
                                 showsVerticalScrollIndicator={true}
                                 persistentScrollbar={true}
@@ -702,7 +680,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                 bounces={true}
                                 alwaysBounceVertical={true}
                                 overScrollMode="always"
-                                contentContainerStyle={styles.postScrollContent}
+                                contentContainerStyle={{ paddingBottom: 16 }}
                                 style={styles.postScrollView}
                                 scrollEventThrottle={8}
                                 onLayout={(e) => {
@@ -736,19 +714,70 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                     }
                                 }}
                             >
-                                <Animated.View {...shortContentPan.panHandlers}>
-                                    <TouchableOpacity activeOpacity={0.8} onLongPress={() => setIsCopyModalVisible(true)} delayLongPress={250}>
-                                        <Text style={[styles.postContent, { color: colors.text }]}>{post.content}</Text>
+                                <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
+                                    <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
+                                    <TouchableOpacity
+                                        style={styles.postAuthorRow}
+                                        onPress={() => post.author?.id && navigateToProfile(post.author.id)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
+                                            {post.author?.photoUrl
+                                                ? <Image source={{ uri: post.author.photoUrl }} style={styles.avatarImage} />
+                                                : <Text style={styles.avatarText}>
+                                                    {post.author?.firstName?.[0] || ''}{post.author?.lastName?.[0] || ''}
+                                                </Text>
+                                            }
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={[styles.postAuthorName, { color: colors.text }]}>
+                                                {post.author?.firstName} {post.author?.lastName}
+                                            </Text>
+                                            <Text style={[styles.postDate, { color: colors.textSecondary }]}>
+                                                {formatDate(post.createdAt)}{isEdited ? ' · Editado' : ''}
+                                            </Text>
+                                        </View>
                                     </TouchableOpacity>
+
+                                    <TouchableOpacity onPress={closeWithAnimation} style={styles.postCloseBtn}
+                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                                        <Ionicons name="close" size={24} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                </View>
+
+                                <Animated.View {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 10 }}>
+                                    <View style={{ marginBottom: 4 }}>
+                                        <TouchableOpacity 
+                                            activeOpacity={0.8} 
+                                            onPress={() => isTextLong && setIsExpanded(!isExpanded)}
+                                            onLongPress={() => setIsCopyModalVisible(true)} 
+                                            delayLongPress={250}
+                                        >
+                                            <Text style={[styles.postContent, { color: colors.text }]}>{displayContent}</Text>
+                                        </TouchableOpacity>
+
+                                        {isTextLong && (
+                                            <TouchableOpacity 
+                                                onPress={() => setIsExpanded(!isExpanded)}
+                                                style={styles.seeMoreBtn}
+                                            >
+                                                <Text style={[styles.seeMoreText, { color: colors.primary }]}>
+                                                    {isExpanded ? 'Ver menos' : 'Ver más'}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
                                     
                                     {/* ── Media Adjunta (Carrusel) dentro del Modal ── */}
                                     {post.media && post.media.length > 0 && (
-                                        <View style={{ marginTop: 12, marginLeft: -16, marginRight: -12 }}>
+                                        <View style={{ marginTop: 12, marginHorizontal: -16 }}>
                                             <ImageCarousel 
-                                                media={post.media} 
-                                                containerWidth={SCREEN_WIDTH - 8} 
+                                                media={post.media}
+                                                // El ancho real disponible para el carrusel = SCREEN_WIDTH - 8 (márgenes del postBubble)
+                                                containerWidth={SCREEN_WIDTH - 8}
                                                 imageResizeMode="contain"
                                                 dynamicAspectRatio={true}
+                                                customAspectRatio={undefined}
                                             />
                                         </View>
                                     )}
@@ -1053,9 +1082,6 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         borderRightColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
     },
     postScrollContent: {
-        paddingLeft: 16,
-        paddingRight: 12,
-        paddingTop: 10,
         paddingBottom: 16
     },
     postHeader: {
@@ -1074,7 +1100,16 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     },
     postAuthorName: { fontWeight: 'bold', fontSize: 15, marginBottom: 2 },
     postDate: { fontSize: 12 },
-    postContent: { fontSize: 15, lineHeight: 23 },
+    postContent: { fontSize: 15, lineHeight: 22 },
+    seeMoreBtn: {
+        marginTop: 4,
+        alignSelf: 'flex-start',
+        paddingVertical: 2,
+    },
+    seeMoreText: {
+        fontSize: 14,
+        fontWeight: '700',
+    },
     postFooterFixed: { borderTopWidth: StyleSheet.hairlineWidth },
     statsRow: {
         flexDirection: 'row',

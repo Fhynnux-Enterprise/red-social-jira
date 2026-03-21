@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Image, StyleSheet, Dimensions, FlatList, TouchableOpacity, Modal, BackHandler } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, Image, StyleSheet, Dimensions, FlatList, TouchableOpacity, Modal, BackHandler } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -47,7 +47,8 @@ export default function ImageCarousel({ media, onPress, containerWidth, imageRes
         if (dynamicAspectRatio && media && media.length > 0 && media[0].type !== 'video') {
             Image.getSize(media[0].url, (width, height) => {
                 if (height > 0) {
-                    setCalculatedAspect(Math.max(0.65, width / height));
+                    // Quitamos la restricción de 0.65 para permitir que tome su tamaño completo
+                    setCalculatedAspect(width / height);
                 }
             }, () => {
                 // Ignore errors
@@ -55,9 +56,22 @@ export default function ImageCarousel({ media, onPress, containerWidth, imageRes
         }
     }, [dynamicAspectRatio, media]);
 
+    // Volvemos a habilitar que tome el calculatedAspect si está en modo dinámico
     const activeAspectRatio = dynamicAspectRatio && calculatedAspect ? calculatedAspect : (customAspectRatio || (4/5));
 
-    const ITEM_WIDTH = containerWidth || (SCREEN_WIDTH - 24); // Assuming margins are 12 left and 12 right on PostCard
+    // El ITEM_WIDTH usa el containerWidth si se proporciona (para cuando el modal tiene márgenes propios)
+    // De lo contrario usa SCREEN_WIDTH exacto para el feed
+    const ITEM_WIDTH = containerWidth ?? SCREEN_WIDTH;
+
+    const carouselRef = useRef<any>(null);
+
+    useEffect(() => {
+        // Resetear a la primera imagen cuando cambia el post
+        if (carouselRef.current && media && media.length > 0) {
+            carouselRef.current.scrollToOffset({ offset: 0, animated: false });
+            setActiveIndex(0);
+        }
+    }, [media]);
 
     // Prevent rendering if empty
     if (!media || media.length === 0) return null;
@@ -72,15 +86,15 @@ export default function ImageCarousel({ media, onPress, containerWidth, imageRes
     };
 
     const renderItem = ({ item, index }: { item: MediaItem, index: number }) => (
-        <TouchableOpacity activeOpacity={0.9} onPress={() => handlePress(index)}>
-            <View style={[styles.mediaContainer, { width: ITEM_WIDTH, aspectRatio: activeAspectRatio }]}>
+        <TouchableOpacity activeOpacity={1} onPress={() => handlePress(index)}>
+            <View style={{ width: ITEM_WIDTH, aspectRatio: activeAspectRatio, overflow: 'hidden' }}>
                 {item.type === 'video' ? (
-                    <View style={[styles.mediaItem, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.surface }]}>
+                    <View style={[styles.mediaItem, { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', backgroundColor: colors.surface }]}>
                         <Ionicons name="play-circle" size={64} color="rgba(255,255,255,0.8)" style={{ position: 'absolute', zIndex: 10 }} />
-                        <Image source={{ uri: item.url }} style={styles.mediaItem} />
+                        <Image source={{ uri: item.url }} style={[styles.mediaItem, { width: '100%', height: '100%' }]} resizeMode="cover" />
                     </View>
                 ) : (
-                    <Image source={{ uri: item.url }} style={[styles.mediaItem, { backgroundColor: colors.surface }]} resizeMode={imageResizeMode} />
+                    <Image source={{ uri: item.url }} style={[styles.mediaItem, { width: '100%', height: '100%', backgroundColor: colors.surface }]} resizeMode="cover" />
                 )}
             </View>
         </TouchableOpacity>
@@ -88,18 +102,32 @@ export default function ImageCarousel({ media, onPress, containerWidth, imageRes
 
     return (
         <View style={styles.container}>
-            <FlatList
-                data={media}
-                renderItem={renderItem}
-                keyExtractor={(item, index) => `${item.url}-${index}`}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                onMomentumScrollEnd={(event) => {
-                    const newIndex = Math.round(event.nativeEvent.contentOffset.x / ITEM_WIDTH);
-                    setActiveIndex(newIndex);
-                }}
-            />
+            {/* Overflow hidden evita que se vea el borde de la imagen contigua */}
+            <View style={{ width: ITEM_WIDTH, overflow: 'hidden' }}>
+                <FlatList
+                    ref={carouselRef}
+                    data={media}
+                    renderItem={renderItem}
+                    keyExtractor={(item, index) => `${item.url}-${index}`}
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    getItemLayout={(_, index) => ({ length: ITEM_WIDTH, offset: ITEM_WIDTH * index, index })}
+                    onMomentumScrollEnd={(event) => {
+                        const newIndex = Math.round(event.nativeEvent.contentOffset.x / ITEM_WIDTH);
+                        setActiveIndex(newIndex);
+                    }}
+                />
+            </View>
+
+            {/* Contador estilo Instagram – esquina superior derecha */}
+            {media.length > 1 && (
+                <View style={styles.counter} pointerEvents="none">
+                    <Text style={styles.counterText}>{activeIndex + 1}/{media.length}</Text>
+                </View>
+            )}
+
+            {/* Puntos de paginación – centrados */}
             {media.length > 1 && (
                 <View style={styles.pagination}>
                     {media.map((_, index) => (
@@ -170,12 +198,31 @@ const styles = StyleSheet.create({
         position: 'absolute',
         bottom: 12,
         alignSelf: 'center',
+        alignItems: 'center',
+        justifyContent: 'center',
+        left: 0,
+        right: 0,
     },
     dot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        marginHorizontal: 4,
+        width: 7,
+        height: 7,
+        borderRadius: 3.5,
+        marginHorizontal: 3,
+    },
+    counter: {
+        position: 'absolute',
+        top: 10,
+        right: 12,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        borderRadius: 12,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+    },
+    counterText: {
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '600',
+        letterSpacing: 0.5,
     },
     viewerContainer: {
         flex: 1,
