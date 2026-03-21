@@ -37,7 +37,40 @@ export class ChatResolver {
             throw new Error('No tienes permiso para ver los mensajes de esta conversación');
         }
 
-        return this.chatService.getMessagesByConversation(id_conversation);
+        return this.chatService.getMessagesByConversation(id_conversation, user.id);
+    }
+
+    @Mutation(() => Boolean)
+    async deleteMessageForMe(
+        @CurrentUser() user: User,
+        @Args('id_message') id_message: string,
+    ) {
+        return this.chatService.deleteMessageForMe(id_message, user.id);
+    }
+
+    @Mutation(() => Boolean)
+    async deleteMessageForAll(
+        @CurrentUser() user: User,
+        @Args('id_message') id_message: string,
+    ) {
+        return this.chatService.deleteMessageForAll(id_message, user.id);
+    }
+
+    @Mutation(() => Boolean)
+    async deleteConversationForMe(
+        @CurrentUser() user: User,
+        @Args('id_conversation') id_conversation: string,
+    ) {
+        return this.chatService.deleteConversationForMe(id_conversation, user.id);
+    }
+
+    @Mutation(() => Message)
+    async editMessage(
+        @CurrentUser() user: User,
+        @Args('id_message') id_message: string,
+        @Args('newContent') newContent: string,
+    ) {
+        return this.chatService.editMessage(id_message, user.id, newContent);
     }
 
     @Query(() => Conversation, { name: 'getConversation', nullable: true })

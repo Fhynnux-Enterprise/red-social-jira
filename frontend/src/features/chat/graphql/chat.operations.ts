@@ -48,6 +48,8 @@ export const GET_CHAT_MESSAGES = gql`
       content
       createdAt
       isRead
+      isDeletedForAll
+      editedAt
       sender {
         id
       }
@@ -63,6 +65,34 @@ export const GET_OR_CREATE_CHAT = gql`
   }
 `;
 
+export const DELETE_MESSAGE_FOR_ME = gql`
+  mutation DeleteMessageForMe($id_message: String!) {
+    deleteMessageForMe(id_message: $id_message)
+  }
+`;
+
+export const DELETE_CONVERSATION_FOR_ME = gql`
+  mutation DeleteConversationForMe($id_conversation: String!) {
+    deleteConversationForMe(id_conversation: $id_conversation)
+  }
+`;
+
+export const DELETE_MESSAGE_FOR_ALL = gql`
+  mutation DeleteMessageForAll($id_message: String!) {
+    deleteMessageForAll(id_message: $id_message)
+  }
+`;
+
+export const EDIT_MESSAGE = gql`
+  mutation EditMessage($id_message: String!, $newContent: String!) {
+    editMessage(id_message: $id_message, newContent: $newContent) {
+      id_message
+      content
+      editedAt
+    }
+  }
+`;
+
 export const SEND_MESSAGE = gql`
   mutation SendMessage($id_conversation: String!, $content: String!) {
     sendMessage(id_conversation: $id_conversation, content: $content) {
@@ -70,6 +100,8 @@ export const SEND_MESSAGE = gql`
       content
       createdAt
       isRead
+      isDeletedForAll
+      editedAt
       sender {
         id
       }

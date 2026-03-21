@@ -14,17 +14,19 @@ import {
     Animated,
     Modal,
     Dimensions,
+    Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '../../../navigation/AppNavigator';
-import { useQuery, useMutation } from '@apollo/client';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION } from '../graphql/chat.operations';
+import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION, DELETE_MESSAGE_FOR_ME, DELETE_MESSAGE_FOR_ALL, EDIT_MESSAGE } from '../graphql/chat.operations';
 import * as Haptics from 'expo-haptics';
+import Toast from 'react-native-toast-message';
 
 export default function ChatRoomScreen() {
     const { colors, isDark } = useTheme();
@@ -34,6 +36,17 @@ export default function ChatRoomScreen() {
     const { id_conversation } = route.params || {};
     const { user: currentUser } = useAuth() as any;
     const [messageText, setMessageText] = useState('');
+    const [selectedMessage, setSelectedMessage] = useState<any>(null);
+    const [isActionModalVisible, setIsActionModalVisible] = useState(false);
+    const [editingMessage, setEditingMessage] = useState<any>(null);
+    const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
+    const [confirmModalData, setConfirmModalData] = useState({
+        title: '',
+        message: '',
+        confirmText: '',
+        onConfirm: () => {}
+    });
+    const client = useApolloClient();
 
     const screenWidth = Dimensions.get('window').width;
 
@@ -54,6 +67,10 @@ export default function ChatRoomScreen() {
         const participants = convData?.getConversation?.participants;
         return participants?.find((p: any) => p.user.id !== currentUser?.id)?.user || null;
     }, [convData, currentUser?.id]);
+
+    const [deleteMessageForMeMutation] = useMutation(DELETE_MESSAGE_FOR_ME);
+    const [deleteMessageForAllMutation] = useMutation(DELETE_MESSAGE_FOR_ALL);
+    const [editMessageMutation] = useMutation(EDIT_MESSAGE);
 
     // Mutación para enviar mensaje
     const [sendMessageMutation] = useMutation(SEND_MESSAGE, {
@@ -83,19 +100,25 @@ export default function ChatRoomScreen() {
 
     const messages = useMemo(() => {
         if (!data?.getChatMessages) return [];
+        // rawMessages: del más nuevo (index 0) al más viejo
         const rawMessages = [...data.getChatMessages].reverse();
         
-        // Inyectar separadores de fecha
         const grouped: any[] = [];
-        let lastDate = '';
 
         rawMessages.forEach((msg, index) => {
-            const date = new Date(msg.createdAt).toDateString();
-            if (date !== lastDate) {
-                grouped.push({ type: 'DATE_SEPARATOR', date, id: `date-${msg.id_message}` });
-                lastDate = date;
-            }
+            // Empujar el mensaje actual (siendo FlatList invertido, se pinta de abajo hacia arriba)
             grouped.push({ ...msg, type: 'MESSAGE', id: msg.id_message });
+            
+            // Checar la fecha del mensaje que sigue (que cronológicamente es más viejo)
+            const currentDate = new Date(msg.createdAt).toDateString();
+            const nextMsg = rawMessages[index + 1];
+            const nextDate = nextMsg ? new Date(nextMsg.createdAt).toDateString() : null;
+
+            // Si el siguiente mensaje tiene fecha diferente (o no hay siguiente, o sea este es el más antiguo)
+            // Agregamos el separador. Como FlatList invierte, este separador quedará VISUALMENTE ARRIBA de este mensaje.
+            if (currentDate !== nextDate) {
+                grouped.push({ type: 'DATE_SEPARATOR', date: msg.createdAt, id: `date-${currentDate}` });
+            }
         });
 
         return grouped;
@@ -109,6 +132,15 @@ export default function ChatRoomScreen() {
 
         try {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+            if (editingMessage) {
+                await editMessageMutation({
+                    variables: { id_message: editingMessage.id_message, newContent: content },
+                });
+                setEditingMessage(null);
+                return;
+            }
+
             await sendMessageMutation({
                 variables: { id_conversation, content },
                 optimisticResponse: {
@@ -118,6 +150,8 @@ export default function ChatRoomScreen() {
                         content,
                         createdAt: new Date().toISOString(),
                         isRead: false,
+                        isDeletedForAll: false,
+                        editedAt: null,
                         sender: {
                             __typename: 'User',
                             id: currentUser.id,
@@ -128,6 +162,114 @@ export default function ChatRoomScreen() {
         } catch (err) {
             console.error("Error sending message:", err);
         }
+    };
+
+    const handleHideMessageFromUI = (msgId: string) => {
+        try {
+            const queryData: any = client.readQuery({
+                query: GET_CHAT_MESSAGES,
+                variables: { id_conversation },
+            });
+
+            if (queryData) {
+                const newMessages = queryData.getChatMessages.filter(
+                    (msg: any) => msg.id_message !== msgId
+                );
+                
+                client.writeQuery({
+                    query: GET_CHAT_MESSAGES,
+                    variables: { id_conversation },
+                    data: {
+                        getChatMessages: newMessages,
+                    },
+                });
+            }
+        } catch (e) {
+            console.error("Error al actualizar la cache para ocultar el mensaje", e);
+        }
+    };
+
+    const handleTombstoneMessageFromUI = (msgId: string) => {
+        try {
+            const queryData: any = client.readQuery({
+                query: GET_CHAT_MESSAGES,
+                variables: { id_conversation },
+            });
+
+            if (queryData) {
+                const newMessages = queryData.getChatMessages.map((msg: any) => 
+                    msg.id_message === msgId 
+                        ? { ...msg, isDeletedForAll: true, content: "" }
+                        : msg
+                );
+                
+                client.writeQuery({
+                    query: GET_CHAT_MESSAGES,
+                    variables: { id_conversation },
+                    data: {
+                        getChatMessages: newMessages,
+                    },
+                });
+            }
+        } catch (e) {
+            console.error("Error al actualizar la cache para poner lápida al mensaje", e);
+        }
+    };
+
+    const revertHideMessageUI = () => {
+        client.refetchQueries({
+            include: [GET_CHAT_MESSAGES],
+        });
+    };
+
+    const handleDeleteForMe = () => {
+        setIsActionModalVisible(false);
+        if (!selectedMessage) return;
+
+        setConfirmModalData({
+            title: "Eliminar mensaje",
+            message: "Este mensaje solo se eliminará para ti. Las otras personas en el chat aún podrán verlo.",
+            confirmText: "Eliminar",
+            onConfirm: async () => {
+                const msgId = selectedMessage.id_message;
+                handleHideMessageFromUI(msgId);
+                setIsConfirmModalVisible(false);
+                
+                try {
+                    await deleteMessageForMeMutation({ variables: { id_message: msgId } });
+                } catch (err) {
+                    console.error("Error al borrar mensaje para mí", err);
+                    revertHideMessageUI();
+                    Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo eliminar el mensaje.' });
+                }
+            }
+        });
+        setIsConfirmModalVisible(true);
+    };
+
+    const handleDeleteForAll = () => {
+        setIsActionModalVisible(false);
+        if (!selectedMessage) return;
+
+        setConfirmModalData({
+            title: "Eliminar para todos",
+            message: "El mensaje se eliminará para todos los participantes del chat.",
+            confirmText: "Eliminar",
+            onConfirm: async () => {
+                const msgId = selectedMessage.id_message;
+                handleTombstoneMessageFromUI(msgId); // Mostramos el mensaje gris (Lápida)
+                setIsConfirmModalVisible(false);
+
+                try {
+                    await deleteMessageForAllMutation({ variables: { id_message: msgId } });
+                } catch (err) {
+                    console.error("Error al borrar mensaje", err);
+                    revertHideMessageUI();
+                    Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo eliminar el mensaje.' });
+                }
+            }
+        });
+        setIsConfirmModalVisible(true);
     };
 
     // ── Lógica de Teclado Manual (Replica de CommentsModal) ──
@@ -196,11 +338,33 @@ export default function ChatRoomScreen() {
 
     const renderMessage = ({ item, index }: { item: any, index: number }) => {
         if (item.type === 'DATE_SEPARATOR') {
+            const dateObj = new Date(item.date);
+            const today = new Date();
+            const yesterday = new Date();
+            yesterday.setDate(today.getDate() - 1);
+
+            let dateLabel = '';
+            if (dateObj.toDateString() === today.toDateString()) {
+                dateLabel = 'Hoy';
+            } else if (dateObj.toDateString() === yesterday.toDateString()) {
+                dateLabel = 'Ayer';
+            } else {
+                const isThisYear = dateObj.getFullYear() === today.getFullYear();
+                const options: Intl.DateTimeFormatOptions = { 
+                    weekday: 'long', 
+                    day: 'numeric', 
+                    month: 'long',
+                    ...(isThisYear ? {} : { year: 'numeric' })
+                };
+                let formatted = dateObj.toLocaleDateString('es-ES', options);
+                dateLabel = formatted.charAt(0).toUpperCase() + formatted.slice(1);
+            }
+
             return (
                 <View style={styles.dateSeparator}>
                     <View style={[styles.datePill, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' }]}>
                         <Text style={[styles.dateText, { color: colors.textSecondary }]}>
-                            {new Date(item.date).toLocaleDateString([], { day: 'numeric', month: 'long' })}
+                            {dateLabel}
                         </Text>
                     </View>
                 </View>
@@ -226,13 +390,44 @@ export default function ChatRoomScreen() {
             }
         ];
 
+        if (item.isDeletedForAll) {
+            return (
+                <View style={[
+                    styles.messageRow,
+                    isMine ? styles.myMessageRow : styles.theirMessageRow,
+                    { marginBottom: isNextSame ? 2 : 12 }
+                ]}>
+                    <View style={[bubbleStyles, { backgroundColor: isDark ? '#2C2C2E' : '#E5E5EA', borderWidth: 1, borderColor: isDark ? '#3C3C3E' : '#D1D1D6' }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Ionicons name="ban-outline" size={16} color={colors.textSecondary} style={{ marginRight: 6 }} />
+                            <Text style={[
+                                styles.messageText,
+                                { color: colors.textSecondary, fontStyle: 'italic', fontSize: 13 }
+                            ]}>
+                                Este mensaje fue eliminado
+                            </Text>
+                        </View>
+                    </View>
+                </View>
+            );
+        }
+
         return (
             <View style={[
                 styles.messageRow,
                 isMine ? styles.myMessageRow : styles.theirMessageRow,
                 { marginBottom: isNextSame ? 2 : 12 }
             ]}>
-                <View style={bubbleStyles}>
+                <TouchableOpacity 
+                    activeOpacity={0.8}
+                    onLongPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        setSelectedMessage(item);
+                        setIsActionModalVisible(true);
+                    }}
+                    delayLongPress={200}
+                    style={bubbleStyles}
+                >
                     <Text style={[
                         styles.messageText,
                         { color: isMine ? '#FFF' : colors.text }
@@ -240,6 +435,14 @@ export default function ChatRoomScreen() {
                         {item.content}
                     </Text>
                     <View style={styles.messageFooter}>
+                        {item.editedAt && (
+                            <Text style={[
+                                styles.messageTime,
+                                { color: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary, fontStyle: 'italic', marginRight: 4 }
+                            ]}>
+                                Editado
+                            </Text>
+                        )}
                         <Text style={[
                             styles.messageTime,
                             { color: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary }
@@ -254,7 +457,7 @@ export default function ChatRoomScreen() {
                             />
                         )}
                     </View>
-                </View>
+                </TouchableOpacity>
             </View>
         );
     };
@@ -357,6 +560,98 @@ export default function ChatRoomScreen() {
                     </View>
                 </View>
             </Animated.View>
+
+            {/* Modal de Acciones del Mensaje */}
+            <Modal
+                visible={isActionModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setIsActionModalVisible(false)}
+            >
+                <TouchableOpacity 
+                    style={styles.modalOverlay} 
+                    activeOpacity={1} 
+                    onPress={() => setIsActionModalVisible(false)}
+                >
+                    <View style={[styles.actionModalContainer, { backgroundColor: colors.surface }]}>
+                        {selectedMessage?.sender?.id === currentUser?.id ? (
+                            <>
+                                <TouchableOpacity 
+                                    style={styles.actionModalBtn}
+                                    onPress={handleDeleteForAll}
+                                >
+                                    <Ionicons name="trash-outline" size={24} color="#FF3B30" />
+                                    <Text style={[styles.actionModalText, { color: '#FF3B30' }]}>Eliminar para todos</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity 
+                                    style={styles.actionModalBtn}
+                                    onPress={handleDeleteForMe}
+                                >
+                                    <Ionicons name="trash-bin-outline" size={24} color={colors.text} />
+                                    <Text style={[styles.actionModalText, { color: colors.text }]}>Eliminar para mí</Text>
+                                </TouchableOpacity>
+
+                                <View style={[styles.actionModalDivider, { backgroundColor: colors.border }]} />
+
+                                <TouchableOpacity 
+                                    style={styles.actionModalBtn}
+                                    onPress={() => {
+                                        setIsActionModalVisible(false);
+                                        setEditingMessage(selectedMessage);
+                                        setMessageText(selectedMessage.content);
+                                    }}
+                                >
+                                    <Ionicons name="pencil-outline" size={24} color={colors.text} />
+                                    <Text style={[styles.actionModalText, { color: colors.text }]}>Editar</Text>
+                                </TouchableOpacity>
+                            </>
+                        ) : (
+                            <TouchableOpacity 
+                                style={styles.actionModalBtn}
+                                onPress={handleDeleteForMe}
+                            >
+                                <Ionicons name="trash-outline" size={24} color="#FF3B30" />
+                                <Text style={[styles.actionModalText, { color: '#FF3B30' }]}>Eliminar</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+
+            {/* Modal de Confirmación Estilizado */}
+            <Modal
+                visible={isConfirmModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setIsConfirmModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.confirmModalContainer, { backgroundColor: colors.surface }]}>
+                        <Text style={[styles.confirmModalTitle, { color: colors.text }]}>{confirmModalData.title}</Text>
+                        <Text style={[styles.confirmModalMessage, { color: colors.textSecondary }]}>
+                            {confirmModalData.message}
+                        </Text>
+                        
+                        <View style={[styles.confirmModalActions, { borderTopColor: colors.border }]}>
+                            <TouchableOpacity 
+                                style={[styles.confirmModalBtn, { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: colors.border }]}
+                                onPress={() => setIsConfirmModalVisible(false)}
+                            >
+                                <Text style={[styles.confirmModalBtnText, { color: colors.text }]}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={styles.confirmModalBtn}
+                                onPress={confirmModalData.onConfirm}
+                            >
+                                <Text style={[styles.confirmModalBtnText, { color: '#FF3B30', fontWeight: 'bold' }]}>
+                                    {confirmModalData.confirmText}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -536,10 +831,9 @@ const styles = StyleSheet.create({
         borderRadius: 15,
     },
     dateText: {
-        fontSize: 11,
-        fontWeight: '700',
-        textTransform: 'uppercase',
-        letterSpacing: 0.6,
+        fontSize: 12,
+        fontWeight: '600',
+        letterSpacing: 0.3,
     },
     profileSummary: {
         alignItems: 'center',
@@ -592,5 +886,79 @@ const styles = StyleSheet.create({
         width: '80%',
         marginTop: 30,
         opacity: 0.3,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    actionModalContainer: {
+        width: '80%',
+        borderRadius: 15,
+        paddingVertical: 10,
+        overflow: 'hidden',
+        elevation: 5,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+    },
+    actionModalBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 15,
+        paddingHorizontal: 20,
+    },
+    actionModalText: {
+        fontSize: 16,
+        marginLeft: 15,
+        fontWeight: '500',
+    },
+    actionModalDivider: {
+        height: StyleSheet.hairlineWidth,
+        width: '100%',
+        marginVertical: 5,
+    },
+    confirmModalContainer: {
+        width: '80%',
+        borderRadius: 20,
+        overflow: 'hidden',
+        alignItems: 'center',
+        paddingTop: 20,
+        elevation: 5,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+    },
+    confirmModalTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        marginBottom: 8,
+        textAlign: 'center',
+        paddingHorizontal: 20,
+    },
+    confirmModalMessage: {
+        fontSize: 14,
+        textAlign: 'center',
+        marginBottom: 20,
+        paddingHorizontal: 20,
+        lineHeight: 20,
+    },
+    confirmModalActions: {
+        flexDirection: 'row',
+        borderTopWidth: StyleSheet.hairlineWidth,
+        width: '100%',
+    },
+    confirmModalBtn: {
+        flex: 1,
+        paddingVertical: 15,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    confirmModalBtnText: {
+        fontSize: 16,
+        fontWeight: '500',
     },
 });

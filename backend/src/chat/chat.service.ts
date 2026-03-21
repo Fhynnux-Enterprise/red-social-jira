@@ -117,12 +117,90 @@ export class ChatService {
         });
     }
 
-    async getMessagesByConversation(id_conversation: string): Promise<Message[]> {
-        return this.messageRepository.find({
-            where: { id_conversation },
-            relations: ['sender'],
-            order: { createdAt: 'ASC' },
+    async getMessagesByConversation(id_conversation: string, currentUserId: string): Promise<Message[]> {
+        return this.messageRepository.createQueryBuilder('message')
+            .leftJoinAndSelect('message.sender', 'sender')
+            .where('message.id_conversation = :id_conversation', { id_conversation })
+            .andWhere('(message.deletedFor IS NULL OR NOT (:currentUserId = ANY (message.deletedFor)))', { currentUserId })
+            .orderBy('message.createdAt', 'ASC')
+            .getMany();
+    }
+
+    async deleteMessageForMe(id_message: string, currentUserId: string): Promise<boolean> {
+        const message = await this.messageRepository.findOne({
+            where: { id_message }
         });
+
+        if (!message) {
+            throw new NotFoundException('Mensaje no encontrado');
+        }
+
+        const currentDeletedFor = message.deletedFor || [];
+        
+        if (!currentDeletedFor.includes(currentUserId)) {
+            message.deletedFor = [...currentDeletedFor, currentUserId];
+            await this.messageRepository.save(message);
+        }
+
+        return true;
+    }
+
+    async deleteConversationForMe(id_conversation: string, currentUserId: string): Promise<boolean> {
+        await this.messageRepository.createQueryBuilder()
+            .update(Message)
+            .set({
+                // Usamos array_append de PostgreSQL 
+                deletedFor: () => `array_append(COALESCE("deletedFor", '{}'), '${currentUserId}')`
+            })
+            .where('id_conversation = :id_conversation', { id_conversation })
+            .andWhere('(deletedFor IS NULL OR NOT (:currentUserId = ANY(deletedFor)))', { currentUserId })
+            .execute();
+
+        return true;
+    }
+
+    async deleteMessageForAll(id_message: string, currentUserId: string): Promise<boolean> {
+        const message = await this.messageRepository.findOne({
+            where: { id_message },
+            relations: ['sender']
+        });
+
+        if (!message) {
+            throw new NotFoundException('Mensaje no encontrado');
+        }
+
+        if (message.sender.id !== currentUserId) {
+            throw new BadRequestException('Solo puedes eliminar tus propios mensajes para todos');
+        }
+
+        message.isDeletedForAll = true;
+        message.content = ""; // Vaciamos el contenido original por privacidad
+        await this.messageRepository.save(message);
+
+        return true;
+    }
+
+    async editMessage(id_message: string, currentUserId: string, newContent: string): Promise<Message> {
+        const message = await this.messageRepository.findOne({
+            where: { id_message },
+            relations: ['sender']
+        });
+
+        if (!message) {
+            throw new NotFoundException('Mensaje no encontrado');
+        }
+
+        if (message.sender.id !== currentUserId) {
+            throw new BadRequestException('Solo puedes editar tus propios mensajes');
+        }
+
+        if (message.isDeletedForAll) {
+            throw new BadRequestException('No puedes editar un mensaje que ha sido eliminado');
+        }
+
+        message.content = newContent;
+        message.editedAt = new Date();
+        return this.messageRepository.save(message);
     }
 
     async getConversationById(id_conversation: string): Promise<Conversation | null> {
