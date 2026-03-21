@@ -32,6 +32,18 @@ export class Message {
     @UpdateDateColumn({ type: 'timestamptz' })
     updatedAt: Date;
 
+    @Field(() => [String], { nullable: true })
+    @Column("text", { array: true, default: [] })
+    deletedFor: string[];
+
+    @Field({ defaultValue: false })
+    @Column({ default: false })
+    isDeletedForAll: boolean;
+
+    @Field(() => Date, { nullable: true })
+    @Column({ type: 'timestamptz', nullable: true })
+    editedAt: Date;
+
     @Field(() => User)
     @ManyToOne(() => User, (user) => user.sentMessages)
     @JoinColumn({ name: 'id_user' })

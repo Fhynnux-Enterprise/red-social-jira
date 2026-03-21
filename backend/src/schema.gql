@@ -75,6 +75,9 @@ type Message {
   isRead: Boolean!
   createdAt: DateTime!
   updatedAt: DateTime!
+  deletedFor: [String!]
+  isDeletedForAll: Boolean!
+  editedAt: DateTime
   sender: User!
   conversation: Conversation!
 }
@@ -133,12 +136,14 @@ type Query {
   me: String!
   getPosts: [Post!]!
   getUserProfile(id: String!): User!
+  searchUsers(searchTerm: String!): [User!]!
   isFollowing(id_following: String!): Boolean!
   getFollowers(id_user: String!): [User!]!
   getFollowing(id_user: String!): [User!]!
   getCommentsByPost(postId: String!): [Comment!]!
   getUserConversations: [Conversation!]!
   getChatMessages(id_conversation: String!): [Message!]!
+  searchMessagesInChat(id_conversation: String!, searchTerm: String!): [Message!]!
   getConversation(id_conversation: String!): Conversation
 }
 
@@ -157,6 +162,10 @@ type Mutation {
   deleteComment(id: String!): Boolean!
   updateComment(id: String!, content: String!): Comment!
   toggleCommentLike(commentId: String!): Comment!
+  deleteMessageForMe(id_message: String!): Boolean!
+  deleteMessageForAll(id_message: String!): Boolean!
+  deleteConversationForMe(id_conversation: String!): Boolean!
+  editMessage(id_message: String!, newContent: String!): Message!
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
   sendMessage(id_conversation: String!, content: String!): Message!
 }

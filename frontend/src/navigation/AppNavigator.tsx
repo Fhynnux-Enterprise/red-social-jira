@@ -10,13 +10,16 @@ import EditProfileScreen from '../features/profile/screens/EditProfileScreen';
 import ChatListScreen from '../features/chat/screens/ChatListScreen';
 import ChatRoomScreen from '../features/chat/screens/ChatRoomScreen';
 import ChatDetailsScreen from '../features/chat/screens/ChatDetailsScreen';
+import NewChatScreen from '../features/chat/screens/NewChatScreen';
 import { useTheme } from '../theme/ThemeContext';
 
 export type AppStackParamList = {
     MainTabs: { screen?: string; params?: any } | undefined;
     EditProfile: undefined;
-    ChatRoom: { id_conversation: string };
+    ChatRoom: { id_conversation: string; activateSearch?: boolean };
     ChatDetails: { id_conversation: string };
+    NewChat: undefined;
+    Profile: { userId?: string } | undefined;
 };
 
 export type AppTabParamList = {
@@ -93,6 +96,15 @@ export default function AppNavigator() {
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
             <Stack.Screen name="ChatDetails" component={ChatDetailsScreen} />
+            <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen 
+                name="NewChat" 
+                component={NewChatScreen} 
+                options={{ 
+                    presentation: 'fullScreenModal',
+                    animation: 'slide_from_bottom' 
+                }} 
+            />
         </Stack.Navigator>
     );
 }
