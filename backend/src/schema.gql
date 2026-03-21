@@ -43,9 +43,19 @@ type Comment {
   isLikedByMe: Boolean!
 }
 
+type PostMedia {
+  id: ID!
+  url: String!
+  type: String!
+  order: Int!
+  post: Post!
+  createdAt: DateTime!
+}
+
 type Post {
   id: ID!
   content: String!
+  media: [PostMedia]
   author: User!
   authorId: String!
   likes: [PostLike!]
@@ -116,6 +126,7 @@ type User {
   phone: String
   bio: String
   photoUrl: String
+  coverUrl: String
   posts: [Post!]
   customFields: [UserCustomField!]
   badge: UserBadge
@@ -128,14 +139,17 @@ type User {
   followingCount: Int!
 }
 
+type UploadUrlResponse {
+  signedUrl: String!
+  publicUrl: String!
+}
+
 type Query {
   """Verifica si el servidor GraphQL está funcionando"""
   ping: String!
-
-  """Obtiene los datos del usuario logueado en base al token JWT"""
-  me: String!
   getPosts: [Post!]!
   getUserProfile(id: String!): User!
+  me: User!
   searchUsers(searchTerm: String!): [User!]!
   isFollowing(id_following: String!): Boolean!
   getFollowers(id_user: String!): [User!]!
@@ -148,15 +162,17 @@ type Query {
 }
 
 type Mutation {
-  createPost(content: String!): Post!
+  createPost(content: String!, media: [PostMediaInput!]): Post!
   updatePost(id: String!, content: String!): Post!
   deletePost(id: String!): Boolean!
   toggleLike(postId: String!): Post!
+  generateUploadUrl(fileName: String!, fileType: String!, folder: String!): UploadUrlResponse!
   addCustomField(title: String!, value: String!): UserCustomField!
   updateCustomField(id: String!, title: String!, value: String!): UserCustomField!
   deleteCustomField(id: String!): Boolean!
   updateBadge(title: String!, theme: String = "default"): UserBadge!
   updateProfile(firstName: String, lastName: String, bio: String, username: String, phone: String): User!
+  updateProfileMedia(photoUrl: String, coverUrl: String): User!
   toggleFollow(id_following: String!): Boolean!
   createComment(postId: String!, content: String!, parentId: String): Comment!
   deleteComment(id: String!): Boolean!
@@ -168,4 +184,10 @@ type Mutation {
   editMessage(id_message: String!, newContent: String!): Message!
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
   sendMessage(id_conversation: String!, content: String!): Message!
+}
+
+input PostMediaInput {
+  url: String!
+  type: String!
+  order: Int!
 }

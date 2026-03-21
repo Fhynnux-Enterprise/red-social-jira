@@ -7,6 +7,7 @@ import { useAuth } from '../../auth/context/AuthContext';
 import { useMutation } from '@apollo/client';
 import { TOGGLE_LIKE } from '../graphql/posts.operations';
 import CopyTextModal from '../../../components/CopyTextModal';
+import ImageCarousel from './ImageCarousel';
 
 const MAX_CHARS = 220;
 
@@ -181,6 +182,15 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
                 </TouchableOpacity>
             )}
 
+            {/* ── Media Adjunta ── */}
+            {item.media && item.media.length > 0 && (
+                <ImageCarousel
+                    media={item.media}
+                    onPress={() => onOpenComments?.(item.id, 'comments', true)}
+                    disableFullscreen={true}
+                />
+            )}
+
             {/* ── Divider ── */}
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
@@ -353,4 +363,14 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         fontWeight: '500',
         marginLeft: 5,
     },
+    mediaContainer: {
+        width: '100%',
+        marginTop: 6,
+        marginBottom: 8,
+    },
+    mediaPlaceholder: {
+        width: '100%',
+        height: 300,
+        backgroundColor: colors.surface,
+    }
 });

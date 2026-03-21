@@ -9,8 +9,10 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ProfileService, UserCustomField } from '../services/profile.service';
-import { UPDATE_PROFILE } from '../graphql/profile.operations';
+import { UPDATE_PROFILE, UPDATE_PROFILE_MEDIA } from '../graphql/profile.operations';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
+import { useAuth } from '../../auth/context/AuthContext';
+import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import Toast from 'react-native-toast-message';
 import EditBadgeSection from '../components/EditBadgeSection';
 import ManageCustomFieldsSection from '../components/ManageCustomFieldsSection';
@@ -34,15 +36,19 @@ type EditProfileFormData = z.infer<typeof editProfileSchema>;
 
 export default function EditProfileScreen() {
     const { colors, isDark } = useTheme();
+    const { refreshProfile } = useAuth();
     const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const navigation = useNavigation();
 
     const [isLoading, setIsLoading] = useState(true);
     const [photoUrl, setPhotoUrl] = useState('');
+    const [coverUrl, setCoverUrl] = useState('');
     const [badgeTitle, setBadgeTitle] = useState('');
     const [customFields, setCustomFields] = useState<UserCustomField[]>([]);
 
     const [updateProfileMutation] = useMutation(UPDATE_PROFILE);
+    const [updateProfileMediaMutation] = useMutation(UPDATE_PROFILE_MEDIA);
+    const { pickImage, uploadMedia } = useMediaUpload();
 
     const {
         control,
@@ -77,6 +83,7 @@ export default function EditProfileScreen() {
                     bio: data.bio || '',
                 });
                 setPhotoUrl(data.photoUrl || '');
+                setCoverUrl(data.coverUrl || '');
                 setBadgeTitle(data.badge?.title || '');
                 setCustomFields(data.customFields || []);
             } catch (error) {
@@ -100,6 +107,7 @@ export default function EditProfileScreen() {
                     phone: data.phone || '',
                 }
             });
+            await refreshProfile();
             Toast.show({ type: 'success', text1: 'Éxito', text2: 'Perfil actualizado correctamente' });
             navigation.goBack();
         } catch (error: any) {
@@ -114,6 +122,48 @@ export default function EditProfileScreen() {
 
     const handleBadgeUpdated = (newTitle: string) => setBadgeTitle(newTitle);
     const handleCustomFieldsUpdated = (fields: UserCustomField[]) => setCustomFields(fields);
+
+    const handleUpdatePhoto = async () => {
+        try {
+            const result = await pickImage(true, 'Images');
+            if (!result) return;
+
+            Toast.show({ type: 'info', text1: 'Subiendo...', text2: 'Actualizando foto de perfil' });
+            const uploadedUrl = await uploadMedia(result.localUri, result.mimeType, 'avatars');
+            
+            await updateProfileMediaMutation({
+                variables: { photoUrl: uploadedUrl }
+            });
+
+            await refreshProfile();
+
+            setPhotoUrl(uploadedUrl);
+            Toast.show({ type: 'success', text1: 'Éxito', text2: 'Foto de perfil actualizada' });
+        } catch (error: any) {
+            Toast.show({ type: 'error', text1: 'Error', text2: error.message });
+        }
+    };
+
+    const handleUpdateCover = async () => {
+        try {
+            const result = await pickImage(true, 'Images');
+            if (!result) return;
+
+            Toast.show({ type: 'info', text1: 'Subiendo...', text2: 'Actualizando portada' });
+            const uploadedUrl = await uploadMedia(result.localUri, result.mimeType, 'covers');
+            
+            await updateProfileMediaMutation({
+                variables: { coverUrl: uploadedUrl }
+            });
+
+            await refreshProfile();
+
+            setCoverUrl(uploadedUrl);
+            Toast.show({ type: 'success', text1: 'Éxito', text2: 'Portada actualizada' });
+        } catch (error: any) {
+            Toast.show({ type: 'error', text1: 'Error', text2: error.message });
+        }
+    };
 
     if (isLoading) {
         return (
@@ -153,14 +203,18 @@ export default function EditProfileScreen() {
                 {/* Opciones de Fondo (Banner) y Avatar */}
                 <View style={styles.mediaEditorContainer}>
                     <View style={styles.bannerContainer}>
-                        <LinearGradient
-                            colors={[colors.primary, '#FF9800']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.bannerGradient}
-                        />
+                        {coverUrl ? (
+                            <Image source={{ uri: coverUrl }} style={[styles.bannerGradient, { position: 'absolute' }]} />
+                        ) : (
+                            <LinearGradient
+                                colors={[colors.primary, '#FF9800']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.bannerGradient}
+                            />
+                        )}
                         <View style={styles.bannerOverlay}>
-                            <TouchableOpacity style={styles.cameraIconWrapper}>
+                            <TouchableOpacity style={styles.cameraIconWrapper} onPress={handleUpdateCover}>
                                 <Ionicons name="camera-outline" size={24} color="#FFF" />
                             </TouchableOpacity>
                         </View>
@@ -179,7 +233,7 @@ export default function EditProfileScreen() {
                                 </View>
                             )}
                             <View style={styles.avatarOverlay}>
-                                <TouchableOpacity style={styles.cameraIconWrapper}>
+                                <TouchableOpacity style={styles.cameraIconWrapper} onPress={handleUpdatePhoto}>
                                     <Ionicons name="camera-outline" size={24} color="#FFF" />
                                 </TouchableOpacity>
                             </View>
@@ -375,7 +429,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     },
     bannerContainer: {
         width: '100%',
-        height: 160,
+        height: 220, // Match the taller look from the main profile screen
         position: 'relative',
     },
     bannerGradient: {

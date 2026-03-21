@@ -62,6 +62,7 @@ export const GET_USER_PROFILE = gql`
       bio
       phone
       photoUrl
+      coverUrl
       customFields {
         id
         title
@@ -78,6 +79,11 @@ export const GET_USER_PROFILE = gql`
       posts {
         id
         content
+        media {
+            url
+            type
+            order
+        }
         createdAt
         updatedAt
         likes {
@@ -97,6 +103,30 @@ export const GET_USER_PROFILE = gql`
           photoUrl
         }
       }
+    }
+  }
+`;
+
+export const UPDATE_PROFILE_MEDIA = gql`
+  mutation UpdateProfileMedia($photoUrl: String, $coverUrl: String) {
+    updateProfileMedia(photoUrl: $photoUrl, coverUrl: $coverUrl) {
+      id
+      photoUrl
+      coverUrl
+    }
+  }
+`;
+
+export const GET_ME = gql`
+  query GetMe {
+    me {
+      id
+      firstName
+      lastName
+      username
+      email
+      photoUrl
+      coverUrl
     }
   }
 `;

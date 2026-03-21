@@ -44,6 +44,10 @@ export class User {
     @Column({ nullable: true })
     photoUrl: string;
 
+    @Field({ nullable: true })
+    @Column({ name: 'cover_url', nullable: true })
+    coverUrl: string;
+
     @Column({ default: 'USER' })
     role: string;
 

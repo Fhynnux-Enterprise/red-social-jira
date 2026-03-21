@@ -73,6 +73,12 @@ export class UsersResolver {
     return this.usersService.findById(id);
   }
 
+  @Query(() => User, { name: 'me' })
+  @UseGuards(JwtGqlGuard)
+  async getMe(@CurrentUser() user: any): Promise<User> {
+    return this.usersService.findById(user.id);
+  }
+
   @Mutation(() => User)
   @UseGuards(JwtGqlGuard)
   async updateProfile(
@@ -84,6 +90,16 @@ export class UsersResolver {
     @CurrentUser() user: any,
   ): Promise<User> {
     return this.usersService.updateProfile(user.id, firstName, lastName, bio, username, phone);
+  }
+
+  @Mutation(() => User)
+  @UseGuards(JwtGqlGuard)
+  async updateProfileMedia(
+    @Args('photoUrl', { nullable: true }) photoUrl: string,
+    @Args('coverUrl', { nullable: true }) coverUrl: string,
+    @CurrentUser() user: any,
+  ): Promise<User> {
+    return this.usersService.updateProfileMedia(user.id, photoUrl, coverUrl);
   }
 
   @Query(() => [User], { name: 'searchUsers' })

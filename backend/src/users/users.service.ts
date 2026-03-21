@@ -135,6 +135,22 @@ export class UsersService {
     return this.userRepository.save(user);
   }
 
+  async updateProfileMedia(
+    userId: string,
+    photoUrl?: string,
+    coverUrl?: string,
+  ): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado');
+    }
+
+    if (photoUrl !== undefined) user.photoUrl = photoUrl;
+    if (coverUrl !== undefined) user.coverUrl = coverUrl;
+
+    return this.userRepository.save(user);
+  }
+
   async searchUsers(searchTerm: string, currentUserId: string): Promise<User[]> {
     if (!searchTerm) return [];
     

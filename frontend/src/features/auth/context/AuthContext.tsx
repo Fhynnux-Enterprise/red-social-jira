@@ -10,6 +10,7 @@ type AuthContextData = {
     isLoading: boolean;
     signIn: (token: string) => Promise<void>;
     signOut: () => Promise<void>;
+    refreshProfile: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextData>({} as AuthContextData);
@@ -69,8 +70,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
     };
 
+    const refreshProfile = async () => {
+        try {
+            const profile = await ProfileService.getProfile();
+            setUser(profile);
+        } catch (e) {
+            console.error('Error refreshing profile:', e);
+        }
+    };
+
     return (
-        <AuthContext.Provider value={{ userToken, user, isLoading, signIn, signOut }}>
+        <AuthContext.Provider value={{ userToken, user, isLoading, signIn, signOut, refreshProfile }}>
             {children}
         </AuthContext.Provider>
     );

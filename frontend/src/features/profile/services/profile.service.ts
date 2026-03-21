@@ -22,6 +22,7 @@ export interface UserProfile {
     bio?: string;
     phone?: string;
     photoUrl?: string | null;
+    coverUrl?: string | null;
     customFields?: UserCustomField[];
     badge?: UserBadge;
     posts?: any[]; // Temporal array of posts

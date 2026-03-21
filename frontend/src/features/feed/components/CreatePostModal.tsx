@@ -11,11 +11,16 @@ import {
     Platform
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMutation } from '@apollo/client';
+import { useMutation, useQuery } from '@apollo/client';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { CREATE_POST, UPDATE_POST, GET_POSTS } from '../graphql/posts.operations';
+import { GET_ME } from '../../profile/graphql/profile.operations';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
+import { Image, ScrollView } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import MaskedView from '@react-native-masked-view/masked-view';
+import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 
 interface CreatePostModalProps {
     visible: boolean;
@@ -27,16 +32,26 @@ interface CreatePostModalProps {
 export default function CreatePostModal({ visible, onClose, initialContent = '', postId }: CreatePostModalProps) {
     const { colors } = useTheme();
     const [content, setContent] = React.useState(initialContent);
+    const [localMediaList, setLocalMediaList] = React.useState<{ uri: string, type: string, mimeType: string }[]>([]);
+    const [isUploadingMedia, setIsUploadingMedia] = React.useState(false);
     const insets = useSafeAreaInsets();
+    const { pickMultipleMedia, uploadMedia } = useMediaUpload();
 
     React.useEffect(() => {
         if (visible) {
             setContent(initialContent);
+            setLocalMediaList([]);
+            setIsUploadingMedia(false);
         }
     }, [visible, initialContent]);
 
     // Generamos estilos dinámicos que reaccionan al tema
     const styles = useMemo(() => getStyles(colors), [colors]);
+
+    const { data: meData } = useQuery(GET_ME, {
+        fetchPolicy: 'cache-only', // Since the feed already fetches it, we can read it from cache
+    });
+    const currentUser = meData?.me;
 
     const [createPost, { loading: creating }] = useMutation(CREATE_POST, {
         onCompleted: () => {
@@ -62,19 +77,54 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
         refetchQueries: [{ query: GET_POSTS }],
     });
 
-    const isLoading = creating || updating;
+    const isLoading = creating || updating || isUploadingMedia;
+
+    const handlePickMedia = async () => {
+        const results = await pickMultipleMedia('All');
+        if (results && results.length > 0) {
+            const newMedia = results.map(res => ({
+                uri: res.localUri,
+                type: res.mimeType.startsWith('video/') ? 'video' : 'image',
+                mimeType: res.mimeType
+            }));
+            setLocalMediaList(prev => [...prev, ...newMedia]);
+        }
+    };
 
     const handlePublish = async () => {
-        if (!content.trim()) return;
-        if (postId) {
-            await updatePost({ variables: { id: postId, content } });
-        } else {
-            await createPost({ variables: { content } });
+        if (!content.trim() && localMediaList.length === 0) return;
+        
+        try {
+            let mediaInput: { url: string, type: string, order: number }[] = [];
+
+            if (localMediaList.length > 0) {
+                setIsUploadingMedia(true);
+                const uploadPromises = localMediaList.map(async (media, index) => {
+                    const uploadedUrl = await uploadMedia(media.uri, media.mimeType, 'posts');
+                    return {
+                        url: uploadedUrl,
+                        type: media.type,
+                        order: index
+                    };
+                });
+                mediaInput = await Promise.all(uploadPromises);
+                setIsUploadingMedia(false);
+            }
+
+            if (postId) {
+                await updatePost({ variables: { id: postId, content } }); // For now simplified edit
+            } else {
+                await createPost({ variables: { content, media: mediaInput.length > 0 ? mediaInput : null } });
+            }
+        } catch (error: any) {
+            setIsUploadingMedia(false);
+            Toast.show({ type: 'error', text1: 'Error subiendo archivo', text2: error.message });
         }
     };
 
     const handleClose = () => {
         setContent(''); // Clean the input when closing
+        setLocalMediaList([]);
         onClose();
     };
 
@@ -97,9 +147,9 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                         </TouchableOpacity>
                         <Text style={styles.headerTitle}>{postId ? 'Editar publicación' : 'Crear publicación'}</Text>
                         <TouchableOpacity
-                            style={[styles.publishButton, (!content.trim() || isLoading) && styles.publishButtonDisabled]}
+                            style={[styles.publishButton, (!content.trim() && localMediaList.length === 0 || isLoading) && styles.publishButtonDisabled]}
                             onPress={handlePublish}
-                            disabled={!content.trim() || isLoading}
+                            disabled={(!content.trim() && localMediaList.length === 0) || isLoading}
                         >
                             {isLoading ? (
                                 <ActivityIndicator size="small" color="#FFF" />
@@ -110,12 +160,22 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                     </View>
 
                     {/* Editor Area */}
-                    <View style={styles.editorContainer}>
+                    <ScrollView style={styles.editorContainer} keyboardShouldPersistTaps="handled">
                         <View style={styles.userInfo}>
-                            <View style={styles.smallAvatarPlaceholder}>
-                                <Ionicons name="person" size={20} color={colors.textSecondary} />
+                            <View style={[styles.smallAvatarPlaceholder, { overflow: 'hidden', backgroundColor: currentUser && !currentUser.photoUrl ? 'rgba(255, 101, 36, 0.15)' : colors.surface }]}>
+                                {currentUser?.photoUrl ? (
+                                    <Image source={{ uri: currentUser.photoUrl }} style={{ width: '100%', height: '100%' }} />
+                                ) : currentUser ? (
+                                    <Text style={{ color: colors.primary, fontWeight: 'bold', fontSize: 16 }}>
+                                        {currentUser.firstName?.charAt(0) || ''}{currentUser.lastName?.charAt(0) || ''}
+                                    </Text>
+                                ) : (
+                                    <Ionicons name="person" size={20} color={colors.textSecondary} />
+                                )}
                             </View>
-                            <Text style={styles.userName}>Tú</Text>
+                            <Text style={styles.userName}>
+                                {currentUser ? `${currentUser.firstName} ${currentUser.lastName}` : 'Tú'}
+                            </Text>
                         </View>
                         <TextInput
                             style={styles.input}
@@ -127,26 +187,51 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                             onChangeText={setContent}
                             editable={!isLoading}
                             textAlignVertical="top"
+                            scrollEnabled={false} // Since it's inside a ScrollView now
                         />
-                    </View>
+
+                        {/* Media Preview - Horizontal Scroll */}
+                        {localMediaList.length > 0 && (
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaPreviewListContainer}>
+                                {localMediaList.map((mediaItem, index) => (
+                                    <View key={index} style={styles.mediaPreviewContainer}>
+                                        <TouchableOpacity
+                                            style={styles.removeMediaButton}
+                                            onPress={() => setLocalMediaList(prev => prev.filter((_, i) => i !== index))}
+                                        >
+                                            <Ionicons name="close-circle" size={24} color="rgba(0,0,0,0.7)" />
+                                        </TouchableOpacity>
+                                        {mediaItem.type === 'video' ? (
+                                            <View style={[styles.mediaPreview, { justifyContent: 'center', alignItems: 'center' }]}>
+                                               <Ionicons name="play-circle" size={48} color="#FFF" style={{ position: 'absolute', zIndex: 10 }} />
+                                               <Image source={{ uri: mediaItem.uri }} style={styles.mediaPreview} />
+                                            </View>
+                                        ) : (
+                                            <Image source={{ uri: mediaItem.uri }} style={styles.mediaPreview} resizeMode="cover" />
+                                        )}
+                                    </View>
+                                ))}
+                            </ScrollView>
+                        )}
+                    </ScrollView>
 
                     {/* Toolbar Opciones de Publicación */}
                     <View style={styles.toolbar}>
-                        <TouchableOpacity style={styles.toolbarOption}>
-                            <Ionicons name="image" size={24} color="#45BD62" />
-                            <Text style={styles.toolbarOptionText}>Foto/video</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.toolbarOption}>
-                            <Ionicons name="person-add" size={24} color="#1877F2" />
-                            <Text style={styles.toolbarOptionText}>Etiquetar personas</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.toolbarOption}>
-                            <Ionicons name="location" size={24} color="#F5533D" />
-                            <Text style={styles.toolbarOptionText}>Ubicación</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.toolbarOption}>
-                            <Ionicons name="happy" size={24} color="#F7B928" />
-                            <Text style={styles.toolbarOptionText}>Sentimiento/actividad</Text>
+                        <TouchableOpacity style={styles.mediaButton} activeOpacity={0.7} onPress={handlePickMedia}>
+                            <View style={styles.mediaButtonIconGradientWrapper}>
+                                <MaskedView
+                                    style={{ width: 24, height: 24 }}
+                                    maskElement={<Ionicons name="image" size={24} color="black" />}
+                                >
+                                    <LinearGradient
+                                        colors={[colors.primary, colors.secondary]}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 1 }}
+                                        style={{ flex: 1 }}
+                                    />
+                                </MaskedView>
+                            </View>
+                            <Text style={styles.mediaButtonText}>Añadir foto o video</Text>
                         </TouchableOpacity>
                     </View>
                 </KeyboardAvoidingView>
@@ -228,18 +313,61 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
         borderTopWidth: 1,
         borderTopColor: colors.border,
         backgroundColor: colors.surface,
-        paddingBottom: 8,
-    },
-    toolbarOption: {
+        paddingHorizontal: 16,
+        paddingVertical: 12,
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 14,
-        paddingHorizontal: 16,
     },
-    toolbarOptionText: {
-        color: colors.text,
-        fontSize: 16,
-        marginLeft: 12,
-        fontWeight: '500',
+    mediaButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: colors.background,
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    mediaButtonIconGradientWrapper: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: 'rgba(255, 101, 36, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 10,
+    },
+    mediaButtonText: {
+        color: colors.primary,
+        fontSize: 15,
+        fontWeight: 'bold',
+    },
+    mediaPreviewListContainer: {
+        marginTop: 16,
+        marginBottom: 20,
+    },
+    mediaPreviewContainer: {
+        width: 250,
+        height: 312, // Taller portrait aspect ratio to match the feed changes
+        marginRight: 12,
+        position: 'relative',
+        borderRadius: 16,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    mediaPreview: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: colors.surface,
+    },
+    removeMediaButton: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        zIndex: 10,
+        backgroundColor: 'rgba(255, 255, 255, 0.6)',
+        borderRadius: 15,
+        padding: 2,
     }
 });

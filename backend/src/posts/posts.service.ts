@@ -1,8 +1,10 @@
 import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { Post } from './entities/post.entity';
 import { PostLike } from './entities/post-like.entity';
+import { PostMedia } from './entities/post-media.entity';
+import { PostMediaInput } from './dto/post-media.input';
 
 @Injectable()
 export class PostsService {
@@ -11,35 +13,67 @@ export class PostsService {
         private readonly postsRepository: Repository<Post>,
         @InjectRepository(PostLike)
         private readonly postLikesRepository: Repository<PostLike>,
+        @InjectRepository(PostMedia)
+        private readonly postMediaRepository: Repository<PostMedia>,
+        private readonly dataSource: DataSource,
     ) { }
 
-    async createPost(content: string, authorId: string): Promise<Post> {
-        const newPost = this.postsRepository.create({
-            content,
-            authorId,
-        });
-        const savedPost = await this.postsRepository.save(newPost);
-        const fullyLoadedPost = await this.postsRepository.findOne({
-            where: { id: savedPost.id },
-            relations: ['author', 'likes', 'likes.user', 'comments'],
-        });
-        if (!fullyLoadedPost) {
-            throw new Error('Error al recuperar el post creado');
+    async createPost(content: string, authorId: string, media?: PostMediaInput[]): Promise<Post> {
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+
+        try {
+            let newPost = this.postsRepository.create({
+                content,
+                authorId,
+            });
+            newPost = await queryRunner.manager.save(newPost);
+
+            if (media && media.length > 0) {
+                const postMediaEntities = media.map(m => this.postMediaRepository.create({
+                    url: m.url,
+                    type: m.type,
+                    order: m.order,
+                    postId: newPost.id,
+                }));
+                await queryRunner.manager.save(postMediaEntities);
+            }
+
+            await queryRunner.commitTransaction();
+
+            const fullyLoadedPost = await this.postsRepository.findOne({
+                where: { id: newPost.id },
+                relations: ['author', 'likes', 'likes.user', 'comments', 'media'],
+                order: { media: { order: 'ASC' } }
+            });
+
+            if (!fullyLoadedPost) {
+                throw new Error('Error al recuperar el post creado');
+            }
+            return fullyLoadedPost;
+        } catch (err) {
+            await queryRunner.rollbackTransaction();
+            throw err;
+        } finally {
+            await queryRunner.release();
         }
-        return fullyLoadedPost;
     }
 
     async findAll(): Promise<Post[]> {
         return this.postsRepository.find({
             order: {
                 createdAt: 'DESC',
+                media: {
+                    order: 'ASC'
+                }
             },
-            relations: ['author', 'likes', 'likes.user', 'comments'],
+            relations: ['author', 'likes', 'likes.user', 'comments', 'media'],
         });
     }
 
     async updatePost(id: string, content: string, userId: string): Promise<Post> {
-        const post = await this.postsRepository.findOne({ where: { id }, relations: ['author', 'likes', 'likes.user', 'comments'] });
+        const post = await this.postsRepository.findOne({ where: { id }, relations: ['author', 'likes', 'likes.user', 'comments', 'media'] });
         if (!post) {
             throw new NotFoundException('Publicación no encontrada');
         }
@@ -53,7 +87,10 @@ export class PostsService {
     }
 
     async deletePost(id: string, userId: string): Promise<boolean> {
-        const post = await this.postsRepository.findOne({ where: { id } });
+        const post = await this.postsRepository.findOne({ 
+            where: { id },
+            relations: ['media'] // Importante cargar la relación para que el suscriptor de borrado tenga data
+        });
         if (!post) {
             throw new NotFoundException('Publicación no encontrada');
         }
@@ -61,7 +98,8 @@ export class PostsService {
             throw new UnauthorizedException('No puedes modificar un post que no es tuyo');
         }
 
-        await this.postsRepository.softDelete(id);
+        // Usamos remove en lugar de softDelete para que Cascade invoque al Subscriber y limpie Supabase Storage
+        await this.postsRepository.remove(post);
         return true;
     }
 
@@ -84,7 +122,7 @@ export class PostsService {
 
         const fullyLoadedPost = await this.postsRepository.findOne({
             where: { id: postId },
-            relations: ['author', 'likes', 'likes.user', 'comments']
+            relations: ['author', 'likes', 'likes.user', 'comments', 'media']
         });
 
         if (!fullyLoadedPost) {

@@ -10,14 +10,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import CreatePostModal from '../components/CreatePostModal';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
-import { ProfileService, UserProfile } from '../../profile/services/profile.service';
+import { GET_ME } from '../../profile/graphql/profile.operations';
 import Toast from 'react-native-toast-message';
 import PostCard from '../components/PostCard';
 import PostOptionsModal from '../components/PostOptionsModal';
 import CommentsModal from '../../comments/components/CommentsModal';
 
 export default function FeedScreen() {
-    const { signOut, user: userProfile } = useAuth();
+    const { signOut } = useAuth();
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
     const [isModalVisible, setIsModalVisible] = useState(false);
@@ -32,6 +32,11 @@ export default function FeedScreen() {
     const { data, loading, error, refetch } = useQuery(GET_POSTS, {
         fetchPolicy: 'cache-and-network',
     });
+
+    const { data: meData } = useQuery(GET_ME, {
+        fetchPolicy: 'cache-and-network',
+    });
+    const currentUser = meData?.me;
 
     useFocusEffect(
         useCallback(() => {
@@ -69,7 +74,7 @@ export default function FeedScreen() {
     const renderPost = ({ item }: { item: any }) => (
         <PostCard
             item={item}
-            currentUserId={userProfile?.id}
+            currentUserId={currentUser?.id}
             onOptionsPress={handleOptionsPress}
             onOpenComments={(_, initialTab, minimize) => setSelectedPostForComments({ post: item, minimize: !!minimize, initialTab })}
         />
@@ -116,14 +121,14 @@ export default function FeedScreen() {
             <View style={styles.createPostContainer}>
                 <View style={styles.createPostRow}>
                     <TouchableOpacity
-                        style={[styles.smallAvatarPlaceholder, { overflow: 'hidden', backgroundColor: userProfile && !userProfile.photoUrl ? 'rgba(255, 101, 36, 0.15)' : colors.surface }]}
+                        style={[styles.smallAvatarPlaceholder, { overflow: 'hidden', backgroundColor: currentUser && !currentUser.photoUrl ? 'rgba(255, 101, 36, 0.15)' : colors.surface }]}
                         onPress={() => navigation.navigate('Profile' as never)}
                     >
-                        {userProfile?.photoUrl ? (
-                            <Image source={{ uri: userProfile.photoUrl }} style={{ width: '100%', height: '100%' }} />
-                        ) : userProfile ? (
+                        {currentUser?.photoUrl ? (
+                            <Image source={{ uri: currentUser.photoUrl }} style={{ width: '100%', height: '100%' }} />
+                        ) : currentUser ? (
                             <Text style={[styles.avatarText, { fontSize: 14 }]}>
-                                {userProfile.firstName?.charAt(0) || ''}{userProfile.lastName?.charAt(0) || ''}
+                                {currentUser.firstName?.charAt(0) || ''}{currentUser.lastName?.charAt(0) || ''}
                             </Text>
                         ) : (
                             <Ionicons name="person" size={20} color={colors.textSecondary} />

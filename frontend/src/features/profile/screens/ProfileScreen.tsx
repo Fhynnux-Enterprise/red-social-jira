@@ -188,12 +188,16 @@ export default function ProfileScreen() {
 
                 {/* Banner Header */}
                 <View style={styles.bannerContainer}>
-                    <LinearGradient
-                        colors={[colors.primary, '#FF9800']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.bannerGradient}
-                    />
+                    {userData.coverUrl ? (
+                        <Image source={{ uri: userData.coverUrl }} style={[styles.bannerGradient, { position: 'absolute' }]} />
+                    ) : (
+                        <LinearGradient
+                            colors={[colors.primary, '#FF9800']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.bannerGradient}
+                        />
+                    )}
 
                     {/* Floating Header Over Banner */}
                     <View style={[styles.floatingHeader, !isMyProfile && { justifyContent: 'flex-start' }]}>
@@ -430,7 +434,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     },
     bannerContainer: {
         width: '100%',
-        height: 180, // Taller background for better impact
+        height: 240, // Increased height for better visual impact
         position: 'relative',
     },
     bannerGradient: {

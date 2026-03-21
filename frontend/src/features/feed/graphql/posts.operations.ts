@@ -5,6 +5,11 @@ export const GET_POSTS = gql`
         getPosts {
             id
             content
+            media {
+                url
+                type
+                order
+            }
             createdAt
             updatedAt
             commentsCount
@@ -30,10 +35,15 @@ export const GET_POSTS = gql`
 `;
 
 export const CREATE_POST = gql`
-    mutation CreatePost($content: String!) {
-        createPost(content: $content) {
+    mutation CreatePost($content: String!, $media: [PostMediaInput!]) {
+        createPost(content: $content, media: $media) {
             id
             content
+            media {
+                url
+                type
+                order
+            }
             createdAt
             comments {
                 id
@@ -54,6 +64,11 @@ export const UPDATE_POST = gql`
         updatePost(id: $id, content: $content) {
             id
             content
+            media {
+                url
+                type
+                order
+            }
             createdAt
             comments {
                 id

@@ -3,6 +3,7 @@ import { UseGuards } from '@nestjs/common';
 import { PostsService } from './posts.service';
 import { Post } from './entities/post.entity';
 import { JwtGqlGuard } from '../auth/guards/jwt-gql.guard';
+import { PostMediaInput } from './dto/post-media.input';
 
 @Resolver(() => Post)
 export class PostsResolver {
@@ -23,10 +24,11 @@ export class PostsResolver {
     @UseGuards(JwtGqlGuard)
     async createPost(
         @Args('content') content: string,
+        @Args('media', { type: () => [PostMediaInput], nullable: true }) media: PostMediaInput[],
         @Context() context: any,
     ): Promise<Post> {
         const authorId = context.req.user.id;
-        return this.postsService.createPost(content, authorId);
+        return this.postsService.createPost(content, authorId, media);
     }
 
     @Mutation(() => Post, { name: 'updatePost' })

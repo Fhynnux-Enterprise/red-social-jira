@@ -22,6 +22,7 @@ import CommentOptionsModal from './CommentOptionsModal';
 import ConfirmationModal from './ConfirmationModal';
 import CommentItem from './CommentItem';
 import CopyTextModal from '../../../components/CopyTextModal';
+import ImageCarousel from '../../feed/components/ImageCarousel';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -629,18 +630,23 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
 
             {/* Exterior: mueve bottom con el teclado (JS driver) */}
             <Animated.View
-                style={[styles.container, { top: insets.top + 20, bottom: keyboardOffset }]}
+                style={[styles.container, { top: insets.top + 6, bottom: keyboardOffset }]}
                 pointerEvents="box-none"
             >
                 {/* Interior: drag translateY (native driver) */}
-                <Animated.View style={[{ flex: 1, gap: 8 }, { transform: [{ translateY: panY }] }]} pointerEvents="box-none">
-
-                    {/* Vacío superior flexible que empuja al medio */}
-                    {isMinimized && <View style={{ flex: 1 }} pointerEvents="none" />}
+                {/* Cuando minimizado: centra el postBubble verticalmente con justifyContent */}
+                <Animated.View
+                    style={[
+                        { flex: 1, gap: 8 },
+                        isMinimized ? { justifyContent: 'center', paddingBottom: Math.max(insets.bottom, 16) + 64 } : {},
+                        { transform: [{ translateY: panY }] }
+                    ]}
+                    pointerEvents="box-none"
+                >
 
                     {/* ── BURBUJA PUBLICACIÓN ── */}
                     {post && (
-                        <Animated.View style={[styles.postBubble, { maxHeight: isMinimized ? SCREEN_HEIGHT * 0.75 : SCREEN_HEIGHT * 0.35 }, { opacity: postTransition, transform: [{ translateY: slideY }, { translateX: panX }] }]}>
+                        <Animated.View style={[styles.postBubble, isMinimized ? { maxHeight: SCREEN_HEIGHT - insets.top - 6 - Math.max(insets.bottom, 72) } : { maxHeight: SCREEN_HEIGHT * 0.35 }, { opacity: postTransition, transform: [{ translateY: slideY }, { translateX: panX }] }]}>
                             <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
                                 <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
                                 <TouchableOpacity
@@ -718,6 +724,18 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                     <TouchableOpacity activeOpacity={0.8} onLongPress={() => setIsCopyModalVisible(true)} delayLongPress={250}>
                                         <Text style={[styles.postContent, { color: colors.text }]}>{post.content}</Text>
                                     </TouchableOpacity>
+                                    
+                                    {/* ── Media Adjunta (Carrusel) dentro del Modal ── */}
+                                    {post.media && post.media.length > 0 && (
+                                        <View style={{ marginTop: 12, marginLeft: -16, marginRight: -12 }}>
+                                            <ImageCarousel 
+                                                media={post.media} 
+                                                containerWidth={SCREEN_WIDTH - 8} 
+                                                imageResizeMode="contain"
+                                                dynamicAspectRatio={true}
+                                            />
+                                        </View>
+                                    )}
                                 </Animated.View>
                             </ScrollView>
 
@@ -764,9 +782,6 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                             </View>
                         </Animated.View>
                     )}
-
-                    {/* Vacío inferior que mantiene la simetría */}
-                    {isMinimized && <View style={{ flex: 1 }} pointerEvents="none" />}
 
                     {/* ── BUBBLE COMENTARIOS NORMAL (Visible cuando maximizado) ── */}
                     {!isMinimized && (
@@ -928,31 +943,33 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                         </Animated.View>
                     )}
 
-                    {/* ── NAV BAR INFERIOR CUADRADA NEGRA (Minimizado) ── */}
-                    {isMinimized && (
-                        <View style={{
-                            backgroundColor: '#000000',
-                            marginLeft: -8,
-                            marginRight: -8,
-                            marginBottom: -Math.max(insets.bottom, 16),
-                            paddingBottom: Math.max(insets.bottom, 16) + 12,
-                            paddingTop: 16,
-                            borderTopWidth: StyleSheet.hairlineWidth,
-                            borderTopColor: '#222222'
-                        }}>
-                            <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-around', alignItems: 'center' }}>
-                                <TouchableOpacity onPress={() => { setActiveTab('likes'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
-                                    <Ionicons name="heart-outline" size={26} color={activeTab === 'likes' ? colors.primary : "#FFFFFF"} />
-                                    <Text style={{ color: activeTab === 'likes' ? colors.primary : '#FFFFFF', marginTop: 4, fontSize: 13, fontWeight: '500' }}>Likes</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity onPress={() => { setActiveTab('comments'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
-                                    <Ionicons name="chatbubbles-outline" size={26} color={activeTab === 'comments' ? colors.primary : "#FFFFFF"} />
-                                    <Text style={{ color: activeTab === 'comments' ? colors.primary : '#FFFFFF', marginTop: 4, fontSize: 13, fontWeight: '500' }}>Comentarios</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    )}
                 </Animated.View>
+
+                {/* ── NAV BAR INFERIOR NEGRA (Minimizado) – Anclada al fondo ABS ── */}
+                {isMinimized && (
+                    <View style={{
+                        position: 'absolute',
+                        left: -4,
+                        right: -4,
+                        bottom: -Math.max(insets.bottom, 16),
+                        backgroundColor: '#000000',
+                        paddingBottom: Math.max(insets.bottom, 16) + 12,
+                        paddingTop: 16,
+                        borderTopWidth: StyleSheet.hairlineWidth,
+                        borderTopColor: '#222222'
+                    }}>
+                        <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-around', alignItems: 'center' }}>
+                            <TouchableOpacity onPress={() => { setActiveTab('likes'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
+                                <Ionicons name="heart-outline" size={26} color={activeTab === 'likes' ? colors.primary : "#FFFFFF"} />
+                                <Text style={{ color: activeTab === 'likes' ? colors.primary : '#FFFFFF', marginTop: 4, fontSize: 13, fontWeight: '500' }}>Likes</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => { setActiveTab('comments'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
+                                <Ionicons name="chatbubbles-outline" size={26} color={activeTab === 'comments' ? colors.primary : "#FFFFFF"} />
+                                <Text style={{ color: activeTab === 'comments' ? colors.primary : '#FFFFFF', marginTop: 4, fontSize: 13, fontWeight: '500' }}>Comentarios</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                )}
             </Animated.View>
 
             <CommentOptionsModal
@@ -999,8 +1016,8 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     },
     container: {
         position: 'absolute',
-        left: 8,
-        right: 8,
+        left: 4,
+        right: 4,
     },
     postBubble: {
         borderRadius: 24,
