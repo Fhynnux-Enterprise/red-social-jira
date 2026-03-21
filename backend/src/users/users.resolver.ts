@@ -85,4 +85,13 @@ export class UsersResolver {
   ): Promise<User> {
     return this.usersService.updateProfile(user.id, firstName, lastName, bio, username, phone);
   }
+
+  @Query(() => [User], { name: 'searchUsers' })
+  @UseGuards(JwtGqlGuard)
+  async searchUsers(
+    @Args('searchTerm') searchTerm: string,
+    @CurrentUser() user: any,
+  ): Promise<User[]> {
+    return this.usersService.searchUsers(searchTerm, user.id);
+  }
 }

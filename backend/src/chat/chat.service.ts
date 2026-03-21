@@ -110,11 +110,18 @@ export class ChatService {
 
         if (conversationIds.length === 0) return [];
 
-        return this.conversationRepository.find({
-            where: { id_conversation: In(conversationIds) },
-            relations: ['participants', 'participants.user'],
-            order: { updatedAt: 'DESC' },
-        });
+        // Recuperamos conversaciones que tengan al menos un mensaje NO borrado para este usuario
+        const conversations = await this.conversationRepository.createQueryBuilder('conversation')
+            .leftJoinAndSelect('conversation.participants', 'participant')
+            .leftJoinAndSelect('participant.user', 'user')
+            // Join con mensajes para filtrar los que sí tiene visibles
+            .innerJoin('conversation.messages', 'message')
+            .where('conversation.id_conversation IN (:...conversationIds)', { conversationIds })
+            .andWhere('(message.deletedFor IS NULL OR NOT (:userId = ANY (message.deletedFor)))', { userId })
+            .orderBy('conversation.updatedAt', 'DESC')
+            .getMany();
+
+        return conversations;
     }
 
     async getMessagesByConversation(id_conversation: string, currentUserId: string): Promise<Message[]> {
@@ -124,6 +131,13 @@ export class ChatService {
             .andWhere('(message.deletedFor IS NULL OR NOT (:currentUserId = ANY (message.deletedFor)))', { currentUserId })
             .orderBy('message.createdAt', 'ASC')
             .getMany();
+    }
+
+    async isUserParticipant(id_conversation: string, userId: string): Promise<boolean> {
+        const participant = await this.participantRepository.findOne({
+            where: { id_conversation, id_user: userId }
+        });
+        return !!participant;
     }
 
     async deleteMessageForMe(id_message: string, currentUserId: string): Promise<boolean> {
@@ -208,5 +222,21 @@ export class ChatService {
             where: { id_conversation },
             relations: ['participants', 'participants.user', 'participants.user.badge'],
         });
+    }
+
+    async searchMessagesInConversation(
+        id_conversation: string,
+        currentUserId: string,
+        searchTerm: string,
+    ): Promise<Message[]> {
+        if (!searchTerm) return [];
+
+        return this.messageRepository.createQueryBuilder('message')
+            .where('message.id_conversation = :id_conversation', { id_conversation })
+            .andWhere('message.content ILIKE :term', { term: `%${searchTerm}%` })
+            .andWhere('message.isDeletedForAll = false')
+            .andWhere('(message.deletedFor IS NULL OR NOT (:currentUserId = ANY (message.deletedFor)))', { currentUserId })
+            .orderBy('message.createdAt', 'DESC')
+            .getMany();
     }
 }

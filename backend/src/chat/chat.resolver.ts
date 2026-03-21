@@ -30,14 +30,23 @@ export class ChatResolver {
         @Args('id_conversation') id_conversation: string,
     ) {
         // Validación de seguridad: Comprobar que el usuario es participante
-        const conversations = await this.chatService.getUserConversations(user.id);
-        const isParticipant = conversations.some(c => c.id_conversation === id_conversation);
+        const isParticipant = await this.chatService.isUserParticipant(id_conversation, user.id);
         
         if (!isParticipant) {
             throw new Error('No tienes permiso para ver los mensajes de esta conversación');
         }
 
         return this.chatService.getMessagesByConversation(id_conversation, user.id);
+    }
+
+    @Query(() => [Message], { name: 'searchMessagesInChat' })
+    @UseGuards(GqlAuthGuard)
+    async searchMessagesInChat(
+        @CurrentUser() user: User,
+        @Args('id_conversation') id_conversation: string,
+        @Args('searchTerm') searchTerm: string,
+    ) {
+        return this.chatService.searchMessagesInConversation(id_conversation, user.id, searchTerm);
     }
 
     @Mutation(() => Boolean)
@@ -79,8 +88,7 @@ export class ChatResolver {
         @Args('id_conversation') id_conversation: string,
     ) {
         // Validación de seguridad
-        const conversations = await this.chatService.getUserConversations(user.id);
-        const isParticipant = conversations.some(c => c.id_conversation === id_conversation);
+        const isParticipant = await this.chatService.isUserParticipant(id_conversation, user.id);
 
         if (!isParticipant) {
             throw new Error('No tienes permiso para ver esta conversación');
@@ -106,10 +114,14 @@ export class ChatResolver {
     }
 
     @ResolveField(() => Message, { nullable: true })
-    async lastMessage(@Parent() conversation: Conversation) {
-        return this.messageRepository.findOne({
-            where: { id_conversation: conversation.id_conversation },
-            order: { createdAt: 'DESC' },
-        });
+    async lastMessage(
+        @Parent() conversation: Conversation,
+        @CurrentUser() user: User,
+    ) {
+        return this.messageRepository.createQueryBuilder('message')
+            .where('message.id_conversation = :id_conversation', { id_conversation: conversation.id_conversation })
+            .andWhere('(message.deletedFor IS NULL OR NOT (:userId = ANY (message.deletedFor)))', { userId: user.id })
+            .orderBy('message.createdAt', 'DESC')
+            .getOne();
     }
 }

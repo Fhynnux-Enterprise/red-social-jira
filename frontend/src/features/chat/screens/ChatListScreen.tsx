@@ -10,24 +10,52 @@ import {
     RefreshControl,
     TextInput,
     ScrollView,
+    Modal,
+    Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { useQuery } from '@apollo/client';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import { GET_USER_CONVERSATIONS } from '../graphql/chat.operations';
+import { GET_USER_CONVERSATIONS, DELETE_CONVERSATION_FOR_ME } from '../graphql/chat.operations';
+import Toast from 'react-native-toast-message';
 
 export default function ChatListScreen() {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
     const { user: currentUser } = useAuth() as any;
+    const client = useApolloClient();
+
+    const [selectedConversation, setSelectedConversation] = React.useState<any>(null);
+    const [isMenuVisible, setIsMenuVisible] = React.useState(false);
+    const [isConfirmModalVisible, setIsConfirmModalVisible] = React.useState(false);
 
     const { data, loading, refetch } = useQuery(GET_USER_CONVERSATIONS, {
         fetchPolicy: 'cache-and-network',
-        pollInterval: 10000, // Refrescar cada 10s para ver nuevos chats
+        pollInterval: 10000, 
     });
+
+    const [deleteConversationForMeMutation] = useMutation(DELETE_CONVERSATION_FOR_ME);
+
+    const handleConfirmDelete = async () => {
+        setIsConfirmModalVisible(false);
+        if (!selectedConversation) return;
+
+        try {
+            await deleteConversationForMeMutation({ 
+                variables: { id_conversation: selectedConversation.id_conversation },
+                refetchQueries: [{ query: GET_USER_CONVERSATIONS }]
+            });
+            client.cache.evict({ id: `Conversation:${selectedConversation.id_conversation}` });
+            client.cache.gc();
+            Toast.show({ type: 'success', text1: 'Éxito', text2: 'Conversación eliminada.' });
+        } catch (err) {
+            console.error("Error al eliminar conversación:", err);
+            Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo eliminar la conversación.' });
+        }
+    };
 
     const getOtherParticipant = useCallback((participants: any[]) => {
         return participants?.find(p => p.user.id !== currentUser?.id)?.user || null;
@@ -94,6 +122,10 @@ export default function ChatListScreen() {
             <TouchableOpacity
                 style={[styles.chatRow, { borderBottomColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }]}
                 onPress={() => (navigation as any).navigate('ChatRoom', { id_conversation: item.id_conversation })}
+                onLongPress={() => {
+                    setSelectedConversation(item);
+                    setIsMenuVisible(true);
+                }}
                 activeOpacity={0.7}
             >
                 {/* Avatar */}
@@ -198,11 +230,82 @@ export default function ChatListScreen() {
             {/* Floating Action Button */}
             <TouchableOpacity 
                 style={[styles.fab, { backgroundColor: colors.primary }]}
-                onPress={() => {}}
+                onPress={() => (navigation as any).navigate('NewChat')}
                 activeOpacity={0.8}
             >
                 <Ionicons name="create" size={28} color="#FFF" />
             </TouchableOpacity>
+
+            {/* Modal de Menú de Opciones (Long Press) */}
+            <Modal
+                visible={isMenuVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setIsMenuVisible(false)}
+            >
+                <TouchableOpacity 
+                    style={styles.modalOverlay} 
+                    activeOpacity={1} 
+                    onPress={() => setIsMenuVisible(false)}
+                >
+                    <View style={[styles.actionModalContainer, { backgroundColor: colors.surface }]}>
+                        <TouchableOpacity 
+                            style={styles.actionModalBtn}
+                            onPress={() => {
+                                setIsMenuVisible(false);
+                                setIsConfirmModalVisible(true);
+                            }}
+                        >
+                            <Ionicons name="trash-outline" size={24} color="#FF3B30" />
+                            <Text style={[styles.actionModalText, { color: '#FF3B30' }]}>Eliminar conversación</Text>
+                        </TouchableOpacity>
+                        
+                        <View style={[styles.actionModalDivider, { backgroundColor: colors.border }]} />
+                        
+                        <TouchableOpacity 
+                            style={styles.actionModalBtn}
+                            onPress={() => setIsMenuVisible(false)}
+                        >
+                            <Ionicons name="close-outline" size={24} color={colors.text} />
+                            <Text style={[styles.actionModalText, { color: colors.text }]}>Cancelar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+
+            {/* Modal de Confirmación Estilizado */}
+            <Modal
+                visible={isConfirmModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setIsConfirmModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.confirmModalContainer, { backgroundColor: colors.surface }]}>
+                        <Text style={[styles.confirmModalTitle, { color: colors.text }]}>Eliminar conversación</Text>
+                        <Text style={[styles.confirmModalMessage, { color: colors.textSecondary }]}>
+                            ¿Estás seguro de que deseas eliminar esta conversación con {getOtherParticipant(selectedConversation?.participants)?.firstName}? Esta acción se aplicará solo para ti.
+                        </Text>
+                        
+                        <View style={[styles.confirmModalActions, { borderTopColor: colors.border }]}>
+                            <TouchableOpacity 
+                                style={[styles.confirmModalBtn, { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: colors.border }]}
+                                onPress={() => setIsConfirmModalVisible(false)}
+                            >
+                                <Text style={[styles.confirmModalBtnText, { color: colors.text }]}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={styles.confirmModalBtn}
+                                onPress={handleConfirmDelete}
+                            >
+                                <Text style={[styles.confirmModalBtnText, { color: '#FF3B30', fontWeight: 'bold' }]}>
+                                    Eliminar
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -411,5 +514,78 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginTop: 10,
         opacity: 0.8,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    actionModalContainer: {
+        width: '85%',
+        borderRadius: 20,
+        paddingVertical: 10,
+        overflow: 'hidden',
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+    },
+    actionModalBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 18,
+        paddingHorizontal: 25,
+    },
+    actionModalText: {
+        fontSize: 16,
+        marginLeft: 15,
+        fontWeight: '600',
+    },
+    actionModalDivider: {
+        height: StyleSheet.hairlineWidth,
+        width: '100%',
+    },
+    confirmModalContainer: {
+        width: '80%',
+        borderRadius: 20,
+        overflow: 'hidden',
+        alignItems: 'center',
+        paddingTop: 20,
+        elevation: 5,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+    },
+    confirmModalTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        marginBottom: 8,
+        textAlign: 'center',
+        paddingHorizontal: 20,
+    },
+    confirmModalMessage: {
+        fontSize: 14,
+        textAlign: 'center',
+        marginBottom: 20,
+        paddingHorizontal: 20,
+        lineHeight: 20,
+    },
+    confirmModalActions: {
+        flexDirection: 'row',
+        borderTopWidth: StyleSheet.hairlineWidth,
+        width: '100%',
+    },
+    confirmModalBtn: {
+        flex: 1,
+        paddingVertical: 15,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    confirmModalBtnText: {
+        fontSize: 16,
+        fontWeight: '500',
     },
 });

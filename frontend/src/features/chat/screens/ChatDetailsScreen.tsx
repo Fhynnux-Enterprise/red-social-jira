@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
     View,
     Text,
@@ -7,7 +7,7 @@ import {
     Image,
     ScrollView,
     Platform,
-    Alert,
+    Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,7 +17,7 @@ import { useQuery, useMutation, useApolloClient } from '@apollo/client';
 import { AppStackParamList } from '../../../navigation/AppNavigator';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import { GET_CONVERSATION, DELETE_CONVERSATION_FOR_ME } from '../graphql/chat.operations';
+import { GET_CONVERSATION, DELETE_CONVERSATION_FOR_ME, GET_USER_CONVERSATIONS } from '../graphql/chat.operations';
 import Toast from 'react-native-toast-message';
 
 export default function ChatDetailsScreen() {
@@ -27,6 +27,7 @@ export default function ChatDetailsScreen() {
     const insets = useSafeAreaInsets();
     const { id_conversation } = route.params || {};
     const { user: currentUser } = useAuth() as any;
+    const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
 
     const { data, loading } = useQuery(GET_CONVERSATION, {
         variables: { id_conversation },
@@ -42,28 +43,23 @@ export default function ChatDetailsScreen() {
     const [deleteConversationForMeMutation] = useMutation(DELETE_CONVERSATION_FOR_ME);
 
     const handleDeleteChat = () => {
-        Alert.alert(
-            "Eliminar conversación",
-            "¿Estás seguro de que deseas eliminar esta conversación? Esta acción se aplicará solo para ti.",
-            [
-                { text: "Cancelar", style: "cancel" },
-                { 
-                    text: "Eliminar", 
-                    style: "destructive", 
-                    onPress: async () => {
-                        try {
-                            await deleteConversationForMeMutation({ variables: { id_conversation } });
-                            client.cache.evict({ id: `Conversation:${id_conversation}` });
-                            // Volvemos hasta la lista de mensajes (podría ser popToTop o navigate según el stack)
-                            navigation.navigate('MainTabs', { screen: 'Messages' });
-                        } catch (err) {
-                            console.error("Error al eliminar conversación:", err);
-                            Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo eliminar la conversación.' });
-                        }
-                    } 
-                }
-            ]
-        );
+        setIsConfirmModalVisible(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        setIsConfirmModalVisible(false);
+        try {
+            await deleteConversationForMeMutation({ 
+                variables: { id_conversation },
+                refetchQueries: [{ query: GET_USER_CONVERSATIONS }]
+            });
+            client.cache.evict({ id: `Conversation:${id_conversation}` });
+            client.cache.gc();
+            navigation.navigate('MainTabs', { screen: 'Messages' });
+        } catch (err) {
+            console.error("Error al eliminar conversación:", err);
+            Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo eliminar la conversación.' });
+        }
     };
 
     if (loading) {
@@ -114,10 +110,7 @@ export default function ChatDetailsScreen() {
                 <View style={styles.actionsGrid}>
                     <TouchableOpacity 
                         style={[styles.actionBtn, { backgroundColor: colors.surface }]}
-                        onPress={() => navigation.navigate('MainTabs', { 
-                            screen: 'Profile', 
-                            params: { userId: otherUser.id } 
-                        })}
+                        onPress={() => navigation.navigate('Profile', { userId: otherUser.id })}
                     >
                         <Ionicons name="person" size={24} color={colors.primary} />
                         <Text style={[styles.actionLabel, { color: colors.text }]}>Perfil</Text>
@@ -128,7 +121,10 @@ export default function ChatDetailsScreen() {
                         <Text style={[styles.actionLabel, { color: colors.text }]}>Silenciar</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.surface }]}>
+                    <TouchableOpacity 
+                        style={[styles.actionBtn, { backgroundColor: colors.surface }]}
+                        onPress={() => navigation.navigate('ChatRoom', { id_conversation, activateSearch: true })}
+                    >
                         <Ionicons name="search" size={24} color={colors.primary} />
                         <Text style={[styles.actionLabel, { color: colors.text }]}>Buscar</Text>
                     </TouchableOpacity>
@@ -161,6 +157,40 @@ export default function ChatDetailsScreen() {
 
                 <View style={{ height: 40 }} />
             </ScrollView>
+
+            {/* Modal de Confirmación Estilizado */}
+            <Modal
+                visible={isConfirmModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setIsConfirmModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.confirmModalContainer, { backgroundColor: colors.surface }]}>
+                        <Text style={[styles.confirmModalTitle, { color: colors.text }]}>Eliminar conversación</Text>
+                        <Text style={[styles.confirmModalMessage, { color: colors.textSecondary }]}>
+                            ¿Estás seguro de que deseas eliminar esta conversación? Esta acción se aplicará solo para ti.
+                        </Text>
+                        
+                        <View style={[styles.confirmModalActions, { borderTopColor: colors.border }]}>
+                            <TouchableOpacity 
+                                style={[styles.confirmModalBtn, { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: colors.border }]}
+                                onPress={() => setIsConfirmModalVisible(false)}
+                            >
+                                <Text style={[styles.confirmModalBtnText, { color: colors.text }]}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={styles.confirmModalBtn}
+                                onPress={handleConfirmDelete}
+                            >
+                                <Text style={[styles.confirmModalBtnText, { color: '#FF3B30', fontWeight: 'bold' }]}>
+                                    Eliminar
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -280,6 +310,53 @@ const styles = StyleSheet.create({
     optionText: {
         fontSize: 16,
         marginLeft: 12,
+        fontWeight: '500',
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    confirmModalContainer: {
+        width: '80%',
+        borderRadius: 20,
+        overflow: 'hidden',
+        alignItems: 'center',
+        paddingTop: 20,
+        elevation: 5,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+    },
+    confirmModalTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        marginBottom: 8,
+        textAlign: 'center',
+        paddingHorizontal: 20,
+    },
+    confirmModalMessage: {
+        fontSize: 14,
+        textAlign: 'center',
+        marginBottom: 20,
+        paddingHorizontal: 20,
+        lineHeight: 20,
+    },
+    confirmModalActions: {
+        flexDirection: 'row',
+        borderTopWidth: StyleSheet.hairlineWidth,
+        width: '100%',
+    },
+    confirmModalBtn: {
+        flex: 1,
+        paddingVertical: 15,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    confirmModalBtnText: {
+        fontSize: 16,
         fontWeight: '500',
     },
 });

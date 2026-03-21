@@ -24,8 +24,9 @@ import { AppStackParamList } from '../../../navigation/AppNavigator';
 import { useQuery, useMutation, useApolloClient } from '@apollo/client';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION, DELETE_MESSAGE_FOR_ME, DELETE_MESSAGE_FOR_ALL, EDIT_MESSAGE } from '../graphql/chat.operations';
+import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION, DELETE_MESSAGE_FOR_ME, DELETE_MESSAGE_FOR_ALL, EDIT_MESSAGE, SEARCH_MESSAGES_IN_CHAT } from '../graphql/chat.operations';
 import * as Haptics from 'expo-haptics';
+import * as Clipboard from 'expo-clipboard';
 import Toast from 'react-native-toast-message';
 
 export default function ChatRoomScreen() {
@@ -46,7 +47,24 @@ export default function ChatRoomScreen() {
         confirmText: '',
         onConfirm: () => {}
     });
+    
+    // Estados de búsqueda
+    const [isSearchMode, setIsSearchMode] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [searchResults, setSearchResults] = useState<string[]>([]);
+    const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
+
+    const flatListRef = useRef<FlatList>(null);
     const client = useApolloClient();
+
+    // Cargar búsqueda si viene de información
+    useEffect(() => {
+        if (route.params?.activateSearch) {
+            setIsSearchMode(true);
+            // Limpiar el parámetro para que no se re-active solo
+            navigation.setParams({ activateSearch: undefined } as any);
+        }
+    }, [route.params?.activateSearch]);
 
     const screenWidth = Dimensions.get('window').width;
 
@@ -164,6 +182,81 @@ export default function ChatRoomScreen() {
         }
     };
 
+    // Lógica de Búsqueda
+    const { refetch: searchMessagesQuery, loading: searchLoading } = useQuery(SEARCH_MESSAGES_IN_CHAT, {
+        variables: { id_conversation, searchTerm: '' },
+        skip: true,
+    });
+
+    useEffect(() => {
+        if (!isSearchMode) {
+            setSearchTerm('');
+            setSearchResults([]);
+            setCurrentSearchIndex(0);
+            return;
+        }
+    }, [isSearchMode]);
+
+    useEffect(() => {
+        const performSearch = async () => {
+            if (searchTerm.trim().length > 1) {
+                const { data } = await searchMessagesQuery({ id_conversation, searchTerm });
+                const ids = data?.searchMessagesInChat?.map((m: any) => m.id_message) || [];
+                setSearchResults(ids);
+                setCurrentSearchIndex(0);
+                if (ids.length > 0) jumpToMatch(0, ids);
+            } else {
+                setSearchResults([]);
+            }
+        };
+
+        const timer = setTimeout(performSearch, 500);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
+    const jumpToMatch = (index: number, idsOverride?: string[]) => {
+        const targetIds = idsOverride || searchResults;
+        if (targetIds.length === 0) return;
+        
+        const messageId = targetIds[index];
+        const flatListIndex = messages.findIndex(m => m.id === messageId);
+        
+        if (flatListIndex !== -1) {
+            flatListRef.current?.scrollToIndex({
+                index: flatListIndex,
+                animated: true,
+                viewPosition: 0.5
+            });
+        }
+    };
+
+    const handleScrollToIndexFailed = (error: any) => {
+        const offset = error.averageItemLength * error.index;
+        flatListRef.current?.scrollToOffset({ offset, animated: false });
+        setTimeout(() => {
+            flatListRef.current?.scrollToIndex({ index: error.index, animated: true });
+        }, 100);
+    };
+
+    const HighlightedText = ({ text, sub, mine }: { text: string, sub: string, mine: boolean }) => {
+        if (!isSearchMode || !sub.trim() || !text) {
+            return <Text style={[styles.messageText, { color: mine ? '#FFF' : colors.text }]}>{text}</Text>;
+        }
+
+        const parts = text.split(new RegExp(`(${sub})`, 'gi'));
+        return (
+            <Text style={[styles.messageText, { color: mine ? '#FFF' : colors.text }]}>
+                {parts.map((part, i) => 
+                    part.toLowerCase() === sub.toLowerCase() ? (
+                        <Text key={i} style={{ backgroundColor: '#FFF59D', color: '#000' }}>{part}</Text>
+                    ) : (
+                        <Text key={i}>{part}</Text>
+                    )
+                )}
+            </Text>
+        );
+    };
+
     const handleHideMessageFromUI = (msgId: string) => {
         try {
             const queryData: any = client.readQuery({
@@ -270,6 +363,25 @@ export default function ChatRoomScreen() {
             }
         });
         setIsConfirmModalVisible(true);
+    };
+
+    const handleCopy = async () => {
+        setIsActionModalVisible(false);
+        if (!selectedMessage) return;
+
+        try {
+            await Clipboard.setStringAsync(selectedMessage.content);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Toast.show({
+                type: 'success',
+                text1: 'Copiado',
+                text2: 'Mensaje copiado al portapapeles',
+                position: 'bottom',
+                visibilityTime: 2000,
+            });
+        } catch (error) {
+            console.error('Error al copiar:', error);
+        }
     };
 
     // ── Lógica de Teclado Manual (Replica de CommentsModal) ──
@@ -428,12 +540,7 @@ export default function ChatRoomScreen() {
                     delayLongPress={200}
                     style={bubbleStyles}
                 >
-                    <Text style={[
-                        styles.messageText,
-                        { color: isMine ? '#FFF' : colors.text }
-                    ]}>
-                        {item.content}
-                    </Text>
+                    <HighlightedText text={item.content} sub={searchTerm} mine={isMine} />
                     <View style={styles.messageFooter}>
                         {item.editedAt && (
                             <Text style={[
@@ -464,44 +571,94 @@ export default function ChatRoomScreen() {
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
-            {/* Header Fijo */}
-            <View style={[styles.header, { borderBottomColor: colors.border }]}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color={colors.text} />
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                    style={styles.headerInfoContainer} 
-                    onPress={() => navigation.navigate('ChatDetails', { id_conversation })}
-                    activeOpacity={0.7}
-                >
-                    {otherUser?.photoUrl ? (
-                        <Image source={{ uri: otherUser.photoUrl }} style={styles.headerAvatar} />
-                    ) : (
-                        <View style={[styles.headerAvatarPlaceholder, { backgroundColor: colors.primary + '20' }]}>
-                            <Text style={[styles.headerAvatarText, { color: colors.primary }]}>
-                                {otherUser?.firstName?.[0]}{otherUser?.lastName?.[0]}
+            {/* Header Dinámico (Normal o Búsqueda) */}
+            {isSearchMode ? (
+                <View style={[styles.searchHeader, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+                    <TouchableOpacity onPress={() => setIsSearchMode(false)} style={styles.backButton}>
+                        <Ionicons name="close" size={24} color={colors.text} />
+                    </TouchableOpacity>
+                    
+                    <TextInput 
+                        placeholder="Buscar en el chat..."
+                        placeholderTextColor={colors.textSecondary}
+                        style={[styles.searchInput, { color: colors.text }]}
+                        value={searchTerm}
+                        onChangeText={setSearchTerm}
+                        autoFocus
+                    />
+
+                    {searchResults.length > 0 && (
+                        <View style={styles.searchControls}>
+                            <Text style={[styles.searchCounter, { color: colors.textSecondary }]}>
+                                {currentSearchIndex + 1} de {searchResults.length}
                             </Text>
+                            <TouchableOpacity 
+                                onPress={() => {
+                                    const next = (currentSearchIndex + 1) % searchResults.length;
+                                    setCurrentSearchIndex(next);
+                                    jumpToMatch(next);
+                                }}
+                            >
+                                <Ionicons name="chevron-up" size={24} color={colors.text} />
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                onPress={() => {
+                                    const prev = (currentSearchIndex - 1 + searchResults.length) % searchResults.length;
+                                    setCurrentSearchIndex(prev);
+                                    jumpToMatch(prev);
+                                }}
+                            >
+                                <Ionicons name="chevron-down" size={24} color={colors.text} />
+                            </TouchableOpacity>
                         </View>
                     )}
-                    <View style={styles.headerTextContainer}>
-                        <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-                            {otherUser ? `${otherUser.firstName} ${otherUser.lastName}` : 'Cargando...'}
-                        </Text>
-                        <View style={styles.onlineStatus}>
-                            <View style={[styles.onlineDot, { backgroundColor: '#4CD964' }]} />
-                            <Text style={[styles.onlineText, { color: colors.textSecondary }]}>En línea</Text>
+                </View>
+            ) : (
+                <View style={[styles.header, { borderBottomColor: colors.border }]}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                        <Ionicons name="arrow-back" size={24} color={colors.text} />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                        style={styles.headerInfoContainer} 
+                        onPress={() => navigation.navigate('ChatDetails', { id_conversation })}
+                        activeOpacity={0.7}
+                    >
+                        {otherUser?.photoUrl ? (
+                            <Image source={{ uri: otherUser.photoUrl }} style={styles.headerAvatar} />
+                        ) : (
+                            <View style={[styles.headerAvatarPlaceholder, { backgroundColor: colors.primary + '20' }]}>
+                                <Text style={[styles.headerAvatarText, { color: colors.primary }]}>
+                                    {otherUser?.firstName?.[0]}{otherUser?.lastName?.[0]}
+                                </Text>
+                            </View>
+                        )}
+                        <View style={styles.headerTextContainer}>
+                            <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+                                {otherUser ? `${otherUser.firstName} ${otherUser.lastName}` : 'Cargando...'}
+                            </Text>
+                            <View style={styles.onlineStatus}>
+                                <View style={[styles.onlineDot, { backgroundColor: '#4CD964' }]} />
+                                <Text style={[styles.onlineText, { color: colors.textSecondary }]}>En línea</Text>
+                            </View>
                         </View>
-                    </View>
-                </TouchableOpacity>
+                    </TouchableOpacity>
 
-                <TouchableOpacity 
-                    style={styles.headerAction}
-                    onPress={() => navigation.navigate('ChatDetails', { id_conversation })}
-                >
-                    <Ionicons name="ellipsis-vertical" size={22} color={colors.textSecondary} />
-                </TouchableOpacity>
-            </View>
+                    <TouchableOpacity 
+                        style={styles.headerAction}
+                        onPress={() => setIsSearchMode(true)}
+                    >
+                        <Ionicons name="search" size={22} color={colors.textSecondary} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                        style={styles.headerAction}
+                        onPress={() => navigation.navigate('ChatDetails', { id_conversation })}
+                    >
+                        <Ionicons name="ellipsis-vertical" size={22} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                </View>
+            )}
 
             {/* Contenido con Desplazamiento de Teclado Manual */}
             <Animated.View style={{ flex: 1, paddingBottom: keyboardOffset }}>
@@ -513,6 +670,7 @@ export default function ChatRoomScreen() {
                         </View>
                     ) : (
                         <FlatList
+                            ref={flatListRef}
                             data={messages}
                             renderItem={renderMessage}
                             keyExtractor={(item) => item.id}
@@ -520,6 +678,7 @@ export default function ChatRoomScreen() {
                             contentContainerStyle={styles.listContent}
                             showsVerticalScrollIndicator={false}
                             ListFooterComponent={renderProfileSummary}
+                            onScrollToIndexFailed={handleScrollToIndexFailed}
                         />
                     )}
                 </View>
@@ -615,6 +774,16 @@ export default function ChatRoomScreen() {
                                 <Text style={[styles.actionModalText, { color: '#FF3B30' }]}>Eliminar</Text>
                             </TouchableOpacity>
                         )}
+
+                        <View style={[styles.actionModalDivider, { backgroundColor: colors.border }]} />
+
+                        <TouchableOpacity 
+                            style={styles.actionModalBtn}
+                            onPress={handleCopy}
+                        >
+                            <Ionicons name="copy-outline" size={24} color={colors.text} />
+                            <Text style={[styles.actionModalText, { color: colors.text }]}>Copiar texto</Text>
+                        </TouchableOpacity>
                     </View>
                 </TouchableOpacity>
             </Modal>
@@ -721,7 +890,29 @@ const styles = StyleSheet.create({
         fontSize: 12,
     },
     headerAction: {
-        padding: 8,
+        padding: 5,
+        marginLeft: 8,
+    },
+    searchHeader: {
+        height: 60,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        borderBottomWidth: 1,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 16,
+        marginLeft: 10,
+    },
+    searchControls: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    searchCounter: {
+        fontSize: 12,
+        fontWeight: '600',
     },
     chatContainer: {
         flex: 1,

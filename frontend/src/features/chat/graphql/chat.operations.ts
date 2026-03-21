@@ -108,3 +108,26 @@ export const SEND_MESSAGE = gql`
     }
   }
 `;
+
+export const SEARCH_USERS = gql`
+  query SearchUsers($searchTerm: String!) {
+    searchUsers(searchTerm: $searchTerm) {
+      id
+      firstName
+      lastName
+      username
+      photoUrl
+      badge {
+        title
+      }
+    }
+  }
+`;
+
+export const SEARCH_MESSAGES_IN_CHAT = gql`
+  query SearchMessagesInChat($id_conversation: String!, $searchTerm: String!) {
+    searchMessagesInChat(id_conversation: $id_conversation, searchTerm: $searchTerm) {
+      id_message
+    }
+  }
+`;

@@ -18,6 +18,7 @@ export const GET_FOLLOWERS = gql`
       id
       firstName
       lastName
+      username
       photoUrl
     }
   }
@@ -29,6 +30,7 @@ export const GET_FOLLOWING = gql`
       id
       firstName
       lastName
+      username
       photoUrl
     }
   }
