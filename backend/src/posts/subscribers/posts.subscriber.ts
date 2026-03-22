@@ -1,4 +1,4 @@
-import { EventSubscriber, EntitySubscriberInterface, RemoveEvent, DataSource } from 'typeorm';
+import { EventSubscriber, EntitySubscriberInterface, SoftRemoveEvent, DataSource } from 'typeorm';
 import { Injectable } from '@nestjs/common';
 import { PostMedia } from '../entities/post-media.entity';
 import { SupabaseService } from '../../storage/supabase.service';
@@ -18,7 +18,7 @@ export class PostsSubscriber implements EntitySubscriberInterface<PostMedia> {
         return PostMedia;
     }
 
-    async beforeRemove(event: RemoveEvent<PostMedia>) {
+    async beforeSoftRemove(event: SoftRemoveEvent<PostMedia>) {
         if (!event.entity || !event.entity.url) {
             return;
         }
@@ -37,7 +37,7 @@ export class PostsSubscriber implements EntitySubscriberInterface<PostMedia> {
                 }
             }
         } catch (error) {
-            console.error(`Failed to delete media file from Supabase: ${event.entity.url}`, error);
+            console.error(`Failed to delete media file from Supabase during soft remove: ${event.entity.url}`, error);
             // No tiramos el error para no bloquear la eliminación del registro en la BD,
             // pero lo loegamos para monitoreo.
         }

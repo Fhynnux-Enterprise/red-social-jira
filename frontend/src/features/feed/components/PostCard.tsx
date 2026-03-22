@@ -27,6 +27,7 @@ export interface PostCardProps {
     isViewable?: boolean;
     isGlobalMuted?: boolean;
     toggleGlobalMute?: () => void;
+    isOverlayActive?: boolean;
 }
 
 export default function PostCard({ 
@@ -39,6 +40,7 @@ export default function PostCard({
     isViewable,
     isGlobalMuted,
     toggleGlobalMute,
+    isOverlayActive,
 }: PostCardProps) {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
@@ -210,6 +212,7 @@ export default function PostCard({
                     containerWidth={CARD_WIDTH}
                     isGlobalMuted={isGlobalMuted}
                     toggleGlobalMute={toggleGlobalMute}
+                    isOverlayActive={isOverlayActive}
                 />
             )}
 

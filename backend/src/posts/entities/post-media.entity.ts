@@ -1,5 +1,5 @@
 import { ObjectType, Field, ID, Int } from '@nestjs/graphql';
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, DeleteDateColumn } from 'typeorm';
 import { Post } from './post.entity';
 
 @ObjectType()
@@ -32,4 +32,7 @@ export class PostMedia {
     @Field()
     @CreateDateColumn({ type: 'timestamptz' })
     createdAt: Date;
+
+    @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+    deletedAt: Date;
 }

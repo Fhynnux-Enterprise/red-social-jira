@@ -99,8 +99,9 @@ export default function FeedScreen() {
             isViewable={item.id === visiblePostId}
             isGlobalMuted={isGlobalMuted}
             toggleGlobalMute={toggleGlobalMute}
+            isOverlayActive={!!selectedPostForComments}
         />
-    ), [currentUser?.id, handleOptionsPress, visiblePostId, isGlobalMuted, toggleGlobalMute]);
+    ), [currentUser?.id, handleOptionsPress, visiblePostId, isGlobalMuted, toggleGlobalMute, selectedPostForComments]);
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>

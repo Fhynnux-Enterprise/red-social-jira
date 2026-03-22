@@ -98,8 +98,9 @@ export class PostsService {
             throw new UnauthorizedException('No puedes modificar un post que no es tuyo');
         }
 
-        // Usamos remove en lugar de softDelete para que Cascade invoque al Subscriber y limpie Supabase Storage
-        await this.postsRepository.remove(post);
+        // Usamos softRemove para aplicar el borrado lógico y que el Cascade 
+        // propague el borrado a PostMedia, disparando el suscriptor de Supabase
+        await this.postsRepository.softRemove(post);
         return true;
     }
 

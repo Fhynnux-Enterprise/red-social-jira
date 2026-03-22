@@ -30,6 +30,7 @@ interface ImageCarouselProps {
     isViewable?: boolean; // Prop para autoplay vertical
     isGlobalMuted?: boolean; // Estado de audio global
     toggleGlobalMute?: () => void; // Función global para mutear/desmutear
+    isOverlayActive?: boolean; // Bloqueo de reproducción (modal abierto)
     /** Llamado cuando el índice activo cambia (útil para el padre) */
     onIndexChange?: (index: number) => void;
     /**
@@ -51,6 +52,7 @@ export default function ImageCarousel({
     isViewable = true,
     isGlobalMuted = true,
     toggleGlobalMute,
+    isOverlayActive = false,
     onIndexChange,
     onSwipeClose,
 }: ImageCarouselProps) {
@@ -82,18 +84,20 @@ export default function ImageCarousel({
         return () => sub.remove();
     }, [viewerVisible]);
 
+    const isFirstItemVideo = media && media.length > 0 && media[0].type === 'video';
+
     // ── Aspect ratio dinámico ──
     useEffect(() => {
-        if (dynamicAspectRatio && media && media.length > 0 && media[0].type !== 'video') {
+        if (dynamicAspectRatio && media && media.length > 0 && !isFirstItemVideo) {
             Image.getSize(media[0].url, (w, h) => {
                 if (h > 0) setCalculatedAspect(w / h);
             }, () => {});
         }
-    }, [dynamicAspectRatio, media]);
+    }, [dynamicAspectRatio, media, isFirstItemVideo]);
 
     const activeAspectRatio = dynamicAspectRatio && calculatedAspect
         ? calculatedAspect
-        : (customAspectRatio || (4 / 5));
+        : (customAspectRatio || (isFirstItemVideo ? (9 / 16) : (4 / 5)));
 
     const ITEM_WIDTH = containerWidth ?? SCREEN_WIDTH;
 
@@ -185,7 +189,7 @@ export default function ImageCarousel({
                             resizeMode={ResizeMode.COVER}
                             isLooping
                             isMuted={isGlobalMuted}
-                            shouldPlay={isViewable && activeIndex === index}
+                            shouldPlay={isViewable && activeIndex === index && !isOverlayActive}
                         />
                         {/* Overlay de volumen personalizado en la esquina superior derecha */}
                         <TouchableOpacity
@@ -207,7 +211,7 @@ export default function ImageCarousel({
                 )}
             </View>
         </TouchableOpacity>
-    ), [ITEM_WIDTH, activeAspectRatio, colors, handlePress, activeIndex, isGlobalMuted, isViewable, toggleGlobalMute]);
+    ), [ITEM_WIDTH, activeAspectRatio, colors, handlePress, activeIndex, isGlobalMuted, isViewable, toggleGlobalMute, isOverlayActive]);
 
     // ────────────────────────────────────────────────────────────────────────
     return (
