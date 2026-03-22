@@ -8,6 +8,11 @@ import { useMutation } from '@apollo/client';
 import { TOGGLE_LIKE } from '../graphql/posts.operations';
 import CopyTextModal from '../../../components/CopyTextModal';
 import ImageCarousel from './ImageCarousel';
+import { Dimensions } from 'react-native';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_MARGIN = 12;
+const CARD_WIDTH = SCREEN_WIDTH - (CARD_MARGIN * 2);
 
 const MAX_CHARS = 220;
 
@@ -19,9 +24,22 @@ export interface PostCardProps {
     isModalView?: boolean;
     headerPanHandlers?: any;
     onScroll?: (event: any) => void;
+    isViewable?: boolean;
+    isGlobalMuted?: boolean;
+    toggleGlobalMute?: () => void;
 }
 
-export default function PostCard({ item, currentUserId, onOptionsPress, onOpenComments, isModalView, headerPanHandlers }: PostCardProps) {
+export default function PostCard({ 
+    item, 
+    currentUserId, 
+    onOptionsPress, 
+    onOpenComments, 
+    isModalView, 
+    headerPanHandlers,
+    isViewable,
+    isGlobalMuted,
+    toggleGlobalMute,
+}: PostCardProps) {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
@@ -188,6 +206,10 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
                     media={item.media}
                     onPress={() => onOpenComments?.(item.id, 'comments', true)}
                     disableFullscreen={true}
+                    isViewable={isViewable}
+                    containerWidth={CARD_WIDTH}
+                    isGlobalMuted={isGlobalMuted}
+                    toggleGlobalMute={toggleGlobalMute}
                 />
             )}
 
@@ -243,6 +265,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         borderRadius: 16,
         paddingTop: 14,
         paddingBottom: 4,
+        overflow: 'hidden', // CRÍTICO: Evita que el carrusel se desborde del recuadro
         // Sombra moderna
         ...Platform.select({
             ios: {

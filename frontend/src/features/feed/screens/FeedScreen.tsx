@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, Image, Platform, Alert, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation } from '@apollo/client';
@@ -21,13 +21,21 @@ export default function FeedScreen() {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
     const [isModalVisible, setIsModalVisible] = useState(false);
-
     const [editingPostId, setEditingPostId] = useState<string | undefined>(undefined);
     const [editingPostContent, setEditingPostContent] = useState<string>('');
-
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<any>(null);
     const [selectedPostForComments, setSelectedPostForComments] = useState<{ post: any, minimize: boolean, initialTab?: 'comments' | 'likes' } | null>(null);
+
+    // Estado para trackear qué post está visible en pantalla (para autoplay)
+    const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
+
+    // Estado global de Mute/Unmute para todo el feed
+    const [isGlobalMuted, setIsGlobalMuted] = useState(true);
+
+    const toggleGlobalMute = useCallback(() => {
+        setIsGlobalMuted(prev => !prev);
+    }, []);
 
     const { data, loading, error, refetch } = useQuery(GET_POSTS, {
         fetchPolicy: 'cache-and-network',
@@ -60,10 +68,10 @@ export default function FeedScreen() {
         }
     });
 
-    const handleOptionsPress = (item: any) => {
+    const handleOptionsPress = useCallback((item: any) => {
         setSelectedPost(item);
         setIsOptionsMenuVisible(true);
-    };
+    }, []);
 
     const handleCreatePostPress = () => {
         setEditingPostId(undefined);
@@ -71,14 +79,28 @@ export default function FeedScreen() {
         setIsModalVisible(true);
     };
 
-    const renderPost = ({ item }: { item: any }) => (
+    // Configuración para detectar visibilidad de elementos
+    const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
+        if (viewableItems.length > 0) {
+            setVisiblePostId(viewableItems[0].item.id);
+        }
+    }, []);
+
+    const viewabilityConfig = useRef({
+        itemVisiblePercentThreshold: 55, // 55% visible para activar autoplay
+    }).current;
+
+    const renderPost = useCallback(({ item }: { item: any }) => (
         <PostCard
             item={item}
             currentUserId={currentUser?.id}
             onOptionsPress={handleOptionsPress}
             onOpenComments={(_, initialTab, minimize) => setSelectedPostForComments({ post: item, minimize: !!minimize, initialTab })}
+            isViewable={item.id === visiblePostId}
+            isGlobalMuted={isGlobalMuted}
+            toggleGlobalMute={toggleGlobalMute}
         />
-    );
+    ), [currentUser?.id, handleOptionsPress, visiblePostId, isGlobalMuted, toggleGlobalMute]);
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -86,10 +108,6 @@ export default function FeedScreen() {
             {/* Cabecera Tipo Facebook */}
             <View style={styles.topHeader}>
                 <View style={styles.brandContainer}>
-                    {/* <Image
-                        source={require('../../../../assets/images/logo-transparente.png')}
-                        style={styles.brandLogo}
-                    /> */}
                     <MaskedView
                         style={{ flexDirection: 'row' }}
                         maskElement={
@@ -159,6 +177,12 @@ export default function FeedScreen() {
                         showsVerticalScrollIndicator={false}
                         refreshing={loading}
                         onRefresh={refetch}
+                        onViewableItemsChanged={onViewableItemsChanged}
+                        viewabilityConfig={viewabilityConfig}
+                        initialNumToRender={5}
+                        maxToRenderPerBatch={5}
+                        windowSize={10}
+                        removeClippedSubviews={Platform.OS === 'android'}
                     />
                 )}
             </View>

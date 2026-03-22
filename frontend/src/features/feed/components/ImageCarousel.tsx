@@ -3,6 +3,7 @@ import {
     View, Text, Image, StyleSheet, Dimensions, FlatList,
     TouchableOpacity, Modal, BackHandler, PanResponder, Animated,
 } from 'react-native';
+import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,6 +27,9 @@ interface ImageCarouselProps {
     customAspectRatio?: number;
     disableFullscreen?: boolean;
     dynamicAspectRatio?: boolean;
+    isViewable?: boolean; // Prop para autoplay vertical
+    isGlobalMuted?: boolean; // Estado de audio global
+    toggleGlobalMute?: () => void; // Función global para mutear/desmutear
     /** Llamado cuando el índice activo cambia (útil para el padre) */
     onIndexChange?: (index: number) => void;
     /**
@@ -44,6 +48,9 @@ export default function ImageCarousel({
     customAspectRatio,
     disableFullscreen = false,
     dynamicAspectRatio = false,
+    isViewable = true,
+    isGlobalMuted = true,
+    toggleGlobalMute,
     onIndexChange,
     onSwipeClose,
 }: ImageCarouselProps) {
@@ -171,16 +178,27 @@ export default function ImageCarousel({
         <TouchableOpacity activeOpacity={1} onPress={() => handlePress(index)}>
             <View style={{ width: ITEM_WIDTH, aspectRatio: activeAspectRatio, overflow: 'hidden' }}>
                 {item.type === 'video' ? (
-                    <View style={[styles.mediaItem, {
-                        width: '100%', height: '100%',
-                        justifyContent: 'center', alignItems: 'center',
-                        backgroundColor: colors.surface,
-                    }]}>
-                        <Ionicons name="play-circle" size={64} color="rgba(255,255,255,0.8)"
-                            style={{ position: 'absolute', zIndex: 10 }} />
-                        <Image source={{ uri: item.url }}
+                    <View style={{ width: '100%', height: '100%' }}>
+                        <Video
+                            source={{ uri: item.url }}
                             style={[styles.mediaItem, { width: '100%', height: '100%' }]}
-                            resizeMode="cover" />
+                            resizeMode={ResizeMode.COVER}
+                            isLooping
+                            isMuted={isGlobalMuted}
+                            shouldPlay={isViewable && activeIndex === index}
+                        />
+                        {/* Overlay de volumen personalizado en la esquina superior derecha */}
+                        <TouchableOpacity
+                            style={styles.muteButtonContainer}
+                            activeOpacity={0.7}
+                            onPress={toggleGlobalMute}
+                        >
+                            <Ionicons
+                                name={isGlobalMuted ? 'volume-mute' : 'volume-high'}
+                                size={18}
+                                color="white"
+                            />
+                        </TouchableOpacity>
                     </View>
                 ) : (
                     <Image source={{ uri: item.url }}
@@ -189,7 +207,7 @@ export default function ImageCarousel({
                 )}
             </View>
         </TouchableOpacity>
-    ), [ITEM_WIDTH, activeAspectRatio, colors, handlePress]);
+    ), [ITEM_WIDTH, activeAspectRatio, colors, handlePress, activeIndex, isGlobalMuted, isViewable, toggleGlobalMute]);
 
     // ────────────────────────────────────────────────────────────────────────
     return (
@@ -351,7 +369,7 @@ const styles = StyleSheet.create({
     counter: {
         position: 'absolute',
         top: 10,
-        right: 12,
+        left: 12,
         backgroundColor: 'rgba(0,0,0,0.55)',
         borderRadius: 12,
         paddingHorizontal: 10,
@@ -382,5 +400,17 @@ const styles = StyleSheet.create({
     viewerImage: {
         width: '100%',
         height: '100%',
+    },
+    muteButtonContainer: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10,
     },
 });
