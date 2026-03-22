@@ -62,6 +62,8 @@ export default function ImageCarousel({
 
     const carouselRef = useRef<any>(null);
     const flatListScrolling = useRef(false);
+    // Periodo de gracia: ignora gestos justo después de llegar rápido a la última imagen
+    const recentlyArrivedAtEnd = useRef(false);
 
     // ── Back-button en Android dentro del visor ──
     useEffect(() => {
@@ -131,21 +133,30 @@ export default function ImageCarousel({
         },
     })).current;
 
-    // ── PanResponder para CARRUSEL: solo activa en la última imagen ──
+    // ── PanResponder para CARRUSEL: toma control total en la última imagen ──
+    // scrollEnabled=false en FlatList cuando estamos aquí → sin competencia nativa.
     const carouselClosePan = useRef(PanResponder.create({
-        onMoveShouldSetPanResponder: (_, g) => {
-            // Solo si estamos en la última imagen Y el movimiento es claramente horizontal-izquierda
-            const isLastImage = activeIndexRef.current === media.length - 1;
-            const isLeftSwipe = g.dx < -12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5;
-            // No interrumpir si el FlatList ya está scrolleando entre páginas
-            return isLastImage && isLeftSwipe && !flatListScrolling.current;
+        onMoveShouldSetPanResponderCapture: (_, g) => {
+            // No activar si el usuario acaba de llegar a la última imagen con momentum (llegó rápido)
+            if (recentlyArrivedAtEnd.current) return false;
+            // Solo captura horizontales; los verticales los hereda el padre (cambiar post)
+            return Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.2;
         },
         onPanResponderMove: (_, g) => {
-            if (g.dx < 0) slideX.setValue(g.dx);
+            if (g.dx < 0) slideX.setValue(g.dx); // Sigue el dedo solo hacia la izquierda
         },
         onPanResponderRelease: (_, g) => {
-            if (g.dx < -(SCREEN_WIDTH * 0.45) || g.vx < -0.9) {
+            // Solo cerrar con arrastre deliberado (>55% pantalla). Sin cierre por velocidad.
+            if (g.dx < -(SCREEN_WIDTH * 0.40)) {
                 onSwipeClose?.(slideX);
+            } else if (g.dx > 40 && activeIndexRef.current > 0) {
+                // Swipe derecha: ir a imagen anterior manualmente
+                Animated.spring(slideX, { toValue: 0, useNativeDriver: true }).start();
+                const prevIndex = activeIndexRef.current - 1;
+                carouselRef.current?.scrollToIndex({ index: prevIndex, animated: true });
+                setActiveIndex(prevIndex);
+                activeIndexRef.current = prevIndex;
+                onIndexChange?.(prevIndex);
             } else {
                 Animated.spring(slideX, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
             }
@@ -193,41 +204,49 @@ export default function ImageCarousel({
                         {renderItem({ item: media[0], index: 0 })}
                     </Animated.View>
                 ) : (
-                    /* Carrusel: cierre detectado en onScrollEndDrag cuando está en última imagen */
-                    <FlatList
-                        ref={carouselRef}
-                        data={media}
-                        renderItem={renderItem}
-                        keyExtractor={(item, index) => `${item.url}-${index}`}
-                        horizontal
-                        pagingEnabled
-                        showsHorizontalScrollIndicator={false}
-                        bounces={false}
-                        overScrollMode="never"
-                        getItemLayout={(_, index) => ({
-                            length: ITEM_WIDTH,
-                            offset: ITEM_WIDTH * index,
-                            index,
-                        })}
-                        onScrollBeginDrag={() => { flatListScrolling.current = true; }}
-                        onScrollEndDrag={(event) => {
-                            flatListScrolling.current = false;
-                            const { contentOffset, velocity } = event.nativeEvent;
-                            const currentIndex = Math.round(contentOffset.x / ITEM_WIDTH);
-                            const vx = velocity?.x ?? 0;
-                            // Si estamos en la última foto y el usuario sigue empujando hacia la izquierda
-                            if (currentIndex === media.length - 1 && vx < -0.3) {
-                                onSwipeClose?.(slideX);
-                            }
-                        }}
-                        onMomentumScrollEnd={(event) => {
-                            flatListScrolling.current = false;
-                            const newIndex = Math.round(event.nativeEvent.contentOffset.x / ITEM_WIDTH);
-                            setActiveIndex(newIndex);
-                            activeIndexRef.current = newIndex;
-                            onIndexChange?.(newIndex);
-                        }}
-                    />
+                    /*
+                     * Carrusel:
+                     * - Cuando NO estamos en la última imagen: FlatList maneja scroll normalmente.
+                     * - Cuando SÍ estamos en la última imagen: scrollEnabled=false, el Animated.View
+                     *   wrapper con carouselClosePan toma el control. No hay competencia nativa.
+                     */
+                    <Animated.View
+                        {...(activeIndex === media.length - 1 ? carouselClosePan.panHandlers : {})}
+                        style={{ transform: [{ translateX: slideX }] }}
+                    >
+                        <FlatList
+                            ref={carouselRef}
+                            data={media}
+                            renderItem={renderItem}
+                            keyExtractor={(item, index) => `${item.url}-${index}`}
+                            horizontal
+                            pagingEnabled
+                            showsHorizontalScrollIndicator={false}
+                            bounces={false}
+                            overScrollMode="never"
+                            scrollEnabled={activeIndex < media.length - 1}
+                            getItemLayout={(_, index) => ({
+                                length: ITEM_WIDTH,
+                                offset: ITEM_WIDTH * index,
+                                index,
+                            })}
+                            onScrollBeginDrag={() => { flatListScrolling.current = true; }}
+                            onScrollEndDrag={() => { flatListScrolling.current = false; }}
+                            onMomentumScrollEnd={(event) => {
+                                flatListScrolling.current = false;
+                                const newIndex = Math.round(event.nativeEvent.contentOffset.x / ITEM_WIDTH);
+                                setActiveIndex(newIndex);
+                                activeIndexRef.current = newIndex;
+                                onIndexChange?.(newIndex);
+                                // Si llegamos a la última imagen, bloqueamos gestos por 350ms
+                                // para que el momentum del scroll no dispare el cierre accidentalmente
+                                if (newIndex === media.length - 1) {
+                                    recentlyArrivedAtEnd.current = true;
+                                    setTimeout(() => { recentlyArrivedAtEnd.current = false; }, 350);
+                                }
+                            }}
+                        />
+                    </Animated.View>
                 )}
             </View>
 
