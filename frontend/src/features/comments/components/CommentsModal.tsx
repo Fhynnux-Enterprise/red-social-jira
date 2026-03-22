@@ -686,7 +686,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                 <Animated.View
                     style={[
                         { flex: 1, gap: 8 },
-                        isMinimized ? { justifyContent: 'center', paddingBottom: Math.max(insets.bottom, 16) + 64 } : {},
+                        isMinimized ? { justifyContent: 'center', paddingBottom: Math.max(insets.bottom, 16) + 50 } : {},
                         { transform: [{ translateY: panY }] }
                     ]}
                     pointerEvents="box-none"

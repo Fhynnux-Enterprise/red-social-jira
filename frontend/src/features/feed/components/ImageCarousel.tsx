@@ -225,6 +225,9 @@ export default function ImageCarousel({
                             bounces={false}
                             overScrollMode="never"
                             scrollEnabled={activeIndex < media.length - 1}
+                            directionalLockEnabled={true}
+                            nestedScrollEnabled={true}
+                            alwaysBounceVertical={false}
                             getItemLayout={(_, index) => ({
                                 length: ITEM_WIDTH,
                                 offset: ITEM_WIDTH * index,
