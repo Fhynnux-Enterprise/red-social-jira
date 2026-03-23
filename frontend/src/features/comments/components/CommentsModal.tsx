@@ -810,6 +810,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                                 imageResizeMode="contain"
                                                 dynamicAspectRatio={true}
                                                 customAspectRatio={undefined}
+                                                isInteractive={true}
                                                 onSwipeClose={(carouselPanX) => {
                                                     // Sincronizamos el panX del modal con el que viene del carrusel
                                                     // para que el efecto visual ya esté en marcha antes de cerrar

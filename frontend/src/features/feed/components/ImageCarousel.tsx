@@ -2,9 +2,11 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     View, Text, Image, StyleSheet, Dimensions, FlatList,
     TouchableOpacity, Modal, BackHandler, PanResponder, Animated,
+    Pressable
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ZoomableImageViewer from './ZoomableImageViewer';
@@ -32,6 +34,7 @@ interface ImageCarouselProps {
     isViewable?: boolean; // Prop para autoplay vertical
     isFocused?: boolean; // Candado: pause when navigating away
     isOverlayActive?: boolean; // Bloqueo de reproducción (modal abierto)
+    isInteractive?: boolean; // Habilita controles avanzados (Play/Pause inmediato, Slider, Fullscreen)
     /** Llamado cuando el índice activo cambia (útil para el padre) */
     onIndexChange?: (index: number) => void;
     /**
@@ -53,6 +56,7 @@ export default function ImageCarousel({
     isViewable = true,
     isFocused = true,
     isOverlayActive = false,
+    isInteractive = false,
     onIndexChange,
     onSwipeClose,
 }: ImageCarouselProps) {
@@ -69,8 +73,16 @@ export default function ImageCarousel({
     const [activeIndex, setActiveIndex] = useState(0);
     const [viewerVisible, setViewerVisible] = useState(false);
     const [viewerInitialIndex, setViewerInitialIndex] = useState(0);
+    const [viewerActiveIndex, setViewerActiveIndex] = useState(0);
     const [calculatedAspect, setCalculatedAspect] = useState<number | null>(null);
     const [isZoomed, setIsZoomed] = useState(false);
+
+    // Sincronizar el índice cuando se abre el visor
+    useEffect(() => {
+        if (viewerVisible) {
+            setViewerActiveIndex(viewerInitialIndex);
+        }
+    }, [viewerVisible, viewerInitialIndex]);
 
     // Ref para conocer el índice activo dentro del PanResponder (sin stale closure)
     const activeIndexRef = useRef(0);
@@ -99,7 +111,7 @@ export default function ImageCarousel({
         if (dynamicAspectRatio && media && media.length > 0 && !isFirstItemVideo) {
             Image.getSize(media[0].url, (w, h) => {
                 if (h > 0) setCalculatedAspect(w / h);
-            }, () => {});
+            }, () => { });
         }
     }, [dynamicAspectRatio, media, isFirstItemVideo]);
 
@@ -118,13 +130,13 @@ export default function ImageCarousel({
         activeIndexRef.current = 0;
         slideX.setValue(0);
         onIndexChange?.(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sortedMedia]);
 
     if (!sortedMedia || sortedMedia.length === 0) return null;
 
     // ── Press ──
-    const handlePress = useCallback((index: number) => {
+    const handleMainPress = useCallback((index: number) => {
         if (!disableFullscreen) {
             setViewerInitialIndex(index);
             setViewerVisible(true);
@@ -133,7 +145,7 @@ export default function ImageCarousel({
         }
     }, [disableFullscreen, onPress]);
 
-    // ── PanResponder para imagen ÚNICA: gestiona el swipe-to-close localmente ──
+    // ── PanResponder para imagen ÚNICA ──
     const singleImagePan = useRef(PanResponder.create({
         onMoveShouldSetPanResponder: (_, g) =>
             g.dx < -8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
@@ -152,24 +164,19 @@ export default function ImageCarousel({
         },
     })).current;
 
-    // ── PanResponder para CARRUSEL: toma control total en la última imagen ──
-    // scrollEnabled=false en FlatList cuando estamos aquí → sin competencia nativa.
+    // ── PanResponder para CARRUSEL ──
     const carouselClosePan = useRef(PanResponder.create({
         onMoveShouldSetPanResponderCapture: (_, g) => {
-            // No activar si el usuario acaba de llegar a la última imagen con momentum (llegó rápido)
             if (recentlyArrivedAtEnd.current) return false;
-            // Solo captura horizontales; los verticales los hereda el padre (cambiar post)
             return Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.2;
         },
         onPanResponderMove: (_, g) => {
-            if (g.dx < 0) slideX.setValue(g.dx); // Sigue el dedo solo hacia la izquierda
+            if (g.dx < 0) slideX.setValue(g.dx);
         },
         onPanResponderRelease: (_, g) => {
-            // Solo cerrar con arrastre deliberado (>55% pantalla). Sin cierre por velocidad.
             if (g.dx < -(SCREEN_WIDTH * 0.40)) {
                 onSwipeClose?.(slideX);
             } else if (g.dx > 40 && activeIndexRef.current > 0) {
-                // Swipe derecha: ir a imagen anterior manualmente
                 Animated.spring(slideX, { toValue: 0, useNativeDriver: true }).start();
                 const prevIndex = activeIndexRef.current - 1;
                 carouselRef.current?.scrollToIndex({ index: prevIndex, animated: true });
@@ -185,55 +192,39 @@ export default function ImageCarousel({
         },
     })).current;
 
-    // ── renderItem (memoizado) ──
+    // ── renderItem ──
     const renderItem = useCallback(({ item, index }: { item: MediaItem; index: number }) => {
         const itemHeight = ITEM_WIDTH / activeAspectRatio;
         return (
-            <TouchableOpacity activeOpacity={1} onPress={() => handlePress(index)}>
-                <View style={{ width: ITEM_WIDTH, height: itemHeight, overflow: 'hidden' }}>
-                    {item.type === 'video' ? (
-                        <View style={{ width: ITEM_WIDTH, height: itemHeight }}>
-                            <Video
-                                key={item.url}
-                                source={{ uri: item.url }}
-                                style={[styles.mediaItem, { width: ITEM_WIDTH, height: itemHeight }]}
-                                resizeMode={ResizeMode.COVER}
-                                isLooping
-                                isMuted={isGlobalMuted}
-                                shouldPlay={isViewable && isFocused && activeIndex === index && !isOverlayActive}
-                            />
-                            {/* Overlay de volumen personalizado en la esquina superior derecha */}
-                            <TouchableOpacity
-                                style={styles.muteButtonContainer}
-                                activeOpacity={0.7}
-                                onPress={toggleGlobalMute}
-                            >
-                                <Ionicons
-                                    name={isGlobalMuted ? 'volume-mute' : 'volume-high'}
-                                    size={18}
-                                    color="white"
-                                />
-                            </TouchableOpacity>
-                        </View>
-                    ) : (
+            <View style={{ width: ITEM_WIDTH, height: itemHeight, overflow: 'hidden' }}>
+                {item.type === 'video' ? (
+                    <InteractiveVideoPlayer
+                        url={item.url}
+                        width={ITEM_WIDTH}
+                        height={itemHeight}
+                        isMuted={isGlobalMuted}
+                        shouldPlay={isViewable && isFocused && activeIndex === index && !isOverlayActive}
+                        toggleMute={toggleGlobalMute}
+                        isInteractive={isInteractive}
+                        onPress={() => handleMainPress(index)}
+                    />
+                ) : (
+                    <TouchableOpacity activeOpacity={1} onPress={() => handleMainPress(index)}>
                         <Image
                             source={{ uri: item.url }}
-                            key={item.url}
                             style={[styles.mediaItem, { width: ITEM_WIDTH, height: itemHeight, backgroundColor: colors.surface }]}
                             resizeMode="cover"
                         />
-                    )}
-                </View>
-            </TouchableOpacity>
+                    </TouchableOpacity>
+                )}
+            </View>
         );
-    }, [ITEM_WIDTH, activeAspectRatio, colors, handlePress, activeIndex, isGlobalMuted, isViewable, isFocused, toggleGlobalMute, isOverlayActive]);
+    }, [ITEM_WIDTH, activeAspectRatio, colors, handleMainPress, activeIndex, isGlobalMuted, isViewable, isFocused, toggleGlobalMute, isOverlayActive, isInteractive]);
 
-    // ────────────────────────────────────────────────────────────────────────
     return (
         <View style={styles.container}>
             <View style={{ width: ITEM_WIDTH, overflow: 'hidden' }}>
                 {sortedMedia.length === 1 ? (
-                    /* Imagen única: Animated.View controlado por singleImagePan */
                     <Animated.View
                         {...singleImagePan.panHandlers}
                         style={{ transform: [{ translateX: slideX }] }}
@@ -241,12 +232,6 @@ export default function ImageCarousel({
                         {renderItem({ item: sortedMedia[0], index: 0 })}
                     </Animated.View>
                 ) : (
-                    /*
-                     * Carrusel:
-                     * - Cuando NO estamos en la última imagen: FlatList maneja scroll normalmente.
-                     * - Cuando SÍ estamos en la última imagen: scrollEnabled=false, el Animated.View
-                     *   wrapper con carouselClosePan toma el control. No hay competencia nativa.
-                     */
                     <Animated.View
                         {...(activeIndex === sortedMedia.length - 1 ? carouselClosePan.panHandlers : {})}
                         style={{ transform: [{ translateX: slideX }] }}
@@ -262,16 +247,11 @@ export default function ImageCarousel({
                             bounces={false}
                             overScrollMode="never"
                             scrollEnabled={activeIndex < media.length - 1}
-                            directionalLockEnabled={true}
-                            nestedScrollEnabled={true}
-                            alwaysBounceVertical={false}
                             getItemLayout={(_, index) => ({
                                 length: ITEM_WIDTH,
                                 offset: ITEM_WIDTH * index,
                                 index,
                             })}
-                            onScrollBeginDrag={() => { flatListScrolling.current = true; }}
-                            onScrollEndDrag={() => { flatListScrolling.current = false; }}
                             onMomentumScrollEnd={(event) => {
                                 flatListScrolling.current = false;
                                 const xOffset = event.nativeEvent.contentOffset.x;
@@ -291,14 +271,12 @@ export default function ImageCarousel({
                 )}
             </View>
 
-            {/* Contador estilo Instagram – esquina superior derecha */}
             {sortedMedia.length > 1 && (
                 <View style={styles.counter} pointerEvents="none">
                     <Text style={styles.counterText}>{activeIndex + 1}/{sortedMedia.length}</Text>
                 </View>
             )}
 
-            {/* Puntos de paginación – centrados */}
             {sortedMedia.length > 1 && (
                 <View style={styles.pagination} pointerEvents="none">
                     {sortedMedia.map((_, index) => (
@@ -324,6 +302,7 @@ export default function ImageCarousel({
                     >
                         <Ionicons name="close" size={28} color="#FFF" />
                     </TouchableOpacity>
+
                     <FlatList
                         data={sortedMedia}
                         horizontal
@@ -336,17 +315,25 @@ export default function ImageCarousel({
                             offset: SCREEN_WIDTH * index,
                             index,
                         })}
+                        onMomentumScrollEnd={(event) => {
+                            const xOffset = event.nativeEvent.contentOffset.x;
+                            const index = Math.round(xOffset / SCREEN_WIDTH);
+                            setViewerActiveIndex(index);
+                        }}
                         keyExtractor={(item, index) => `viewer-${item.url}-${index}`}
-                        renderItem={({ item }) => (
+                        renderItem={({ item, index }) => (
                             <View style={[styles.viewerSlide, { width: SCREEN_WIDTH, height: SCREEN_HEIGHT }]}>
                                 {item.type === 'video' ? (
-                                    <View style={[styles.viewerSlide, { width: SCREEN_WIDTH, height: SCREEN_HEIGHT }]}>
-                                        <Ionicons name="play-circle" size={80}
-                                            color="rgba(255,255,255,0.8)"
-                                            style={{ position: 'absolute', zIndex: 10 }} />
-                                        <Image source={{ uri: item.url }}
-                                            style={styles.viewerImage} resizeMode="contain" />
-                                    </View>
+                                    <InteractiveVideoPlayer
+                                        url={item.url}
+                                        width={SCREEN_WIDTH}
+                                        height={SCREEN_HEIGHT}
+                                        isMuted={isGlobalMuted}
+                                        shouldPlay={viewerActiveIndex === index && viewerVisible}
+                                        toggleMute={toggleGlobalMute}
+                                        isInteractive={true}
+                                        resizeMode={ResizeMode.CONTAIN}
+                                    />
                                 ) : (
                                     <ZoomableImageViewer url={item.url}
                                         onClose={() => setViewerVisible(false)}
@@ -369,7 +356,6 @@ const styles = StyleSheet.create({
         marginBottom: 8,
         position: 'relative',
     },
-    mediaContainer: { width: '100%' },
     mediaItem: { width: '100%', height: '100%' },
     pagination: {
         flexDirection: 'row',
@@ -418,10 +404,6 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-    viewerImage: {
-        width: '100%',
-        height: '100%',
-    },
     muteButtonContainer: {
         position: 'absolute',
         top: 12,
@@ -432,6 +414,154 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
+        zIndex: 15,
+    },
+    videoOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.25)',
+        justifyContent: 'center',
+        alignItems: 'center',
         zIndex: 10,
     },
+    centerControl: {
+        width: 84,
+        height: 84,
+        borderRadius: 42,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+    },
+    sliderContainer: {
+        position: 'absolute',
+        bottom: 24,
+        width: '100%',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+    },
 });
+
+/**
+ * Tarea 1, 2 y 3: Componente InteractiveVideoPlayer
+ */
+function InteractiveVideoPlayer({
+    url,
+    width,
+    height,
+    isMuted,
+    shouldPlay,
+    toggleMute,
+    isInteractive,
+    onPress,
+    resizeMode = ResizeMode.COVER
+}: {
+    url: string;
+    width: number;
+    height: number;
+    isMuted: boolean;
+    shouldPlay: boolean;
+    toggleMute: () => void;
+    isInteractive?: boolean;
+    onPress?: () => void;
+    resizeMode?: ResizeMode;
+}) {
+    const { colors } = useTheme();
+    const videoRef = useRef<Video>(null);
+    const [status, setStatus] = useState<any>({});
+    const [showControls, setShowControls] = useState(false);
+    const controlsTimeout = useRef<any>(null);
+
+    const resetControlsTimeout = () => {
+        if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
+        controlsTimeout.current = setTimeout(() => setShowControls(false), 2500);
+    };
+
+    const handlePress = async () => {
+        if (!isInteractive) {
+            onPress?.();
+            return;
+        }
+
+        if (status.isPlaying) {
+            await videoRef.current?.pauseAsync();
+            setShowControls(true);
+            if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
+        } else {
+            await videoRef.current?.playAsync();
+            setShowControls(false);
+        }
+    };
+
+    return (
+        <View style={{ width, height, backgroundColor: '#000' }}>
+            <Pressable onPress={handlePress} style={{ width, height }}>
+                <Video
+                    ref={videoRef}
+                    source={{ uri: url }}
+                    style={{ width, height }}
+                    resizeMode={resizeMode}
+                    isLooping
+                    isMuted={isMuted}
+                    shouldPlay={shouldPlay}
+                    onPlaybackStatusUpdate={(s) => setStatus(s)}
+                />
+
+                {(showControls || (status.isLoaded && !status.isPlaying)) && isInteractive && (
+                    <View style={styles.videoOverlay}>
+                        <View style={styles.centerControl}>
+                            <Ionicons
+                                name={status.isPlaying ? 'pause' : 'play'}
+                                size={50}
+                                color="white"
+                                style={{ marginLeft: status.isPlaying ? 0 : 5 }}
+                            />
+                        </View>
+                    </View>
+                )}
+            </Pressable>
+
+            {isInteractive && (
+                <>
+                    {/* Expand button below mute button */}
+                    <TouchableOpacity
+                        style={[styles.muteButtonContainer, { top: 52 }]}
+                        activeOpacity={0.7}
+                        onPress={() => videoRef.current?.presentFullscreenPlayer()}
+                    >
+                        <Ionicons name="expand" size={16} color="white" />
+                    </TouchableOpacity>
+
+                    {/* Slider at the bottom */}
+                    <View style={styles.sliderContainer}>
+                        <Slider
+                            style={{ width: width - 40, height: 40 }}
+                            minimumValue={0}
+                            maximumValue={status.durationMillis || 0}
+                            value={status.positionMillis || 0}
+                            minimumTrackTintColor={colors.primary}
+                            maximumTrackTintColor="rgba(255,255,255,0.4)"
+                            thumbTintColor="white"
+                            onSlidingComplete={(value) => {
+                                videoRef.current?.setPositionAsync(value);
+                                resetControlsTimeout();
+                            }}
+                        />
+                    </View>
+                </>
+            )}
+
+            <TouchableOpacity
+                style={styles.muteButtonContainer}
+                activeOpacity={0.7}
+                onPress={toggleMute}
+            >
+                <Ionicons
+                    name={isMuted ? 'volume-mute' : 'volume-high'}
+                    size={16}
+                    color="white"
+                />
+            </TouchableOpacity>
+        </View>
+    );
+}
