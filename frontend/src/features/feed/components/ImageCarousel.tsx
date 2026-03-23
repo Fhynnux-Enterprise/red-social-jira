@@ -441,6 +441,23 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         zIndex: 20,
     },
+    timeDisplay: {
+        position: 'absolute',
+        bottom: 120,
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        zIndex: 25,
+    },
+    timeText: {
+        color: '#FFF',
+        fontSize: 22,
+        fontWeight: '700',
+        letterSpacing: 0.5,
+        textShadowColor: 'rgba(0,0,0,0.6)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
+    },
 });
 
 /**
@@ -461,21 +478,55 @@ function FullscreenVideoModal({
     const [visible, setVisible] = useState(false);
     const [fsStatus, setFsStatus] = useState<any>({});
     const [showFsControls, setShowFsControls] = useState(false);
+    const [isScrubbing, setIsScrubbing] = useState(false);
+    const [scrubPosition, setScrubPosition] = useState(0);
     const fsVideoRef = useRef<Video>(null);
     const fsControlsTimeout = useRef<any>(null);
     const top = insets?.top ?? 12;
-    const bottom = insets?.bottom ?? 0;
+    // Margen inferior generoso: insets + altura barra nav Android (≈48) + espacio extra
+    const safeBottom = (insets?.bottom ?? 0) + 56;
 
-    const openFullscreen = async () => {
-        await onOpen(); // pausa el video embebido
-        setVisible(true);
-    };
-    const closeFullscreen = async () => {
+    // Swipe para cerrar
+    const swipeTranslateY = useRef(new Animated.Value(0)).current;
+    const swipePan = useRef(PanResponder.create({
+        onMoveShouldSetPanResponder: (_, g) =>
+            Math.abs(g.dy) > 12 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5,
+        onPanResponderMove: (_, g) => swipeTranslateY.setValue(g.dy),
+        onPanResponderRelease: (_, g) => {
+            if (Math.abs(g.dy) > 100 || Math.abs(g.vy) > 0.9) {
+                Animated.timing(swipeTranslateY, {
+                    toValue: g.dy > 0 ? SCREEN_HEIGHT : -SCREEN_HEIGHT,
+                    duration: 220,
+                    useNativeDriver: true,
+                }).start(() => performClose());
+            } else {
+                Animated.spring(swipeTranslateY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+            }
+        },
+        onPanResponderTerminate: () =>
+            Animated.spring(swipeTranslateY, { toValue: 0, useNativeDriver: true }).start(),
+    })).current;
+
+    const performClose = async () => {
         await fsVideoRef.current?.pauseAsync();
         setFsStatus({});
         setShowFsControls(false);
+        swipeTranslateY.setValue(0);
         setVisible(false);
-        onClose(); // le avisa al padre para que recargue su video
+        onClose();
+    };
+
+    const openFullscreen = async () => {
+        await onOpen();
+        setVisible(true);
+    };
+
+    const closeFullscreen = () => {
+        Animated.timing(swipeTranslateY, {
+            toValue: SCREEN_HEIGHT,
+            duration: 220,
+            useNativeDriver: true,
+        }).start(() => performClose());
     };
 
     const resetFsTimeout = () => {
@@ -492,6 +543,14 @@ function FullscreenVideoModal({
             await fsVideoRef.current?.playAsync();
             setShowFsControls(false);
         }
+    };
+
+    // Formatea milisegundos → "mm:ss"
+    const formatTime = (ms: number) => {
+        const s = Math.floor(ms / 1000);
+        const m = Math.floor(s / 60);
+        const sec = s % 60;
+        return `${m}:${sec.toString().padStart(2, '0')}`;
     };
 
     return (
@@ -514,7 +573,10 @@ function FullscreenVideoModal({
                 onRequestClose={closeFullscreen}
                 statusBarTranslucent
             >
-                <View style={{ flex: 1, backgroundColor: '#000' }}>
+                <Animated.View
+                    style={{ flex: 1, backgroundColor: '#000', transform: [{ translateY: swipeTranslateY }] }}
+                    {...swipePan.panHandlers}
+                >
                     <Video
                         ref={fsVideoRef}
                         source={{ uri: url }}
@@ -522,7 +584,7 @@ function FullscreenVideoModal({
                         resizeMode={ResizeMode.CONTAIN}
                         isLooping
                         isMuted={isMuted}
-                        shouldPlay={visible} // Solo reproduce cuando el modal está visible
+                        shouldPlay={visible}
                         useNativeControls={false}
                         onPlaybackStatusUpdate={(s) => {
                             setFsStatus(s);
@@ -543,29 +605,55 @@ function FullscreenVideoModal({
                     )}
 
                     {/* Botón Cerrar */}
-                    <TouchableOpacity onPress={closeFullscreen} style={[styles.muteButtonContainer, { top: top + 8 }]} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                    <TouchableOpacity
+                        onPress={closeFullscreen}
+                        style={[styles.muteButtonContainer, { top: top + 8 }]}
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    >
                         <Ionicons name="close" size={20} color="white" />
                     </TouchableOpacity>
 
                     {/* Botón Mute */}
-                    <TouchableOpacity style={[styles.muteButtonContainer, { top: top + 54 }]} activeOpacity={0.7} onPress={toggleMute} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                    <TouchableOpacity
+                        style={[styles.muteButtonContainer, { top: top + 54 }]}
+                        activeOpacity={0.7}
+                        onPress={toggleMute}
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    >
                         <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={18} color="white" />
                     </TouchableOpacity>
 
-                    {/* Slider */}
-                    <View style={[styles.sliderContainer, { bottom: bottom + 24 }]}>
+                    {/* Tiempo al scrubbing — estilo TikTok */}
+                    {isScrubbing && (
+                        <View style={styles.timeDisplay} pointerEvents="none">
+                            <Text style={styles.timeText}>
+                                {formatTime(scrubPosition)} / {formatTime(fsStatus.durationMillis || 0)}
+                            </Text>
+                        </View>
+                    )}
+
+                    {/* Slider subido sobre la barra de navegación de Android */}
+                    <View style={[styles.sliderContainer, { bottom: safeBottom }]}>
                         <Slider
                             style={{ width: SCREEN_WIDTH - 32, height: 40 }}
                             minimumValue={0}
                             maximumValue={fsStatus.durationMillis || 1}
-                            value={fsStatus.positionMillis || 0}
+                            value={isScrubbing ? scrubPosition : (fsStatus.positionMillis || 0)}
                             minimumTrackTintColor={colors.primary}
                             maximumTrackTintColor="rgba(255,255,255,0.3)"
                             thumbTintColor="#FFF"
-                            onSlidingComplete={(value) => { fsVideoRef.current?.setPositionAsync(value); resetFsTimeout(); }}
+                            onValueChange={(value) => {
+                                setIsScrubbing(true);
+                                setScrubPosition(value);
+                            }}
+                            onSlidingComplete={(value) => {
+                                setIsScrubbing(false);
+                                fsVideoRef.current?.setPositionAsync(value);
+                                resetFsTimeout();
+                            }}
                         />
                     </View>
-                </View>
+                </Animated.View>
             </Modal>
         </>
     );
