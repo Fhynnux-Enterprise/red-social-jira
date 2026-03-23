@@ -30,6 +30,7 @@ interface ImageCarouselProps {
     disableFullscreen?: boolean;
     dynamicAspectRatio?: boolean;
     isViewable?: boolean; // Prop para autoplay vertical
+    isFocused?: boolean; // Candado: pause when navigating away
     isOverlayActive?: boolean; // Bloqueo de reproducción (modal abierto)
     /** Llamado cuando el índice activo cambia (útil para el padre) */
     onIndexChange?: (index: number) => void;
@@ -50,10 +51,18 @@ export default function ImageCarousel({
     disableFullscreen = false,
     dynamicAspectRatio = false,
     isViewable = true,
+    isFocused = true,
     isOverlayActive = false,
     onIndexChange,
     onSwipeClose,
 }: ImageCarouselProps) {
+    // Garantizamos el orden desde el frontend para evitar que la normalización de caché 
+    // de Apollo altere el carrusel cuando falta el OrderBy en la BD en consultas viejas.
+    const sortedMedia = React.useMemo(() => {
+        if (!media) return [];
+        return [...media].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    }, [media]);
+
     const { colors } = useTheme();
     const insets = useSafeAreaInsets();
     const { isGlobalMuted, toggleGlobalMute } = useMute();
@@ -83,7 +92,7 @@ export default function ImageCarousel({
         return () => sub.remove();
     }, [viewerVisible]);
 
-    const isFirstItemVideo = media && media.length > 0 && media[0].type === 'video';
+    const isFirstItemVideo = sortedMedia && sortedMedia.length > 0 && sortedMedia[0].type === 'video';
 
     // ── Aspect ratio dinámico ──
     useEffect(() => {
@@ -102,7 +111,7 @@ export default function ImageCarousel({
 
     // ── Reset al cambiar de post ──
     useEffect(() => {
-        if (carouselRef.current && media && media.length > 0) {
+        if (carouselRef.current && sortedMedia && sortedMedia.length > 0) {
             carouselRef.current.scrollToOffset({ offset: 0, animated: false });
         }
         setActiveIndex(0);
@@ -110,9 +119,9 @@ export default function ImageCarousel({
         slideX.setValue(0);
         onIndexChange?.(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [media]);
+    }, [sortedMedia]);
 
-    if (!media || media.length === 0) return null;
+    if (!sortedMedia || sortedMedia.length === 0) return null;
 
     // ── Press ──
     const handlePress = useCallback((index: number) => {
@@ -191,7 +200,7 @@ export default function ImageCarousel({
                                 resizeMode={ResizeMode.COVER}
                                 isLooping
                                 isMuted={isGlobalMuted}
-                                shouldPlay={isViewable && activeIndex === index && !isOverlayActive}
+                                shouldPlay={isViewable && isFocused && activeIndex === index && !isOverlayActive}
                             />
                             {/* Overlay de volumen personalizado en la esquina superior derecha */}
                             <TouchableOpacity
@@ -217,19 +226,19 @@ export default function ImageCarousel({
                 </View>
             </TouchableOpacity>
         );
-    }, [ITEM_WIDTH, activeAspectRatio, colors, handlePress, activeIndex, isGlobalMuted, isViewable, toggleGlobalMute, isOverlayActive]);
+    }, [ITEM_WIDTH, activeAspectRatio, colors, handlePress, activeIndex, isGlobalMuted, isViewable, isFocused, toggleGlobalMute, isOverlayActive]);
 
     // ────────────────────────────────────────────────────────────────────────
     return (
         <View style={styles.container}>
             <View style={{ width: ITEM_WIDTH, overflow: 'hidden' }}>
-                {media.length === 1 ? (
+                {sortedMedia.length === 1 ? (
                     /* Imagen única: Animated.View controlado por singleImagePan */
                     <Animated.View
                         {...singleImagePan.panHandlers}
                         style={{ transform: [{ translateX: slideX }] }}
                     >
-                        {renderItem({ item: media[0], index: 0 })}
+                        {renderItem({ item: sortedMedia[0], index: 0 })}
                     </Animated.View>
                 ) : (
                     /*
@@ -239,12 +248,12 @@ export default function ImageCarousel({
                      *   wrapper con carouselClosePan toma el control. No hay competencia nativa.
                      */
                     <Animated.View
-                        {...(activeIndex === media.length - 1 ? carouselClosePan.panHandlers : {})}
+                        {...(activeIndex === sortedMedia.length - 1 ? carouselClosePan.panHandlers : {})}
                         style={{ transform: [{ translateX: slideX }] }}
                     >
                         <FlatList
                             ref={carouselRef}
-                            data={media}
+                            data={sortedMedia}
                             renderItem={renderItem}
                             keyExtractor={(item, index) => `${item.url}-${index}`}
                             horizontal
@@ -265,15 +274,16 @@ export default function ImageCarousel({
                             onScrollEndDrag={() => { flatListScrolling.current = false; }}
                             onMomentumScrollEnd={(event) => {
                                 flatListScrolling.current = false;
-                                const newIndex = Math.round(event.nativeEvent.contentOffset.x / ITEM_WIDTH);
-                                setActiveIndex(newIndex);
-                                activeIndexRef.current = newIndex;
-                                onIndexChange?.(newIndex);
-                                // Si llegamos a la última imagen, bloqueamos gestos por 350ms
-                                // para que el momentum del scroll no dispare el cierre accidentalmente
-                                if (newIndex === media.length - 1) {
+                                const xOffset = event.nativeEvent.contentOffset.x;
+                                const index = Math.round(xOffset / ITEM_WIDTH);
+                                if (index !== activeIndexRef.current) {
+                                    setActiveIndex(index);
+                                    activeIndexRef.current = index;
+                                    onIndexChange?.(index);
+                                }
+                                if (index === sortedMedia.length - 1) {
                                     recentlyArrivedAtEnd.current = true;
-                                    setTimeout(() => { recentlyArrivedAtEnd.current = false; }, 350);
+                                    setTimeout(() => { recentlyArrivedAtEnd.current = false; }, 300);
                                 }
                             }}
                         />
@@ -282,16 +292,16 @@ export default function ImageCarousel({
             </View>
 
             {/* Contador estilo Instagram – esquina superior derecha */}
-            {media.length > 1 && (
+            {sortedMedia.length > 1 && (
                 <View style={styles.counter} pointerEvents="none">
-                    <Text style={styles.counterText}>{activeIndex + 1}/{media.length}</Text>
+                    <Text style={styles.counterText}>{activeIndex + 1}/{sortedMedia.length}</Text>
                 </View>
             )}
 
             {/* Puntos de paginación – centrados */}
-            {media.length > 1 && (
-                <View style={styles.pagination}>
-                    {media.map((_, index) => (
+            {sortedMedia.length > 1 && (
+                <View style={styles.pagination} pointerEvents="none">
+                    {sortedMedia.map((_, index) => (
                         <View
                             key={index}
                             style={[
@@ -305,7 +315,8 @@ export default function ImageCarousel({
 
             {/* Modal de Pantalla Completa */}
             <Modal visible={viewerVisible} transparent animationType="fade"
-                onRequestClose={() => setViewerVisible(false)}>
+                onRequestClose={() => setViewerVisible(false)}
+            >
                 <View style={styles.viewerContainer}>
                     <TouchableOpacity
                         style={[styles.closeViewerButton, { top: insets.top + 10 }]}
@@ -314,7 +325,7 @@ export default function ImageCarousel({
                         <Ionicons name="close" size={28} color="#FFF" />
                     </TouchableOpacity>
                     <FlatList
-                        data={media}
+                        data={sortedMedia}
                         horizontal
                         pagingEnabled
                         scrollEnabled={!isZoomed}

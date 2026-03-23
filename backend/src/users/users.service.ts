@@ -4,6 +4,7 @@ import { Repository, Not } from 'typeorm';
 import { UserCustomField } from './entities/user-custom-field.entity';
 import { UserBadge } from './entities/user-badge.entity';
 import { User } from '../auth/entities/user.entity';
+import { Comment } from '../comments/entities/comment.entity';
 
 @Injectable()
 export class UsersService {
@@ -58,15 +59,37 @@ export class UsersService {
   }
 
   async findById(id: string): Promise<User> {
-    const user = await this.userRepository.findOne({
-      where: { id },
-      relations: ['customFields', 'badge', 'posts', 'posts.author', 'posts.likes', 'posts.likes.user', 'comments', 'posts.comments', 'posts.media'],
-      order: {
-        posts: { createdAt: 'DESC' },
-      },
-    });
+    const user = await this.userRepository.createQueryBuilder('user')
+      .where('user.id = :id', { id })
+      .leftJoinAndSelect('user.customFields', 'customFields')
+      .leftJoinAndSelect('user.badge', 'badge')
+      .leftJoinAndSelect('user.posts', 'posts')
+      .leftJoinAndSelect('posts.likes', 'postLikes')
+      .leftJoinAndSelect('postLikes.user', 'likeUser')
+      .leftJoinAndSelect('posts.media', 'media')
+      .orderBy('posts.createdAt', 'DESC')
+      .addOrderBy('media.order', 'ASC')
+      .getOne();
     if (!user) {
       throw new BadRequestException('Usuario no encontrado');
+    }
+
+    // Calculamos commentsCount via raw SQL y lo asignamos
+    // Nota: usamos Object.defineProperty para que NestJS não ignore la propiedad
+    if (user.posts && user.posts.length > 0) {
+      const postIds = user.posts.map(p => p.id);
+      const rows: { postId: string; count: string }[] = await this.userRepository.manager
+        .query(
+          `SELECT id_post as "postId", COUNT(id_comment) as "count"
+           FROM comments
+           WHERE id_post = ANY($1) AND "deletedAt" IS NULL
+           GROUP BY id_post`,
+          [postIds],
+        );
+      const countMap = new Map(rows.map(r => [r.postId, parseInt(r.count, 10)]));
+      user.posts.forEach(p => {
+        (p as any).commentsCount = countMap.get(p.id) ?? 0;
+      });
     }
 
     return user;

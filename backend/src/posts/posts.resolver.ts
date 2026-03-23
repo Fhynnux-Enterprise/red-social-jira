@@ -11,6 +11,10 @@ export class PostsResolver {
 
     @ResolveField(() => Int)
     async commentsCount(@Parent() post: Post): Promise<number> {
+        // If loaded via loadRelationCountAndMap
+        if (post.commentsCount !== undefined) {
+            return post.commentsCount;
+        }
         return post.comments?.length ?? 0;
     }
 

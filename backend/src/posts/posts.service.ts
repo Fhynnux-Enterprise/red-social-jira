@@ -61,15 +61,32 @@ export class PostsService {
     }
 
     async findAll(): Promise<Post[]> {
-        return this.postsRepository.find({
-            order: {
-                createdAt: 'DESC',
-                media: {
-                    order: 'ASC'
-                }
-            },
-            relations: ['author', 'likes', 'likes.user', 'comments', 'media'],
-        });
+        const posts = await this.postsRepository.createQueryBuilder('post')
+            .leftJoinAndSelect('post.author', 'author')
+            .leftJoinAndSelect('post.likes', 'likes')
+            .leftJoinAndSelect('likes.user', 'likeUser')
+            .leftJoinAndSelect('post.media', 'media')
+            .orderBy('post.createdAt', 'DESC')
+            .addOrderBy('media.order', 'ASC')
+            .getMany();
+
+        if (posts.length > 0) {
+            const postIds = posts.map(p => p.id);
+            const rows: { postId: string; count: string }[] = await this.postsRepository.manager
+                .query(
+                    `SELECT id_post as "postId", COUNT(id_comment) as "count"
+                     FROM comments
+                     WHERE id_post = ANY($1) AND "deletedAt" IS NULL
+                     GROUP BY id_post`,
+                    [postIds],
+                );
+            const countMap = new Map(rows.map(r => [r.postId, parseInt(r.count, 10)]));
+            posts.forEach(p => {
+                (p as any).commentsCount = countMap.get(p.id) ?? 0;
+            });
+        }
+
+        return posts;
     }
 
     async updatePost(id: string, content: string, userId: string): Promise<Post> {

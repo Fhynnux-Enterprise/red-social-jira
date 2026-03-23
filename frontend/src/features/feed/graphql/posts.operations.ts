@@ -6,6 +6,7 @@ export const GET_POSTS = gql`
             id
             content
             media {
+                id
                 url
                 type
                 order
@@ -40,6 +41,7 @@ export const CREATE_POST = gql`
             id
             content
             media {
+                id
                 url
                 type
                 order
@@ -65,6 +67,7 @@ export const UPDATE_POST = gql`
             id
             content
             media {
+                id
                 url
                 type
                 order

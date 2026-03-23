@@ -80,6 +80,7 @@ export const GET_USER_PROFILE = gql`
         id
         content
         media {
+            id
             url
             type
             order
@@ -96,12 +97,6 @@ export const GET_USER_PROFILE = gql`
           }
         }
         commentsCount
-        author {
-          id
-          firstName
-          lastName
-          photoUrl
-        }
       }
     }
   }

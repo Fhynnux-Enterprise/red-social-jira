@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, Image, Platform, Alert, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation } from '@apollo/client';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useIsFocused } from '@react-navigation/native';
 import { GET_POSTS, DELETE_POST } from '../graphql/posts.operations';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../auth/context/AuthContext';
@@ -27,6 +27,7 @@ export default function FeedScreen() {
     const [selectedPost, setSelectedPost] = useState<any>(null);
     const [selectedPostForComments, setSelectedPostForComments] = useState<{ post: any, minimize: boolean, initialTab?: 'comments' | 'likes' } | null>(null);
 
+    const isFocused = useIsFocused();
     // Estado para trackear qué post está visible en pantalla (para autoplay)
     const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
 
@@ -90,9 +91,10 @@ export default function FeedScreen() {
             onOptionsPress={handleOptionsPress}
             onOpenComments={(_, initialTab, minimize) => setSelectedPostForComments({ post: item, minimize: !!minimize, initialTab })}
             isViewable={item.id === visiblePostId}
+            isFocused={isFocused}
             isOverlayActive={!!selectedPostForComments}
         />
-    ), [currentUser?.id, handleOptionsPress, visiblePostId, selectedPostForComments]);
+    ), [currentUser?.id, handleOptionsPress, visiblePostId, isFocused, selectedPostForComments]);
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>

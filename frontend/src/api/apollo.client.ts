@@ -70,6 +70,20 @@ export const apolloClient = new ApolloClient({
                     },
                 },
             },
+            // Política para la entidad Post normalizada:
+            // Apollo la identifica por __typename + id automáticamente.
+            // Aquí le decimos que cuando lleguen nuevos 'likes', reemplace (no mezcle)
+            // el array completo para evitar duplicados o datos rancios.
+            Post: {
+                fields: {
+                    likes: {
+                        merge(existing, incoming) {
+                            // Siempre tomamos la lista más reciente del servidor
+                            return incoming;
+                        },
+                    },
+                },
+            },
         },
     }),
 });

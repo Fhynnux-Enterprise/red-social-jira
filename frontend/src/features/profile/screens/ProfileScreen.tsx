@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Mod
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute, useIsFocused } from '@react-navigation/native';
 import { useCallback } from 'react';
 import { useAuth } from '../../auth/context/AuthContext';
 import { ProfileService, UserProfile } from '../services/profile.service';
@@ -42,6 +42,7 @@ export default function ProfileScreen() {
     const [selectedPost, setSelectedPost] = useState<any>(null);
     const [selectedPostForComments, setSelectedPostForComments] = useState<{ post: any, minimize: boolean, initialTab?: 'comments' | 'likes' } | null>(null);
     const insets = useSafeAreaInsets();
+    const isFocused = useIsFocused();
 
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
 
@@ -146,16 +147,18 @@ export default function ProfileScreen() {
     const renderPostItem = useCallback(({ item: post }: any) => (
         <PostCard
             item={{ ...post, author: userData }}
-            currentUserId={isMyProfile ? userData?.id : undefined}
+            currentUserId={currentUserId}
             onOptionsPress={(p: any) => {
                 setSelectedPost(p);
                 setIsOptionsMenuVisible(true);
             }}
             onOpenComments={(_, initialTab, minimize) => setSelectedPostForComments({ post: { ...post, author: userData }, minimize: !!minimize, initialTab })}
             isViewable={post.id === visiblePostId}
-            isOverlayActive={!!selectedPostForComments}
+            isFocused={isFocused}
+            isOverlayActive={!!selectedPostForComments || isCreatePostVisible}
+            isModalView={false}
         />
-    ), [userData, isMyProfile, visiblePostId, selectedPostForComments]);
+    ), [userData, currentUserId, visiblePostId, isFocused, selectedPostForComments, isCreatePostVisible]);
 
     const handleMessagePress = async () => {
         if (!profileUserId) return;
@@ -365,10 +368,15 @@ export default function ProfileScreen() {
             <CommentsModal
                 visible={!!selectedPostForComments}
                 post={
+                    // Siempre usar el post VIVO del caché de Apollo para que se reflejen
+                    // los cambios de likes/comentarios sin necesidad de refetch
                     selectedPostForComments
-                        ? (userData?.posts?.find((p: any) => p.id === selectedPostForComments.post?.id)
-                            ? { ...userData.posts.find((p: any) => p.id === selectedPostForComments.post?.id), author: userData }
-                            : selectedPostForComments.post)
+                        ? (() => {
+                            const livePost = userData?.posts?.find((p: any) => p.id === selectedPostForComments.post?.id);
+                            return livePost
+                                ? { ...livePost, author: userData }
+                                : selectedPostForComments.post;
+                        })()
                         : null
                 }
                 onClose={() => setSelectedPostForComments(null)}

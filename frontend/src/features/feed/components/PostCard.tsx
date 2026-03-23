@@ -25,6 +25,7 @@ export interface PostCardProps {
     headerPanHandlers?: any;
     onScroll?: (event: any) => void;
     isViewable?: boolean;
+    isFocused?: boolean;
     isOverlayActive?: boolean;
 }
 
@@ -36,6 +37,7 @@ export default function PostCard({
     isModalView, 
     headerPanHandlers,
     isViewable,
+    isFocused,
     isOverlayActive,
 }: PostCardProps) {
     const { colors, isDark } = useTheme();
@@ -205,8 +207,9 @@ export default function PostCard({
                     onPress={() => onOpenComments?.(item.id, 'comments', true)}
                     disableFullscreen={true}
                     isViewable={isViewable}
-                    containerWidth={CARD_WIDTH}
+                    isFocused={isFocused}
                     isOverlayActive={isOverlayActive}
+                    containerWidth={CARD_WIDTH}
                 />
             )}
 
