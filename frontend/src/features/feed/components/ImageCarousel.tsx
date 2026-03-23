@@ -11,6 +11,8 @@ import ZoomableImageViewer from './ZoomableImageViewer';
 import Toast from 'react-native-toast-message';
 import { customToastConfig } from '../../../components/CustomToast';
 
+import { useMute } from '../../../contexts/MuteContext';
+
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface MediaItem {
@@ -28,8 +30,6 @@ interface ImageCarouselProps {
     disableFullscreen?: boolean;
     dynamicAspectRatio?: boolean;
     isViewable?: boolean; // Prop para autoplay vertical
-    isGlobalMuted?: boolean; // Estado de audio global
-    toggleGlobalMute?: () => void; // Función global para mutear/desmutear
     isOverlayActive?: boolean; // Bloqueo de reproducción (modal abierto)
     /** Llamado cuando el índice activo cambia (útil para el padre) */
     onIndexChange?: (index: number) => void;
@@ -50,14 +50,13 @@ export default function ImageCarousel({
     disableFullscreen = false,
     dynamicAspectRatio = false,
     isViewable = true,
-    isGlobalMuted = true,
-    toggleGlobalMute,
     isOverlayActive = false,
     onIndexChange,
     onSwipeClose,
 }: ImageCarouselProps) {
     const { colors } = useTheme();
     const insets = useSafeAreaInsets();
+    const { isGlobalMuted, toggleGlobalMute } = useMute();
     const [activeIndex, setActiveIndex] = useState(0);
     const [viewerVisible, setViewerVisible] = useState(false);
     const [viewerInitialIndex, setViewerInitialIndex] = useState(0);
@@ -178,40 +177,47 @@ export default function ImageCarousel({
     })).current;
 
     // ── renderItem (memoizado) ──
-    const renderItem = useCallback(({ item, index }: { item: MediaItem; index: number }) => (
-        <TouchableOpacity activeOpacity={1} onPress={() => handlePress(index)}>
-            <View style={{ width: ITEM_WIDTH, aspectRatio: activeAspectRatio, overflow: 'hidden' }}>
-                {item.type === 'video' ? (
-                    <View style={{ width: '100%', height: '100%' }}>
-                        <Video
-                            source={{ uri: item.url }}
-                            style={[styles.mediaItem, { width: '100%', height: '100%' }]}
-                            resizeMode={ResizeMode.COVER}
-                            isLooping
-                            isMuted={isGlobalMuted}
-                            shouldPlay={isViewable && activeIndex === index && !isOverlayActive}
-                        />
-                        {/* Overlay de volumen personalizado en la esquina superior derecha */}
-                        <TouchableOpacity
-                            style={styles.muteButtonContainer}
-                            activeOpacity={0.7}
-                            onPress={toggleGlobalMute}
-                        >
-                            <Ionicons
-                                name={isGlobalMuted ? 'volume-mute' : 'volume-high'}
-                                size={18}
-                                color="white"
+    const renderItem = useCallback(({ item, index }: { item: MediaItem; index: number }) => {
+        const itemHeight = ITEM_WIDTH / activeAspectRatio;
+        return (
+            <TouchableOpacity activeOpacity={1} onPress={() => handlePress(index)}>
+                <View style={{ width: ITEM_WIDTH, height: itemHeight, overflow: 'hidden' }}>
+                    {item.type === 'video' ? (
+                        <View style={{ width: ITEM_WIDTH, height: itemHeight }}>
+                            <Video
+                                key={item.url}
+                                source={{ uri: item.url }}
+                                style={[styles.mediaItem, { width: ITEM_WIDTH, height: itemHeight }]}
+                                resizeMode={ResizeMode.COVER}
+                                isLooping
+                                isMuted={isGlobalMuted}
+                                shouldPlay={isViewable && activeIndex === index && !isOverlayActive}
                             />
-                        </TouchableOpacity>
-                    </View>
-                ) : (
-                    <Image source={{ uri: item.url }}
-                        style={[styles.mediaItem, { width: '100%', height: '100%', backgroundColor: colors.surface }]}
-                        resizeMode="cover" />
-                )}
-            </View>
-        </TouchableOpacity>
-    ), [ITEM_WIDTH, activeAspectRatio, colors, handlePress, activeIndex, isGlobalMuted, isViewable, toggleGlobalMute, isOverlayActive]);
+                            {/* Overlay de volumen personalizado en la esquina superior derecha */}
+                            <TouchableOpacity
+                                style={styles.muteButtonContainer}
+                                activeOpacity={0.7}
+                                onPress={toggleGlobalMute}
+                            >
+                                <Ionicons
+                                    name={isGlobalMuted ? 'volume-mute' : 'volume-high'}
+                                    size={18}
+                                    color="white"
+                                />
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        <Image
+                            source={{ uri: item.url }}
+                            key={item.url}
+                            style={[styles.mediaItem, { width: ITEM_WIDTH, height: itemHeight, backgroundColor: colors.surface }]}
+                            resizeMode="cover"
+                        />
+                    )}
+                </View>
+            </TouchableOpacity>
+        );
+    }, [ITEM_WIDTH, activeAspectRatio, colors, handlePress, activeIndex, isGlobalMuted, isViewable, toggleGlobalMute, isOverlayActive]);
 
     // ────────────────────────────────────────────────────────────────────────
     return (

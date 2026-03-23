@@ -25,8 +25,6 @@ export interface PostCardProps {
     headerPanHandlers?: any;
     onScroll?: (event: any) => void;
     isViewable?: boolean;
-    isGlobalMuted?: boolean;
-    toggleGlobalMute?: () => void;
     isOverlayActive?: boolean;
 }
 
@@ -38,8 +36,6 @@ export default function PostCard({
     isModalView, 
     headerPanHandlers,
     isViewable,
-    isGlobalMuted,
-    toggleGlobalMute,
     isOverlayActive,
 }: PostCardProps) {
     const { colors, isDark } = useTheme();
@@ -210,8 +206,6 @@ export default function PostCard({
                     disableFullscreen={true}
                     isViewable={isViewable}
                     containerWidth={CARD_WIDTH}
-                    isGlobalMuted={isGlobalMuted}
-                    toggleGlobalMute={toggleGlobalMute}
                     isOverlayActive={isOverlayActive}
                 />
             )}

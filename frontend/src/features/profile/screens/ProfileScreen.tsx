@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, ScrollView, Alert, RefreshControl, Platform } from 'react-native';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, ScrollView, Alert, RefreshControl, Platform, FlatList } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,6 +29,7 @@ export default function ProfileScreen() {
     const { colors, themeMode, setThemeMode, isDark } = useTheme();
     const authContext = useAuth() as any;
     const currentUserId = authContext.user?.id;
+    const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [isMenuVisible, setIsMenuVisible] = useState(false);
     const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
@@ -65,15 +66,12 @@ export default function ProfileScreen() {
     const [toggleFollow] = useMutation(TOGGLE_FOLLOW, {
         variables: { id_following: profileUserId },
         update(cache, { data: { toggleFollow: newValue } }) {
-            // 1. Actualizar estado del botón
             cache.writeQuery({
                 query: IS_FOLLOWING,
                 variables: { id_following: profileUserId },
                 data: { isFollowing: newValue },
             });
 
-            // 2. Actualizar el contador de seguidores del perfil que estamos viendo
-            // GraphQL devuelve 'followersCount'. Lo incrementamos o decrementamos.
             cache.modify({
                 id: cache.identify({ __typename: 'User', id: profileUserId }),
                 fields: {
@@ -83,8 +81,6 @@ export default function ProfileScreen() {
                 }
             });
 
-            // 3. Si eres TÚ quien está siguiendo, también actualizamos tu propio 'followingCount'
-            // para que se vea reflejado en tu perfil cuando vuelvas a él.
             if (currentUserId) {
                 cache.modify({
                     id: cache.identify({ __typename: 'User', id: currentUserId }),
@@ -103,8 +99,6 @@ export default function ProfileScreen() {
     useFocusEffect(
         useCallback(() => {
             if (profileUserId) {
-                // Pequeño retraso para evitar que la recarga de la pantalla (condición de carrera) le gane
-                // al guardado en base de datos del 'Like' anterior que diste en el Feed.
                 const timeout = setTimeout(() => {
                     refetchProfile().catch(e => console.log('Error refetching profile on focus', e));
                 }, 500);
@@ -137,6 +131,32 @@ export default function ProfileScreen() {
 
     const [getOrCreateChat, { loading: creatingChat }] = useMutation(GET_OR_CREATE_CHAT);
 
+    const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
+        if (viewableItems.length > 0) {
+            setVisiblePostId(viewableItems[0].item.id);
+        } else {
+            setVisiblePostId(null);
+        }
+    }, []);
+
+    const viewabilityConfig = useRef({
+        itemVisiblePercentThreshold: 50, // Bajado a 50 para mayor sensibilidad
+    }).current;
+
+    const renderPostItem = useCallback(({ item: post }: any) => (
+        <PostCard
+            item={{ ...post, author: userData }}
+            currentUserId={isMyProfile ? userData?.id : undefined}
+            onOptionsPress={(p: any) => {
+                setSelectedPost(p);
+                setIsOptionsMenuVisible(true);
+            }}
+            onOpenComments={(_, initialTab, minimize) => setSelectedPostForComments({ post: { ...post, author: userData }, minimize: !!minimize, initialTab })}
+            isViewable={post.id === visiblePostId}
+            isOverlayActive={!!selectedPostForComments}
+        />
+    ), [userData, isMyProfile, visiblePostId, selectedPostForComments]);
+
     const handleMessagePress = async () => {
         if (!profileUserId) return;
         try {
@@ -155,10 +175,6 @@ export default function ProfileScreen() {
         }
     };
 
-    const handleOptionsPress = (post: any) => {
-        setSelectedPost(post);
-        setIsOptionsMenuVisible(true);
-    };
     if (gqlLoading && !userData) {
         return (
             <SafeAreaView style={styles.centerContainer}>
@@ -175,132 +191,102 @@ export default function ProfileScreen() {
         );
     }
 
-    return (
-        <SafeAreaView style={styles.container} edges={['top']}>
-            <ScrollView
-                bounces={true}
-                style={styles.scrollView}
-                showsVerticalScrollIndicator={false}
-                refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} tintColor={colors.primary} />
-                }
-            >
-
-                {/* Banner Header */}
-                <View style={styles.bannerContainer}>
-                    {userData.coverUrl ? (
-                        <Image source={{ uri: userData.coverUrl }} style={[styles.bannerGradient, { position: 'absolute' }]} />
-                    ) : (
-                        <LinearGradient
-                            colors={[colors.primary, '#FF9800']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.bannerGradient}
-                        />
-                    )}
-
-                    {/* Floating Header Over Banner */}
-                    <View style={[styles.floatingHeader, !isMyProfile && { justifyContent: 'flex-start' }]}>
-                        {isMyProfile ? (
-                            <>
-                                <TouchableOpacity
-                                    onPress={() => navigation.navigate('EditProfile' as never)}
-                                    style={[styles.floatingMenuButton, { marginRight: 10 }]}
-                                >
-                                    <Ionicons name="pencil" size={20} color="#FFF" />
-                                </TouchableOpacity>
-
-                                <TouchableOpacity onPress={() => setIsMenuVisible(true)} style={styles.floatingMenuButton}>
-                                    <Ionicons name="ellipsis-vertical" size={24} color="#FFF" />
-                                </TouchableOpacity>
-                            </>
-                        ) : (
+    const renderHeader = () => (
+        <>
+            <View style={styles.bannerContainer}>
+                {userData.coverUrl ? (
+                    <Image source={{ uri: userData.coverUrl }} style={[styles.bannerGradient, { position: 'absolute' }]} />
+                ) : (
+                    <LinearGradient
+                        colors={[colors.primary, '#FF9800']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.bannerGradient}
+                    />
+                )}
+                <View style={[styles.floatingHeader, !isMyProfile && { justifyContent: 'flex-start' }]}>
+                    {isMyProfile ? (
+                        <>
                             <TouchableOpacity
-                                onPress={() => navigation.goBack()}
-                                style={styles.floatingMenuButton}
+                                onPress={() => navigation.navigate('EditProfile' as never)}
+                                style={[styles.floatingMenuButton, { marginRight: 10 }]}
                             >
-                                <Ionicons name="arrow-back" size={24} color="#FFF" />
+                                <Ionicons name="pencil" size={20} color="#FFF" />
                             </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setIsMenuVisible(true)} style={styles.floatingMenuButton}>
+                                <Ionicons name="ellipsis-vertical" size={24} color="#FFF" />
+                            </TouchableOpacity>
+                        </>
+                    ) : (
+                        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.floatingMenuButton}>
+                            <Ionicons name="arrow-back" size={24} color="#FFF" />
+                        </TouchableOpacity>
+                    )}
+                </View>
+            </View>
+            <View style={styles.content}>
+                <View style={styles.avatarCenterContainer}>
+                    <View style={styles.avatarWrapper}>
+                        {userData.photoUrl ? (
+                            <Image source={{ uri: userData.photoUrl }} style={styles.avatarImage} />
+                        ) : (
+                            <View style={styles.avatarPlaceholder}>
+                                <Text style={styles.avatarPlaceholderText}>
+                                    {userData.firstName?.[0]}{userData.lastName?.[0]}
+                                </Text>
+                            </View>
                         )}
                     </View>
                 </View>
-
-                {/* Body Details */}
-                <View style={styles.content}>
-                    <View style={styles.avatarCenterContainer}>
-                        <View style={styles.avatarWrapper}>
-                            {userData.photoUrl ? (
-                                <Image source={{ uri: userData.photoUrl }} style={styles.avatarImage} />
-                            ) : (
-                                <View style={styles.avatarPlaceholder}>
-                                    <Text style={styles.avatarPlaceholderText}>
-                                        {userData.firstName?.[0]}{userData.lastName?.[0]}
-                                    </Text>
-                                </View>
-                            )}
-                        </View>
+                <Text style={styles.fullName}>{userData.firstName} {userData.lastName}</Text>
+                <Text style={styles.username}>@{userData.username}</Text>
+                {userData.badge?.title && (
+                    <View style={styles.badgeContainer}>
+                        <Text style={styles.badgeText}>{userData.badge.title}</Text>
                     </View>
-
-                    <Text style={styles.fullName}>{userData.firstName} {userData.lastName}</Text>
-                    <Text style={styles.username}>@{userData.username}</Text>
-
-                    {/* Pro Badge */}
-                    {userData.badge?.title && (
-                        <View style={styles.badgeContainer}>
-                            <Text style={styles.badgeText}>{userData.badge.title}</Text>
-                        </View>
-                    )}
-
-                    {/* Stats Section (New Placement) */}
-                    <ProfileStats
-                        followersCount={userData.followersCount || 0}
-                        followingCount={userData.followingCount || 0}
-                        postsCount={userData.posts?.length || 0}
+                )}
+                <ProfileStats
+                    followersCount={userData.followersCount || 0}
+                    followingCount={userData.followingCount || 0}
+                    postsCount={userData.posts?.length || 0}
+                />
+                {!isMyProfile && (
+                    <ProfileActions
+                        isFollowing={isFollowing}
+                        onToggleFollow={() => toggleFollow()}
+                        onMessage={handleMessagePress}
                     />
+                )}
+                <ProfileBio bio={userData.bio} phone={userData.phone} customFields={userData.customFields} />
+            </View>
+            <Text style={styles.postsSectionTitle}>Publicaciones</Text>
+        </>
+    );
 
-                    {/* Botones de Acción */}
-                    {!isMyProfile && (
-                        <ProfileActions
-                            isFollowing={isFollowing}
-                            onToggleFollow={() => toggleFollow()}
-                            onMessage={handleMessagePress}
-                        />
-                    )}
+    return (
+        <SafeAreaView style={styles.container} edges={['top']}>
+            <FlatList
+                data={userData.posts || []}
+                extraData={visiblePostId}
+                keyExtractor={(item) => item.id}
+                renderItem={renderPostItem}
+                ListHeaderComponent={renderHeader}
+                ListEmptyComponent={
+                    <View style={styles.emptyPostsContainer}>
+                        <Ionicons name="images-outline" size={48} color={colors.textSecondary} style={{ opacity: 0.5 }} />
+                        <Text style={styles.emptyPostsText}>Aún no hay publicaciones</Text>
+                        <Text style={styles.emptyPostsSubText}>Cuando compartas fotos y videos, aparecerán aquí.</Text>
+                    </View>
+                }
+                onViewableItemsChanged={onViewableItemsChanged}
+                viewabilityConfig={viewabilityConfig}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} tintColor={colors.primary} />
+                }
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 20 }}
+            />
 
-                    {/* Biografía e Información */}
-                    <ProfileBio
-                        bio={userData.bio}
-                        phone={userData.phone}
-                        customFields={userData.customFields}
-                    />
-
-                </View>
-
-                {/* Seccion de Publicaciones */}
-                <View style={styles.postsSection}>
-                    <Text style={styles.postsSectionTitle}>Publicaciones</Text>
-                    {userData.posts && userData.posts.length > 0 ? (
-                        userData.posts.map((post: any, index: number) => (
-                            <View key={post.id || index}>
-                                <PostCard
-                                    item={{ ...post, author: userData }}
-                                    currentUserId={isMyProfile ? userData.id : undefined}
-                                    onOptionsPress={handleOptionsPress}
-                                    onOpenComments={(_, initialTab, minimize) => setSelectedPostForComments({ post: { ...post, author: userData }, minimize: !!minimize, initialTab })}
-                                />
-                            </View>
-                        ))
-                    ) : (
-                        <View style={styles.emptyPostsContainer}>
-                            <Ionicons name="images-outline" size={48} color={colors.textSecondary} style={{ opacity: 0.5 }} />
-                            <Text style={styles.emptyPostsText}>Aún no hay publicaciones</Text>
-                            <Text style={styles.emptyPostsSubText}>Cuando compartas fotos y videos, aparecerán aquí.</Text>
-                        </View>
-                    )}
-                </View>
-            </ScrollView>
-
-            {/* Modal del Menú de Opciones a la Derecha */}
             <Modal
                 visible={isMenuVisible}
                 animationType="fade"
@@ -311,7 +297,6 @@ export default function ProfileScreen() {
                     <View style={styles.modalOverlay}>
                         <TouchableWithoutFeedback>
                             <View style={[styles.modalContent, { paddingTop: Math.max(insets.top, 20) + 10, paddingBottom: Math.max(insets.bottom, 20) + 20 }]}>
-                                {/* Encabezado del Drawer */}
                                 <View style={styles.drawerHeader}>
                                     <TouchableOpacity onPress={() => setIsMenuVisible(false)} style={styles.drawerCloseBtn}>
                                         <Ionicons name="close" size={28} color={colors.text} />
@@ -319,8 +304,6 @@ export default function ProfileScreen() {
                                     <Text style={styles.modalTitle}>Configuración</Text>
                                     <View style={{ width: 28 }} />
                                 </View>
-
-                                {/* Opciones de Configuración */}
                                 <TouchableOpacity
                                     style={styles.settingButton}
                                     onPress={() => {
@@ -334,10 +317,7 @@ export default function ProfileScreen() {
                                     </View>
                                     <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                                 </TouchableOpacity>
-
                                 <View style={styles.spacer} />
-
-                                {/* Botón de Cerrar Sesión dentro del Modal/Drawer */}
                                 <TouchableOpacity style={styles.logoutButton} onPress={signOut}>
                                     <Ionicons name="log-out-outline" size={24} color={colors.error} />
                                     <Text style={styles.logoutText}>Cerrar Sesión</Text>
@@ -348,7 +328,6 @@ export default function ProfileScreen() {
                 </TouchableWithoutFeedback>
             </Modal>
 
-            {/* Modal para Ajustar el Tema */}
             <ThemeSelectorModal
                 visible={isThemeModalVisible}
                 onClose={() => setIsThemeModalVisible(false)}
@@ -356,7 +335,6 @@ export default function ProfileScreen() {
                 onSelectTheme={(theme) => setThemeMode(theme)}
             />
 
-            {/* Modal para Editar Publicación */}
             <CreatePostModal
                 visible={isCreatePostVisible}
                 onClose={() => {
@@ -367,7 +345,6 @@ export default function ProfileScreen() {
                 initialContent={editingPostContent}
             />
 
-            {/* Modal Menú de Opciones de la Publicación Inferior */}
             <PostOptionsModal
                 visible={isOptionsMenuVisible}
                 onClose={() => setIsOptionsMenuVisible(false)}
@@ -388,7 +365,6 @@ export default function ProfileScreen() {
             <CommentsModal
                 visible={!!selectedPostForComments}
                 post={
-                    // Siempre usar el post VIVO del caché de Apollo (no el snapshot)
                     selectedPostForComments
                         ? (userData?.posts?.find((p: any) => p.id === selectedPostForComments.post?.id)
                             ? { ...userData.posts.find((p: any) => p.id === selectedPostForComments.post?.id), author: userData }
@@ -413,7 +389,6 @@ export default function ProfileScreen() {
                     }
                 }}
             />
-
         </SafeAreaView>
     );
 }
@@ -434,7 +409,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     },
     bannerContainer: {
         width: '100%',
-        height: 240, // Increased height for better visual impact
+        height: 240,
         position: 'relative',
     },
     bannerGradient: {
@@ -476,7 +451,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     },
     avatarCenterContainer: {
         alignItems: 'center',
-        marginTop: -48, // Balanced overlap for 96px avatar
+        marginTop: -48,
         marginBottom: 12,
     },
     avatarWrapper: {
@@ -485,7 +460,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         backgroundColor: colors.background,
     },
     avatarImage: {
-        width: 96, // Elegant size
+        width: 96,
         height: 96,
         borderRadius: 48,
     },
@@ -643,11 +618,11 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         flex: 1,
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
         justifyContent: 'flex-start',
-        alignItems: 'flex-end', // Pega el contenido hacia el lado derecho
+        alignItems: 'flex-end',
     },
     modalContent: {
         backgroundColor: colors.background,
-        width: '75%', // Tamaño de un menú lateral común (Drawer)
+        width: '75%',
         height: '100%',
         paddingHorizontal: 20,
         paddingBottom: 40,
@@ -662,7 +637,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     },
     modalTitle: {
         fontSize: 18,
-        fontWeight: 'bold', // Un tamaño más modesto para el encabezado del drawer
+        fontWeight: 'bold',
         color: colors.text,
     },
     drawerCloseBtn: {

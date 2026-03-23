@@ -30,13 +30,6 @@ export default function FeedScreen() {
     // Estado para trackear qué post está visible en pantalla (para autoplay)
     const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
 
-    // Estado global de Mute/Unmute para todo el feed
-    const [isGlobalMuted, setIsGlobalMuted] = useState(true);
-
-    const toggleGlobalMute = useCallback(() => {
-        setIsGlobalMuted(prev => !prev);
-    }, []);
-
     const { data, loading, error, refetch } = useQuery(GET_POSTS, {
         fetchPolicy: 'cache-and-network',
     });
@@ -97,11 +90,9 @@ export default function FeedScreen() {
             onOptionsPress={handleOptionsPress}
             onOpenComments={(_, initialTab, minimize) => setSelectedPostForComments({ post: item, minimize: !!minimize, initialTab })}
             isViewable={item.id === visiblePostId}
-            isGlobalMuted={isGlobalMuted}
-            toggleGlobalMute={toggleGlobalMute}
             isOverlayActive={!!selectedPostForComments}
         />
-    ), [currentUser?.id, handleOptionsPress, visiblePostId, isGlobalMuted, toggleGlobalMute, selectedPostForComments]);
+    ), [currentUser?.id, handleOptionsPress, visiblePostId, selectedPostForComments]);
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>

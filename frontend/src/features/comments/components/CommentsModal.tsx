@@ -78,7 +78,15 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
     const inputRef = useRef<TextInput>(null);
+    const scrollViewRef = useRef<ScrollView>(null);
     const postId = post?.id;
+
+    // Resetear scroll al cambiar de post
+    useEffect(() => {
+        if (scrollViewRef.current && postId) {
+            scrollViewRef.current.scrollTo({ y: 0, animated: false });
+        }
+    }, [postId]);
 
     // Lógica para determinar si el texto es largo
     const TEXT_LIMIT = 200;
@@ -694,7 +702,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
 
                     {/* ── BURBUJA PUBLICACIÓN ── */}
                     {post && (
-                        <Animated.View style={[styles.postBubble, isMinimized ? { maxHeight: SCREEN_HEIGHT - insets.top - 6 - Math.max(insets.bottom, 72) } : { maxHeight: SCREEN_HEIGHT * 0.35 }, { opacity: postTransition, transform: [{ translateY: slideY }, { translateX: panX }] }]}>
+                        <Animated.View style={[styles.postBubble, isMinimized ? { maxHeight: SCREEN_HEIGHT - insets.top - 6 - Math.max(insets.bottom, 72) } : { maxHeight: SCREEN_HEIGHT * 0.38 }, { opacity: postTransition, transform: [{ translateY: slideY }, { translateX: panX }] }]}>
                             <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
                                 <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
                                 <TouchableOpacity
@@ -727,6 +735,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                             </View>
 
                             <ScrollView
+                                ref={scrollViewRef}
                                 showsVerticalScrollIndicator={true}
                                 persistentScrollbar={true}
                                 indicatorStyle={isDark ? 'white' : 'black'}
@@ -795,6 +804,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                     {post.media && post.media.length > 0 && (
                                         <View style={{ marginTop: 12, marginHorizontal: -16 }}>
                                             <ImageCarousel
+                                                key={post?.id}
                                                 media={post.media}
                                                 containerWidth={SCREEN_WIDTH - 8}
                                                 imageResizeMode="contain"
