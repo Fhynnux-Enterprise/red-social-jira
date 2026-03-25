@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, Image, Platform, Alert, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQuery, useMutation } from '@apollo/client';
+import { useQuery, useMutation } from '@apollo/client/react';
 import { useFocusEffect, useNavigation, useIsFocused } from '@react-navigation/native';
 import { GET_POSTS, DELETE_POST } from '../graphql/posts.operations';
 import { Ionicons } from '@expo/vector-icons';
@@ -54,12 +54,6 @@ export default function FeedScreen() {
 
     const [deletePost] = useMutation(DELETE_POST, {
         refetchQueries: [{ query: GET_POSTS }],
-        onCompleted: () => {
-            Toast.show({ type: 'success', text1: 'Eliminado', text2: 'Publicación borrada con éxito' });
-        },
-        onError: (err) => {
-            Toast.show({ type: 'error', text1: 'Error', text2: err.message });
-        }
     });
 
     const handleOptionsPress = useCallback((item: any) => {
@@ -92,7 +86,7 @@ export default function FeedScreen() {
             onOpenComments={(_, initialTab, minimize) => setSelectedPostForComments({ post: item, minimize: !!minimize, initialTab })}
             isViewable={item.id === visiblePostId}
             isFocused={isFocused}
-            isOverlayActive={!!selectedPostForComments}
+            isOverlayActive={!!selectedPostForComments || isModalVisible}
         />
     ), [currentUser?.id, handleOptionsPress, visiblePostId, isFocused, selectedPostForComments]);
 
@@ -203,6 +197,8 @@ export default function FeedScreen() {
                 onDelete={() => {
                     if (selectedPost) {
                         deletePost({ variables: { id: selectedPost.id } })
+                            .then(() => Toast.show({ type: 'success', text1: 'Eliminado', text2: 'Publicación borrada con éxito' }))
+                            .catch((err: any) => Toast.show({ type: 'error', text1: 'Error', text2: err.message }));
                     }
                 }}
             />

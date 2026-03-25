@@ -10,7 +10,7 @@ import { ProfileService, UserProfile } from '../services/profile.service';
 import ThemeSelectorModal from '../../../components/ThemeSelectorModal';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import Toast from 'react-native-toast-message';
-import { useQuery, useMutation } from '@apollo/client';
+import { useQuery, useMutation } from '@apollo/client/react';
 import { GET_USER_PROFILE } from '../graphql/profile.operations';
 import { DELETE_POST, GET_POSTS } from '../../feed/graphql/posts.operations';
 import { TOGGLE_FOLLOW, IS_FOLLOWING } from '../../follows/graphql/follows.operations';
@@ -121,13 +121,6 @@ export default function ProfileScreen() {
 
     const [deletePost] = useMutation(DELETE_POST, {
         refetchQueries: [{ query: GET_POSTS }],
-        onCompleted: () => {
-            Toast.show({ type: 'success', text1: 'Eliminado', text2: 'Publicación borrada con éxito' });
-            refetchProfile();
-        },
-        onError: (err) => {
-            Toast.show({ type: 'error', text1: 'Error', text2: err.message });
-        }
     });
 
     const [getOrCreateChat, { loading: creatingChat }] = useMutation(GET_OR_CREATE_CHAT);

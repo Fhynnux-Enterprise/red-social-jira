@@ -4,14 +4,11 @@ import {
     Image, ActivityIndicator, TouchableWithoutFeedback,
     Alert, Pressable, Keyboard, ScrollView, Modal,
     Dimensions, TextInput, PanResponder, Animated,
-    LayoutAnimation, UIManager, BackHandler
+    LayoutAnimation, BackHandler
 } from 'react-native';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-    UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 import { useNavigation } from '@react-navigation/native';
-import { useQuery, useMutation } from '@apollo/client';
+import { useQuery, useMutation } from '@apollo/client/react';
 import { Ionicons } from '@expo/vector-icons';
 import { GET_COMMENTS, CREATE_COMMENT, DELETE_COMMENT, UPDATE_COMMENT } from '../graphql/comments.operations';
 import { TOGGLE_LIKE } from '../../feed/graphql/posts.operations';
@@ -777,7 +774,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                     }
                                 }}
                             >
-                                <Animated.View {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 10 }}>
+                                <Animated.View collapsable={false} {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 10, overflow: 'hidden', zIndex: 1 }}>
                                     <View style={{ marginBottom: 4 }}>
                                         <TouchableOpacity
                                             activeOpacity={0.8}
@@ -802,7 +799,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
 
                                     {/* ── Media Adjunta (Carrusel) dentro del Modal ── */}
                                     {post.media && post.media.length > 0 && (
-                                        <View style={{ marginTop: 12, marginHorizontal: -16 }}>
+                                        <View collapsable={false} style={{ marginTop: 12, marginHorizontal: -16, overflow: 'hidden', borderRadius: 0.1, zIndex: 5, backgroundColor: '#000' }}>
                                             <ImageCarousel
                                                 key={post?.id}
                                                 media={post.media}

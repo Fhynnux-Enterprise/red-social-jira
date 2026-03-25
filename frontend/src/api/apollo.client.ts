@@ -51,8 +51,16 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
     }
 
     if (isUnauthorized) {
+        // Limpiamos la caché de Apollo inmediatamente para mayor seguridad
+        apolloClient.clearStore().catch(e => console.error('Error clearing store:', e));
+        
         DeviceEventEmitter.emit('session_expired');
-        Toast.show({ type: 'error', text1: 'Sesión expirada', text2: 'Por favor, inicia sesión nuevamente.' });
+        Toast.show({ 
+            type: 'error', 
+            text1: 'Sesión expirada', 
+            text2: 'Tus credenciales han caducado, por favor inicia sesión de nuevo.',
+            visibilityTime: 4000
+        });
     }
 });
 

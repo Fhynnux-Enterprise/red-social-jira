@@ -1,5 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
-import { useMutation } from '@apollo/client';
+import { useMutation } from '@apollo/client/react';
 import { GENERATE_UPLOAD_URL } from '../graphql/storage.operations';
 
 export const useMediaUpload = () => {
@@ -18,10 +18,10 @@ export const useMediaUpload = () => {
     // 2. Seleccionar archivo
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
       allowsEditing,
-      mediaTypes: 
-        mediaTypes === 'Images' ? ImagePicker.MediaTypeOptions.Images :
-        mediaTypes === 'Videos' ? ImagePicker.MediaTypeOptions.Videos : 
-        ImagePicker.MediaTypeOptions.All,
+      mediaTypes:
+        mediaTypes === 'Images' ? ['images' as const] :
+        mediaTypes === 'Videos' ? ['videos' as const] :
+        ['images', 'videos'] as const,
       quality: 0.8,
     });
 
@@ -34,7 +34,7 @@ export const useMediaUpload = () => {
     const extension = localUri.split('.').pop();
     const mimeType = asset.mimeType || (mediaTypes === 'Images' ? 'image/jpeg' : 'video/mp4');
 
-    return { localUri, mimeType, extension };
+    return { localUri, mimeType, extension, duration: asset.duration };
   };
 
   const pickMultipleMedia = async (
@@ -47,10 +47,10 @@ export const useMediaUpload = () => {
 
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: true,
-      mediaTypes: 
-        mediaTypes === 'Images' ? ImagePicker.MediaTypeOptions.Images :
-        mediaTypes === 'Videos' ? ImagePicker.MediaTypeOptions.Videos : 
-        ImagePicker.MediaTypeOptions.All,
+      mediaTypes:
+        mediaTypes === 'Images' ? ['images' as const] :
+        mediaTypes === 'Videos' ? ['videos' as const] :
+        ['images', 'videos'] as const,
       quality: 0.8,
     });
 
@@ -62,7 +62,7 @@ export const useMediaUpload = () => {
       const localUri = asset.uri;
       const extension = localUri.split('.').pop();
       const mimeType = asset.mimeType || (asset.type === 'video' ? 'video/mp4' : 'image/jpeg');
-      return { localUri, mimeType, extension };
+      return { localUri, mimeType, extension, duration: asset.duration };
     });
   };
 

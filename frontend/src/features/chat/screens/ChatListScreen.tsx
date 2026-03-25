@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { useQuery, useMutation, useApolloClient } from '@apollo/client';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
 import { GET_USER_CONVERSATIONS, DELETE_CONVERSATION_FOR_ME } from '../graphql/chat.operations';

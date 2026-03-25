@@ -11,9 +11,11 @@ import {
     Platform
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMutation, useQuery } from '@apollo/client';
+import { useMutation, useQuery } from '@apollo/client/react';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
+import { Alert } from 'react-native';
+import { Video as Compressor } from 'react-native-compressor';
 import { CREATE_POST, UPDATE_POST, GET_POSTS } from '../graphql/posts.operations';
 import { GET_ME } from '../../profile/graphql/profile.operations';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
@@ -21,6 +23,7 @@ import { Image, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
+import { useAuth } from '../../auth/context/AuthContext';
 
 interface CreatePostModalProps {
     visible: boolean;
@@ -32,8 +35,38 @@ interface CreatePostModalProps {
 export default function CreatePostModal({ visible, onClose, initialContent = '', postId }: CreatePostModalProps) {
     const { colors } = useTheme();
     const [content, setContent] = React.useState(initialContent);
-    const [localMediaList, setLocalMediaList] = React.useState<{ uri: string, type: string, mimeType: string }[]>([]);
+    const [localMediaList, setLocalMediaList] = React.useState<{ 
+        uri: string, 
+        type: string, 
+        mimeType: string,
+        isValid: boolean,
+        errorMessage?: string,
+        uploadStatus?: 'idle' | 'compressing' | 'uploading' | 'done' | 'error',
+        progress: number 
+    }[]>([]);
     const [isUploadingMedia, setIsUploadingMedia] = React.useState(false);
+    const { userToken } = useAuth();
+
+    // Resetear contenido y cerrar modal si la sesión expira
+    React.useEffect(() => {
+        if (!userToken && visible) {
+            handleClose();
+        }
+    }, [userToken, visible]);
+    
+    // Estado para alertas personalizadas
+    const [alertConfig, setAlertConfig] = React.useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        buttons: { text: string; onPress: () => void; style?: 'cancel' | 'default' }[];
+    }>({ 
+        visible: false, 
+        title: '', 
+        message: '', 
+        buttons: [] 
+    });
+
     const insets = useSafeAreaInsets();
     const { pickMultipleMedia, uploadMedia } = useMediaUpload();
 
@@ -54,26 +87,10 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
     const currentUser = meData?.me;
 
     const [createPost, { loading: creating }] = useMutation(CREATE_POST, {
-        onCompleted: () => {
-            setContent('');
-            Toast.show({ type: 'success', text1: '¡Publicado!', text2: 'Tu post está ahora en el Feed.' });
-            onClose();
-        },
-        onError: (err) => {
-            Toast.show({ type: 'error', text1: 'Error', text2: err.message });
-        },
         refetchQueries: [{ query: GET_POSTS }],
     });
 
     const [updatePost, { loading: updating }] = useMutation(UPDATE_POST, {
-        onCompleted: () => {
-            setContent('');
-            Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'La publicación fue modificada' });
-            onClose();
-        },
-        onError: (err) => {
-            Toast.show({ type: 'error', text1: 'Error', text2: err.message });
-        },
         refetchQueries: [{ query: GET_POSTS }],
     });
 
@@ -82,43 +99,171 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
     const handlePickMedia = async () => {
         const results = await pickMultipleMedia('All');
         if (results && results.length > 0) {
-            const newMedia = results.map(res => ({
-                uri: res.localUri,
-                type: res.mimeType.startsWith('video/') ? 'video' : 'image',
-                mimeType: res.mimeType
-            }));
-            setLocalMediaList(prev => [...prev, ...newMedia]);
+            // Tarea 1: Marcado de Estado Individual y Validación
+            const newMedia = results.map(res => {
+                const type = res.mimeType.startsWith('video/') ? 'video' : 'image';
+                let isValid = true;
+                let errorMessage = '';
+
+                // Regla 1: Duración de video > 1 minuto (milisegundos)
+                if (type === 'video' && res.duration && res.duration > 60000) {
+                    isValid = false;
+                    errorMessage = 'Máx 1 minuto';
+                }
+
+                return {
+                    uri: res.localUri,
+                    type,
+                    mimeType: res.mimeType,
+                    isValid,
+                    errorMessage,
+                    duration: res.duration,
+                    uploadStatus: 'idle' as const,
+                    progress: 0
+                };
+            });
+
+            // Combinamos con lo que ya tenemos
+            const updatedTotal = [...localMediaList, ...newMedia];
+
+            // Regla 2: Límite de 3 videos en total
+            let videoCount = 0;
+            const validatedList = updatedTotal.map((item, index) => {
+                if (item.type === 'video') {
+                    videoCount++;
+                    if (videoCount > 3) {
+                        return { ...item, isValid: false, errorMessage: 'Límite de videos' };
+                    }
+                }
+                
+                // Regla 3: Máximo 10 archivos en total
+                if (index >= 10) {
+                    return { ...item, isValid: false, errorMessage: 'Límite 10 archivos' };
+                }
+
+                return item;
+            });
+
+            setLocalMediaList(validatedList);
         }
     };
 
     const handlePublish = async () => {
         if (!content.trim() && localMediaList.length === 0) return;
+
+        // Verificación de archivos inválidos
+        const hasInvalidItems = localMediaList.some(m => !m.isValid);
         
+        if (hasInvalidItems) {
+            setAlertConfig({
+                visible: true,
+                title: "Contenido no permitido",
+                message: "Algunos de tus archivos exceden los límites de la plataforma y no serán incluidos en la publicación. ¿Deseas subir el contenido válido de todos modos?",
+                buttons: [
+                    { text: "Cancelar", style: "cancel", onPress: () => setAlertConfig(p => ({ ...p, visible: false })) },
+                    { text: "Publicar válidos", onPress: () => {
+                        setAlertConfig(p => ({ ...p, visible: false }));
+                        processUpload(true);
+                    }}
+                ]
+            });
+        } else {
+            processUpload(false);
+        }
+    };
+
+    const processUpload = async (filterInvalid: boolean) => {
+        const mediaToUpload = filterInvalid 
+            ? localMediaList.filter(m => m.isValid)
+            : localMediaList;
+
+        // Validación de seguridad corregida y estilizada
+        if (mediaToUpload.length === 0 && !content.trim()) {
+            setAlertConfig({
+                visible: true,
+                title: "Publicación sin contenido",
+                message: "No queda contenido válido para publicar. Por favor, asegúrate de añadir texto o archivos que cumplan con los límites de tiempo y cantidad.",
+                buttons: [
+                    { text: "Entendido", onPress: () => setAlertConfig(p => ({ ...p, visible: false })) }
+                ]
+            });
+            return;
+        }
+
         try {
             let mediaInput: { url: string, type: string, order: number }[] = [];
-
-            if (localMediaList.length > 0) {
+            
+            if (mediaToUpload.length > 0) {
                 setIsUploadingMedia(true);
-                const uploadPromises = localMediaList.map(async (media, index) => {
-                    const uploadedUrl = await uploadMedia(media.uri, media.mimeType, 'posts');
-                    return {
-                        url: uploadedUrl,
-                        type: media.type,
-                        order: index
+                const uploadPromises = mediaToUpload.map(async (media, index) => {
+                    let finalUri = media.uri;
+                    const mediaIndex = localMediaList.findIndex(m => m.uri === media.uri);
+
+                    // Función para simular porcentaje fluido
+                    const startProgress = (status: any) => {
+                        let currentProgress = 0;
+                        const interval = setInterval(() => {
+                            currentProgress += Math.random() * 15;
+                            if (currentProgress >= 90) {
+                                clearInterval(interval);
+                                currentProgress = 90;
+                            }
+                            setLocalMediaList(prev => prev.map(m => m.uri === media.uri ? { ...m, uploadStatus: status, progress: Math.floor(currentProgress) } : m));
+                        }, 200);
+                        return interval;
                     };
+
+                    // 1. Fase de Compresión
+                    if (media.type === 'video') {
+                        const compInterval = startProgress('compressing');
+                        try {
+                            finalUri = await Compressor.compress(media.uri, {
+                                compressionMethod: 'auto',
+                                maxSize: 720
+                            });
+                        } finally {
+                            clearInterval(compInterval);
+                        }
+                    }
+
+                    // 2. Fase de Subida Real
+                    const uploadInterval = startProgress('uploading');
+                    try {
+                        const uploadedUrl = await uploadMedia(finalUri, media.mimeType, 'posts');
+                        clearInterval(uploadInterval);
+                        
+                        // 3. ¡Terminado al 100%!
+                        setLocalMediaList(prev => prev.map(m => m.uri === media.uri ? { ...m, uploadStatus: 'done' as const, progress: 100 } : m));
+
+                        return {
+                            url: uploadedUrl,
+                            type: media.type,
+                            order: index
+                        };
+                    } catch (error) {
+                        clearInterval(uploadInterval);
+                        throw error;
+                    }
                 });
                 mediaInput = await Promise.all(uploadPromises);
-                setIsUploadingMedia(false);
             }
 
             if (postId) {
-                await updatePost({ variables: { id: postId, content } }); // For now simplified edit
+                await updatePost({ variables: { id: postId, content } });
+                setContent('');
+                Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'La publicación fue modificada' });
+                onClose();
             } else {
                 await createPost({ variables: { content, media: mediaInput.length > 0 ? mediaInput : null } });
+                setContent('');
+                Toast.show({ type: 'success', text1: '¡Publicado!', text2: 'Tu post está ahora en el Feed.' });
+                onClose();
             }
         } catch (error: any) {
             setIsUploadingMedia(false);
-            Toast.show({ type: 'error', text1: 'Error subiendo archivo', text2: error.message });
+            Toast.show({ type: 'error', text1: 'Error en la subida', text2: error.message });
+        } finally {
+            setIsUploadingMedia(false);
         }
     };
 
@@ -152,7 +297,10 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                             disabled={(!content.trim() && localMediaList.length === 0) || isLoading}
                         >
                             {isLoading ? (
-                                <ActivityIndicator size="small" color="#FFF" />
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    <ActivityIndicator size="small" color="#FFF" />
+                                    <Text style={[styles.publishText, { marginLeft: 8 }]}>Subiendo...</Text>
+                                </View>
                             ) : (
                                 <Text style={styles.publishText}>{postId ? 'Guardar' : 'Publicar'}</Text>
                             )}
@@ -195,25 +343,94 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaPreviewListContainer}>
                                 {localMediaList.map((mediaItem, index) => (
                                     <View key={index} style={styles.mediaPreviewContainer}>
-                                        <TouchableOpacity
-                                            style={styles.removeMediaButton}
-                                            onPress={() => setLocalMediaList(prev => prev.filter((_, i) => i !== index))}
-                                        >
-                                            <Ionicons name="close-circle" size={24} color="rgba(0,0,0,0.7)" />
-                                        </TouchableOpacity>
+                                        {/* 1. La Imagen/Video Base */}
                                         {mediaItem.type === 'video' ? (
-                                            <View style={[styles.mediaPreview, { justifyContent: 'center', alignItems: 'center' }]}>
-                                               <Ionicons name="play-circle" size={48} color="#FFF" style={{ position: 'absolute', zIndex: 10 }} />
-                                               <Image source={{ uri: mediaItem.uri }} style={styles.mediaPreview} />
+                                            <View style={styles.mediaPreview}>
+                                                <Image source={{ uri: mediaItem.uri }} style={styles.mediaPreview} />
+                                                <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.1)' }]}>
+                                                    <Ionicons name="play-circle" size={40} color="#FFF" />
+                                                </View>
                                             </View>
                                         ) : (
                                             <Image source={{ uri: mediaItem.uri }} style={styles.mediaPreview} resizeMode="cover" />
+                                        )}
+
+                                        {/* Indicador de "Listo para subir" (Check azul en esquina) */}
+                                        {mediaItem.isValid && (!mediaItem.uploadStatus || mediaItem.uploadStatus === 'idle') && (
+                                            <View style={styles.readyBadge}>
+                                                <Ionicons name="checkmark-done-circle" size={24} color="#007AFF" />
+                                            </View>
+                                        )}
+
+                                        {/* 2. Botón de Eliminar (Solo si NO está subiendo) */}
+                                        {(!mediaItem.uploadStatus || mediaItem.uploadStatus === 'idle') && (
+                                            <TouchableOpacity
+                                                style={styles.removeMediaButton}
+                                                onPress={() => setLocalMediaList(prev => prev.filter((_, i) => i !== index))}
+                                            >
+                                                <Ionicons name="close-circle" size={26} color="rgba(0,0,0,0.8)" />
+                                            </TouchableOpacity>
+                                        )}
+
+                                        {/* 3. Feedback Visual Overlay de Error (Inválidos) */}
+                                        {!mediaItem.isValid && (
+                                            <View style={styles.invalidOverlay}>
+                                                <Ionicons name="close-outline" size={32} color="#FFF" />
+                                                <Text style={styles.invalidText}>{mediaItem.errorMessage}</Text>
+                                            </View>
+                                        )}
+                                        
+                                        {/* 4. Feedback Visual Overlay de Subida (Activo) */}
+                                        {mediaItem.uploadStatus && mediaItem.uploadStatus !== 'idle' && (
+                                            <View style={[
+                                                styles.uploadOverlay, 
+                                                mediaItem.uploadStatus === 'done' && styles.uploadDoneOverlay
+                                            ]}>
+                                                {mediaItem.uploadStatus === 'done' ? (
+                                                    <View style={styles.doneBadge}>
+                                                        <Ionicons name="checkmark-circle" size={32} color="#4ADE80" />
+                                                    </View>
+                                                ) : (
+                                                    <View style={styles.uploadingStatusContainer}>
+                                                        <ActivityIndicator size="small" color="#FFF" />
+                                                        <View style={{ marginLeft: 4 }}>
+                                                            <Text style={styles.uploadingLabel}>
+                                                                {mediaItem.uploadStatus === 'compressing' ? 'Optimizando...' : 'Subiendo...'}
+                                                            </Text>
+                                                            <Text style={styles.progressText}>{mediaItem.progress}%</Text>
+                                                        </View>
+                                                    </View>
+                                                )}
+                                            </View>
                                         )}
                                     </View>
                                 ))}
                             </ScrollView>
                         )}
                     </ScrollView>
+
+                    {/* Alerta Estilizada Personalizada */}
+                    <Modal visible={alertConfig.visible} transparent animationType="fade">
+                        <View style={styles.alertOverlay}>
+                            <View style={styles.alertContent}>
+                                <Text style={styles.alertTitle}>{alertConfig.title}</Text>
+                                <Text style={styles.alertMessage}>{alertConfig.message}</Text>
+                                <View style={styles.alertButtonsContainer}>
+                                    {alertConfig.buttons.map((btn, i) => (
+                                        <TouchableOpacity
+                                            key={i}
+                                            style={[styles.alertButton, btn.style === 'cancel' ? styles.alertCancelButton : styles.alertConfirmButton]}
+                                            onPress={btn.onPress}
+                                        >
+                                            <Text style={[styles.alertButtonText, btn.style === 'cancel' && { color: colors.textSecondary }]}>
+                                                {btn.text}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            </View>
+                        </View>
+                    </Modal>
 
                     {/* Toolbar Opciones de Publicación */}
                     <View style={styles.toolbar}>
@@ -365,9 +582,130 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
         position: 'absolute',
         top: 8,
         right: 8,
-        zIndex: 10,
-        backgroundColor: 'rgba(255, 255, 255, 0.6)',
+        zIndex: 20,
         borderRadius: 15,
         padding: 2,
+    },
+    invalidOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(255, 0, 0, 0.65)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 10,
+    },
+    invalidText: {
+        color: '#FFF',
+        fontSize: 12,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        marginTop: 4,
+    },
+    // Estilos del Alerta Personalizado (Luxury Minimal)
+    alertOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 32,
+    },
+    alertContent: {
+        width: '100%',
+        backgroundColor: colors.surface,
+        borderRadius: 24,
+        padding: 24,
+        alignItems: 'center',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        elevation: 10,
+    },
+    alertTitle: {
+        color: colors.text,
+        fontSize: 18,
+        fontWeight: 'bold',
+        marginBottom: 12,
+        textAlign: 'center',
+    },
+    alertMessage: {
+        color: colors.textSecondary,
+        fontSize: 14,
+        lineHeight: 20,
+        textAlign: 'center',
+        marginBottom: 24,
+    },
+    alertButtonsContainer: {
+        width: '100%',
+        gap: 12,
+    },
+    alertButton: {
+        width: '100%',
+        paddingVertical: 14,
+        borderRadius: 16,
+        alignItems: 'center',
+    },
+    alertConfirmButton: {
+        backgroundColor: colors.primary,
+    },
+    alertCancelButton: {
+        backgroundColor: colors.border,
+    },
+    alertButtonText: {
+        color: '#FFF',
+        fontWeight: 'bold',
+        fontSize: 15,
+    },
+    // Nuevos estilos de Feedback de subida rediseñados
+    uploadOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 15,
+    },
+    uploadDoneOverlay: {
+        backgroundColor: 'rgba(0,0,0,0.2)',
+    },
+    uploadingStatusContainer: {
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    uploadingLabel: {
+        color: '#FFF',
+        fontWeight: '600',
+        fontSize: 12,
+    },
+    doneBadge: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        borderRadius: 16,
+    },
+    doneText: {
+        color: '#4ADE80',
+        fontWeight: 'bold',
+        fontSize: 16,
+        marginTop: 5,
+    },
+    readyBadge: {
+        position: 'absolute',
+        top: 8,
+        left: 8,
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        borderRadius: 12,
+        padding: 2,
+        zIndex: 14,
+    },
+    progressText: {
+        color: '#FFF',
+        fontSize: 10,
+        fontWeight: 'bold',
+        marginTop: -2,
     }
 });

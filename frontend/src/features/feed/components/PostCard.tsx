@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import { useMutation } from '@apollo/client';
+import { useMutation } from '@apollo/client/react';
 import { TOGGLE_LIKE } from '../graphql/posts.operations';
 import CopyTextModal from '../../../components/CopyTextModal';
 import ImageCarousel from './ImageCarousel';

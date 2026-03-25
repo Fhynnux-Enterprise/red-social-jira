@@ -21,7 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '../../../navigation/AppNavigator';
-import { useQuery, useMutation, useApolloClient } from '@apollo/client';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
 import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION, DELETE_MESSAGE_FOR_ME, DELETE_MESSAGE_FOR_ALL, EDIT_MESSAGE, SEARCH_MESSAGES_IN_CHAT } from '../graphql/chat.operations';
