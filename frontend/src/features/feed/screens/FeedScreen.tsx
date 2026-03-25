@@ -207,12 +207,20 @@ export default function FeedScreen() {
             <CommentsModal 
                 visible={!!selectedPostForComments} 
                 post={
-                    // Siempre usar el post VIVO del caché de Apollo (no el snapshot guardado en state)
-                    // Esto evita que likes/comentarios se cuenten mal al hacer optimistic updates
                     selectedPostForComments
                         ? (data?.getPosts?.find((p: any) => p.id === selectedPostForComments.post?.id) ?? selectedPostForComments.post)
                         : null
                 }
+                nextPost={(() => {
+                    const posts = data?.getPosts || [];
+                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
+                    return (currentIndex !== -1 && currentIndex < posts.length - 1) ? posts[currentIndex + 1] : null;
+                })()}
+                prevPost={(() => {
+                    const posts = data?.getPosts || [];
+                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
+                    return (currentIndex > 0) ? posts[currentIndex - 1] : null;
+                })()}
                 onClose={() => setSelectedPostForComments(null)} 
                 initialMinimized={selectedPostForComments?.minimize}
                 initialTab={selectedPostForComments?.initialTab}

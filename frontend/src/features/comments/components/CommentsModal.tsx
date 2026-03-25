@@ -57,8 +57,14 @@ export interface CommentsModalProps {
     initialTab?: 'comments' | 'likes';
     onNextPost?: () => void;
     onPrevPost?: () => void;
+    nextPost?: any | null;
+    prevPost?: any | null;
 }
-export default function CommentsModal({ visible, post, onClose, initialMinimized = false, initialTab = 'comments', onNextPost, onPrevPost }: CommentsModalProps) {
+export default function CommentsModal({ 
+    visible, post, onClose, 
+    initialMinimized = false, initialTab = 'comments', 
+    onNextPost, onPrevPost, nextPost, prevPost 
+}: CommentsModalProps) {
     const { colors, isDark } = useTheme();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const insets = useSafeAreaInsets();
@@ -121,9 +127,13 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
         onPanResponderMove: (_, g) => {
-            // Seguir el dedo solo hacia la izquierda
+            // Swipe horizontal (izquierda) para cerrar
             if (g.dx < 0 && Math.abs(g.dx) > Math.abs(g.dy)) {
                 panX.setValue(g.dx);
+            } 
+            // Swipe vertical para cambiar de post (Tiktok style)
+            else if (Math.abs(g.dy) > Math.abs(g.dx)) {
+                panYPost.setValue(g.dy);
             }
         },
         onPanResponderRelease: (_, g) => {
@@ -132,30 +142,44 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                 Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
                 closeWithAnimation();
             } else if (g.dx < -80 && Math.abs(g.dy) < 80) {
-                // Cerrar deslizando de derecha a izquierda
                 closeWithXAnimation();
-            } else if (g.vx < -0.8 && Math.abs(g.vy) < 0.8 && g.dx < -20) {
-                // Cerrar por velocidad horizontal
-                closeWithXAnimation();
-            } else if (g.dy < -30 || g.vy < -0.3) {
-                // Desplazamiento hacia ARRIBA -> Siguiente post
-                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
-                lastSwipeDir.current = 'up';
-                callbacksRef.current.onNextPost?.();
-            } else if (g.dy > 30 || g.vy > 0.3) {
-                // Desplazamiento hacia ABAJO -> Post anterior
-                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
-                lastSwipeDir.current = 'down';
-                callbacksRef.current.onPrevPost?.();
+            } else if (g.dy < -100 || g.vy < -0.8) {
+                // Siguiente post (Hacia arriba)
+                Animated.timing(panYPost, {
+                    toValue: -SCREEN_HEIGHT,
+                    duration: 250,
+                    useNativeDriver: true
+                }).start(() => {
+                    lastSwipeDir.current = 'up';
+                    callbacksRef.current.onNextPost?.();
+                    panYPost.setValue(0);
+                });
+            } else if (g.dy > 100 || g.vy > 0.8) {
+                // Post anterior (Hacia abajo)
+                Animated.timing(panYPost, {
+                    toValue: SCREEN_HEIGHT,
+                    duration: 250,
+                    useNativeDriver: true
+                }).start(() => {
+                    lastSwipeDir.current = 'down';
+                    callbacksRef.current.onPrevPost?.();
+                    panYPost.setValue(0);
+                });
             } else {
-                // Spring de regreso
-                Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                // Reset con efecto muelle
+                Animated.parallel([
+                    Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 8 }),
+                    Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 })
+                ]).start();
             }
         }
     })).current;
 
-    // ── Animación entrada/salida + drag ────────────────────────────────────
+    // ── Animación entrada/salida + drag del modal entero ─────────────────
     const panY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+    
+    // ── Animación para el cambio de post estilo TikTok (Físico) ──────────
+    const panYPost = useRef(new Animated.Value(0)).current;
     const panX = useRef(new Animated.Value(0)).current;
 
     const closeWithAnimation = () => {
@@ -675,9 +699,41 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
             statusBarTranslucent
         >
 
-            {/* Este fondo atrapará los taps y los deslizamientos en toda su superficie libre */}
+            {/* ── CAPA DE FONDO (TikTok Style: revelamos el sig/prev post) ── */}
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent' }]}>
+                {panYPost && (
+                    <>
+                        {/* Previsora del siguiente post (cuando subimos el actual) */}
+                        {nextPost?.media?.[0] && (
+                            <Animated.View style={[StyleSheet.absoluteFill, { 
+                                opacity: panYPost.interpolate({
+                                    inputRange: [-SCREEN_HEIGHT, -100, 0],
+                                    outputRange: [1, 0, 0],
+                                    extrapolate: 'clamp'
+                                })
+                            }]}>
+                                <Image source={{ uri: nextPost.media[0].url }} style={StyleSheet.absoluteFill} blurRadius={0} />
+                            </Animated.View>
+                        )}
+                        {/* Previsora del post anterior (cuando bajamos el actual) */}
+                        {prevPost?.media?.[0] && (
+                            <Animated.View style={[StyleSheet.absoluteFill, { 
+                                opacity: panYPost.interpolate({
+                                    inputRange: [0, 100, SCREEN_HEIGHT],
+                                    outputRange: [0, 0, 1],
+                                    extrapolate: 'clamp'
+                                })
+                            }]}>
+                                <Image source={{ uri: prevPost.media[0].url }} style={StyleSheet.absoluteFill} blurRadius={0} />
+                            </Animated.View>
+                        )}
+                    </>
+                )}
+            </View>
+
+            {/* Este fondo ahora es semi-transparente para dar enfoque pero dejar ver lo de abajo */}
             <Animated.View
-                style={styles.backdrop}
+                style={[styles.backdrop, { backgroundColor: 'rgba(0,0,0,0.7)' }]}
                 {...backgroundSwipePan.panHandlers}
             />
 
@@ -692,7 +748,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                     style={[
                         { flex: 1, gap: 8 },
                         isMinimized ? { justifyContent: 'center', paddingBottom: Math.max(insets.bottom, 16) + 50 } : {},
-                        { transform: [{ translateY: panY }] }
+                        { transform: [{ translateY: panY }, { translateY: panYPost }] }
                     ]}
                     pointerEvents="box-none"
                 >
