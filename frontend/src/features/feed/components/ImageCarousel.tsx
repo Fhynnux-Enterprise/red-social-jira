@@ -162,6 +162,12 @@ export default function ImageCarousel({
         outputRange: [0, 1, 0]
     });
 
+    const viewerScale = viewerTranslateY.interpolate({
+        inputRange: [-SCREEN_HEIGHT, 0, SCREEN_HEIGHT],
+        outputRange: [0.92, 1, 0.92],
+        extrapolate: 'clamp'
+    });
+
     // ── Press ──
     const handleMainPress = useCallback((index: number) => {
         if (!disableFullscreen) {
@@ -327,15 +333,31 @@ export default function ImageCarousel({
             >
                 <Animated.View style={[styles.viewerContainer, { opacity: viewerBgOpacity }]}>
                     <TouchableOpacity
-                        style={[styles.closeViewerButton, { top: insets.top + 20 }]}
+                        style={[styles.closeViewerButton, { top: insets.top + 40 }]}
                         onPress={() => setViewerVisible(false)}
                         hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
                     >
-                        <Ionicons name="close" size={28} color="#FFF" />
+                        <Ionicons name="close" size={24} color="#FFF" />
                     </TouchableOpacity>
 
+                    {/* Botón Mute Dinámico en el Visor */}
+                    {sortedMedia[viewerActiveIndex]?.type?.toLowerCase() === 'video' && (
+                        <TouchableOpacity
+                            style={[styles.closeViewerButton, { top: insets.top + 90 }]}
+                            onPress={toggleGlobalMute}
+                            activeOpacity={0.7}
+                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                        >
+                            <Ionicons 
+                                name={isGlobalMuted ? 'volume-mute' : 'volume-high'} 
+                                size={24} 
+                                color="#FFF" 
+                            />
+                        </TouchableOpacity>
+                    )}
+
                     <Animated.View 
-                        style={{ flex: 1, transform: [{ translateY: viewerTranslateY }] }}
+                        style={{ flex: 1, transform: [{ translateY: viewerTranslateY }, { scale: viewerScale }] }}
                         {...viewerPan.panHandlers}
                     >
                         <FlatList
@@ -358,7 +380,7 @@ export default function ImageCarousel({
                             }}
                             keyExtractor={(item, index) => `viewer-${item.url}-${index}`}
                             renderItem={({ item, index }) => (
-                                <View style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, backgroundColor: '#000' }}>
+                                <View style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, backgroundColor: 'transparent' }}>
                                     {item.type?.toLowerCase() === 'video' ? (
                                         <InteractiveVideoPlayer
                                             url={item.url}
@@ -846,24 +868,29 @@ function InteractiveVideoPlayer({
 
             {isInteractive && (
                 <>
-                    {/* Botón Mute (Siempre presente en interactivo, bajamos si hideExpand es true) */}
-                    <TouchableOpacity
-                        style={[
-                            styles.muteButtonContainer, 
-                            { top: topOffset + (hideExpand ? 16 : 16) },
-                            hideExpand ? { left: 16, right: undefined } : { right: 16 }
-                        ]}
-                        activeOpacity={0.7}
-                        onPress={toggleMute}
-                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                    >
-                        <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={18} color="white" />
-                    </TouchableOpacity>
+                    {/* Botón Mute (Solo se muestra si no estamos en expansión forzada, el visor tiene el suyo global) */}
+                    {!hideExpand && (
+                        <TouchableOpacity
+                            style={[
+                                styles.muteButtonContainer, 
+                                { top: 16, right: 16 }
+                            ]}
+                            activeOpacity={0.7}
+                            onPress={toggleMute}
+                            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                        >
+                            <Ionicons 
+                                name={isMuted ? 'volume-mute' : 'volume-high'} 
+                                size={18} 
+                                color="white" 
+                            />
+                        </TouchableOpacity>
+                    )}
 
                     {/* Botón Expandir (Solo si no está oculto) */}
                     {!hideExpand && (
                         <TouchableOpacity
-                            style={[styles.muteButtonContainer, { top: topOffset + 64 }]}
+                            style={[styles.muteButtonContainer, { top: 60, right: 16 }]}
                             activeOpacity={0.7}
                             onPress={() => {
                                 if (onExpand) {
