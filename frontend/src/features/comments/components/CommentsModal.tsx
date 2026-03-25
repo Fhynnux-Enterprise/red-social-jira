@@ -60,10 +60,10 @@ export interface CommentsModalProps {
     nextPost?: any | null;
     prevPost?: any | null;
 }
-export default function CommentsModal({ 
-    visible, post, onClose, 
-    initialMinimized = false, initialTab = 'comments', 
-    onNextPost, onPrevPost, nextPost, prevPost 
+export default function CommentsModal({
+    visible, post, onClose,
+    initialMinimized = false, initialTab = 'comments',
+    onNextPost, onPrevPost, nextPost, prevPost
 }: CommentsModalProps) {
     const { colors, isDark } = useTheme();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
@@ -82,6 +82,16 @@ export default function CommentsModal({
     const [isExpanded, setIsExpanded] = useState(false);
     const inputRef = useRef<TextInput>(null);
     const scrollViewRef = useRef<ScrollView>(null);
+    // postScrollEnabled: state para re-renderizar el ScrollView, ref para el PanResponder (closure-safe)
+    const [postScrollEnabled, setPostScrollEnabled] = React.useState(true);
+    const postScrollEnabledRef = useRef(true);
+    const setScrollEnabled = (val: boolean) => {
+        postScrollEnabledRef.current = val;
+        setPostScrollEnabled(val);
+    };
+    // Rastrea si el usuario ya hizo scroll hacia abajo en el post actual.
+    // La captura TikTok en el TOPE solo se activa si antes exploró el contenido hacia abajo.
+    const hasScrolledDown = useRef(false);
     const postId = post?.id;
 
     // Resetear scroll al cambiar de post
@@ -89,6 +99,13 @@ export default function CommentsModal({
         if (scrollViewRef.current && postId) {
             scrollViewRef.current.scrollTo({ y: 0, animated: false });
         }
+        // Reset: el usuario aún no exploró este post hacia abajo
+        hasScrolledDown.current = false;
+        // Iniciar con scroll desactivado para que el primer toque en y=0
+        // sea capturado por tiktokSwipePan (prev post desde el primer drag).
+        // Si el usuario quiere scrollear abajo, onPanResponderRelease lo detecta
+        // (no está al fondo), rebota y re-habilita el scroll automáticamente.
+        setScrollEnabled(false);
     }, [postId]);
 
     // Lógica para determinar si el texto es largo
@@ -97,6 +114,10 @@ export default function CommentsModal({
     const displayContent = isTextLong && !isExpanded
         ? post?.content.substring(0, TEXT_LIMIT) + '...'
         : post?.content;
+
+    // Puedes ajustar este valor entre 0.38 y 0.60 para que la publicación se extienda más hacia abajo 
+    // y quede más cerca o más lejos del inicio del panel de comentarios (la barra de comentarios/likes).
+    const POST_EXPANDED_MAX_HEIGHT = SCREEN_HEIGHT * 0.35;
 
     const navigateToProfile = (userId: string) => {
         onClose();
@@ -122,65 +143,134 @@ export default function CommentsModal({
     // Flag: solo habilita LayoutAnimation tras la animación de entrada del modal
     const bubbleAnimReady = useRef(false);
 
-    // ── PanResponder para el fondo transparente (Swipe para Next/Prev/Close) ──
+    // ── Animación entrada/salida + drag del modal entero ─────────────────
+    const panY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+
+    // ── Animación para el cambio de post estilo TikTok (Físico) ──────────
+    const panYPost = useRef(new Animated.Value(0)).current;
+    const panX = useRef(new Animated.Value(0)).current;
+
+    // ── PanResponder para el fondo transparente (cierre + TikTok vertical) ──
     const backgroundSwipePan = useRef(PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_, g) =>
+            (Math.abs(g.dx) > Math.abs(g.dy) && g.dx < 0) ||
+            (Math.abs(g.dy) > Math.abs(g.dx) && Math.abs(g.dy) > 8),
+        onPanResponderGrant: () => {
+            // El backdrop siempre puede hacer TikTok — el postScrollEnabled no aplica aquí
+            // (el backdrop está FUERA del postBubble/ScrollView)
+        },
         onPanResponderMove: (_, g) => {
-            // Swipe horizontal (izquierda) para cerrar
             if (g.dx < 0 && Math.abs(g.dx) > Math.abs(g.dy)) {
                 panX.setValue(g.dx);
-            } 
-            // Swipe vertical para cambiar de post (Tiktok style)
-            else if (Math.abs(g.dy) > Math.abs(g.dx)) {
+            } else if (Math.abs(g.dy) > Math.abs(g.dx)) {
                 panYPost.setValue(g.dy);
             }
         },
         onPanResponderRelease: (_, g) => {
-            const isTap = Math.abs(g.dx) < 15 && Math.abs(g.dy) < 15;
+            setScrollEnabled(true); // Siempre limpiar estado al soltar desde el backdrop
+            const isTap = Math.abs(g.dx) < 10 && Math.abs(g.dy) < 10;
             if (isTap) {
-                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
                 closeWithAnimation();
-            } else if (g.dx < -80 && Math.abs(g.dy) < 80) {
+            } else if (g.dx < -80 || (g.vx < -0.8 && g.dx < -20)) {
                 closeWithXAnimation();
-            } else if (g.dy < -100 || g.vy < -0.8) {
-                // Siguiente post (Hacia arriba)
-                Animated.timing(panYPost, {
-                    toValue: -SCREEN_HEIGHT,
-                    duration: 250,
-                    useNativeDriver: true
-                }).start(() => {
-                    lastSwipeDir.current = 'up';
-                    callbacksRef.current.onNextPost?.();
-                    panYPost.setValue(0);
-                });
-            } else if (g.dy > 100 || g.vy > 0.8) {
-                // Post anterior (Hacia abajo)
-                Animated.timing(panYPost, {
-                    toValue: SCREEN_HEIGHT,
-                    duration: 250,
-                    useNativeDriver: true
-                }).start(() => {
-                    lastSwipeDir.current = 'down';
-                    callbacksRef.current.onPrevPost?.();
-                    panYPost.setValue(0);
-                });
+            } else if (Math.abs(g.dy) > Math.abs(g.dx)) {
+                const THRESHOLD = SCREEN_HEIGHT * 0.2;
+                if (g.dy < -THRESHOLD || g.vy < -0.7) {
+                    Animated.timing(panYPost, {
+                        toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                    }).start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                } else if (g.dy > THRESHOLD || g.vy > 0.7) {
+                    Animated.timing(panYPost, {
+                        toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                    }).start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                } else {
+                    Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
+                }
             } else {
-                // Reset con efecto muelle
-                Animated.parallel([
-                    Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 8 }),
-                    Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 })
-                ]).start();
+                Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
             }
         }
     })).current;
 
-    // ── Animación entrada/salida + drag del modal entero ─────────────────
-    const panY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-    
-    // ── Animación para el cambio de post estilo TikTok (Físico) ──────────
-    const panYPost = useRef(new Animated.Value(0)).current;
-    const panX = useRef(new Animated.Value(0)).current;
+    const currentScrollY = useRef(0);
+
+    // ── PanResponder TikTok: sigue el dedo en el postBubble ──────────────
+    // Este PanResponder puede capturar el gesto solo cuando scrollEnabled=false,
+    // ya que el ScrollView soltó el control del toque.
+    const tiktokSwipePan = useRef(PanResponder.create({
+        // Caso A: siguiente toque después de llegar al borde (scrollEnabled ya desactivado)
+        onStartShouldSetPanResponderCapture: () => !postScrollEnabledRef.current,
+        // Caso B: captura mid-gesture detectando la posición del scroll mientras arrastra
+        // Esto permite robar el gesto al ScrollView cuando llega al borde sin soltar el dedo
+        onMoveShouldSetPanResponderCapture: (_, g) => {
+            if (!(Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx))) return false;
+            if (!postScrollEnabledRef.current) return true;
+            // En el tope, g.dy > 0 (dedo baja) EN y=0 SIEMPRE es "post anterior"
+            // No hay scroll válido hacia arriba cuando ya estás al tope
+            const atTop = currentScrollY.current <= 2 && g.dy > 0;
+            // Captura al fondo ABAJO siempre (el usuario claramente llegó al final)
+            const atBottom =
+                currentScrollY.current + postScrollHeight.current >= postScrollContentHeight.current - 2
+                && g.dy < 0;
+            return atTop || atBottom;
+        },
+        onPanResponderMove: (_, g) => {
+            // Solo mover el bubble si el gesto va en la dirección correcta para la posición actual
+            const reallyAtBottom =
+                currentScrollY.current + postScrollHeight.current >= postScrollContentHeight.current - 5;
+            const reallyAtTop = currentScrollY.current <= 5;
+            if ((reallyAtBottom && g.dy < 0) || (reallyAtTop && g.dy > 0)) {
+                panYPost.setValue(g.dy);
+            }
+            // Si la dirección no coincide, no movemos nada (el release lo reseteará)
+        },
+        onPanResponderRelease: (_, g) => {
+            const THRESHOLD = SCREEN_HEIGHT * 0.2;
+            const actuallyAtBottom =
+                currentScrollY.current + postScrollHeight.current >= postScrollContentHeight.current - 5;
+            const actuallyAtTop = currentScrollY.current <= 5;
+
+            if (g.dy < -THRESHOLD || g.vy < -0.7) {
+                // Gesto HACIA ARRIBA (dedo sube) → siguiente post SOLO si realmente está al fondo
+                if (actuallyAtBottom) {
+                    Animated.timing(panYPost, {
+                        toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                    }).start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                } else {
+                    // El usuario intentaba scrollear hacia abajo, no cambiar de post
+                    setScrollEnabled(true);
+                    hasScrolledDown.current = false;
+                    Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                }
+            } else if (g.dy > THRESHOLD || g.vy > 0.7) {
+                // Gesto HACIA ABAJO (dedo baja) → post anterior SOLO si realmente está en el tope
+                if (actuallyAtTop) {
+                    Animated.timing(panYPost, {
+                        toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                    }).start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                } else {
+                    // El usuario intentaba scrollear hacia arriba, no cambiar de post
+                    setScrollEnabled(true);
+                    hasScrolledDown.current = false;
+                    Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                }
+            } else {
+                // Por debajo del umbral → rebote + rehabilitar scroll para uso normal
+                setScrollEnabled(true);
+                hasScrolledDown.current = false;
+                Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
+            }
+        },
+        onPanResponderTerminate: () => {
+            setScrollEnabled(true);
+            Animated.spring(panYPost, { toValue: 0, useNativeDriver: true }).start();
+        },
+        onPanResponderEnd: () => {
+            setScrollEnabled(true);
+        },
+    })).current;
+
 
     const closeWithAnimation = () => {
         Animated.timing(panY, {
@@ -210,12 +300,25 @@ export default function CommentsModal({
 
     useEffect(() => {
         if (visible && post?.id && prevPostId.current !== post.id) {
+            // Determinar desde dónde entra el nuevo post (opuesto a la dirección del swipe)
+            // swipe 'up' (siguiente) → nuevo post viene de abajo (+SCREEN_HEIGHT)
+            // swipe 'down' (anterior) → nuevo post viene de arriba (-SCREEN_HEIGHT)
+            const enterFrom = lastSwipeDir.current === 'up' ? SCREEN_HEIGHT * 0.6 : -SCREEN_HEIGHT * 0.6;
+            panYPost.setValue(enterFrom);
             postTransition.setValue(0);
-            Animated.timing(postTransition, {
-                toValue: 1,
-                duration: 250,
-                useNativeDriver: true,
-            }).start();
+            Animated.parallel([
+                Animated.spring(panYPost, {
+                    toValue: 0,
+                    useNativeDriver: true,
+                    speed: 16,
+                    bounciness: 0,
+                }),
+                Animated.timing(postTransition, {
+                    toValue: 1,
+                    duration: 220,
+                    useNativeDriver: true,
+                }),
+            ]).start();
             prevPostId.current = post.id;
         } else if (visible && post?.id) {
             prevPostId.current = post.id;
@@ -385,39 +488,45 @@ export default function CommentsModal({
     // Solo activamos para swipe vertical en contenido que no requiere scroll propio.
     const shortContentPan = useRef(PanResponder.create({
         onMoveShouldSetPanResponder: (_, g) => {
+            // Solo para contenido que no necesita scroll propio
             if (postScrollContentHeight.current <= postScrollHeight.current + 5) {
-                return Math.abs(g.dy) > 15 && Math.abs(g.dy) > Math.abs(g.dx);
+                return Math.abs(g.dy) > 12 && Math.abs(g.dy) > Math.abs(g.dx);
             }
             return false;
         },
+        onPanResponderMove: (_, g) => {
+            // Seguir el dedo en tiempo real
+            panYPost.setValue(g.dy);
+        },
         onPanResponderRelease: (_, g) => {
-            const vy = g.vy;
-            const dy = g.dy;
-            if (dy > 40 || vy > 0.5) {
-                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
-                lastSwipeDir.current = 'down';
-                callbacksRef.current.onPrevPost?.();
-            } else if (dy < -40 || vy < -0.5) {
-                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
-                lastSwipeDir.current = 'up';
-                callbacksRef.current.onNextPost?.();
+            const THRESHOLD = SCREEN_HEIGHT * 0.2;
+            if (g.dy > THRESHOLD || g.vy > 0.5) {
+                Animated.timing(panYPost, { toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                    .start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+            } else if (g.dy < -THRESHOLD || g.vy < -0.5) {
+                Animated.timing(panYPost, { toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                    .start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
             } else {
-                Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
             }
-        }
+        },
+        onPanResponderTerminate: () => {
+            Animated.spring(panYPost, { toValue: 0, useNativeDriver: true }).start();
+        },
     })).current;
 
     // ── PanResponder: Footer (cambiar post + cerrar) ─────────────────────────
     const footerSwipePan = useRef(PanResponder.create({
         onMoveShouldSetPanResponderCapture: (_, g) => {
-            // Swipe vertical: cambiar post
             if (Math.abs(g.dy) > 10 && Math.abs(g.dy) > Math.abs(g.dx)) return true;
-            // Swipe horizontal izquierda: cerrar
             if (g.dx < -15 && Math.abs(g.dy) < Math.abs(g.dx)) return true;
             return false;
         },
         onPanResponderMove: (_, g) => {
-            if (g.dx < 0 && Math.abs(g.dx) > Math.abs(g.dy)) {
+            if (Math.abs(g.dy) > Math.abs(g.dx)) {
+                // Vertical: seguir el dedo con panYPost
+                panYPost.setValue(g.dy);
+            } else if (g.dx < 0) {
                 panX.setValue(g.dx);
             }
         },
@@ -425,20 +534,24 @@ export default function CommentsModal({
             const vy = g.vy; const dy = g.dy; const dx = g.dx; const vx = g.vx;
             if ((dx < -(SCREEN_WIDTH * 0.45)) || (vx < -0.9 && dx < -50)) {
                 closeWithXAnimation();
-            } else if (dy > 40 || vy > 0.5) {
-                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
-                lastSwipeDir.current = 'down';
-                callbacksRef.current.onPrevPost?.();
-            } else if (dy < -40 || vy < -0.5) {
-                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
-                lastSwipeDir.current = 'up';
-                callbacksRef.current.onNextPost?.();
+            } else if (Math.abs(dy) > Math.abs(dx)) {
+                const THRESHOLD = SCREEN_HEIGHT * 0.2;
+                if (dy > THRESHOLD || vy > 0.5) {
+                    Animated.timing(panYPost, { toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                        .start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                } else if (dy < -THRESHOLD || vy < -0.5) {
+                    Animated.timing(panYPost, { toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                        .start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                } else {
+                    Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
+                }
             } else {
                 Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
             }
         },
         onPanResponderTerminate: () => {
-            Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+            Animated.spring(panYPost, { toValue: 0, useNativeDriver: true }).start();
+            Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
         },
     })).current;
 
@@ -699,37 +812,7 @@ export default function CommentsModal({
             statusBarTranslucent
         >
 
-            {/* ── CAPA DE FONDO (TikTok Style: revelamos el sig/prev post) ── */}
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent' }]}>
-                {panYPost && (
-                    <>
-                        {/* Previsora del siguiente post (cuando subimos el actual) */}
-                        {nextPost?.media?.[0] && (
-                            <Animated.View style={[StyleSheet.absoluteFill, { 
-                                opacity: panYPost.interpolate({
-                                    inputRange: [-SCREEN_HEIGHT, -100, 0],
-                                    outputRange: [1, 0, 0],
-                                    extrapolate: 'clamp'
-                                })
-                            }]}>
-                                <Image source={{ uri: nextPost.media[0].url }} style={StyleSheet.absoluteFill} blurRadius={0} />
-                            </Animated.View>
-                        )}
-                        {/* Previsora del post anterior (cuando bajamos el actual) */}
-                        {prevPost?.media?.[0] && (
-                            <Animated.View style={[StyleSheet.absoluteFill, { 
-                                opacity: panYPost.interpolate({
-                                    inputRange: [0, 100, SCREEN_HEIGHT],
-                                    outputRange: [0, 0, 1],
-                                    extrapolate: 'clamp'
-                                })
-                            }]}>
-                                <Image source={{ uri: prevPost.media[0].url }} style={StyleSheet.absoluteFill} blurRadius={0} />
-                            </Animated.View>
-                        )}
-                    </>
-                )}
-            </View>
+
 
             {/* Este fondo ahora es semi-transparente para dar enfoque pero dejar ver lo de abajo */}
             <Animated.View
@@ -755,7 +838,17 @@ export default function CommentsModal({
 
                     {/* ── BURBUJA PUBLICACIÓN ── */}
                     {post && (
-                        <Animated.View style={[styles.postBubble, isMinimized ? { maxHeight: SCREEN_HEIGHT - insets.top - 6 - Math.max(insets.bottom, 72) } : { maxHeight: SCREEN_HEIGHT * 0.38 }, { opacity: postTransition, transform: [{ translateY: slideY }, { translateX: panX }] }]}>
+                        <Animated.View
+                            style={[
+                                styles.postBubble,
+                                isMinimized
+                                    ? { maxHeight: SCREEN_HEIGHT - insets.top - 6 - Math.max(insets.bottom, 72) }
+                                    // POST_EXPANDED_MAX_HEIGHT en línea 103: ajusta entre 0.38 y 0.65
+                                    : { maxHeight: POST_EXPANDED_MAX_HEIGHT, flexShrink: 1 },
+                                { opacity: postTransition, transform: [{ translateY: slideY }, { translateX: panX }] }
+                            ]}
+                            {...tiktokSwipePan.panHandlers}
+                        >
                             <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
                                 <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
                                 <TouchableOpacity
@@ -793,9 +886,10 @@ export default function CommentsModal({
                                 persistentScrollbar={true}
                                 indicatorStyle={isDark ? 'white' : 'black'}
                                 nestedScrollEnabled={true}
-                                bounces={true}
-                                alwaysBounceVertical={true}
-                                overScrollMode="always"
+                                scrollEnabled={postScrollEnabled}
+                                bounces={false}
+                                alwaysBounceVertical={false}
+                                overScrollMode="never"
                                 contentContainerStyle={{ paddingBottom: 16 }}
                                 style={styles.postScrollView}
                                 scrollEventThrottle={8}
@@ -805,28 +899,56 @@ export default function CommentsModal({
                                 onContentSizeChange={(_, h) => {
                                     postScrollContentHeight.current = h;
                                 }}
+                                onScroll={(e) => {
+                                    const y = e.nativeEvent.contentOffset.y;
+                                    currentScrollY.current = y;
+                                    // Registrar que el usuario exploró hacia abajo
+                                    if (y > 10) hasScrolledDown.current = true;
+                                }}
                                 onScrollBeginDrag={(e) => {
                                     postScrollDragStartY.current = e.nativeEvent.contentOffset.y;
+                                    setScrollEnabled(true); // Siempre re-habilitar al iniciar un drag
+                                }}
+                                onMomentumScrollEnd={(e) => {
+                                    const y = e.nativeEvent.contentOffset.y;
+                                    currentScrollY.current = y;
+                                    const atTop = y <= 2;
+                                    const atBottom = y + postScrollHeight.current >= postScrollContentHeight.current - 2;
+                                    if (atTop || atBottom) {
+                                        setScrollEnabled(false);
+                                    } else {
+                                        setScrollEnabled(true);
+                                    }
                                 }}
                                 onScrollEndDrag={(e) => {
                                     const endY = e.nativeEvent.contentOffset.y;
                                     const vy = e.nativeEvent.velocity?.y ?? 0;
+                                    const atTop = endY <= 3;
+                                    const atBottom = endY + postScrollHeight.current >= postScrollContentHeight.current - 3;
 
-                                    // Drag hacia abajo desde arriba del todo -> Post Anterior
-                                    if (postScrollDragStartY.current <= 5 && endY <= 5 && vy > 0.3) {
-                                        lastSwipeDir.current = 'down';
-                                        callbacksRef.current.onPrevPost?.();
+                                    if (atTop && vy >= -0.1) {
+                                        // En el tope quieto → siguiente gesto DOWN = prev post
+                                        setScrollEnabled(false);
+                                    } else if (atBottom && vy <= 0.1) {
+                                        // En el fondo quieto → siguiente gesto UP = next post
+                                        setScrollEnabled(false);
+                                    } else if (!atTop && !atBottom) {
+                                        setScrollEnabled(true);
                                     }
-                                    // Drag hacia arriba desde el fondo del todo -> Post Siguiente
-                                    else if (
+
+                                    // Transición automática por velocidad (sigue funcionando sin seguimiento)
+                                    if (postScrollDragStartY.current <= 5 && endY <= 5 && vy > 0.5) {
+                                        Animated.timing(panYPost, {
+                                            toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                                        }).start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                                    } else if (
                                         postScrollDragStartY.current + postScrollHeight.current >= postScrollContentHeight.current - 5 &&
                                         endY + postScrollHeight.current >= postScrollContentHeight.current - 5 &&
-                                        vy < -0.3
+                                        vy < -0.5
                                     ) {
-                                        lastSwipeDir.current = 'up';
-                                        callbacksRef.current.onNextPost?.();
-                                    } else {
-                                        Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+                                        Animated.timing(panYPost, {
+                                            toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                                        }).start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
                                     }
                                 }}
                             >
@@ -1231,8 +1353,8 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     commentsHeader: {
         alignItems: 'center',
         justifyContent: 'center',
-        paddingTop: 16,
-        paddingBottom: 12,
+        paddingTop: 7,
+        paddingBottom: 6,
         borderBottomWidth: StyleSheet.hairlineWidth,
         backgroundColor: colors.surface,
     },
