@@ -30,7 +30,13 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
 
     if (graphQLErrors) {
         graphQLErrors.forEach(({ extensions, message }) => {
-            if (extensions?.code === 'UNAUTHENTICATED' || message.includes('Unauthorized')) {
+            // Buscamos el código estándar UNAUTHENTICATED o la palabra Unauthorized en el mensaje
+            if (
+                extensions?.code === 'UNAUTHENTICATED' || 
+                extensions?.code === '401' ||
+                message.includes('Unauthorized') || 
+                message.includes('not authenticated')
+            ) {
                 isUnauthorized = true;
             }
         });

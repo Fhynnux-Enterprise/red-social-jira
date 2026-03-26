@@ -118,6 +118,16 @@ type Follow {
   following: User!
 }
 
+type Story {
+  id: ID!
+  user: User!
+  userId: String!
+  mediaUrl: String!
+  mediaType: String!
+  createdAt: DateTime!
+  expiresAt: DateTime!
+}
+
 type User {
   id: ID!
   email: String!
@@ -136,6 +146,7 @@ type User {
   sentMessages: [Message!]
   followers: [Follow!]
   following: [Follow!]
+  stories: [Story!]
   followersCount: Int!
   followingCount: Int!
 }
@@ -160,6 +171,7 @@ type Query {
   getChatMessages(id_conversation: String!): [Message!]!
   searchMessagesInChat(id_conversation: String!, searchTerm: String!): [Message!]!
   getConversation(id_conversation: String!): Conversation
+  getActiveStories: [Story!]!
 }
 
 type Mutation {
@@ -185,6 +197,7 @@ type Mutation {
   editMessage(id_message: String!, newContent: String!): Message!
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
   sendMessage(id_conversation: String!, content: String!): Message!
+  createStory(mediaUrl: String!, mediaType: String!): Story!
 }
 
 input PostMediaInput {

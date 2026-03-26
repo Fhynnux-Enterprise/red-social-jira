@@ -165,6 +165,7 @@ export default function CommentsModal({
 
     // ── Animación entrada/salida + drag del modal entero ─────────────────
     const panY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+    const currentGestureAxis = useRef<'none' | 'vertical' | 'horizontal'>('none');
 
     // ── Animación para el cambio de post estilo TikTok (Físico) ──────────
     const panYPost = useRef(new Animated.Value(0)).current;
@@ -179,22 +180,33 @@ export default function CommentsModal({
         onPanResponderGrant: () => {
             // El backdrop siempre puede hacer TikTok — el postScrollEnabled no aplica aquí
             // (el backdrop está FUERA del postBubble/ScrollView)
+            currentGestureAxis.current = 'none'; // Reset axis on grant
         },
         onPanResponderMove: (_, g) => {
-            if (g.dx < 0 && Math.abs(g.dx) > Math.abs(g.dy)) {
-                panX.setValue(g.dx);
-            } else if (Math.abs(g.dy) > Math.abs(g.dx)) {
+            if (currentGestureAxis.current === 'none') {
+                if (Math.abs(g.dy) > 12) currentGestureAxis.current = 'vertical';
+                else if (g.dx < -25) currentGestureAxis.current = 'horizontal';
+            }
+
+            if (currentGestureAxis.current === 'vertical') {
                 panYPost.setValue(g.dy);
+            } else if (currentGestureAxis.current === 'horizontal') {
+                panX.setValue(g.dx);
             }
         },
         onPanResponderRelease: (_, g) => {
+            const currentAxis = currentGestureAxis.current;
+            currentGestureAxis.current = 'none';
             setScrollEnabled(true); // Siempre limpiar estado al soltar desde el backdrop
             const isTap = Math.abs(g.dx) < 10 && Math.abs(g.dy) < 10;
             if (isTap) {
                 closeWithAnimation();
-            } else if (g.dx < -80 || (g.vx < -0.8 && g.dx < -20)) {
+                return;
+            }
+
+            if (currentAxis === 'horizontal' && (g.dx < -80 || (g.vx < -0.8 && g.dx < -20))) {
                 closeWithXAnimation();
-            } else if (Math.abs(g.dy) > Math.abs(g.dx)) {
+            } else if (currentAxis === 'vertical') {
                 const THRESHOLD = SCREEN_HEIGHT * 0.2;
                 if (g.dy < -THRESHOLD || g.vy < -0.7) {
                     if (navRef.current.nextPost) {
@@ -432,16 +444,44 @@ export default function CommentsModal({
     // ── PanResponder: arrastra headers para cerrar ─────────────────────────
     const makeDragPan = () => PanResponder.create({
         onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 5 && g.dy > 0,
-        onPanResponderMove: (_, g) => { if (g.dy > 0) panY.setValue(g.dy); },
-        onPanResponderRelease: (_, g) => {
-            const shouldClose = g.dy > SCREEN_HEIGHT * 0.45 || g.vy > 1.2;
-            if (shouldClose) {
-                closeWithAnimation();
-            } else {
-                Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+        onMoveShouldSetPanResponder: (_, g) => (Math.abs(g.dy) > 5 && g.dy > 0) || (g.dx < -15 && Math.abs(g.dx) > Math.abs(g.dy)),
+        onPanResponderGrant: () => {
+            currentGestureAxis.current = 'none';
+        },
+        onPanResponderMove: (_, g) => {
+            if (currentGestureAxis.current === 'none') {
+                if (g.dy > 10 && Math.abs(g.dy) > Math.abs(g.dx)) currentGestureAxis.current = 'vertical';
+                else if (g.dx < -15 && Math.abs(g.dx) > Math.abs(g.dy)) currentGestureAxis.current = 'horizontal';
+            }
+
+            if (currentGestureAxis.current === 'vertical') {
+                if (g.dy > 0) panY.setValue(g.dy);
+            } else if (currentGestureAxis.current === 'horizontal') {
+                panX.setValue(g.dx);
             }
         },
+        onPanResponderRelease: (_, g) => {
+            const currentAxis = currentGestureAxis.current;
+            currentGestureAxis.current = 'none';
+
+            if (currentAxis === 'horizontal') {
+                const shouldClose = g.dx < -SCREEN_WIDTH * 0.4 || g.vx < -0.8;
+                if (shouldClose) closeWithXAnimation();
+                else Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+            } else {
+                const shouldClose = g.dy > SCREEN_HEIGHT * 0.15 || g.vy > 0.8;
+                if (shouldClose) {
+                    closeWithAnimation();
+                } else {
+                    Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+                }
+            }
+        },
+        onPanResponderTerminate: () => {
+            currentGestureAxis.current = 'none';
+            Animated.spring(panY, { toValue: 0, useNativeDriver: true }).start();
+            Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
+        }
     });
 
     const postHeaderPan = useRef(makeDragPan()).current;
@@ -527,30 +567,55 @@ export default function CommentsModal({
     // Solo activamos para swipe vertical en contenido que no requiere scroll propio.
     const shortContentPan = useRef(PanResponder.create({
         onMoveShouldSetPanResponder: (_, g) => {
-            // Solo para contenido que no necesita scroll propio
-            if (postScrollContentHeight.current <= postScrollHeight.current + 5) {
-                return Math.abs(g.dy) > 12 && Math.abs(g.dy) > Math.abs(g.dx);
-            }
-            return false;
+            // Caso vertical (TikTok) - solo si no necesita scroll
+            const isVertical = Math.abs(g.dy) > 12 && Math.abs(g.dy) > Math.abs(g.dx) &&
+                               postScrollContentHeight.current <= postScrollHeight.current + 5;
+            // Caso horizontal (Cierre) - siempre permitido
+            const isHorizontal = g.dx < -15 && Math.abs(g.dx) > Math.abs(g.dy);
+            
+            return isVertical || isHorizontal;
+        },
+        onPanResponderGrant: () => {
+            currentGestureAxis.current = 'none';
         },
         onPanResponderMove: (_, g) => {
-            // Seguir el dedo en tiempo real
-            panYPost.setValue(g.dy);
+            if (currentGestureAxis.current === 'none') {
+                if (Math.abs(g.dy) > 12) currentGestureAxis.current = 'vertical';
+                else if (g.dx < -15) currentGestureAxis.current = 'horizontal';
+            }
+
+            if (currentGestureAxis.current === 'vertical') {
+                panYPost.setValue(g.dy);
+            } else if (currentGestureAxis.current === 'horizontal') {
+                panX.setValue(g.dx);
+            }
         },
         onPanResponderRelease: (_, g) => {
-            const THRESHOLD = SCREEN_HEIGHT * 0.2;
-            if (g.dy > THRESHOLD || g.vy > 0.5) {
-                Animated.timing(panYPost, { toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
-                    .start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
-            } else if (g.dy < -THRESHOLD || g.vy < -0.5) {
-                Animated.timing(panYPost, { toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
-                    .start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+            const currentAxis = currentGestureAxis.current;
+            currentGestureAxis.current = 'none';
+
+            if (currentAxis === 'horizontal') {
+                const shouldClose = g.dx < -SCREEN_WIDTH * 0.4 || g.vx < -0.8;
+                if (shouldClose) closeWithXAnimation();
+                else Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
             } else {
-                Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
+                // Lógica vertical original de TikTok
+                const THRESHOLD = SCREEN_HEIGHT * 0.2;
+                if (g.dy > THRESHOLD || g.vy > 0.5) {
+                    Animated.timing(panYPost, { toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                        .start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                } else if (g.dy < -THRESHOLD || g.vy < -0.5) {
+                    Animated.timing(panYPost, { toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                        .start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                } else {
+                    Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
+                }
             }
         },
         onPanResponderTerminate: () => {
+            currentGestureAxis.current = 'none';
             Animated.spring(panYPost, { toValue: 0, useNativeDriver: true }).start();
+            Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
         },
     })).current;
 
@@ -562,18 +627,25 @@ export default function CommentsModal({
             return false;
         },
         onPanResponderMove: (_, g) => {
-            if (Math.abs(g.dy) > Math.abs(g.dx)) {
-                // Vertical: seguir el dedo con panYPost
+            if (currentGestureAxis.current === 'none') {
+                if (Math.abs(g.dy) > 15) currentGestureAxis.current = 'vertical';
+                else if (g.dx < -25) currentGestureAxis.current = 'horizontal';
+            }
+
+            if (currentGestureAxis.current === 'vertical') {
                 panYPost.setValue(g.dy);
-            } else if (g.dx < 0) {
+            } else if (currentGestureAxis.current === 'horizontal') {
                 panX.setValue(g.dx);
             }
         },
         onPanResponderRelease: (_, g) => {
+            const currentAxis = currentGestureAxis.current;
+            currentGestureAxis.current = 'none';
+
             const vy = g.vy; const dy = g.dy; const dx = g.dx; const vx = g.vx;
-            if ((dx < -(SCREEN_WIDTH * 0.45)) || (vx < -0.9 && dx < -50)) {
+            if (currentAxis === 'horizontal' && ((dx < -(SCREEN_WIDTH * 0.45)) || (vx < -0.9 && dx < -50))) {
                 closeWithXAnimation();
-            } else if (Math.abs(dy) > Math.abs(dx)) {
+            } else if (currentAxis === 'vertical') {
                 const THRESHOLD = SCREEN_HEIGHT * 0.2;
                 if (dy > THRESHOLD || vy > 0.5) {
                     Animated.timing(panYPost, { toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
@@ -589,6 +661,7 @@ export default function CommentsModal({
             }
         },
         onPanResponderTerminate: () => {
+            currentGestureAxis.current = 'none';
             Animated.spring(panYPost, { toValue: 0, useNativeDriver: true }).start();
             Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
         },

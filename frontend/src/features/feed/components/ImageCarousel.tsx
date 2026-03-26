@@ -619,7 +619,9 @@ const ActualFullscreenVideo = ({
         <>
             <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: bgOpacity }]} />
             <Animated.View style={{ flex: 1, transform: [{ translateY: swipeTranslateY }] }} {...swipePan.panHandlers}>
-                <VideoView key={url} player={fsPlayer} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls={false} />
+                {fsPlayer && (
+                    <VideoView key={url} player={fsPlayer} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls={false} />
+                )}
                 <TouchableOpacity activeOpacity={1} onPress={handleFsPress} style={StyleSheet.absoluteFill} />
                 {(showFsControls || !isPlaying) && (
                     <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center' }]} pointerEvents="none">
@@ -710,6 +712,12 @@ const ActualVideoPlayer = ({
     const [showFullscreenLocal, setShowFullscreenLocal] = useState(false);
     const fsModalRef = useRef<any>(null);
     const controlsTimeout = useRef<any>(null);
+    const isMounted = useRef(true);
+
+    useEffect(() => {
+        isMounted.current = true;
+        return () => { isMounted.current = false; };
+    }, []);
 
     const player = useVideoPlayer(source, (p: any) => {
         p.loop = true;
@@ -735,6 +743,7 @@ const ActualVideoPlayer = ({
 
     useEffect(() => {
         const interval = setInterval(() => {
+            if (!isMounted.current) return;
             try {
                 if (player && typeof player === 'object') {
                     setIsPlaying(player.playing);
@@ -766,7 +775,9 @@ const ActualVideoPlayer = ({
 
     return (
         <View style={{ width, height, backgroundColor: '#000', overflow: 'hidden' }}>
-            <VideoView key={source} player={player} style={StyleSheet.absoluteFill} contentFit={contentFit} nativeControls={false} surfaceType="textureView" />
+            {player && (
+                <VideoView key={source} player={player} style={StyleSheet.absoluteFill} contentFit={contentFit} nativeControls={false} surfaceType="textureView" />
+            )}
             <TouchableOpacity activeOpacity={1} onPress={handlePress} style={StyleSheet.absoluteFill} />
             
             {isInteractive && (showControls || !isPlaying) && (

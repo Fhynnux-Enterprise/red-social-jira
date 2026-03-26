@@ -15,6 +15,54 @@ import Toast from 'react-native-toast-message';
 import PostCard from '../components/PostCard';
 import PostOptionsModal from '../components/PostOptionsModal';
 import CommentsModal from '../../comments/components/CommentsModal';
+import { StoriesBar } from '../../stories/components/StoriesBar';
+
+export interface PostAuthor {
+    id: string;
+    firstName: string;
+    lastName: string;
+    username: string;
+    photoUrl?: string | null;
+}
+
+export interface PostMedia {
+    id: string;
+    url: string;
+    type: string;
+    order: number;
+}
+
+export interface PostLike {
+    id_post_like: string;
+    user: PostAuthor;
+}
+
+export interface Post {
+    id: string;
+    content: string;
+    title?: string | null;
+    media: PostMedia[];
+    createdAt: string;
+    updatedAt?: string;
+    commentsCount: number;
+    likes: PostLike[];
+    author: PostAuthor;
+}
+
+interface GetPostsData {
+    getPosts: Post[];
+}
+
+interface GetMeData {
+    me: PostAuthor;
+}
+
+interface SelectedPostForComments {
+    post: Post;
+    minimize: boolean;
+    initialTab?: 'comments' | 'likes';
+    initialExpanded?: boolean;
+}
 
 export default function FeedScreen() {
     const { signOut } = useAuth();
@@ -25,18 +73,18 @@ export default function FeedScreen() {
     const [editingPostContent, setEditingPostContent] = useState<string>('');
     const [editingPostTitle, setEditingPostTitle] = useState<string>('');
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
-    const [selectedPost, setSelectedPost] = useState<any>(null);
-    const [selectedPostForComments, setSelectedPostForComments] = useState<{ post: any, minimize: boolean, initialTab?: 'comments' | 'likes', initialExpanded?: boolean } | null>(null);
+    const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+    const [selectedPostForComments, setSelectedPostForComments] = useState<SelectedPostForComments | null>(null);
 
     const isFocused = useIsFocused();
     // Estado para trackear qué post está visible en pantalla (para autoplay)
     const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
 
-    const { data, loading, error, refetch } = useQuery<any>(GET_POSTS, {
+    const { data, loading, error, refetch } = useQuery<GetPostsData>(GET_POSTS, {
         fetchPolicy: 'cache-and-network',
     });
 
-    const { data: meData } = useQuery<any>(GET_ME, {
+    const { data: meData } = useQuery<GetMeData>(GET_ME, {
         fetchPolicy: 'cache-and-network',
     });
     const currentUser = meData?.me;
@@ -51,7 +99,7 @@ export default function FeedScreen() {
         refetchQueries: [{ query: GET_POSTS }],
     });
 
-    const handleOptionsPress = useCallback((item: any) => {
+    const handleOptionsPress = useCallback((item: Post) => {
         setSelectedPost(item);
         setIsOptionsMenuVisible(true);
     }, []);
@@ -74,12 +122,14 @@ export default function FeedScreen() {
         itemVisiblePercentThreshold: 55, // 55% visible para activar autoplay
     }).current;
 
-    const renderPost = useCallback(({ item }: { item: any }) => (
+    const renderPost = useCallback(({ item }: { item: Post }) => (
         <PostCard
             item={item}
             currentUserId={currentUser?.id}
             onOptionsPress={handleOptionsPress}
-            onOpenComments={(_, initialTab, minimize, initialExpanded) => setSelectedPostForComments({ post: item, minimize: !!minimize, initialTab, initialExpanded })}
+            onOpenComments={(_: any, initialTab?: 'comments' | 'likes', minimize?: boolean, initialExpanded?: boolean) => 
+                setSelectedPostForComments({ post: item, minimize: !!minimize, initialTab, initialExpanded })
+            }
             isViewable={item.id === visiblePostId}
             isFocused={isFocused}
             isOverlayActive={!!selectedPostForComments || isModalVisible}
@@ -119,32 +169,7 @@ export default function FeedScreen() {
                 </View>
             </View>
 
-            {/* Input "Crear Publicación" Estilo Facebook */}
-            <View style={styles.createPostContainer}>
-                <View style={styles.createPostRow}>
-                    <TouchableOpacity
-                        style={[styles.smallAvatarPlaceholder, { overflow: 'hidden', backgroundColor: currentUser && !currentUser.photoUrl ? 'rgba(255, 101, 36, 0.15)' : colors.surface }]}
-                        onPress={() => navigation.navigate('Profile' as never)}
-                    >
-                        {currentUser?.photoUrl ? (
-                            <Image source={{ uri: currentUser.photoUrl }} style={{ width: '100%', height: '100%' }} />
-                        ) : currentUser ? (
-                            <Text style={[styles.avatarText, { fontSize: 14 }]}>
-                                {currentUser.firstName?.charAt(0) || ''}{currentUser.lastName?.charAt(0) || ''}
-                            </Text>
-                        ) : (
-                            <Ionicons name="person" size={20} color={colors.textSecondary} />
-                        )}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.fakeInput}
-                        activeOpacity={0.7}
-                        onPress={handleCreatePostPress}
-                    >
-                        <Text style={styles.fakeInputText}>¿Qué está pasando en Chunchi?</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
+            {/* Ya no ponemos el createPostContainer aquí fijo, irá en el ListHeaderComponent del FlatList */}
 
             <View style={{ flex: 1, backgroundColor: colors.background }}>
                 {loading ? (
@@ -153,6 +178,39 @@ export default function FeedScreen() {
                     <Text style={styles.errorText}>No se pudieron cargar los posts.</Text>
                 ) : (
                     <FlatList
+                        ListHeaderComponent={
+                            <>
+                                {/* ARCHITECTURE TASK 3: Barra de historias primero */}
+                                <StoriesBar />
+
+                                {/* Input "Crear Publicación" ahora debajo de las historias */}
+                                <View style={styles.createPostContainer}>
+                                    <View style={styles.createPostRow}>
+                                        <TouchableOpacity
+                                            style={[styles.smallAvatarPlaceholder, { overflow: 'hidden', backgroundColor: currentUser && !currentUser.photoUrl ? 'rgba(255, 101, 36, 0.15)' : colors.surface }]}
+                                            onPress={() => navigation.navigate('Profile' as never)}
+                                        >
+                                            {currentUser?.photoUrl ? (
+                                                <Image source={{ uri: currentUser.photoUrl }} style={{ width: '100%', height: '100%' }} />
+                                            ) : currentUser ? (
+                                                <Text style={[styles.avatarText, { fontSize: 14 }]}>
+                                                    {currentUser.firstName?.charAt(0) || ''}{currentUser.lastName?.charAt(0) || ''}
+                                                </Text>
+                                            ) : (
+                                                <Ionicons name="person" size={20} color={colors.textSecondary} />
+                                            )}
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={styles.fakeInput}
+                                            activeOpacity={0.7}
+                                            onPress={handleCreatePostPress}
+                                        >
+                                            <Text style={styles.fakeInputText}>¿Qué está pasando en Chunchi?</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            </>
+                        }
                         data={data?.getPosts || []}
                         extraData={data}
                         keyExtractor={(item) => item.id}

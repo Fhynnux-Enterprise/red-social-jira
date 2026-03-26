@@ -21,9 +21,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [isLoading, setIsLoading] = useState(true);
 
     const signOut = async () => {
-        await AuthService.logout();
+        // 1. Limpiamos el estado local inmediatamente para reaccionar en la UI
         setUserToken(null);
         setUser(null);
+        
+        // 2. Realizamos la limpieza de almacenamiento y servicios en segundo plano
+        try {
+            await AuthService.logout();
+        } catch (error) {
+            console.error('Error during background logout:', error);
+        }
     };
 
     useEffect(() => {
@@ -74,8 +81,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         try {
             const profile = await ProfileService.getProfile();
             setUser(profile);
-        } catch (e) {
+        } catch (e: any) {
             console.error('Error refreshing profile:', e);
+            // Si el error es de autorización (401), forzamos logout
+            if (e.response?.status === 401 || e.message?.includes('Unauthorized')) {
+                signOut();
+            }
         }
     };
 

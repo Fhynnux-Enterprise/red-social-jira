@@ -7,6 +7,7 @@ import { Comment } from '../../comments/entities/comment.entity';
 import { Participant } from '../../chat/entities/participant.entity';
 import { Message } from '../../chat/entities/message.entity';
 import { Follow } from '../../follows/entities/follow.entity';
+import { Story } from '../../stories/entities/story.entity';
 
 
 @ObjectType()
@@ -94,4 +95,8 @@ export class User {
     @Field(() => [Follow], { nullable: true })
     @OneToMany(() => Follow, follow => follow.follower)
     following: Follow[];
+
+    @Field(() => [Story], { nullable: true })
+    @OneToMany(() => Story, (story) => story.user)
+    stories: Story[];
 }
