@@ -275,7 +275,7 @@ export const StoriesBar = () => {
 
 const styles = StyleSheet.create({
     container: {
-        paddingVertical: 12,
+        paddingVertical: 2, // ESPACIO VERTICAL: Reduce este número para que haya menos espacio arriba/abajo
         borderBottomWidth: 0.5,
     },
     listContent: {
@@ -283,35 +283,35 @@ const styles = StyleSheet.create({
     },
     storyItem: {
         alignItems: 'center',
-        marginRight: 20,
-        width: 84,
+        marginRight: 12, // ESPACIO HORIZONTAL: Baja este número para que los círculos estén más juntos
+        width: 92,
     },
     userControlsContainer: {
         flexDirection: 'row',
     },
     gradientBorder: {
-        width: 84,
-        height: 84,
-        borderRadius: 42,
-        padding: 3, // Grosor del degradado de Chunchi
+        width: 92, // Debe coincidir con el TAMAÑO BASE
+        height: 92,
+        borderRadius: 46, // Siempre la mitad del tamaño base
+        padding: 3, 
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: 6, // Espacio entre el círculo y el nombre
     },
     grayBorder: {
-        width: 84,
-        height: 84,
-        borderRadius: 42,
+        width: 92, // Debe coincidir con el TAMAÑO BASE
+        height: 92,
+        borderRadius: 46, // Siempre la mitad del tamaño base
         borderWidth: 1.5,
         padding: 3,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: 6,
     },
     innerCircle: {
         width: '100%',
         height: '100%',
-        borderRadius: 40,
+        borderRadius: 44,
         padding: 2,
         justifyContent: 'center',
         alignItems: 'center',
@@ -319,23 +319,23 @@ const styles = StyleSheet.create({
     addBtnContent: {
         width: '100%',
         height: '100%',
-        borderRadius: 40,
+        borderRadius: 44,
         justifyContent: 'center',
         alignItems: 'center',
     },
     previewImage: {
         width: '100%',
         height: '100%',
-        borderRadius: 40,
+        borderRadius: 44,
         backgroundColor: '#222',
     },
     badgeAvatarContainer: {
         position: 'absolute',
         bottom: -2,
         right: -2,
-        width: 30,
-        height: 30,
-        borderRadius: 15,
+        width: 32, // Tamaño de la mini foto de perfil
+        height: 32,
+        borderRadius: 16,
         borderWidth: 3,
         overflow: 'hidden',
         backgroundColor: '#333',
@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
         height: '100%',
     },
     username: {
-        fontSize: 11.5,
+        fontSize: 12,
         fontWeight: '500',
         textAlign: 'center',
         marginTop: 2,

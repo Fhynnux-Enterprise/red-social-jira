@@ -28,7 +28,8 @@ interface StoryViewerModalProps {
 const StoryVideoPlayer = ({ url, onFinish }: { url: string, onFinish: () => void }) => {
     const { cachedSource } = useVideoCache(url);
     const isMounted = useRef(true);
-
+    
+    // Usamos el hook de expo-video con la URL definitiva (caché o red)
     const player = useVideoPlayer(cachedSource || url, (p) => {
         p.loop = false;
         p.play();
@@ -45,7 +46,8 @@ const StoryVideoPlayer = ({ url, onFinish }: { url: string, onFinish: () => void
         };
     }, [player, onFinish]);
 
-    if (!cachedSource) {
+    // CRÍTICO: Si no hay player o no hay puente con la URL, mostramos loader
+    if (!player || !cachedSource) {
         return (
             <View style={styles.loaderContainer}>
                 <ActivityIndicator color="white" size="large" />
