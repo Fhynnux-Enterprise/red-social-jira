@@ -117,7 +117,7 @@ export default function CommentsModal({
     // =======================================================================================
     // 🎛️ CONTROLES DE PANTALLA AJUSTABLES PARA EL TAMAÑO DE LA COMPOSICIÓN (MODIFICA AQUÍ)
     // =======================================================================================
-    
+
     // 1. ESPACIO DESDE ARRIBA (Haz esto más pequeño para que la publicación suba)
     // 0 es el límite absoluto de la zona segura (la cámara o barra de estado de tu celular).
     // Ponlo en 0, 2 o 4 para aprovechar pantalla hacia arriba.
@@ -140,9 +140,12 @@ export default function CommentsModal({
 
     // Almacenamos los callbacks actualizados en una referencia porque el PanResponder guarda las variables del primer render
     const callbacksRef = useRef({ onNextPost, onPrevPost });
+    // IGUAL para nextPost/prevPost: el PanResponder los lee desde la ref, no del closure inicial
+    const navRef = useRef({ nextPost, prevPost });
     useEffect(() => {
         callbacksRef.current = { onNextPost, onPrevPost };
-    }, [onNextPost, onPrevPost]);
+        navRef.current = { nextPost, prevPost };
+    }, [onNextPost, onPrevPost, nextPost, prevPost]);
 
     const toggleMinimize = () => {
         if (!isMinimized) {
@@ -191,13 +194,23 @@ export default function CommentsModal({
             } else if (Math.abs(g.dy) > Math.abs(g.dx)) {
                 const THRESHOLD = SCREEN_HEIGHT * 0.2;
                 if (g.dy < -THRESHOLD || g.vy < -0.7) {
-                    Animated.timing(panYPost, {
-                        toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
-                    }).start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                    if (navRef.current.nextPost) {
+                        Animated.timing(panYPost, {
+                            toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                        }).start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                    } else {
+                        // Última publicación -> cerrar modal
+                        Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                    }
                 } else if (g.dy > THRESHOLD || g.vy > 0.7) {
-                    Animated.timing(panYPost, {
-                        toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
-                    }).start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                    if (navRef.current.prevPost) {
+                        Animated.timing(panYPost, {
+                            toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                        }).start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                    } else {
+                        // Primera publicación -> cerrar modal
+                        Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                    }
                 } else {
                     Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
                 }
@@ -247,9 +260,14 @@ export default function CommentsModal({
             if (g.dy < -THRESHOLD || g.vy < -0.7) {
                 // Gesto HACIA ARRIBA (dedo sube) → siguiente post SOLO si realmente está al fondo
                 if (actuallyAtBottom) {
-                    Animated.timing(panYPost, {
-                        toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
-                    }).start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                    if (navRef.current.nextPost) {
+                        Animated.timing(panYPost, {
+                            toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                        }).start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                    } else {
+                        // Última publicación: rebote
+                        Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                    }
                 } else {
                     // El usuario intentaba scrollear hacia abajo, no cambiar de post
                     setScrollEnabled(true);
@@ -259,9 +277,14 @@ export default function CommentsModal({
             } else if (g.dy > THRESHOLD || g.vy > 0.7) {
                 // Gesto HACIA ABAJO (dedo baja) → post anterior SOLO si realmente está en el tope
                 if (actuallyAtTop) {
-                    Animated.timing(panYPost, {
-                        toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
-                    }).start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                    if (navRef.current.prevPost) {
+                        Animated.timing(panYPost, {
+                            toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                        }).start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                    } else {
+                        // Primera publicación: rebote
+                        Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                    }
                 } else {
                     // El usuario intentaba scrollear hacia arriba, no cambiar de post
                     setScrollEnabled(true);
