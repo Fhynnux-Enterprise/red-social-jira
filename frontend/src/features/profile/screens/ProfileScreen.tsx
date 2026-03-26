@@ -361,8 +361,6 @@ export default function ProfileScreen() {
             <CommentsModal
                 visible={!!selectedPostForComments}
                 post={
-                    // Siempre usar el post VIVO del caché de Apollo para que se reflejen
-                    // los cambios de likes/comentarios sin necesidad de refetch
                     selectedPostForComments
                         ? (() => {
                             const livePost = userData?.posts?.find((p: any) => p.id === selectedPostForComments.post?.id);
@@ -372,6 +370,20 @@ export default function ProfileScreen() {
                         })()
                         : null
                 }
+                nextPost={(() => {
+                    const posts = userData?.posts || [];
+                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
+                    return (currentIndex !== -1 && currentIndex < posts.length - 1)
+                        ? { ...posts[currentIndex + 1], author: userData }
+                        : null;
+                })()}
+                prevPost={(() => {
+                    const posts = userData?.posts || [];
+                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
+                    return (currentIndex > 0)
+                        ? { ...posts[currentIndex - 1], author: userData }
+                        : null;
+                })()}
                 onClose={() => setSelectedPostForComments(null)}
                 initialMinimized={selectedPostForComments?.minimize}
                 initialTab={selectedPostForComments?.initialTab}

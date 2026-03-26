@@ -777,13 +777,14 @@ const ActualVideoPlayer = ({
                 </View>
             )}
 
+            {!hideExpand && (
+                <TouchableOpacity style={[styles.muteButtonContainer, { top: 16, right: 16 }]} activeOpacity={0.7} onPress={toggleMute}>
+                    <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={18} color="white" />
+                </TouchableOpacity>
+            )}
+
             {isInteractive && (
                 <>
-                    {!hideExpand && (
-                        <TouchableOpacity style={[styles.muteButtonContainer, { top: 16, right: 16 }]} activeOpacity={0.7} onPress={toggleMute}>
-                            <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={18} color="white" />
-                        </TouchableOpacity>
-                    )}
                     {!hideExpand && (
                         <TouchableOpacity style={[styles.muteButtonContainer, { top: 60, right: 16 }]} activeOpacity={0.7} onPress={() => {
                             if (onExpand) onExpand(); else fsModalRef.current?.open();
