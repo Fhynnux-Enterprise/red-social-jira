@@ -36,6 +36,23 @@ export class StoriesService {
     });
   }
 
+  async delete(userId: string, storyId: string): Promise<boolean> {
+    const story = await this.storiesRepository.findOne({ where: { id: storyId, userId } });
+    if (!story) throw new Error('Historia no encontrada o no autorizada');
+    try {
+      const urlParts = story.mediaUrl.split('/chunchi-media/');
+      if (urlParts.length > 1) {
+        const filePath = urlParts[1];
+        await this.supabaseService.deleteFile(filePath);
+      }
+      await this.storiesRepository.remove(story);
+      return true;
+    } catch (e: any) {
+      this.logger.error(`Error al eliminar historia ${storyId}: ${e.message}`);
+      return false;
+    }
+  }
+
   // CRON JOB: Cada hora revisa y limpia lo que expiró
   @Cron(CronExpression.EVERY_HOUR)
   async cleanupExpiredStories() {

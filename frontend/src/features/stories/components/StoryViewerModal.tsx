@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-    Modal, View, StyleSheet, Image, 
-    Dimensions, TouchableWithoutFeedback, 
-    ActivityIndicator, StatusBar, Text,
-    TouchableOpacity, Animated
-} from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableWithoutFeedback, Animated, Dimensions, TouchableOpacity, ActivityIndicator, Image, StatusBar } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoCache } from '../../../hooks/useVideoCache';
 import { Story } from '../components/StoriesBar';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import ConfirmationModal from '../../../features/comments/components/ConfirmationModal';
+
+import { PanResponder } from 'react-native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -19,6 +18,9 @@ interface StoryViewerModalProps {
     stories: Story[];
     initialIndex: number;
     onClose: () => void;
+    onStorySeen?: (id: string) => void;
+    onDeleteStory?: (id: string) => void;
+    currentUserId?: string;
 }
 
 /**
@@ -65,38 +67,121 @@ const StoryVideoPlayer = ({ url, onFinish }: { url: string, onFinish: () => void
     );
 };
 
-export const StoryViewerModal = ({ visible, stories, initialIndex, onClose }: StoryViewerModalProps) => {
+export const StoryViewerModal = ({ visible, stories, initialIndex, onClose, onStorySeen, onDeleteStory, currentUserId }: StoryViewerModalProps) => {
     const [currentIndex, setCurrentIndex] = useState(initialIndex);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [isPaused, setIsPaused] = useState(false);
     const { colors } = useTheme();
     const insets = useSafeAreaInsets();
+    
+    // Animación de la barra de progreso
     const animValue = useRef(new Animated.Value(0)).current;
+    const animRef = useRef<Animated.CompositeAnimation | null>(null);
+    
+    // Animación de arrastre (Gesto)
+    const pan = useRef(new Animated.ValueXY()).current;
+    const [isDragging, setIsDragging] = useState(false);
+    const longPressTimeout = useRef<any>(null);
+    const isClosing = useRef(false);
 
     const currentStory = stories[currentIndex];
+
+    // GESTO: Arrastrar SOLO abajo para cerrar (Estilo Instagram/TikTok)
+    const panResponder = useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => true,
+            onMoveShouldSetPanResponder: (_, gestureState) => {
+                if (isClosing.current) return false;
+                // Solo activamos si el arrastre es predominantemente vertical y hacia ABAJO
+                return Math.abs(gestureState.dy) > 10 && gestureState.dy > 0;
+            },
+            onPanResponderGrant: () => {
+                // No pausamos aquí, esperamos el timeout del Touchable
+                setIsDragging(true);
+            },
+            onPanResponderMove: (_, gestureState) => {
+                const newY = Math.max(0, gestureState.dy);
+                pan.setValue({ x: 0, y: newY });
+                // Si arrastramos, cancelamos cualquier intento de pausa por long press
+                if (longPressTimeout.current) {
+                    clearTimeout(longPressTimeout.current);
+                    longPressTimeout.current = null;
+                }
+            },
+            onPanResponderRelease: (_, gestureState) => {
+                const threshold = 150;
+                if (gestureState.dy > threshold) {
+                    isClosing.current = true;
+                    Animated.timing(pan, {
+                        toValue: { x: 0, y: SCREEN_HEIGHT + 100 },
+                        duration: 200,
+                        useNativeDriver: true
+                    }).start(() => {
+                        pan.setValue({ x: 0, y: SCREEN_HEIGHT + 100 });
+                        onClose();
+                    });
+                } else {
+                    Animated.spring(pan, {
+                        toValue: { x: 0, y: 0 },
+                        friction: 8,
+                        tension: 40,
+                        useNativeDriver: true
+                    }).start(() => {
+                        setIsPaused(false);
+                        setIsDragging(false);
+                    });
+                }
+            }
+        })
+    ).current;
+
+    // Interpolación para el fondo: Solo se desvanece al bajar
+    const backdropOpacity = pan.y.interpolate({
+        inputRange: [0, SCREEN_HEIGHT / 2],
+        outputRange: [1, 0],
+        extrapolate: 'clamp'
+    });
 
     // Resetear el índice cuando se abre el modal
     useEffect(() => {
         if (visible) {
             setCurrentIndex(initialIndex);
+            setIsPaused(false);
+            isClosing.current = false;
+            pan.setValue({ x: 0, y: 0 });
+            setIsDragging(false);
+            if (longPressTimeout.current) clearTimeout(longPressTimeout.current);
         }
     }, [visible, initialIndex]);
 
+    // MARCAR COMO VISTA CADA VEZ QUE CAMBIA EL ÍNDICE
+    useEffect(() => {
+        if (visible && currentStory && onStorySeen) {
+            onStorySeen(currentStory.id);
+        }
+    }, [currentIndex, visible, currentStory, onStorySeen]);
+
     // Motor de Animación de la Barra
     const startProgressAnim = useCallback(() => {
-        animValue.setValue(0);
-        // Duración: 5s para fotos, 45s (máximo) para videos
-        const duration = currentStory?.mediaType === 'image' ? 5000 : 45000;
-        
-        Animated.timing(animValue, {
+        // @ts-ignore
+        const currentValue = animValue._value || 0;
+        const totalDuration = currentStory?.mediaType === 'image' ? 5000 : 45000;
+        const remainingDuration = (1 - currentValue) * totalDuration;
+
+        animRef.current = Animated.timing(animValue, {
             toValue: 1,
-            duration: duration,
+            duration: remainingDuration,
             useNativeDriver: false,
-        }).start(({ finished }: { finished: boolean }) => {
-            if (finished) handleNext();
         });
-    }, [currentStory, currentIndex]);
+
+        animRef.current.start(({ finished }: { finished: boolean }) => {
+            if (finished) if (!showDeleteConfirm && !isPaused) handleNext();
+        });
+    }, [currentStory, currentIndex, showDeleteConfirm, isPaused]);
 
     // Función para avanzar
     const handleNext = () => {
+        animValue.setValue(0);
         if (currentIndex < stories.length - 1) {
             setCurrentIndex(prev => prev + 1);
         } else {
@@ -106,28 +191,47 @@ export const StoryViewerModal = ({ visible, stories, initialIndex, onClose }: St
 
     // Función para retroceder
     const handlePrev = () => {
+        animValue.setValue(0);
         if (currentIndex > 0) {
             setCurrentIndex(prev => prev - 1);
         }
     };
 
-    // Iniciar animación al cargar cada historia
+    // Iniciar o reanudar animación
     useEffect(() => {
-        if (visible && currentStory) {
+        if (visible && currentStory && !showDeleteConfirm && !isPaused && !isClosing.current) {
             startProgressAnim();
         } else {
             animValue.stopAnimation();
         }
         return () => animValue.stopAnimation();
-    }, [visible, currentIndex, currentStory]);
+    }, [visible, currentIndex, currentStory, showDeleteConfirm, isPaused]);
 
     const handleTap = (evt: any) => {
+        // Si ya está pausado, significa que fue un Long Press, no navegamos
+        if (showDeleteConfirm || isPaused || isClosing.current) return;
+        
         const x = evt.nativeEvent.locationX;
-        if (x < SCREEN_WIDTH * 0.3) {
+        if (x < SCREEN_WIDTH / 2) {
             handlePrev();
         } else {
             handleNext();
         }
+    };
+
+    const handlePressIn = () => {
+        // Iniciamos el timer para pausa (Long Press) 200ms
+        longPressTimeout.current = setTimeout(() => {
+            setIsPaused(true);
+        }, 200);
+    };
+
+    const handlePressOut = () => {
+        if (longPressTimeout.current) {
+            clearTimeout(longPressTimeout.current);
+            longPressTimeout.current = null;
+        }
+        setIsPaused(false);
     };
 
     if (!currentStory) return null;
@@ -140,11 +244,22 @@ export const StoryViewerModal = ({ visible, stories, initialIndex, onClose }: St
     return (
         <Modal
             visible={visible}
-            animationType="fade"
-            transparent={false}
+            animationType="none"
+            transparent={true}
             onRequestClose={onClose}
         >
-            <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+            <Animated.View 
+                style={[
+                    styles.container, 
+                    { 
+                        paddingTop: insets.top, 
+                        paddingBottom: insets.bottom,
+                        opacity: backdropOpacity,
+                        transform: [{ translateY: pan.y }]
+                    }
+                ]}
+                {...panResponder.panHandlers}
+            >
                 {/* Renderizado de Medios */}
                 <View style={styles.mediaWrapper}>
                     {currentStory.mediaType === 'video' ? (
@@ -163,18 +278,34 @@ export const StoryViewerModal = ({ visible, stories, initialIndex, onClose }: St
                 </View>
 
                 {/* Header Info - Ahora más abajo (insets.top + 30) */}
-                <View style={[styles.header, { top: insets.top + 35 }]}>
-                    <View style={styles.userInfo}>
-                        <Image source={{ uri: currentStory.user.photoUrl || '' }} style={styles.avatar} />
-                        <Text style={styles.username}>{displayName}</Text>
+                {!isPaused && !isClosing.current && (
+                    <View style={[styles.header, { top: insets.top + 35 }]}>
+                        <View style={styles.userInfo}>
+                            <Image source={{ uri: currentStory.user.photoUrl || '' }} style={styles.avatar} />
+                            <Text style={styles.username}>{displayName}</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            {currentUserId === currentStory.userId && (
+                                <TouchableOpacity 
+                                    onPress={() => setShowDeleteConfirm(true)} 
+                                    style={[styles.closeButton, { marginRight: 15 }]}
+                                >
+                                    <Ionicons name="ellipsis-horizontal" size={26} color="white" />
+                                </TouchableOpacity>
+                            )}
+                            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                                <Ionicons name="close" size={28} color="white" />
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                    <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                        <Ionicons name="close" size={28} color="white" />
-                    </TouchableOpacity>
-                </View>
+                )}
 
-                {/* TAREA 1: Gestos de navegación invisibles */}
-                <TouchableWithoutFeedback onPress={handleTap}>
+                {/* TAREA 1: Gestos de navegación invisibles con Hold-to-Pause Retardado */}
+                <TouchableWithoutFeedback 
+                    onPressIn={handlePressIn}
+                    onPressOut={handlePressOut}
+                    onPress={handleTap}
+                >
                     <View style={styles.gestureOverlay} />
                 </TouchableWithoutFeedback>
 
@@ -202,7 +333,21 @@ export const StoryViewerModal = ({ visible, stories, initialIndex, onClose }: St
                         );
                     })}
                 </View>
-            </View>
+
+                <ConfirmationModal 
+                    visible={showDeleteConfirm}
+                    title="Eliminar Historia"
+                    message="¿Estás seguro de que deseas eliminar esta historia? Esta acción no se puede deshacer."
+                    confirmText="Eliminar"
+                    cancelText="Cancelar"
+                    confirmColor={colors.primary}
+                    onConfirm={() => {
+                        setShowDeleteConfirm(false);
+                        onDeleteStory?.(currentStory.id);
+                    }}
+                    onCancel={() => setShowDeleteConfirm(false)}
+                />
+            </Animated.View>
         </Modal>
     );
 };

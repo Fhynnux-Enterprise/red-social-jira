@@ -180,8 +180,8 @@ export default function FeedScreen() {
                     <FlatList
                         ListHeaderComponent={
                             <>
-                                {/* ARCHITECTURE TASK 3: Barra de historias primero */}
-                                <StoriesBar />
+                                {/* ARCHITECTURE TASK 3: Barra de historias primero con aislamiento de sesión */}
+                                <StoriesBar key={currentUser?.id || 'anonymous'} />
 
                                 {/* Input "Crear Publicación" ahora debajo de las historias */}
                                 <View style={styles.createPostContainer}>

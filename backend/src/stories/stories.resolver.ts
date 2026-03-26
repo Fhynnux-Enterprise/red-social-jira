@@ -24,4 +24,14 @@ export class StoriesResolver {
   getActiveStories() {
     return this.storiesService.getActiveStories();
   }
+
+  @Mutation(() => Boolean)
+  @UseGuards(JwtGqlGuard)
+  deleteStory(
+    @Context() context: any,
+    @Args('id') id: string,
+  ) {
+    const userId = context.req.user.id;
+    return this.storiesService.delete(userId, id);
+  }
 }

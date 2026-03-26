@@ -198,6 +198,7 @@ type Mutation {
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
   sendMessage(id_conversation: String!, content: String!): Message!
   createStory(mediaUrl: String!, mediaType: String!): Story!
+  deleteStory(id: String!): Boolean!
 }
 
 input PostMediaInput {
