@@ -5,6 +5,7 @@ export const GET_POSTS = gql`
         getPosts {
             id
             content
+            title
             media {
                 id
                 url
@@ -36,10 +37,11 @@ export const GET_POSTS = gql`
 `;
 
 export const CREATE_POST = gql`
-    mutation CreatePost($content: String!, $media: [PostMediaInput!]) {
-        createPost(content: $content, media: $media) {
+    mutation CreatePost($content: String!, $title: String, $media: [PostMediaInput!]) {
+        createPost(content: $content, title: $title, media: $media) {
             id
             content
+            title
             media {
                 id
                 url
@@ -62,10 +64,11 @@ export const CREATE_POST = gql`
 `;
 
 export const UPDATE_POST = gql`
-    mutation UpdatePost($id: String!, $content: String!) {
-        updatePost(id: $id, content: $content) {
+    mutation UpdatePost($id: String!, $content: String!, $title: String) {
+        updatePost(id: $id, content: $content, title: $title) {
             id
             content
+            title
             media {
                 id
                 url

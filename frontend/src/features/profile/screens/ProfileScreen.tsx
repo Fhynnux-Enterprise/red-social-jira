@@ -38,6 +38,7 @@ export default function ProfileScreen() {
     const [isCreatePostVisible, setIsCreatePostVisible] = useState(false);
     const [editingPostId, setEditingPostId] = useState<string | undefined>(undefined);
     const [editingPostContent, setEditingPostContent] = useState<string>('');
+    const [editingPostTitle, setEditingPostTitle] = useState<string>('');
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<any>(null);
     const [selectedPostForComments, setSelectedPostForComments] = useState<{ post: any, minimize: boolean, initialTab?: 'comments' | 'likes' } | null>(null);
@@ -339,6 +340,7 @@ export default function ProfileScreen() {
                 }}
                 postId={editingPostId}
                 initialContent={editingPostContent}
+                initialTitle={editingPostTitle}
             />
 
             <PostOptionsModal
@@ -348,6 +350,7 @@ export default function ProfileScreen() {
                     if (selectedPost) {
                         setEditingPostId(selectedPost.id);
                         setEditingPostContent(selectedPost.content);
+                        setEditingPostTitle(selectedPost.title || '');
                         setIsCreatePostVisible(true);
                     }
                 }}
@@ -400,6 +403,10 @@ export default function ProfileScreen() {
                     if (currentIndex > 0) {
                         setSelectedPostForComments({ post: { ...posts[currentIndex - 1], author: userData }, minimize: !!selectedPostForComments?.minimize, initialTab: selectedPostForComments?.initialTab });
                     }
+                }}
+                onOptionsPress={(post) => {
+                    setSelectedPost(post);
+                    setIsOptionsMenuVisible(true);
                 }}
             />
         </SafeAreaView>

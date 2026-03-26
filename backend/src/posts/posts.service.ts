@@ -18,7 +18,7 @@ export class PostsService {
         private readonly dataSource: DataSource,
     ) { }
 
-    async createPost(content: string, authorId: string, media?: PostMediaInput[]): Promise<Post> {
+    async createPost(content: string, authorId: string, media?: PostMediaInput[], title?: string): Promise<Post> {
         const queryRunner = this.dataSource.createQueryRunner();
         await queryRunner.connect();
         await queryRunner.startTransaction();
@@ -26,6 +26,7 @@ export class PostsService {
         try {
             let newPost = this.postsRepository.create({
                 content,
+                title,
                 authorId,
             });
             newPost = await queryRunner.manager.save(newPost);
@@ -89,7 +90,7 @@ export class PostsService {
         return posts;
     }
 
-    async updatePost(id: string, content: string, userId: string): Promise<Post> {
+    async updatePost(id: string, content: string, userId: string, title?: string): Promise<Post> {
         const post = await this.postsRepository.findOne({ where: { id }, relations: ['author', 'likes', 'likes.user', 'comments', 'media'] });
         if (!post) {
             throw new NotFoundException('Publicación no encontrada');
@@ -99,6 +100,7 @@ export class PostsService {
         }
 
         post.content = content;
+        if (title !== undefined) post.title = title;
         await this.postsRepository.save(post);
         return post;
     }

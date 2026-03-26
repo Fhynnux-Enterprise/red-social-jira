@@ -16,6 +16,10 @@ export class Post {
     @Column('text')
     content: string;
 
+    @Field({ nullable: true })
+    @Column({ type: 'varchar', nullable: true })
+    title?: string;
+
     @Field(() => [PostMedia], { nullable: 'itemsAndList' })
     @OneToMany(() => PostMedia, media => media.post, { cascade: true })
     media?: PostMedia[];

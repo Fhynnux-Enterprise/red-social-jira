@@ -23,31 +23,26 @@ export default function FeedScreen() {
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [editingPostId, setEditingPostId] = useState<string | undefined>(undefined);
     const [editingPostContent, setEditingPostContent] = useState<string>('');
+    const [editingPostTitle, setEditingPostTitle] = useState<string>('');
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<any>(null);
-    const [selectedPostForComments, setSelectedPostForComments] = useState<{ post: any, minimize: boolean, initialTab?: 'comments' | 'likes' } | null>(null);
+    const [selectedPostForComments, setSelectedPostForComments] = useState<{ post: any, minimize: boolean, initialTab?: 'comments' | 'likes', initialExpanded?: boolean } | null>(null);
 
     const isFocused = useIsFocused();
     // Estado para trackear qué post está visible en pantalla (para autoplay)
     const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
 
-    const { data, loading, error, refetch } = useQuery(GET_POSTS, {
+    const { data, loading, error, refetch } = useQuery<any>(GET_POSTS, {
         fetchPolicy: 'cache-and-network',
     });
 
-    const { data: meData } = useQuery(GET_ME, {
+    const { data: meData } = useQuery<any>(GET_ME, {
         fetchPolicy: 'cache-and-network',
     });
     const currentUser = meData?.me;
 
-    useFocusEffect(
-        useCallback(() => {
-            const timeout = setTimeout(() => {
-                refetch().catch(e => console.log('Error refetching feed posts:', e));
-            }, 500);
-            return () => clearTimeout(timeout);
-        }, [refetch])
-    );
+    // Ya no usamos useFocusEffect para refetch manual en cada foco para evitar saltos y recargas molestas.
+    // Apollo Client con cache-and-network ya se encarga de servir datos de caché inmediatamente.
 
     // Generamos estilos dinámicos que reaccionan al tema
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
@@ -64,6 +59,7 @@ export default function FeedScreen() {
     const handleCreatePostPress = () => {
         setEditingPostId(undefined);
         setEditingPostContent('');
+        setEditingPostTitle('');
         setIsModalVisible(true);
     };
 
@@ -83,7 +79,7 @@ export default function FeedScreen() {
             item={item}
             currentUserId={currentUser?.id}
             onOptionsPress={handleOptionsPress}
-            onOpenComments={(_, initialTab, minimize) => setSelectedPostForComments({ post: item, minimize: !!minimize, initialTab })}
+            onOpenComments={(_, initialTab, minimize, initialExpanded) => setSelectedPostForComments({ post: item, minimize: !!minimize, initialTab, initialExpanded })}
             isViewable={item.id === visiblePostId}
             isFocused={isFocused}
             isOverlayActive={!!selectedPostForComments || isModalVisible}
@@ -181,6 +177,7 @@ export default function FeedScreen() {
                 onClose={() => setIsModalVisible(false)}
                 postId={editingPostId}
                 initialContent={editingPostContent}
+                initialTitle={editingPostTitle}
             />
 
             {/* Modal Menú de Opciones de la Publicación Inferior */}
@@ -191,6 +188,7 @@ export default function FeedScreen() {
                     if (selectedPost) {
                         setEditingPostId(selectedPost.id);
                         setEditingPostContent(selectedPost.content);
+                        setEditingPostTitle(selectedPost.title || '');
                         setIsModalVisible(true);
                     }
                 }}
@@ -224,19 +222,24 @@ export default function FeedScreen() {
                 onClose={() => setSelectedPostForComments(null)} 
                 initialMinimized={selectedPostForComments?.minimize}
                 initialTab={selectedPostForComments?.initialTab}
+                initialExpanded={selectedPostForComments?.initialExpanded}
                 onNextPost={() => {
                     const posts = data?.getPosts || [];
                     const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     if (currentIndex !== -1 && currentIndex < posts.length - 1) {
-                        setSelectedPostForComments({ post: posts[currentIndex + 1], minimize: !!selectedPostForComments?.minimize, initialTab: selectedPostForComments?.initialTab });
+                        setSelectedPostForComments({ post: posts[currentIndex + 1], minimize: !!selectedPostForComments?.minimize, initialTab: selectedPostForComments?.initialTab, initialExpanded: false });
                     }
                 }}
                 onPrevPost={() => {
                     const posts = data?.getPosts || [];
                     const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     if (currentIndex > 0) {
-                        setSelectedPostForComments({ post: posts[currentIndex - 1], minimize: !!selectedPostForComments?.minimize, initialTab: selectedPostForComments?.initialTab });
+                        setSelectedPostForComments({ post: posts[currentIndex - 1], minimize: !!selectedPostForComments?.minimize, initialTab: selectedPostForComments?.initialTab, initialExpanded: false });
                     }
+                }}
+                onOptionsPress={(post) => {
+                    setSelectedPost(post);
+                    setIsOptionsMenuVisible(true);
                 }}
             />
         </SafeAreaView>

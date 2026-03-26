@@ -55,6 +55,7 @@ type PostMedia {
 type Post {
   id: ID!
   content: String!
+  title: String
   media: [PostMedia]
   author: User!
   authorId: String!
@@ -162,8 +163,8 @@ type Query {
 }
 
 type Mutation {
-  createPost(content: String!, media: [PostMediaInput!]): Post!
-  updatePost(id: String!, content: String!): Post!
+  createPost(content: String!, title: String, media: [PostMediaInput!]): Post!
+  updatePost(id: String!, content: String!, title: String): Post!
   deletePost(id: String!): Boolean!
   toggleLike(postId: String!): Post!
   generateUploadUrl(fileName: String!, fileType: String!, folder: String!): UploadUrlResponse!

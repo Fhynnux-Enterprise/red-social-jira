@@ -28,11 +28,12 @@ export class PostsResolver {
     @UseGuards(JwtGqlGuard)
     async createPost(
         @Args('content') content: string,
+        @Args('title', { nullable: true }) title: string,
         @Args('media', { type: () => [PostMediaInput], nullable: true }) media: PostMediaInput[],
         @Context() context: any,
     ): Promise<Post> {
         const authorId = context.req.user.id;
-        return this.postsService.createPost(content, authorId, media);
+        return this.postsService.createPost(content, authorId, media, title);
     }
 
     @Mutation(() => Post, { name: 'updatePost' })
@@ -40,10 +41,11 @@ export class PostsResolver {
     async updatePost(
         @Args('id') id: string,
         @Args('content') content: string,
+        @Args('title', { nullable: true }) title: string,
         @Context() context: any,
     ): Promise<Post> {
         const userId = context.req.user.id;
-        return this.postsService.updatePost(id, content, userId);
+        return this.postsService.updatePost(id, content, userId, title);
     }
 
     @Mutation(() => Boolean, { name: 'deletePost' })

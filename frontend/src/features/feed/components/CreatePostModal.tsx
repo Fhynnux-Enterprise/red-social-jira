@@ -29,20 +29,24 @@ interface CreatePostModalProps {
     visible: boolean;
     onClose: () => void;
     initialContent?: string;
+    initialTitle?: string;
     postId?: string;
 }
 
-export default function CreatePostModal({ visible, onClose, initialContent = '', postId }: CreatePostModalProps) {
+const MAX_TITLE_LENGTH = 100;
+
+export default function CreatePostModal({ visible, onClose, initialContent = '', initialTitle = '', postId }: CreatePostModalProps) {
     const { colors } = useTheme();
     const [content, setContent] = React.useState(initialContent);
-    const [localMediaList, setLocalMediaList] = React.useState<{ 
-        uri: string, 
-        type: string, 
+    const [title, setTitle] = React.useState(initialTitle);
+    const [localMediaList, setLocalMediaList] = React.useState<{
+        uri: string,
+        type: string,
         mimeType: string,
         isValid: boolean,
         errorMessage?: string,
         uploadStatus?: 'idle' | 'compressing' | 'uploading' | 'done' | 'error',
-        progress: number 
+        progress: number
     }[]>([]);
     const [isUploadingMedia, setIsUploadingMedia] = React.useState(false);
     const { userToken } = useAuth();
@@ -53,18 +57,18 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
             handleClose();
         }
     }, [userToken, visible]);
-    
+
     // Estado para alertas personalizadas
     const [alertConfig, setAlertConfig] = React.useState<{
         visible: boolean;
         title: string;
         message: string;
         buttons: { text: string; onPress: () => void; style?: 'cancel' | 'default' }[];
-    }>({ 
-        visible: false, 
-        title: '', 
-        message: '', 
-        buttons: [] 
+    }>({
+        visible: false,
+        title: '',
+        message: '',
+        buttons: []
     });
 
     const insets = useSafeAreaInsets();
@@ -73,15 +77,16 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
     React.useEffect(() => {
         if (visible) {
             setContent(initialContent);
+            setTitle(initialTitle);
             setLocalMediaList([]);
             setIsUploadingMedia(false);
         }
-    }, [visible, initialContent]);
+    }, [visible, initialContent, initialTitle]);
 
     // Generamos estilos dinámicos que reaccionan al tema
     const styles = useMemo(() => getStyles(colors), [colors]);
 
-    const { data: meData } = useQuery(GET_ME, {
+    const { data: meData } = useQuery<any>(GET_ME, {
         fetchPolicy: 'cache-only', // Since the feed already fetches it, we can read it from cache
     });
     const currentUser = meData?.me;
@@ -135,7 +140,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                         return { ...item, isValid: false, errorMessage: 'Límite de videos' };
                     }
                 }
-                
+
                 // Regla 3: Máximo 10 archivos en total
                 if (index >= 10) {
                     return { ...item, isValid: false, errorMessage: 'Límite 10 archivos' };
@@ -153,7 +158,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
 
         // Verificación de archivos inválidos
         const hasInvalidItems = localMediaList.some(m => !m.isValid);
-        
+
         if (hasInvalidItems) {
             setAlertConfig({
                 visible: true,
@@ -161,10 +166,12 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                 message: "Algunos de tus archivos exceden los límites de la plataforma y no serán incluidos en la publicación. ¿Deseas subir el contenido válido de todos modos?",
                 buttons: [
                     { text: "Cancelar", style: "cancel", onPress: () => setAlertConfig(p => ({ ...p, visible: false })) },
-                    { text: "Publicar válidos", onPress: () => {
-                        setAlertConfig(p => ({ ...p, visible: false }));
-                        processUpload(true);
-                    }}
+                    {
+                        text: "Publicar válidos", onPress: () => {
+                            setAlertConfig(p => ({ ...p, visible: false }));
+                            processUpload(true);
+                        }
+                    }
                 ]
             });
         } else {
@@ -173,7 +180,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
     };
 
     const processUpload = async (filterInvalid: boolean) => {
-        const mediaToUpload = filterInvalid 
+        const mediaToUpload = filterInvalid
             ? localMediaList.filter(m => m.isValid)
             : localMediaList;
 
@@ -192,7 +199,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
 
         try {
             let mediaInput: { url: string, type: string, order: number }[] = [];
-            
+
             if (mediaToUpload.length > 0) {
                 setIsUploadingMedia(true);
                 const uploadPromises = mediaToUpload.map(async (media, index) => {
@@ -231,7 +238,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                     try {
                         const uploadedUrl = await uploadMedia(finalUri, media.mimeType, 'posts');
                         clearInterval(uploadInterval);
-                        
+
                         // 3. ¡Terminado al 100%!
                         setLocalMediaList(prev => prev.map(m => m.uri === media.uri ? { ...m, uploadStatus: 'done' as const, progress: 100 } : m));
 
@@ -249,13 +256,15 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
             }
 
             if (postId) {
-                await updatePost({ variables: { id: postId, content } });
+                await updatePost({ variables: { id: postId, content, title: title.trim() || null } });
                 setContent('');
+                setTitle('');
                 Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'La publicación fue modificada' });
                 onClose();
             } else {
-                await createPost({ variables: { content, media: mediaInput.length > 0 ? mediaInput : null } });
+                await createPost({ variables: { content, title: title.trim() || null, media: mediaInput.length > 0 ? mediaInput : null } });
                 setContent('');
+                setTitle('');
                 Toast.show({ type: 'success', text1: '¡Publicado!', text2: 'Tu post está ahora en el Feed.' });
                 onClose();
             }
@@ -269,6 +278,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
 
     const handleClose = () => {
         setContent(''); // Clean the input when closing
+        setTitle('');
         setLocalMediaList([]);
         onClose();
     };
@@ -325,6 +335,25 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                                 {currentUser ? `${currentUser.firstName} ${currentUser.lastName}` : 'Tú'}
                             </Text>
                         </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 2 }}>
+                            <TextInput
+                                style={[styles.titleInput, { flex: 1, paddingTop: 0 }]}
+                                placeholder="Añade un título (opcional)..."
+                                placeholderTextColor={colors.textSecondary}
+                                value={title}
+                                onChangeText={setTitle}
+                                editable={!isLoading}
+                                maxLength={MAX_TITLE_LENGTH}
+                                multiline
+                            />
+                            <Text style={[
+                                styles.charCounter, 
+                                title.length >= 90 ? { color: '#ff4444' } : { color: colors.textSecondary },
+                                { marginTop: 4 }
+                            ]}>
+                                {title.length} / {MAX_TITLE_LENGTH}
+                            </Text>
+                        </View>
                         <TextInput
                             style={styles.input}
                             placeholder="¿Qué está pasando en Chunchi?"
@@ -379,11 +408,11 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                                                 <Text style={styles.invalidText}>{mediaItem.errorMessage}</Text>
                                             </View>
                                         )}
-                                        
+
                                         {/* 4. Feedback Visual Overlay de Subida (Activo) */}
                                         {mediaItem.uploadStatus && mediaItem.uploadStatus !== 'idle' && (
                                             <View style={[
-                                                styles.uploadOverlay, 
+                                                styles.uploadOverlay,
                                                 mediaItem.uploadStatus === 'done' && styles.uploadDoneOverlay
                                             ]}>
                                                 {mediaItem.uploadStatus === 'done' ? (
@@ -520,6 +549,17 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
         fontWeight: 'bold',
         fontSize: 16,
     },
+    titleInput: {
+        color: colors.text,
+        fontSize: 20, // Increased from 19 to 20
+        fontWeight: 'bold',
+        marginBottom: 0,
+    },
+    charCounter: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        marginLeft: 8,
+    },
     input: {
         flex: 1,
         color: colors.text,
@@ -626,6 +666,13 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
         fontWeight: 'bold',
         marginBottom: 12,
         textAlign: 'center',
+    },
+    postTitle: {
+        color: colors.text,
+        fontSize: 16,
+        fontWeight: 'bold',
+        paddingHorizontal: 14,
+        marginBottom: 6,
     },
     alertMessage: {
         color: colors.textSecondary,

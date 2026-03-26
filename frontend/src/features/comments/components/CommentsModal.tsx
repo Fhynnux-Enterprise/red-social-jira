@@ -59,11 +59,14 @@ export interface CommentsModalProps {
     onPrevPost?: () => void;
     nextPost?: any | null;
     prevPost?: any | null;
+    onOptionsPress?: (post: any) => void;
+    initialExpanded?: boolean;
 }
 export default function CommentsModal({
     visible, post, onClose,
     initialMinimized = false, initialTab = 'comments',
-    onNextPost, onPrevPost, nextPost, prevPost
+    onNextPost, onPrevPost, nextPost, prevPost,
+    onOptionsPress, initialExpanded = false
 }: CommentsModalProps) {
     const { colors, isDark } = useTheme();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
@@ -108,10 +111,10 @@ export default function CommentsModal({
     }, [postId]);
 
     // Lógica para determinar si el texto es largo
-    const TEXT_LIMIT = 200;
+    const TEXT_LIMIT = 90;
     const isTextLong = (post?.content?.length || 0) > TEXT_LIMIT;
     const displayContent = isTextLong && !isExpanded
-        ? post?.content.substring(0, TEXT_LIMIT) + '...'
+        ? post?.content.substring(0, TEXT_LIMIT).trimEnd()
         : post?.content;
 
     // =======================================================================================
@@ -121,12 +124,12 @@ export default function CommentsModal({
     // 1. ESPACIO DESDE ARRIBA (Haz esto más pequeño para que la publicación suba)
     // 0 es el límite absoluto de la zona segura (la cámara o barra de estado de tu celular).
     // Ponlo en 0, 2 o 4 para aprovechar pantalla hacia arriba.
-    const TOP_SPACING = 0;
+    const TOP_SPACING = -12;
 
     // 2. ESPACIO CON LA BARRA INFERIOR (Haz esto más pequeño para que baje MAS la tarjeta)
     // Este valor restringe la tarjeta minimizada para que no se encima con tu barra negra.
     // Bájalo a 45 o 40 si quieres que llegue rozando, o súbelo si la tapa.
-    const BOTTOM_SPACING = 50;
+    const BOTTOM_SPACING = 40;
 
     // 2. TAMAÑO CUANDO EL CAJÓN DE COMENTARIOS ESTÁ ABIERTO
     // Puedes ajustar este multiplicador (p. ej 0.45) para que el post no se acorte tanto al leer comentarios.
@@ -374,7 +377,7 @@ export default function CommentsModal({
             setIsMinimized(initialMinimized);
             setActiveTab(initialTab);
             activeTabRef.current = initialTab;
-            setIsExpanded(false); // Reset al abrir o cambiar
+            setIsExpanded(initialExpanded); // Inicializar según el prop
             Animated.spring(panY, {
                 toValue: 0,
                 useNativeDriver: true,
@@ -910,10 +913,22 @@ export default function CommentsModal({
                                     </View>
                                 </TouchableOpacity>
 
-                                <TouchableOpacity onPress={closeWithAnimation} style={styles.postCloseBtn}
-                                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                                    <Ionicons name="close" size={24} color={colors.textSecondary} />
-                                </TouchableOpacity>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', position: 'absolute', right: 14, top: 14, zIndex: 10 }}>
+                                    {post.author?.id === currentUser?.id && (
+                                        <TouchableOpacity
+                                            onPress={() => onOptionsPress?.(post)}
+                                            style={{ marginRight: 16 }}
+                                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                                        >
+                                            <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                    )}
+
+                                    <TouchableOpacity onPress={closeWithAnimation}
+                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                                        <Ionicons name="close" size={24} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                </View>
                             </View>
 
                             <ScrollView
@@ -926,7 +941,7 @@ export default function CommentsModal({
                                 bounces={false}
                                 alwaysBounceVertical={false}
                                 overScrollMode="never"
-                                contentContainerStyle={{ paddingBottom: 16 }}
+                                contentContainerStyle={{ paddingBottom: 0 }}
                                 style={styles.postScrollView}
                                 scrollEventThrottle={8}
                                 onLayout={(e) => {
@@ -989,24 +1004,37 @@ export default function CommentsModal({
                                     }
                                 }}
                             >
-                                <Animated.View collapsable={false} {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 10, overflow: 'hidden', zIndex: 1 }}>
-                                    <View style={{ marginBottom: 4 }}>
+                                <Animated.View collapsable={false} {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 8, overflow: 'hidden', zIndex: 1 }}>
+                                    <View style={{ marginBottom: 1 }}>
                                         <TouchableOpacity
                                             activeOpacity={0.8}
                                             onPress={() => isTextLong && setIsExpanded(!isExpanded)}
                                             onLongPress={() => setIsCopyModalVisible(true)}
                                             delayLongPress={250}
                                         >
-                                            <Text style={[styles.postContent, { color: colors.text }]}>{displayContent}</Text>
+                                            {post.title && (
+                                                <Text style={[styles.postTitleTitle, { color: colors.text }]}>{post.title}</Text>
+                                            )}
+                                            <Text style={[styles.postContent, { color: colors.text }]}>
+                                                {displayContent}
+                                                {isTextLong && !isExpanded && (
+                                                    <Text 
+                                                        onPress={() => setIsExpanded(true)} 
+                                                        style={[styles.seeMoreText, { color: colors.primary }]}
+                                                    >
+                                                        ... más
+                                                    </Text>
+                                                )}
+                                            </Text>
                                         </TouchableOpacity>
 
-                                        {isTextLong && (
+                                        {isTextLong && isExpanded && (
                                             <TouchableOpacity
-                                                onPress={() => setIsExpanded(!isExpanded)}
+                                                onPress={() => setIsExpanded(false)}
                                                 style={styles.seeMoreBtn}
                                             >
                                                 <Text style={[styles.seeMoreText, { color: colors.primary }]}>
-                                                    {isExpanded ? 'Ver menos' : 'Ver más'}
+                                                    Ver menos
                                                 </Text>
                                             </TouchableOpacity>
                                         )}
@@ -1021,7 +1049,7 @@ export default function CommentsModal({
                                                 containerWidth={SCREEN_WIDTH}
                                                 imageResizeMode="cover"
                                                 dynamicAspectRatio={false}
-                                                customAspectRatio={1080 / 1512}
+                                                customAspectRatio={1080 / 1440}
                                                 isInteractive={true}
                                                 onSwipeClose={(carouselPanX) => {
                                                     // Sincronizamos el panX del modal con el que viene del carrusel
@@ -1322,16 +1350,12 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
-        borderWidth: 1.5,
-        borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+        borderWidth: 0,
         // Fondo adaptado al tema (no negro total)
         backgroundColor: colors.surface,
     },
     postScrollView: {
         flexShrink: 1,
-        // Un borde sutil a la derecha que simula el rail del scroll
-        borderRightWidth: 1.5,
-        borderRightColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
     },
     postScrollContent: {
         paddingBottom: 16
@@ -1340,7 +1364,6 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         paddingTop: 14,
         paddingBottom: 10,
         paddingHorizontal: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
         alignItems: 'center',
     },
     postAuthorRow: {
@@ -1352,6 +1375,7 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     },
     postAuthorName: { fontWeight: 'bold', fontSize: 15, marginBottom: 2 },
     postDate: { fontSize: 12 },
+    postTitleTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 6 },
     postContent: { fontSize: 15, lineHeight: 22 },
     seeMoreBtn: {
         marginTop: 4,
@@ -1362,7 +1386,7 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         fontSize: 14,
         fontWeight: '700',
     },
-    postFooterFixed: { borderTopWidth: StyleSheet.hairlineWidth },
+    postFooterFixed: { },
     statsRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -1374,7 +1398,6 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         flexDirection: 'row',
         paddingHorizontal: 14,
         paddingVertical: 8,
-        borderTopWidth: StyleSheet.hairlineWidth,
     },
     actionBtn: { flexDirection: 'row', alignItems: 'center', marginRight: 24, paddingVertical: 2 },
     actionText: { marginLeft: 6, fontSize: 14, fontWeight: '500' },
@@ -1387,8 +1410,7 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
-        borderWidth: 1.5,
-        borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+        borderWidth: 0,
         backgroundColor: colors.surface,
     },
     commentsHeader: {
@@ -1396,7 +1418,6 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         justifyContent: 'center',
         paddingTop: 7,
         paddingBottom: 6,
-        borderBottomWidth: StyleSheet.hairlineWidth,
         backgroundColor: colors.surface,
     },
     dragHandle: {
