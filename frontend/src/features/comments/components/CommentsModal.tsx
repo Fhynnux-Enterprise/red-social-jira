@@ -995,7 +995,7 @@ export default function CommentsModal({
                                             <ImageCarousel
                                                 key={post?.id}
                                                 media={post.media}
-                                                containerWidth={SCREEN_WIDTH - 8}
+                                                containerWidth={SCREEN_WIDTH}
                                                 imageResizeMode="cover"
                                                 dynamicAspectRatio={false}
                                                 customAspectRatio={1080 / 1512}
