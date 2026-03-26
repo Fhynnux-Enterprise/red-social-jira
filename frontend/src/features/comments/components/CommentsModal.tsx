@@ -98,13 +98,12 @@ export default function CommentsModal({
     useEffect(() => {
         if (scrollViewRef.current && postId) {
             scrollViewRef.current.scrollTo({ y: 0, animated: false });
+            currentScrollY.current = 0;
         }
         // Reset: el usuario aún no exploró este post hacia abajo
         hasScrolledDown.current = false;
         // Iniciar con scroll desactivado para que el primer toque en y=0
         // sea capturado por tiktokSwipePan (prev post desde el primer drag).
-        // Si el usuario quiere scrollear abajo, onPanResponderRelease lo detecta
-        // (no está al fondo), rebota y re-habilita el scroll automáticamente.
         setScrollEnabled(false);
     }, [postId]);
 
@@ -115,9 +114,24 @@ export default function CommentsModal({
         ? post?.content.substring(0, TEXT_LIMIT) + '...'
         : post?.content;
 
-    // Puedes ajustar este valor entre 0.38 y 0.60 para que la publicación se extienda más hacia abajo 
-    // y quede más cerca o más lejos del inicio del panel de comentarios (la barra de comentarios/likes).
+    // =======================================================================================
+    // 🎛️ CONTROLES DE PANTALLA AJUSTABLES PARA EL TAMAÑO DE LA COMPOSICIÓN (MODIFICA AQUÍ)
+    // =======================================================================================
+    
+    // 1. ESPACIO DESDE ARRIBA (Haz esto más pequeño para que la publicación suba)
+    // 0 es el límite absoluto de la zona segura (la cámara o barra de estado de tu celular).
+    // Ponlo en 0, 2 o 4 para aprovechar pantalla hacia arriba.
+    const TOP_SPACING = 0;
+
+    // 2. ESPACIO CON LA BARRA INFERIOR (Haz esto más pequeño para que baje MAS la tarjeta)
+    // Este valor restringe la tarjeta minimizada para que no se encima con tu barra negra.
+    // Bájalo a 45 o 40 si quieres que llegue rozando, o súbelo si la tapa.
+    const BOTTOM_SPACING = 50;
+
+    // 2. TAMAÑO CUANDO EL CAJÓN DE COMENTARIOS ESTÁ ABIERTO
+    // Puedes ajustar este multiplicador (p. ej 0.45) para que el post no se acorte tanto al leer comentarios.
     const POST_EXPANDED_MAX_HEIGHT = SCREEN_HEIGHT * 0.35;
+    // =======================================================================================
 
     const navigateToProfile = (userId: string) => {
         onClose();
@@ -206,12 +220,11 @@ export default function CommentsModal({
         onMoveShouldSetPanResponderCapture: (_, g) => {
             if (!(Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx))) return false;
             if (!postScrollEnabledRef.current) return true;
-            // En el tope, g.dy > 0 (dedo baja) EN y=0 SIEMPRE es "post anterior"
-            // No hay scroll válido hacia arriba cuando ya estás al tope
-            const atTop = currentScrollY.current <= 2 && g.dy > 0;
-            // Captura al fondo ABAJO siempre (el usuario claramente llegó al final)
+            // En el tope, si arrastra abajo (g.dy > 0) -> quiere el post anterior
+            const atTop = currentScrollY.current <= 5 && g.dy > 0;
+            // Captura al fondo arrastrando arriba (g.dy < 0) -> post siguiente
             const atBottom =
-                currentScrollY.current + postScrollHeight.current >= postScrollContentHeight.current - 2
+                currentScrollY.current + postScrollHeight.current >= postScrollContentHeight.current - 5
                 && g.dy < 0;
             return atTop || atBottom;
         },
@@ -822,7 +835,7 @@ export default function CommentsModal({
 
             {/* Exterior: mueve bottom con el teclado (JS driver) */}
             <Animated.View
-                style={[styles.container, { top: insets.top + 6, bottom: keyboardOffset }]}
+                style={[styles.container, { top: insets.top + TOP_SPACING, bottom: keyboardOffset }]}
                 pointerEvents="box-none"
             >
                 {/* Interior: drag translateY (native driver) */}
@@ -830,7 +843,7 @@ export default function CommentsModal({
                 <Animated.View
                     style={[
                         { flex: 1, gap: 8 },
-                        isMinimized ? { justifyContent: 'center', paddingBottom: Math.max(insets.bottom, 16) + 50 } : {},
+                        isMinimized ? { justifyContent: 'center', paddingBottom: BOTTOM_SPACING } : {},
                         { transform: [{ translateY: panY }, { translateY: panYPost }] }
                     ]}
                     pointerEvents="box-none"
@@ -842,8 +855,8 @@ export default function CommentsModal({
                             style={[
                                 styles.postBubble,
                                 isMinimized
-                                    ? { maxHeight: SCREEN_HEIGHT - insets.top - 6 - Math.max(insets.bottom, 72) }
-                                    // POST_EXPANDED_MAX_HEIGHT en línea 103: ajusta entre 0.38 y 0.65
+                                    ? { flexShrink: 1, maxHeight: SCREEN_HEIGHT - insets.top - TOP_SPACING - BOTTOM_SPACING }
+                                    // POST_EXPANDED_MAX_HEIGHT en línea superior: ajusta su fracción
                                     : { maxHeight: POST_EXPANDED_MAX_HEIGHT, flexShrink: 1 },
                                 { opacity: postTransition, transform: [{ translateY: slideY }, { translateX: panX }] }
                             ]}
@@ -936,7 +949,8 @@ export default function CommentsModal({
                                         setScrollEnabled(true);
                                     }
 
-                                    // Transición automática por velocidad (sigue funcionando sin seguimiento)
+                                    // Transición automática rápida (velocidad bruta)
+
                                     if (postScrollDragStartY.current <= 5 && endY <= 5 && vy > 0.5) {
                                         Animated.timing(panYPost, {
                                             toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
@@ -982,9 +996,9 @@ export default function CommentsModal({
                                                 key={post?.id}
                                                 media={post.media}
                                                 containerWidth={SCREEN_WIDTH - 8}
-                                                imageResizeMode="contain"
-                                                dynamicAspectRatio={true}
-                                                customAspectRatio={undefined}
+                                                imageResizeMode="cover"
+                                                dynamicAspectRatio={false}
+                                                customAspectRatio={1080 / 1512}
                                                 isInteractive={true}
                                                 onSwipeClose={(carouselPanX) => {
                                                     // Sincronizamos el panX del modal con el que viene del carrusel
@@ -1043,7 +1057,7 @@ export default function CommentsModal({
 
                     {/* ── BUBBLE COMENTARIOS NORMAL (Visible cuando maximizado) ── */}
                     {!isMinimized && (
-                        <Animated.View style={[styles.commentsBubble, { backgroundColor: colors.surface, flex: 1 }, { opacity: postTransition, transform: [{ translateY: slideY }] }]} {...tabSwipePan.panHandlers}>
+                        <Animated.View style={[styles.commentsBubble, { flex: 1 }, { opacity: postTransition, transform: [{ translateY: slideY }] }]} {...tabSwipePan.panHandlers}>
 
                             <View style={[styles.commentsHeader, { borderBottomColor: colors.border }]} {...commentsHeaderPan.panHandlers}>
                                 <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
@@ -1174,10 +1188,10 @@ export default function CommentsModal({
                                 )}
 
                                 {activeTab === 'comments' && (
-                                    <View style={[styles.inputContainer, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
+                                    <View style={[styles.inputContainer, { borderTopColor: colors.border }]}>
                                         <TextInput
                                             ref={inputRef}
-                                            style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                                            style={[styles.input, { color: colors.text }]}
                                             placeholder="Escribe un comentario..."
                                             placeholderTextColor={colors.textSecondary}
                                             value={content}
@@ -1211,19 +1225,19 @@ export default function CommentsModal({
                         right: -4,
                         bottom: -Math.max(insets.bottom, 16),
                         backgroundColor: '#000000',
-                        paddingBottom: Math.max(insets.bottom, 16) + 12,
-                        paddingTop: 16,
+                        paddingBottom: Math.max(insets.bottom, 16) + 4,
+                        paddingTop: 10,
                         borderTopWidth: StyleSheet.hairlineWidth,
-                        borderTopColor: '#222222'
+                        borderTopColor: '#333333'
                     }}>
                         <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-around', alignItems: 'center' }}>
                             <TouchableOpacity onPress={() => { setActiveTab('likes'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
-                                <Ionicons name="heart-outline" size={26} color={activeTab === 'likes' ? colors.primary : "#FFFFFF"} />
-                                <Text style={{ color: activeTab === 'likes' ? colors.primary : '#FFFFFF', marginTop: 4, fontSize: 13, fontWeight: '500' }}>Likes</Text>
+                                <Ionicons name="heart-outline" size={22} color={activeTab === 'likes' ? colors.primary : "#FFFFFF"} />
+                                <Text style={{ color: activeTab === 'likes' ? colors.primary : '#FFFFFF', marginTop: 2, fontSize: 11, fontWeight: '500' }}>Likes</Text>
                             </TouchableOpacity>
                             <TouchableOpacity onPress={() => { setActiveTab('comments'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
-                                <Ionicons name="chatbubbles-outline" size={26} color={activeTab === 'comments' ? colors.primary : "#FFFFFF"} />
-                                <Text style={{ color: activeTab === 'comments' ? colors.primary : '#FFFFFF', marginTop: 4, fontSize: 13, fontWeight: '500' }}>Comentarios</Text>
+                                <Ionicons name="chatbubbles-outline" size={22} color={activeTab === 'comments' ? colors.primary : "#FFFFFF"} />
+                                <Text style={{ color: activeTab === 'comments' ? colors.primary : '#FFFFFF', marginTop: 2, fontSize: 11, fontWeight: '500' }}>Comentarios</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -1285,8 +1299,10 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
-        // Fondo gris un poco más oscuro en light mode para resaltar el scrollbar
-        backgroundColor: isDark ? colors.surface : '#EBEBEB',
+        borderWidth: 1.5,
+        borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+        // Fondo adaptado al tema (no negro total)
+        backgroundColor: colors.surface,
     },
     postScrollView: {
         flexShrink: 1,
@@ -1348,6 +1364,8 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
+        borderWidth: 1.5,
+        borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
         backgroundColor: colors.surface,
     },
     commentsHeader: {

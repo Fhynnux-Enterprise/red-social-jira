@@ -645,13 +645,15 @@ const FullscreenVideoModal = React.forwardRef(({
 
     const handleFsPress = () => {
         try {
-            if (fsPlayer?.playing) {
-                fsPlayer.pause();
-                setShowFsControls(true);
-                if (fsControlsTimeout.current) clearTimeout(fsControlsTimeout.current);
-            } else {
-                fsPlayer?.play();
-                setShowFsControls(false);
+            if (fsPlayer && typeof fsPlayer.play === 'function') {
+                if (fsPlayer.playing) {
+                    fsPlayer.pause();
+                    setShowFsControls(true);
+                    if (fsControlsTimeout.current) clearTimeout(fsControlsTimeout.current);
+                } else {
+                    fsPlayer.play();
+                    setShowFsControls(false);
+                }
             }
         } catch (e) {
             // Likely released
@@ -685,12 +687,15 @@ const FullscreenVideoModal = React.forwardRef(({
                     style={{ flex: 1, transform: [{ translateY: swipeTranslateY }] }}
                     {...swipePan.panHandlers}
                 >
-                    <VideoView
-                        player={fsPlayer}
-                        style={StyleSheet.absoluteFill}
-                        contentFit="contain"
-                        nativeControls={false}
-                    />
+                    {fsPlayer && (
+                        <VideoView
+                            key={url}
+                            player={fsPlayer}
+                            style={StyleSheet.absoluteFill}
+                            contentFit="contain"
+                            nativeControls={false}
+                        />
+                    )}
 
                     <TouchableOpacity activeOpacity={1} onPress={handleFsPress} style={StyleSheet.absoluteFill} />
 
@@ -829,13 +834,15 @@ function InteractiveVideoPlayer({
     const handlePress = () => {
         if (!isInteractive) { onExpand?.(); return; }
         try {
-            if (player?.playing) {
-                player.pause();
-                setShowControls(true);
-                if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
-            } else {
-                player?.play();
-                setShowControls(false);
+            if (player && typeof player.play === 'function') {
+                if (player.playing) {
+                    player.pause();
+                    setShowControls(true);
+                    if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
+                } else {
+                    player.play();
+                    setShowControls(false);
+                }
             }
         } catch (e) {
             // Silent error during release
@@ -848,13 +855,16 @@ function InteractiveVideoPlayer({
     return (
         <View style={{ width, height, backgroundColor: '#000', overflow: 'hidden' }}>
 
-            <VideoView
-                player={player}
-                style={StyleSheet.absoluteFill}
-                contentFit={contentFit}
-                nativeControls={false}
-                surfaceType="textureView"
-            />
+            {player && (
+                <VideoView
+                    key={url}
+                    player={player}
+                    style={StyleSheet.absoluteFill}
+                    contentFit={contentFit}
+                    nativeControls={false}
+                    surfaceType="textureView"
+                />
+            )}
 
             <TouchableOpacity activeOpacity={1} onPress={handlePress} style={StyleSheet.absoluteFill} />
 

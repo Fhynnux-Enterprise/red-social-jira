@@ -17,11 +17,11 @@ export const colors = {
         error: '#B00020',
     },
     dark: {
-        background: '#121212',
-        surface: '#1E1E1E',
+        background: '#080808',
+        surface: '#111111',
         text: '#FFFFFF',
         textSecondary: '#B3B3B3',
-        border: '#333333',
+        border: '#1F1F1F',
         error: '#CF6679',
     },
 };
