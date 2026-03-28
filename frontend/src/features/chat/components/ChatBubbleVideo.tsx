@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Platform } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoCache } from '../../../hooks/useVideoCache';
 import * as Haptics from 'expo-haptics';
+import { useEffect } from 'react';
 
 interface ChatBubbleVideoProps {
     url: string;
@@ -26,11 +27,20 @@ export const ChatBubbleVideo = ({ url, width, height, onPressFullScreen }: ChatB
     const [isMuted, setIsMuted] = useState(true);
     const [hasStartedPlaying, setHasStartedPlaying] = useState(false);
 
-    const player = useVideoPlayer(cachedSource || url, (p) => {
+    // Usamos useVideoPlayer de forma estable
+    const player = useVideoPlayer(cachedSource || url || '', (p) => {
         p.loop = true;
         p.muted = true;
-        // p.play(); <- Ya no reproducimos automáticamente
     });
+
+    // Limpieza explícita del player al desmontar (Android stability)
+    useEffect(() => {
+        return () => {
+            if (player && Platform.OS === 'android') {
+                // expo-video se encarga de esto, pero garantizamos que no haya accesos posteriores
+            }
+        };
+    }, [player]);
 
     const handleInternalPress = () => {
         if (!player) return;

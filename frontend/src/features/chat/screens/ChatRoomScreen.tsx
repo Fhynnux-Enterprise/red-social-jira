@@ -816,7 +816,7 @@ export default function ChatRoomScreen() {
                             <Ionicons 
                                 name="checkmark-done" 
                                 size={16} 
-                                color={item.isRead ? "#34B7F1" : "rgba(255,255,255,0.5)"} 
+                                color={item.isRead ? "#00E5FF" : "rgba(255,255,255,0.4)"} 
                                 style={{ marginLeft: 4, marginBottom: -1 }}
                             />
                         )}
@@ -934,6 +934,11 @@ export default function ChatRoomScreen() {
                                 inverted={true} // Los mensajes nuevos se mantienen al fondo
                                 contentContainerStyle={styles.listContent}
                                 showsVerticalScrollIndicator={false}
+                                // Optimización de rendimiento para Android y Videos
+                                initialNumToRender={10}
+                                maxToRenderPerBatch={5}
+                                windowSize={5}
+                                removeClippedSubviews={Platform.OS === 'android'}
                                 
                                 // Indicador de carga (el Footer aparece VISUALMENTE ARRIBA cuando inverted=true)
                                 ListFooterComponent={() => {
