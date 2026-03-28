@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
@@ -32,10 +32,33 @@ export default function ChatListScreen() {
     const [isMenuVisible, setIsMenuVisible] = React.useState(false);
     const [isConfirmModalVisible, setIsConfirmModalVisible] = React.useState(false);
 
+    const [isRefreshing, setIsRefreshing] = React.useState(false);
+
     const { data, loading, refetch } = useQuery(GET_USER_CONVERSATIONS, {
         fetchPolicy: 'cache-and-network',
-        pollInterval: 10000, 
+        // Sin pollInterval: el ícono de recarga aparecía cada 10s porque Apollo
+        // refetcheaba en background y `loading` se ponía true, lo cual activaba
+        // el RefreshControl nativo. Eliminamos el polling — la lista se actualiza
+        // al entrar a la pantalla gracias a cache-and-network, y manualmente con pull-to-refresh.
+        notifyOnNetworkStatusChange: false, // Evitar que loading flipee en background fetches
     });
+
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        try {
+            await refetch();
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
+
+    // Al volver de un ChatRoom, refrescamos la lista para mostrar el último mensaje actualizado.
+    // Esto reemplaza el pollInterval eliminado — es más eficiente porque solo corre al enfocar la pantalla.
+    useFocusEffect(
+        useCallback(() => {
+            refetch();
+        }, [refetch])
+    );
 
     const [deleteConversationForMeMutation] = useMutation(DELETE_CONVERSATION_FOR_ME);
 
@@ -230,7 +253,7 @@ export default function ChatListScreen() {
                     contentContainerStyle={styles.listContainer}
                     ListHeaderComponent={renderActiveUsers}
                     refreshControl={
-                        <RefreshControl refreshing={loading} onRefresh={refetch} tintColor={colors.primary} />
+                        <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
                     }
                 />
             )}

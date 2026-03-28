@@ -243,4 +243,31 @@ export class ChatService {
             .orderBy('message.createdAt', 'DESC')
             .getMany();
     }
+
+    async markMessagesAsRead(id_conversation: string, userId: string): Promise<boolean> {
+        // Marcamos como leídos todos los mensajes de la conversación que no fueron enviados por el usuario actual
+        // y que aún no están marcados como leídos.
+        await this.messageRepository.createQueryBuilder()
+            .update(Message)
+            .set({ isRead: true })
+            .where('id_conversation = :id_conversation', { id_conversation })
+            .andWhere('id_user != :userId', { userId })
+            .andWhere('isRead = false')
+            .execute();
+
+        // Buscamos el último mensaje para guardarlo como referencia en el participante
+        const lastMessage = await this.messageRepository.findOne({
+            where: { id_conversation },
+            order: { createdAt: 'DESC' }
+        });
+
+        if (lastMessage) {
+            await this.participantRepository.update(
+                { id_conversation, id_user: userId },
+                { id_last_read_message: lastMessage.id_message }
+            );
+        }
+
+        return true;
+    }
 }

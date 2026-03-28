@@ -28,12 +28,16 @@ const authLink = setContext(async (_, { headers }) => {
 });
 
 // Global Error Link for Apollo Client
-const errorLink = onError(({ graphQLErrors, networkError }) => {
+const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
     let isUnauthorized = false;
 
     if (graphQLErrors) {
-        graphQLErrors.forEach(({ extensions, message }) => {
-            // Buscamos el código estándar UNAUTHENTICATED o la palabra Unauthorized en el mensaje
+        graphQLErrors.forEach(({ extensions, message, path }) => {
+            // Ignoramos errores 401 que vengan de suscripciones WebSocket (messageAdded).
+            // Esos son esperados y no indican sesión expirada del usuario.
+            const isFromSubscription = path && path.includes('messageAdded');
+            if (isFromSubscription) return;
+
             if (
                 extensions?.code === 'UNAUTHENTICATED' ||
                 extensions?.code === '401' ||

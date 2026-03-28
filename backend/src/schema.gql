@@ -158,6 +158,11 @@ type UploadUrlResponse {
   publicUrl: String!
 }
 
+type ReadMessagesPayload {
+  id_conversation: String!
+  readerId: String!
+}
+
 type Query {
   """Verifica si el servidor GraphQL está funcionando"""
   ping: String!
@@ -199,6 +204,7 @@ type Mutation {
   editMessage(id_message: String!, newContent: String!): Message!
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
   sendMessage(id_conversation: String!, content: String = "", imageUrl: String, videoUrl: String): Message!
+  markMessagesAsRead(id_conversation: String!): Boolean!
   createStory(mediaUrl: String!, mediaType: String!): Story!
   deleteStory(id: String!): Boolean!
 }
@@ -211,4 +217,5 @@ input PostMediaInput {
 
 type Subscription {
   messageAdded(id_conversation: String!): Message!
+  messagesRead(id_conversation: String!): ReadMessagesPayload!
 }

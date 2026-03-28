@@ -1,4 +1,4 @@
-import { Resolver, Query, Mutation, Args, ResolveField, Parent, Subscription } from '@nestjs/graphql';
+import { Resolver, Query, Mutation, Args, ResolveField, Parent, Subscription, ObjectType, Field } from '@nestjs/graphql';
 import { PubSub } from 'graphql-subscriptions';
 
 const pubSub = new PubSub();
@@ -13,8 +13,16 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateChatArgs, SendMessageArgs } from './dto/chat.args';
 
+@ObjectType()
+export class ReadMessagesPayload {
+    @Field()
+    id_conversation: string;
+
+    @Field()
+    readerId: string;
+}
+
 @Resolver(() => Conversation)
-@UseGuards(GqlAuthGuard)
 export class ChatResolver {
     constructor(
         private readonly chatService: ChatService,
@@ -23,11 +31,13 @@ export class ChatResolver {
     ) { }
 
     @Query(() => [Conversation], { name: 'getUserConversations' })
+    @UseGuards(GqlAuthGuard)
     async getUserConversations(@CurrentUser() user: User) {
         return this.chatService.getUserConversations(user.id);
     }
 
     @Query(() => [Message], { name: 'getChatMessages' })
+    @UseGuards(GqlAuthGuard)
     async getChatMessages(
         @CurrentUser() user: User,
         @Args('id_conversation') id_conversation: string,
@@ -55,6 +65,7 @@ export class ChatResolver {
     }
 
     @Mutation(() => Boolean)
+    @UseGuards(GqlAuthGuard)
     async deleteMessageForMe(
         @CurrentUser() user: User,
         @Args('id_message') id_message: string,
@@ -63,6 +74,7 @@ export class ChatResolver {
     }
 
     @Mutation(() => Boolean)
+    @UseGuards(GqlAuthGuard)
     async deleteMessageForAll(
         @CurrentUser() user: User,
         @Args('id_message') id_message: string,
@@ -71,6 +83,7 @@ export class ChatResolver {
     }
 
     @Mutation(() => Boolean)
+    @UseGuards(GqlAuthGuard)
     async deleteConversationForMe(
         @CurrentUser() user: User,
         @Args('id_conversation') id_conversation: string,
@@ -79,6 +92,7 @@ export class ChatResolver {
     }
 
     @Mutation(() => Message)
+    @UseGuards(GqlAuthGuard)
     async editMessage(
         @CurrentUser() user: User,
         @Args('id_message') id_message: string,
@@ -88,6 +102,7 @@ export class ChatResolver {
     }
 
     @Query(() => Conversation, { name: 'getConversation', nullable: true })
+    @UseGuards(GqlAuthGuard)
     async getConversation(
         @CurrentUser() user: User,
         @Args('id_conversation') id_conversation: string,
@@ -103,6 +118,7 @@ export class ChatResolver {
     }
 
     @Mutation(() => Conversation, { name: 'getOrCreateOneOnOneChat' })
+    @UseGuards(GqlAuthGuard)
     async getOrCreateOneOnOneChat(
         @CurrentUser() user: User,
         @Args() args: CreateChatArgs,
@@ -111,6 +127,7 @@ export class ChatResolver {
     }
 
     @Mutation(() => Message, { name: 'sendMessage' })
+    @UseGuards(GqlAuthGuard)
     async sendMessage(
         @CurrentUser() user: User,
         @Args() args: SendMessageArgs,
@@ -130,6 +147,7 @@ export class ChatResolver {
     }
 
     @ResolveField(() => Message, { nullable: true })
+    @UseGuards(GqlAuthGuard)
     async lastMessage(
         @Parent() conversation: Conversation,
         @CurrentUser() user: User,
@@ -139,5 +157,25 @@ export class ChatResolver {
             .andWhere('(message.deletedFor IS NULL OR NOT (:userId = ANY (message.deletedFor)))', { userId: user.id })
             .orderBy('message.createdAt', 'DESC')
             .getOne();
+    }
+
+    @Mutation(() => Boolean, { name: 'markMessagesAsRead' })
+    @UseGuards(GqlAuthGuard)
+    async markMessagesAsRead(
+        @CurrentUser() user: User,
+        @Args('id_conversation') id_conversation: string,
+    ) {
+        await this.chatService.markMessagesAsRead(id_conversation, user.id);
+        pubSub.publish('MESSAGES_READ_EVENT', { messagesRead: { id_conversation, readerId: user.id } });
+        return true;
+    }
+
+    @Subscription(() => ReadMessagesPayload, {
+        filter: (payload, variables) => {
+            return payload.messagesRead.id_conversation === variables.id_conversation;
+        },
+    })
+    messagesRead(@Args('id_conversation') id_conversation: string) {
+        return pubSub.asyncIterableIterator('MESSAGES_READ_EVENT');
     }
 }

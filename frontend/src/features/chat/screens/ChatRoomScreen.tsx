@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -19,13 +19,13 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '../../../navigation/AppNavigator';
-import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
+import { useQuery, useMutation, useSubscription, useApolloClient } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION, DELETE_MESSAGE_FOR_ME, DELETE_MESSAGE_FOR_ALL, EDIT_MESSAGE, SEARCH_MESSAGES_IN_CHAT, MESSAGE_ADDED_SUBSCRIPTION } from '../graphql/chat.operations';
+import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION, DELETE_MESSAGE_FOR_ME, DELETE_MESSAGE_FOR_ALL, EDIT_MESSAGE, SEARCH_MESSAGES_IN_CHAT, MESSAGE_ADDED_SUBSCRIPTION, MARK_MESSAGES_AS_READ, MESSAGES_READ_SUBSCRIPTION } from '../graphql/chat.operations';
 import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
 import Toast from 'react-native-toast-message';
@@ -76,78 +76,153 @@ export default function ChatRoomScreen() {
     const MESSAGES_LIMIT = 20;
     const [hasMore, setHasMore] = useState(true);
     const [isFetchingMore, setIsFetchingMore] = useState(false);
+    // Estado local de mensajes — fuente única de verdad para la UI
+    const [localMessages, setLocalMessages] = useState<any[]>([]);
 
-    // Query para obtener mensajes (Sin pollInterval ya que usamos WebSockets)
-    const { data, loading, error, fetchMore, subscribeToMore } = useQuery(GET_CHAT_MESSAGES, {
+    // cache-and-network: muestra datos de caché INMEDIATAMENTE al regresar al chat,
+    // y en paralelo hace un fetch al servidor para actualizar.
+    // Esto es clave: cuando el usuario regresa, ve sus mensajes al instante (desde la caché)
+    // en lugar de una pantalla en blanco mientras espera la respuesta de la red.
+    const { loading, data: queryData, fetchMore } = useQuery(GET_CHAT_MESSAGES, {
         variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
         skip: !id_conversation,
+        fetchPolicy: 'cache-and-network', // Lee caché primero, luego actualiza desde red
+        nextFetchPolicy: 'cache-first',   // Después del primer fetch, usa caché (evita double-fetch loops)
+        notifyOnNetworkStatusChange: false,
     });
 
-    // Subscripción a nuevos mensajes
+    // Estrategia de MERGE: cuando el servidor responde (carga inicial o refetch al volver),
+    // mezclamos los mensajes del servidor con los que ya teníamos en estado local.
+    // Esto garantiza que:
+    // 1. Los mensajes enviados por el usuario (onCompleted) no se pierden
+    // 2. Los mensajes de la otra cuenta que llegaron mientras estábamos fuera sí aparecen
+    // 3. No hay duplicados gracias al Map keyed por id_message
     useEffect(() => {
-        if (!id_conversation) return;
+        const serverMsgs: any[] = (queryData as any)?.getChatMessages || [];
+        if (serverMsgs.length === 0) return;
 
-        const unsubscribe = subscribeToMore({
-            document: MESSAGE_ADDED_SUBSCRIPTION,
-            variables: { id_conversation },
-            updateQuery: (prev: any, { subscriptionData }: any) => {
-                if (!subscriptionData.data) return prev;
-                const newMessage = subscriptionData.data.messageAdded;
-                
-                // Prevenimos duplicación si la mutación sendMessage ya actualizó la caché local
-                const exists = prev.getChatMessages.find((m: any) => m.id_message === newMessage.id_message);
-                if (exists) return prev;
+        setLocalMessages(prev => {
+            const isFirstLoad = prev.length === 0;
 
-                // El arreglo está ordenado DESC (los nuevos van al frente)
-                return Object.assign({}, prev, {
-                    getChatMessages: [newMessage, ...prev.getChatMessages]
-                });
+            if (isFirstLoad) {
+                // Primera carga: simplemente usar los mensajes del servidor
+                if (serverMsgs.length < MESSAGES_LIMIT) setHasMore(false);
+                return serverMsgs;
             }
+
+            // Re-carga (al volver al chat): MERGE inteligente
+            // Construimos un Map preservando todos los mensajes locales Y los nuevos del servidor
+            const msgMap = new Map<string, any>();
+            // Primero los mensajes locales (incluyen los enviados y recibidos por WS)
+            prev.forEach((m: any) => msgMap.set(m.id_message, m));
+            // Luego los del servidor (sobrescriben si hay actualizaciones de contenido, ej: mensajes editados)
+            serverMsgs.forEach((m: any) => msgMap.set(m.id_message, m));
+
+            // Ordenamos DESC por fecha (el más nuevo primero, como necesita el FlatList invertido)
+            const merged = Array.from(msgMap.values()).sort(
+                (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+            return merged;
         });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [queryData]);
 
-        return () => {
-            unsubscribe();
-        };
-    }, [id_conversation, subscribeToMore]);
 
+    const [markMessagesAsReadMutation] = useMutation(MARK_MESSAGES_AS_READ);
+
+    const markAsRead = useCallback(async () => {
+        if (!id_conversation) return;
+        try {
+            await markMessagesAsReadMutation({ variables: { id_conversation } });
+        } catch (e) {
+            console.log('[Chat] Error marking as read:', e);
+        }
+    }, [id_conversation, markMessagesAsReadMutation]);
+
+    // Marcar como leído al entrar o enfocar el chat
+    useFocusEffect(
+        useCallback(() => {
+            markAsRead();
+        }, [markAsRead])
+    );
+
+    // Subscription WebSocket — mensajes nuevos
+    useSubscription(MESSAGE_ADDED_SUBSCRIPTION, {
+        variables: { id_conversation },
+        skip: !id_conversation,
+        onData: ({ data: subResult }: any) => {
+            const newMsg = subResult?.data?.messageAdded;
+            if (!newMsg) return;
+            
+            setLocalMessages(prev => {
+                if (prev.some((m: any) => m.id_message === newMsg.id_message)) return prev;
+                return [newMsg, ...prev];
+            });
+
+            // Si el mensaje es de la otra persona y estamos viendo el chat, marcar como leído
+            if (newMsg.sender.id !== currentUser?.id) {
+                markAsRead();
+            }
+        },
+        onError: (e: any) => {
+            console.log('[WS Chat] Subscription error silenciado:', e.message);
+        },
+    });
+
+    // Subscription WebSocket — confirmación de lectura (Visto azul)
+    useSubscription(MESSAGES_READ_SUBSCRIPTION, {
+        variables: { id_conversation },
+        skip: !id_conversation,
+        onData: ({ data: subResult }: any) => {
+            const payload = subResult?.data?.messagesRead;
+            if (!payload) return;
+
+            // Si ALGUIEN MÁS leyó mis mensajes, actualizamos isRead a true para todos mis mensajes
+            if (payload.readerId !== currentUser?.id) {
+                setLocalMessages(prev => 
+                    prev.map(m => m.sender?.id === currentUser?.id ? { ...m, isRead: true } : m)
+                );
+            }
+        }
+    });
+
+    // Cargar mensajes más antiguos (infinite scroll)
     const loadOlderMessages = async () => {
-        // Freno: No cargar si ya se está cargando o si ya no hay más mensajes
         if (isFetchingMore || !hasMore) return;
-
         setIsFetchingMore(true);
         try {
-            const currentCount = data?.getChatMessages?.length || 0;
             const { data: moreData } = await fetchMore({
                 variables: {
-                    offset: currentCount,
+                    id_conversation,
+                    limit: MESSAGES_LIMIT,
+                    offset: localMessages.length,
                 },
             }) as any;
 
-            const newCount = moreData?.getChatMessages?.length || 0;
-
-            // Si el servidor no devolvió mensajes nuevos, la longitud total no crecerá en MESSAGES_LIMIT
-            if (!moreData?.getChatMessages || (newCount - currentCount) < MESSAGES_LIMIT) {
+            const newMsgs: any[] = moreData?.getChatMessages || [];
+            if (newMsgs.length < MESSAGES_LIMIT) {
                 setHasMore(false);
             }
+            if (newMsgs.length > 0) {
+                setLocalMessages(prev => {
+                    const existingIds = new Set(prev.map((m: any) => m.id_message));
+                    const unique = newMsgs.filter((m: any) => !existingIds.has(m.id_message));
+                    return [...prev, ...unique];
+                });
+            }
         } catch (e) {
-            console.error("Error cargando historial de chat:", e);
-            setHasMore(false); // Para no ciclar el error
+            console.error('Error cargando historial:', e);
+            setHasMore(false);
         } finally {
             setIsFetchingMore(false);
         }
     };
 
-    // Reseteamos el paginado cuando cambiamos de chat
+    // Reset al cambiar de conversación
     useEffect(() => {
+        setLocalMessages([]);
         setHasMore(true);
     }, [id_conversation]);
-
-    // Verificación segura en la carga inicial
-    useEffect(() => {
-        if (data?.getChatMessages && data.getChatMessages.length < MESSAGES_LIMIT) {
-            setHasMore(false);
-        }
-    }, [data?.getChatMessages?.length]);
 
     // Query para obtener info de la conversación (para el header)
     const { data: convData } = useQuery(GET_CONVERSATION, {
@@ -156,65 +231,109 @@ export default function ChatRoomScreen() {
     });
 
     const otherUser = useMemo(() => {
-        const participants = convData?.getConversation?.participants;
+        const participants = (convData as any)?.getConversation?.participants;
         return participants?.find((p: any) => p.user.id !== currentUser?.id)?.user || null;
     }, [convData, currentUser?.id]);
 
     const [deleteMessageForMeMutation] = useMutation(DELETE_MESSAGE_FOR_ME);
     const [deleteMessageForAllMutation] = useMutation(DELETE_MESSAGE_FOR_ALL);
-    const [editMessageMutation] = useMutation(EDIT_MESSAGE);
-
-    // Mutación para enviar mensaje
-    const [sendMessageMutation] = useMutation(SEND_MESSAGE, {
-        update(cache, { data: { sendMessage } }) {
-            const queryData: any = cache.readQuery({
-                query: GET_CHAT_MESSAGES,
-                variables: { id_conversation },
-            });
-
-            if (queryData && sendMessage) {
-                const existingMessages = queryData.getChatMessages || [];
-                // Evitar duplicados (especialmente entre el optimistic y el real)
-                const isDuplicate = existingMessages.some((msg: any) => msg.id_message === sendMessage.id_message);
-
-                if (!isDuplicate) {
-                    cache.writeQuery({
+    const [editMessageMutation] = useMutation(EDIT_MESSAGE, {
+        // Actualiza el mensaje en el estado local inmediatamente al guardar la edición
+        onCompleted: ({ editMessage }: any) => {
+            if (!editMessage) return;
+            // 1. Actualizar el estado local para que la UI refleje el cambio al instante
+            setLocalMessages(prev =>
+                prev.map((m: any) =>
+                    m.id_message === editMessage.id_message
+                        ? { ...m, content: editMessage.content, editedAt: editMessage.editedAt }
+                        : m
+                )
+            );
+            // 2. Actualizar la caché Apollo para que persista si el usuario navega fuera y vuelve
+            try {
+                const existing: any = client.readQuery({
+                    query: GET_CHAT_MESSAGES,
+                    variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
+                });
+                if (existing?.getChatMessages) {
+                    client.writeQuery({
                         query: GET_CHAT_MESSAGES,
-                        variables: { id_conversation },
+                        variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
                         data: {
-                            getChatMessages: [sendMessage, ...existingMessages],
+                            getChatMessages: existing.getChatMessages.map((m: any) =>
+                                m.id_message === editMessage.id_message
+                                    ? { ...m, content: editMessage.content, editedAt: editMessage.editedAt }
+                                    : m
+                            ),
                         },
                     });
                 }
+            } catch {
+                // Cache vacía, no hay problema
             }
         },
     });
 
+    // Mutación para enviar mensaje
+    // update(): escribe el mensaje enviado en la caché de Apollo con las variables exactas de la query.
+    // Esto es CRUCIAL: si el usuario sale del chat y vuelve, Apollo lee la caché primero
+    // (gracias a cache-and-network), y verá el mensaje enviado INMEDIATAMENTE.
+    const [sendMessageMutation] = useMutation(SEND_MESSAGE, {
+        update(cache, result: any) {
+            const sentMsg = result?.data?.sendMessage;
+            if (!sentMsg) return;
+            try {
+                const existing: any = cache.readQuery({
+                    query: GET_CHAT_MESSAGES,
+                    variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
+                });
+                if (existing?.getChatMessages) {
+                    const msgs: any[] = existing.getChatMessages;
+                    if (!msgs.some((m: any) => m.id_message === sentMsg.id_message)) {
+                        cache.writeQuery({
+                            query: GET_CHAT_MESSAGES,
+                            variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
+                            data: { getChatMessages: [sentMsg, ...msgs] },
+                        });
+                    }
+                }
+            } catch {
+                // La caché puede estar vacía la primera vez, está bien ignorar el error
+            }
+        },
+        onCompleted: ({ sendMessage }: any) => {
+            if (!sendMessage) return;
+            setLocalMessages(prev => {
+                if (prev.some((m: any) => m.id_message === sendMessage.id_message)) return prev;
+                return [sendMessage, ...prev];
+            });
+        },
+    });
+
     const messages = useMemo(() => {
-        if (!data?.getChatMessages) return [];
-        // rawMessages: del más nuevo (index 0) al más viejo
-        const rawMessages = [...data.getChatMessages].reverse();
-        
         const grouped: any[] = [];
+        // Usamos un Set para evitar claves duplicadas de separadores de fecha.
+        // Esto ocurre cuando hay mensajes del mismo día en posiciones no contiguas
+        // (e.g., primera página y página de historial cargada después).
+        const usedDateKeys = new Set<string>();
 
-        rawMessages.forEach((msg, index) => {
-            // Empujar el mensaje actual (siendo FlatList invertido, se pinta de abajo hacia arriba)
+        localMessages.forEach((msg: any, index: number) => {
             grouped.push({ ...msg, type: 'MESSAGE', id: msg.id_message });
-            
-            // Checar la fecha del mensaje que sigue (que cronológicamente es más viejo)
             const currentDate = new Date(msg.createdAt).toDateString();
-            const nextMsg = rawMessages[index + 1];
+            const nextMsg = localMessages[index + 1];
             const nextDate = nextMsg ? new Date(nextMsg.createdAt).toDateString() : null;
-
-            // Si el siguiente mensaje tiene fecha diferente (o no hay siguiente, o sea este es el más antiguo)
-            // Agregamos el separador. Como FlatList invierte, este separador quedará VISUALMENTE ARRIBA de este mensaje.
             if (currentDate !== nextDate) {
-                grouped.push({ type: 'DATE_SEPARATOR', date: msg.createdAt, id: `date-${currentDate}` });
+                // Garantizamos unicidad de la key aunque haya repetición de fecha
+                let sepKey = `date-${currentDate}`;
+                if (usedDateKeys.has(sepKey)) {
+                    sepKey = `${sepKey}-${index}`;
+                }
+                usedDateKeys.add(`date-${currentDate}`);
+                grouped.push({ type: 'DATE_SEPARATOR', date: msg.createdAt, id: sepKey });
             }
         });
-
         return grouped;
-    }, [data]);
+    }, [localMessages]);
 
     const handleSend = async () => {
         const hasText = messageText.trim().length > 0;
@@ -289,23 +408,6 @@ export default function ChatRoomScreen() {
                     imageUrl: uploadedImageUrl || undefined,
                     videoUrl: uploadedVideoUrl || undefined,
                 },
-                optimisticResponse: {
-                    sendMessage: {
-                        __typename: 'Message',
-                        id_message: `temp-${Date.now()}`,
-                        content: content || '',
-                        imageUrl: uploadedImageUrl || null,
-                        videoUrl: uploadedVideoUrl || null,
-                        createdAt: new Date().toISOString(),
-                        isRead: false,
-                        isDeletedForAll: false,
-                        editedAt: null,
-                        sender: {
-                            __typename: 'User',
-                            id: currentUser.id,
-                        },
-                    },
-                },
             });
         } catch (err) {
             console.error("Error sending message:", err);
@@ -363,8 +465,8 @@ export default function ChatRoomScreen() {
     useEffect(() => {
         const performSearch = async () => {
             if (searchTerm.trim().length > 1) {
-                const { data } = await searchMessagesQuery({ id_conversation, searchTerm });
-                const ids = data?.searchMessagesInChat?.map((m: any) => m.id_message) || [];
+                const { data: searchData } = await searchMessagesQuery({ id_conversation, searchTerm });
+                const ids = (searchData as any)?.searchMessagesInChat?.map((m: any) => m.id_message) || [];
                 setSearchResults(ids);
                 setCurrentSearchIndex(0);
                 if (ids.length > 0) jumpToMatch(0, ids);
@@ -421,61 +523,20 @@ export default function ChatRoomScreen() {
     };
 
     const handleHideMessageFromUI = (msgId: string) => {
-        try {
-            const queryData: any = client.readQuery({
-                query: GET_CHAT_MESSAGES,
-                variables: { id_conversation },
-            });
-
-            if (queryData) {
-                const newMessages = queryData.getChatMessages.filter(
-                    (msg: any) => msg.id_message !== msgId
-                );
-                
-                client.writeQuery({
-                    query: GET_CHAT_MESSAGES,
-                    variables: { id_conversation },
-                    data: {
-                        getChatMessages: newMessages,
-                    },
-                });
-            }
-        } catch (e) {
-            console.error("Error al actualizar la cache para ocultar el mensaje", e);
-        }
+        setLocalMessages(prev => prev.filter((m: any) => m.id_message !== msgId));
     };
 
     const handleTombstoneMessageFromUI = (msgId: string) => {
-        try {
-            const queryData: any = client.readQuery({
-                query: GET_CHAT_MESSAGES,
-                variables: { id_conversation },
-            });
-
-            if (queryData) {
-                const newMessages = queryData.getChatMessages.map((msg: any) => 
-                    msg.id_message === msgId 
-                        ? { ...msg, isDeletedForAll: true, content: "" }
-                        : msg
-                );
-                
-                client.writeQuery({
-                    query: GET_CHAT_MESSAGES,
-                    variables: { id_conversation },
-                    data: {
-                        getChatMessages: newMessages,
-                    },
-                });
-            }
-        } catch (e) {
-            console.error("Error al actualizar la cache para poner lápida al mensaje", e);
-        }
+        setLocalMessages(prev => prev.map((m: any) =>
+            m.id_message === msgId ? { ...m, isDeletedForAll: true, content: '' } : m
+        ));
     };
 
     const revertHideMessageUI = () => {
-        client.refetchQueries({
-            include: [GET_CHAT_MESSAGES],
-        });
+        // Con estado local, para 'revertir' simplemente hacemos un refetch completo
+        setLocalMessages([]);
+        setHasMore(true);
+        // El useQuery con network-only va a correr de nuevo en el próximo render gracias al cambio de estado
     };
 
     const handleDeleteForMe = () => {
@@ -747,15 +808,16 @@ export default function ChatRoomScreen() {
                         )}
                         <Text style={[
                             styles.messageTime,
-                            { color: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary }
+                            { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }
                         ]}>
                             {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
                         </Text>
                         {isMine && (
                             <Ionicons 
                                 name="checkmark-done" 
-                                size={14} 
-                                color="rgba(255,255,255,0.7)" 
+                                size={16} 
+                                color={item.isRead ? "#34B7F1" : "rgba(255,255,255,0.5)"} 
+                                style={{ marginLeft: 4, marginBottom: -1 }}
                             />
                         )}
                     </View>
@@ -859,7 +921,7 @@ export default function ChatRoomScreen() {
             <Animated.View style={{ flex: 1, paddingBottom: keyboardOffset }}>
                 {/* Lista de Mensajes */}
                 <View style={styles.chatContainer}>
-                    {loading && !data ? (
+                    {loading && localMessages.length === 0 ? (
                         <View style={styles.center}>
                             <ActivityIndicator color={colors.primary} />
                         </View>
@@ -873,16 +935,25 @@ export default function ChatRoomScreen() {
                                 contentContainerStyle={styles.listContent}
                                 showsVerticalScrollIndicator={false}
                                 
-                                // Indicador de carga (Aparece arriba en modo inverted={true})
-                                ListFooterComponent={() => (
-                                    <View style={{ paddingVertical: 20, alignItems: 'center' }}>
-                                        {isFetchingMore && hasMore ? (
-                                            <ActivityIndicator color={colors.primary} />
-                                        ) : (
-                                            !hasMore ? renderProfileSummary() : null
-                                        )}
-                                    </View>
-                                )}
+                                // Indicador de carga (el Footer aparece VISUALMENTE ARRIBA cuando inverted=true)
+                                ListFooterComponent={() => {
+                                    if (isFetchingMore) {
+                                        return (
+                                            <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                                                <ActivityIndicator color={colors.primary} />
+                                            </View>
+                                        );
+                                    }
+                                    if (!hasMore) {
+                                        return (
+                                            <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                                                {renderProfileSummary()}
+                                            </View>
+                                        );
+                                    }
+                                    // hasMore=true y no estamos cargando: no mostrar nada
+                                    return null;
+                                }}
                                 
                                 // Configuración de Infinite Scroll
                                 onEndReached={loadOlderMessages}

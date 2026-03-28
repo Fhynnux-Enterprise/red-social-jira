@@ -155,3 +155,19 @@ export const SEARCH_MESSAGES_IN_CHAT = gql`
     }
   }
 `;
+
+export const MARK_MESSAGES_AS_READ = gql`
+  mutation MarkMessagesAsRead($id_conversation: String!) {
+    markMessagesAsRead(id_conversation: $id_conversation)
+  }
+`;
+
+export const MESSAGES_READ_SUBSCRIPTION = gql`
+  subscription OnMessagesRead($id_conversation: String!) {
+    messagesRead(id_conversation: $id_conversation) {
+      id_conversation
+      readerId
+    }
+  }
+`;
+
