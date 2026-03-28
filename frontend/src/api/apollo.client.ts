@@ -77,6 +77,15 @@ export const apolloClient = new ApolloClient({
         typePolicies: {
             Query: {
                 fields: {
+                    getPosts: {
+                        keyArgs: false,
+                        merge(existing = [], incoming) {
+                            // Deduplicación basada en las referencias internas de Apollo (__ref)
+                            const existingRefs = new Set(existing.map((ref: any) => ref.__ref));
+                            const uniqueIncoming = incoming.filter((ref: any) => !existingRefs.has(ref.__ref));
+                            return [...existing, ...uniqueIncoming];
+                        },
+                    },
                     getCommentsByPost: {
                         merge(existing, incoming) {
                             return incoming;

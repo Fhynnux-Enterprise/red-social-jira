@@ -92,11 +92,11 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
     const currentUser = meData?.me;
 
     const [createPost, { loading: creating }] = useMutation(CREATE_POST, {
-        refetchQueries: [{ query: GET_POSTS }],
+        refetchQueries: [{ query: GET_POSTS, variables: { limit: 5, offset: 0 } }],
     });
 
     const [updatePost, { loading: updating }] = useMutation(UPDATE_POST, {
-        refetchQueries: [{ query: GET_POSTS }],
+        refetchQueries: [{ query: GET_POSTS, variables: { limit: 5, offset: 0 } }],
     });
 
     const isLoading = creating || updating || isUploadingMedia;

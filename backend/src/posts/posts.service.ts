@@ -61,15 +61,24 @@ export class PostsService {
         }
     }
 
-    async findAll(): Promise<Post[]> {
+    async findAll(limit: number = 5, offset: number = 0): Promise<Post[]> {
         const posts = await this.postsRepository.createQueryBuilder('post')
             .leftJoinAndSelect('post.author', 'author')
             .leftJoinAndSelect('post.likes', 'likes')
             .leftJoinAndSelect('likes.user', 'likeUser')
             .leftJoinAndSelect('post.media', 'media')
             .orderBy('post.createdAt', 'DESC')
-            .addOrderBy('media.order', 'ASC')
+            .addOrderBy('post.id', 'DESC')
+            .take(limit)
+            .skip(offset)
             .getMany();
+
+        // Sort media correctly in memory to prevent TypeORM from falling back to raw LIMIT
+        posts.forEach(p => {
+            if (p.media && p.media.length > 1) {
+                p.media.sort((a, b) => a.order - b.order);
+            }
+        });
 
         if (posts.length > 0) {
             const postIds = posts.map(p => p.id);

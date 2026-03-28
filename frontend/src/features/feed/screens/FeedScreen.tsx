@@ -79,9 +79,12 @@ export default function FeedScreen() {
     const isFocused = useIsFocused();
     // Estado para trackear qué post está visible en pantalla (para autoplay)
     const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
+    const [hasMore, setHasMore] = useState(true);
 
-    const { data, loading, error, refetch } = useQuery<GetPostsData>(GET_POSTS, {
+    const { data, loading, error, refetch, fetchMore, networkStatus } = useQuery<GetPostsData>(GET_POSTS, {
+        variables: { limit: 5, offset: 0 },
         fetchPolicy: 'cache-and-network',
+        notifyOnNetworkStatusChange: true,
     });
 
     const { data: meData } = useQuery<GetMeData>(GET_ME, {
@@ -96,8 +99,42 @@ export default function FeedScreen() {
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
 
     const [deletePost] = useMutation(DELETE_POST, {
-        refetchQueries: [{ query: GET_POSTS }],
+        refetchQueries: [{ query: GET_POSTS, variables: { limit: 5, offset: 0 } }],
     });
+
+    const isFetchingMore = networkStatus === 3;
+
+    const loadMorePosts = useCallback(() => {
+        if (loading || isFetchingMore || !hasMore || !data?.getPosts.length) return;
+
+        fetchMore({
+            variables: {
+                offset: data.getPosts.length,
+                limit: 5
+            },
+        }).then((fetchMoreResult) => {
+            // BUG FIX: El resultado de fetchMore contiene los datos en .data
+            // Si no hay datos o la longitud es menor al límite, cerramos la paginación
+            if (!fetchMoreResult.data || fetchMoreResult.data.getPosts.length < 5) {
+                setHasMore(false);
+            }
+        });
+    }, [data?.getPosts.length, fetchMore, loading, isFetchingMore, hasMore]);
+
+    const handleRefresh = useCallback(async () => {
+        setHasMore(true);
+        await refetch();
+    }, [refetch]);
+
+    const renderFooter = useCallback(() => {
+        if (!hasMore) return null;
+        if (!isFetchingMore) return null;
+        return (
+            <View style={{ paddingVertical: 20 }}>
+                <ActivityIndicator size="small" color={colors.primary} />
+            </View>
+        );
+    }, [isFetchingMore, colors.primary, hasMore]);
 
     const handleOptionsPress = useCallback((item: Post) => {
         setSelectedPost(item);
@@ -172,9 +209,9 @@ export default function FeedScreen() {
             {/* Ya no ponemos el createPostContainer aquí fijo, irá en el ListHeaderComponent del FlatList */}
 
             <View style={{ flex: 1, backgroundColor: colors.background }}>
-                {loading ? (
+                {(loading && networkStatus === 1) || (!data && loading && networkStatus !== 3) ? (
                     <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
-                ) : error ? (
+                ) : error && !data ? (
                     <Text style={styles.errorText}>No se pudieron cargar los posts.</Text>
                 ) : (
                     <FlatList
@@ -213,12 +250,15 @@ export default function FeedScreen() {
                         }
                         data={data?.getPosts || []}
                         extraData={data}
-                        keyExtractor={(item) => item.id}
+                        keyExtractor={(item) => item.id.toString()}
                         renderItem={renderPost}
                         contentContainerStyle={styles.listContainer}
                         showsVerticalScrollIndicator={false}
-                        refreshing={loading}
-                        onRefresh={refetch}
+                        refreshing={loading && networkStatus !== 3}
+                        onRefresh={handleRefresh}
+                        onEndReached={loadMorePosts}
+                        onEndReachedThreshold={0.5}
+                        ListFooterComponent={renderFooter}
                         onViewableItemsChanged={onViewableItemsChanged}
                         viewabilityConfig={viewabilityConfig}
                         initialNumToRender={5}

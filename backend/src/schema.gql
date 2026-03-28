@@ -159,7 +159,7 @@ type UploadUrlResponse {
 type Query {
   """Verifica si el servidor GraphQL está funcionando"""
   ping: String!
-  getPosts: [Post!]!
+  getPosts(limit: Int! = 5, offset: Int! = 0): [Post!]!
   getUserProfile(id: String!): User!
   me: User!
   searchUsers(searchTerm: String!): [User!]!

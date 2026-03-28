@@ -20,8 +20,11 @@ export class PostsResolver {
 
     @Query(() => [Post], { name: 'getPosts' })
     @UseGuards(JwtGqlGuard)
-    async getPosts(): Promise<Post[]> {
-        return this.postsService.findAll();
+    async getPosts(
+        @Args('limit', { type: () => Int, defaultValue: 5 }) limit: number,
+        @Args('offset', { type: () => Int, defaultValue: 0 }) offset: number,
+    ): Promise<Post[]> {
+        return this.postsService.findAll(limit, offset);
     }
 
     @Mutation(() => Post, { name: 'createPost' })
