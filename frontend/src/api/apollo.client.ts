@@ -1,4 +1,7 @@
-import { ApolloClient, InMemoryCache, createHttpLink, from } from '@apollo/client';
+import { ApolloClient, InMemoryCache, createHttpLink, from, split } from '@apollo/client';
+import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
+import { createClient } from 'graphql-ws';
+import { getMainDefinition } from '@apollo/client/utilities';
 import { onError } from '@apollo/client/link/error';
 import { setContext } from '@apollo/client/link/context';
 import * as SecureStore from 'expo-secure-store';
@@ -32,9 +35,9 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
         graphQLErrors.forEach(({ extensions, message }) => {
             // Buscamos el código estándar UNAUTHENTICATED o la palabra Unauthorized en el mensaje
             if (
-                extensions?.code === 'UNAUTHENTICATED' || 
+                extensions?.code === 'UNAUTHENTICATED' ||
                 extensions?.code === '401' ||
-                message.includes('Unauthorized') || 
+                message.includes('Unauthorized') ||
                 message.includes('not authenticated')
             ) {
                 isUnauthorized = true;
@@ -59,20 +62,45 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
     if (isUnauthorized) {
         // Limpiamos la caché de Apollo inmediatamente para mayor seguridad
         apolloClient.clearStore().catch(e => console.error('Error clearing store:', e));
-        
+
         DeviceEventEmitter.emit('session_expired');
-        Toast.show({ 
-            type: 'error', 
-            text1: 'Sesión expirada', 
+        Toast.show({
+            type: 'error',
+            text1: 'Sesión expirada',
             text2: 'Tus credenciales han caducado, por favor inicia sesión de nuevo.',
             visibilityTime: 4000
         });
     }
 });
 
+const wsUrl = (`${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'}/graphql`).replace('http://', 'ws://').replace('https://', 'wss://');
+
+const wsLink = new GraphQLWsLink(createClient({
+    url: wsUrl,
+    connectionParams: async () => {
+        const token = await SecureStore.getItemAsync('access_token');
+        return {
+            Authorization: token ? `Bearer ${token}` : '',
+        };
+    },
+}));
+
+// Router de Apollo: decide si envía por WebSocket o por HTTP
+const splitLink = split(
+    ({ query }) => {
+        const definition = getMainDefinition(query);
+        return (
+            definition.kind === 'OperationDefinition' &&
+            definition.operation === 'subscription'
+        );
+    },
+    wsLink,
+    authLink.concat(httpLink),
+);
+
 // Configure and export Apollo Client
 export const apolloClient = new ApolloClient({
-    link: from([errorLink, authLink, httpLink]),
+    link: from([errorLink, splitLink]),
     cache: new InMemoryCache({
         typePolicies: {
             Query: {
@@ -91,6 +119,15 @@ export const apolloClient = new ApolloClient({
                         merge(existing = [], incoming) {
                             const existingRefs = new Set(existing.map((ref: any) => ref.__ref));
                             const uniqueIncoming = incoming.filter((ref: any) => !existingRefs.has(ref.__ref));
+                            return [...existing, ...uniqueIncoming];
+                        },
+                    },
+                    getChatMessages: {
+                        keyArgs: ['id_conversation'],
+                        merge(existing = [], incoming) {
+                            const existingRefs = new Set(existing.map((ref: any) => ref.__ref));
+                            const uniqueIncoming = incoming.filter((ref: any) => !existingRefs.has(ref.__ref));
+                            // Los incoming van después de los existing
                             return [...existing, ...uniqueIncoming];
                         },
                     },

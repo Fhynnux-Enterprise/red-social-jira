@@ -1,4 +1,7 @@
-import { Resolver, Query, Mutation, Args, ResolveField, Parent } from '@nestjs/graphql';
+import { Resolver, Query, Mutation, Args, ResolveField, Parent, Subscription } from '@nestjs/graphql';
+import { PubSub } from 'graphql-subscriptions';
+
+const pubSub = new PubSub();
 import { UseGuards } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { Conversation } from './entities/conversation.entity';
@@ -28,15 +31,17 @@ export class ChatResolver {
     async getChatMessages(
         @CurrentUser() user: User,
         @Args('id_conversation') id_conversation: string,
+        @Args('limit', { type: () => Number, nullable: true }) limit?: number,
+        @Args('offset', { type: () => Number, nullable: true }) offset?: number,
     ) {
         // Validación de seguridad: Comprobar que el usuario es participante
         const isParticipant = await this.chatService.isUserParticipant(id_conversation, user.id);
-        
+
         if (!isParticipant) {
             throw new Error('No tienes permiso para ver los mensajes de esta conversación');
         }
 
-        return this.chatService.getMessagesByConversation(id_conversation, user.id);
+        return this.chatService.getMessagesByConversation(id_conversation, user.id, limit, offset);
     }
 
     @Query(() => [Message], { name: 'searchMessagesInChat' })
@@ -110,7 +115,18 @@ export class ChatResolver {
         @CurrentUser() user: User,
         @Args() args: SendMessageArgs,
     ) {
-        return this.chatService.sendMessage(user.id, args.id_conversation, args.content);
+        const newMessage = await this.chatService.sendMessage(user.id, args.id_conversation, args.content, args.imageUrl, args.videoUrl);
+        pubSub.publish('MESSAGE_ADDED_EVENT', { messageAdded: newMessage });
+        return newMessage;
+    }
+
+    @Subscription(() => Message, {
+        filter: (payload, variables) => {
+            return payload.messageAdded.id_conversation === variables.id_conversation;
+        },
+    })
+    messageAdded(@Args('id_conversation') id_conversation: string) {
+        return pubSub.asyncIterableIterator('MESSAGE_ADDED_EVENT');
     }
 
     @ResolveField(() => Message, { nullable: true })

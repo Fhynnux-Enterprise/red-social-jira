@@ -35,6 +35,8 @@ export const GET_USER_CONVERSATIONS = gql`
       }
       lastMessage {
         content
+        imageUrl
+        videoUrl
         createdAt
       }
     }
@@ -42,10 +44,30 @@ export const GET_USER_CONVERSATIONS = gql`
 `;
 
 export const GET_CHAT_MESSAGES = gql`
-  query GetChatMessages($id_conversation: String!) {
-    getChatMessages(id_conversation: $id_conversation) {
+  query GetChatMessages($id_conversation: String!, $limit: Float, $offset: Float) {
+    getChatMessages(id_conversation: $id_conversation, limit: $limit, offset: $offset) {
       id_message
       content
+      imageUrl
+      videoUrl
+      createdAt
+      isRead
+      isDeletedForAll
+      editedAt
+      sender {
+        id
+      }
+    }
+  }
+`;
+
+export const MESSAGE_ADDED_SUBSCRIPTION = gql`
+  subscription OnMessageAdded($id_conversation: String!) {
+    messageAdded(id_conversation: $id_conversation) {
+      id_message
+      content
+      imageUrl
+      videoUrl
       createdAt
       isRead
       isDeletedForAll
@@ -94,10 +116,12 @@ export const EDIT_MESSAGE = gql`
 `;
 
 export const SEND_MESSAGE = gql`
-  mutation SendMessage($id_conversation: String!, $content: String!) {
-    sendMessage(id_conversation: $id_conversation, content: $content) {
+  mutation SendMessage($id_conversation: String!, $content: String, $imageUrl: String, $videoUrl: String) {
+    sendMessage(id_conversation: $id_conversation, content: $content, imageUrl: $imageUrl, videoUrl: $videoUrl) {
       id_message
       content
+      imageUrl
+      videoUrl
       createdAt
       isRead
       isDeletedForAll

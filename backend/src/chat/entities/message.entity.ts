@@ -14,6 +14,14 @@ export class Message {
     @Column({ type: 'text' })
     content: string;
 
+    @Field({ nullable: true })
+    @Column({ type: 'text', nullable: true })
+    imageUrl: string;
+
+    @Field({ nullable: true })
+    @Column({ type: 'text', nullable: true })
+    videoUrl: string;
+
     @Column({ name: 'id_user' })
     id_user: string;
 

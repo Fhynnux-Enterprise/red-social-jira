@@ -160,7 +160,15 @@ export default function ChatListScreen() {
                             ]} 
                             numberOfLines={1}
                         >
-                            {lastMessage?.content || 'Iniciaste una conversación'}
+                            {lastMessage?.videoUrl && !lastMessage?.content 
+                                ? '📹 Video' 
+                                : lastMessage?.videoUrl && lastMessage?.content 
+                                    ? `📹 ${lastMessage.content}` 
+                                    : lastMessage?.imageUrl && !lastMessage?.content 
+                                        ? '📷 Imagen' 
+                                        : lastMessage?.imageUrl && lastMessage?.content 
+                                            ? `📷 ${lastMessage.content}` 
+                                            : lastMessage?.content || 'Iniciaste una conversación'}
                         </Text>
                         {/* Indicador de Unread */}
                         {item.unreadCount > 0 && (

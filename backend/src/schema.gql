@@ -83,6 +83,8 @@ type UserBadge {
 type Message {
   id_message: ID!
   content: String!
+  imageUrl: String
+  videoUrl: String
   isRead: Boolean!
   createdAt: DateTime!
   updatedAt: DateTime!
@@ -168,7 +170,7 @@ type Query {
   getFollowing(id_user: String!): [User!]!
   getCommentsByPost(postId: String!, limit: Int = 10, offset: Int = 0): [Comment!]!
   getUserConversations: [Conversation!]!
-  getChatMessages(id_conversation: String!): [Message!]!
+  getChatMessages(id_conversation: String!, limit: Float, offset: Float): [Message!]!
   searchMessagesInChat(id_conversation: String!, searchTerm: String!): [Message!]!
   getConversation(id_conversation: String!): Conversation
   getActiveStories: [Story!]!
@@ -196,7 +198,7 @@ type Mutation {
   deleteConversationForMe(id_conversation: String!): Boolean!
   editMessage(id_message: String!, newContent: String!): Message!
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
-  sendMessage(id_conversation: String!, content: String!): Message!
+  sendMessage(id_conversation: String!, content: String = "", imageUrl: String, videoUrl: String): Message!
   createStory(mediaUrl: String!, mediaType: String!): Story!
   deleteStory(id: String!): Boolean!
 }
@@ -205,4 +207,8 @@ input PostMediaInput {
   url: String!
   type: String!
   order: Int!
+}
+
+type Subscription {
+  messageAdded(id_conversation: String!): Message!
 }

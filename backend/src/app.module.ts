@@ -47,6 +47,17 @@ import { StoriesModule } from './stories/stories.module';
       autoSchemaFile: join(process.cwd(), 'src/schema.gql'), // Autogenera el archivo del schema
       playground: false, // Desactivamos el playground antiguo
       plugins: [ApolloServerPluginLandingPageLocalDefault()], // Activamos Apollo Studio Sandbox
+      subscriptions: {
+        'graphql-ws': {
+          onConnect: (context: any) => {
+            const { connectionParams, extra } = context;
+            const authToken = connectionParams?.Authorization || connectionParams?.authorization;
+            if (authToken) {
+              extra.request = { headers: { authorization: authToken } };
+            }
+          },
+        },
+      },
     }),
 
     // 4. Módulos de nuestra aplicación

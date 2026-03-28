@@ -15,6 +15,7 @@ import {
     Modal,
     Dimensions,
     Alert,
+    PanResponder,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,10 +25,15 @@ import { AppStackParamList } from '../../../navigation/AppNavigator';
 import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION, DELETE_MESSAGE_FOR_ME, DELETE_MESSAGE_FOR_ALL, EDIT_MESSAGE, SEARCH_MESSAGES_IN_CHAT } from '../graphql/chat.operations';
+import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION, DELETE_MESSAGE_FOR_ME, DELETE_MESSAGE_FOR_ALL, EDIT_MESSAGE, SEARCH_MESSAGES_IN_CHAT, MESSAGE_ADDED_SUBSCRIPTION } from '../graphql/chat.operations';
 import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
 import Toast from 'react-native-toast-message';
+import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
+import { Video as VideoCompressor } from 'react-native-compressor';
+import { ChatBubbleVideo } from '../components/ChatBubbleVideo';
+import ZoomableImageViewer from '../../feed/components/ZoomableImageViewer';
+import { ActualFullscreenVideo } from '../../feed/components/ActualFullscreenVideo';
 
 export default function ChatRoomScreen() {
     const { colors, isDark } = useTheme();
@@ -56,24 +62,92 @@ export default function ChatRoomScreen() {
 
     const flatListRef = useRef<FlatList>(null);
     const client = useApolloClient();
-
-    // Cargar búsqueda si viene de información
-    useEffect(() => {
-        if (route.params?.activateSearch) {
-            setIsSearchMode(true);
-            // Limpiar el parámetro para que no se re-active solo
-            navigation.setParams({ activateSearch: undefined } as any);
-        }
-    }, [route.params?.activateSearch]);
+    const { pickImage, uploadMedia } = useMediaUpload();
+    const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+    const [uploadStatusText, setUploadStatusText] = useState('');
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
+    const [videoPreview, setVideoPreview] = useState<string | null>(null);
+    const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
+    const [fullscreenVideo, setFullscreenVideo] = useState<string | null>(null);
+    const [isMuted, setIsMuted] = useState(true);
 
     const screenWidth = Dimensions.get('window').width;
 
-    // Query para obtener mensajes
-    const { data, loading, error } = useQuery(GET_CHAT_MESSAGES, {
-        variables: { id_conversation },
+    const MESSAGES_LIMIT = 20;
+    const [hasMore, setHasMore] = useState(true);
+    const [isFetchingMore, setIsFetchingMore] = useState(false);
+
+    // Query para obtener mensajes (Sin pollInterval ya que usamos WebSockets)
+    const { data, loading, error, fetchMore, subscribeToMore } = useQuery(GET_CHAT_MESSAGES, {
+        variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
         skip: !id_conversation,
-        pollInterval: 3000,
     });
+
+    // Subscripción a nuevos mensajes
+    useEffect(() => {
+        if (!id_conversation) return;
+
+        const unsubscribe = subscribeToMore({
+            document: MESSAGE_ADDED_SUBSCRIPTION,
+            variables: { id_conversation },
+            updateQuery: (prev: any, { subscriptionData }: any) => {
+                if (!subscriptionData.data) return prev;
+                const newMessage = subscriptionData.data.messageAdded;
+                
+                // Prevenimos duplicación si la mutación sendMessage ya actualizó la caché local
+                const exists = prev.getChatMessages.find((m: any) => m.id_message === newMessage.id_message);
+                if (exists) return prev;
+
+                // El arreglo está ordenado DESC (los nuevos van al frente)
+                return Object.assign({}, prev, {
+                    getChatMessages: [newMessage, ...prev.getChatMessages]
+                });
+            }
+        });
+
+        return () => {
+            unsubscribe();
+        };
+    }, [id_conversation, subscribeToMore]);
+
+    const loadOlderMessages = async () => {
+        // Freno: No cargar si ya se está cargando o si ya no hay más mensajes
+        if (isFetchingMore || !hasMore) return;
+
+        setIsFetchingMore(true);
+        try {
+            const currentCount = data?.getChatMessages?.length || 0;
+            const { data: moreData } = await fetchMore({
+                variables: {
+                    offset: currentCount,
+                },
+            }) as any;
+
+            const newCount = moreData?.getChatMessages?.length || 0;
+
+            // Si el servidor no devolvió mensajes nuevos, la longitud total no crecerá en MESSAGES_LIMIT
+            if (!moreData?.getChatMessages || (newCount - currentCount) < MESSAGES_LIMIT) {
+                setHasMore(false);
+            }
+        } catch (e) {
+            console.error("Error cargando historial de chat:", e);
+            setHasMore(false); // Para no ciclar el error
+        } finally {
+            setIsFetchingMore(false);
+        }
+    };
+
+    // Reseteamos el paginado cuando cambiamos de chat
+    useEffect(() => {
+        setHasMore(true);
+    }, [id_conversation]);
+
+    // Verificación segura en la carga inicial
+    useEffect(() => {
+        if (data?.getChatMessages && data.getChatMessages.length < MESSAGES_LIMIT) {
+            setHasMore(false);
+        }
+    }, [data?.getChatMessages?.length]);
 
     // Query para obtener info de la conversación (para el header)
     const { data: convData } = useQuery(GET_CONVERSATION, {
@@ -108,7 +182,7 @@ export default function ChatRoomScreen() {
                         query: GET_CHAT_MESSAGES,
                         variables: { id_conversation },
                         data: {
-                            getChatMessages: [...existingMessages, sendMessage],
+                            getChatMessages: [sendMessage, ...existingMessages],
                         },
                     });
                 }
@@ -143,10 +217,16 @@ export default function ChatRoomScreen() {
     }, [data]);
 
     const handleSend = async () => {
-        if (!messageText.trim() || !id_conversation) return;
+        const hasText = messageText.trim().length > 0;
+        const hasMedia = !!imagePreview || !!videoPreview;
+        if ((!hasText && !hasMedia) || !id_conversation) return;
 
         const content = messageText.trim();
+        const pendingImage = imagePreview;
+        const pendingVideo = videoPreview;
         setMessageText('');
+        setImagePreview(null);
+        setVideoPreview(null);
 
         try {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -159,13 +239,63 @@ export default function ChatRoomScreen() {
                 return;
             }
 
+            let uploadedImageUrl: string | undefined;
+            let uploadedVideoUrl: string | undefined;
+
+            // Subir imagen
+            if (pendingImage) {
+                setIsUploadingMedia(true);
+                setUploadStatusText('Subiendo imagen...');
+                try {
+                    const ext = pendingImage.split('.').pop() || 'jpg';
+                    const mimeType = `image/${ext === 'png' ? 'png' : 'jpeg'}`;
+                    uploadedImageUrl = await uploadMedia(pendingImage, mimeType, 'chat-images');
+                } catch (uploadErr) {
+                    console.error('Error uploading image:', uploadErr);
+                    Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo subir la imagen' });
+                    setIsUploadingMedia(false);
+                    setUploadStatusText('');
+                    return;
+                }
+            }
+
+            // Comprimir y subir video
+            if (pendingVideo) {
+                setIsUploadingMedia(true);
+                setUploadStatusText('Comprimiendo video...');
+                try {
+                    const compressedUri = await VideoCompressor.compress(pendingVideo, {
+                        compressionMethod: 'auto',
+                        maxSize: 720,
+                    });
+                    setUploadStatusText('Subiendo video...');
+                    uploadedVideoUrl = await uploadMedia(compressedUri, 'video/mp4', 'chat-videos');
+                } catch (uploadErr) {
+                    console.error('Error uploading video:', uploadErr);
+                    Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo subir el video' });
+                    setIsUploadingMedia(false);
+                    setUploadStatusText('');
+                    return;
+                }
+            }
+
+            setIsUploadingMedia(false);
+            setUploadStatusText('');
+
             await sendMessageMutation({
-                variables: { id_conversation, content },
+                variables: {
+                    id_conversation,
+                    content: content || '',
+                    imageUrl: uploadedImageUrl || undefined,
+                    videoUrl: uploadedVideoUrl || undefined,
+                },
                 optimisticResponse: {
                     sendMessage: {
                         __typename: 'Message',
                         id_message: `temp-${Date.now()}`,
-                        content,
+                        content: content || '',
+                        imageUrl: uploadedImageUrl || null,
+                        videoUrl: uploadedVideoUrl || null,
                         createdAt: new Date().toISOString(),
                         isRead: false,
                         isDeletedForAll: false,
@@ -179,6 +309,39 @@ export default function ChatRoomScreen() {
             });
         } catch (err) {
             console.error("Error sending message:", err);
+        }
+    };
+
+    const handlePickMedia = async () => {
+        try {
+            // Tarea 2: Usar editor integrado de expo-image-picker
+            const result = await pickImage(true, 'All', 60, 0.7);
+            if (result) {
+                if (result.mimeType?.startsWith('video')) {
+                    // Validar duración (máx 60 segundos)
+                    // expo-image-picker entrega la duración en milisegundos en versiones recientes
+                    const durationInSeconds = result.duration ? (result.duration > 1000 ? result.duration / 1000 : result.duration) : 0;
+                    
+                    if (durationInSeconds > 60.5) {
+                        Toast.show({
+                            type: 'error',
+                            text1: 'Video muy largo',
+                            text2: 'Solo se permiten videos de hasta 1 minuto.'
+                        });
+                        return;
+                    }
+                    
+                    setVideoPreview(result.localUri);
+                    setImagePreview(null);
+                } else {
+                    setImagePreview(result.localUri);
+                    setVideoPreview(null);
+                }
+            }
+        } catch (error: any) {
+            if (error.message?.includes('denegados')) {
+                Toast.show({ type: 'error', text1: 'Permisos', text2: 'Permite el acceso a tu galería' });
+            }
         }
     };
 
@@ -540,7 +703,39 @@ export default function ChatRoomScreen() {
                     delayLongPress={200}
                     style={bubbleStyles}
                 >
-                    <HighlightedText text={item.content} sub={searchTerm} mine={isMine} />
+                    {item.imageUrl && (
+                        <TouchableOpacity
+                            activeOpacity={0.9}
+                            onPress={() => setFullscreenImage(item.imageUrl)}
+                        >
+                            <Image
+                                source={{ uri: item.imageUrl }}
+                                style={{
+                                    width: screenWidth * 0.55,
+                                    height: screenWidth * 0.55 * 0.75,
+                                    borderRadius: 12,
+                                    marginBottom: item.content ? 6 : 0,
+                                }}
+                                resizeMode="cover"
+                            />
+                        </TouchableOpacity>
+                    )}
+                    {item.videoUrl && (
+                        <View style={{ width: screenWidth * 0.55, borderRadius: 12, overflow: 'hidden', marginBottom: item.content ? 6 : 0 }}>
+                            <ChatBubbleVideo
+                                url={item.videoUrl}
+                                width={screenWidth * 0.55}
+                                height={screenWidth * 0.55 * 0.75}
+                                onPressFullScreen={() => {
+                                    setIsMuted(false); // Activamos audio automáticamente para el visor
+                                    setFullscreenVideo(item.videoUrl);
+                                }}
+                            />
+                        </View>
+                    )}
+                    {item.content ? (
+                        <HighlightedText text={item.content} sub={searchTerm} mine={isMine} />
+                    ) : null}
                     <View style={styles.messageFooter}>
                         {item.editedAt && (
                             <Text style={[
@@ -669,30 +864,81 @@ export default function ChatRoomScreen() {
                             <ActivityIndicator color={colors.primary} />
                         </View>
                     ) : (
-                        <FlatList
-                            ref={flatListRef}
-                            data={messages}
-                            renderItem={renderMessage}
-                            keyExtractor={(item) => item.id}
-                            inverted={true}
-                            contentContainerStyle={styles.listContent}
-                            showsVerticalScrollIndicator={false}
-                            ListFooterComponent={renderProfileSummary}
-                            onScrollToIndexFailed={handleScrollToIndexFailed}
-                        />
+                            <FlatList
+                                ref={flatListRef}
+                                data={messages}
+                                renderItem={renderMessage}
+                                keyExtractor={(item) => item.id}
+                                inverted={true} // Los mensajes nuevos se mantienen al fondo
+                                contentContainerStyle={styles.listContent}
+                                showsVerticalScrollIndicator={false}
+                                
+                                // Indicador de carga (Aparece arriba en modo inverted={true})
+                                ListFooterComponent={() => (
+                                    <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                                        {isFetchingMore && hasMore ? (
+                                            <ActivityIndicator color={colors.primary} />
+                                        ) : (
+                                            !hasMore ? renderProfileSummary() : null
+                                        )}
+                                    </View>
+                                )}
+                                
+                                // Configuración de Infinite Scroll
+                                onEndReached={loadOlderMessages}
+                                onEndReachedThreshold={0.5} // Carga cuando falte un 50% para ver el tope
+                                onScrollToIndexFailed={handleScrollToIndexFailed}
+                            />
                     )}
                 </View>
 
                 {/* Input de Mensajes */}
-                <View style={[
-                    styles.inputWrapper, 
+                <View style={[styles.inputWrapper, 
                     { 
                         borderTopColor: colors.border, 
                         backgroundColor: colors.background,
                         paddingBottom: 10
                     }
                 ]}>
+                    {/* Preview de media seleccionada */}
+                    {(imagePreview || videoPreview) && (
+                        <View style={[styles.imagePreviewBar, { backgroundColor: isDark ? '#1C1C1E' : '#F0F0F0' }]}>
+                            {imagePreview && <Image source={{ uri: imagePreview }} style={styles.imagePreviewThumb} />}
+                            {videoPreview && (
+                                <View style={[styles.imagePreviewThumb, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }]}>
+                                    <Ionicons name="videocam" size={20} color="#FFF" />
+                                </View>
+                            )}
+                            <Text style={[styles.imagePreviewText, { color: colors.textSecondary }]} numberOfLines={1}>
+                                {videoPreview ? 'Video adjunto' : 'Imagen adjunta'}
+                            </Text>
+                            <TouchableOpacity onPress={() => { setImagePreview(null); setVideoPreview(null); }} style={styles.imagePreviewClose}>
+                                <Ionicons name="close-circle" size={22} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
+                    )}
+
+                    {/* Status de subida */}
+                    {isUploadingMedia && uploadStatusText ? (
+                        <View style={[styles.uploadStatusBar, { backgroundColor: isDark ? '#1C1C1E' : '#F0F0F0' }]}>
+                            <ActivityIndicator size="small" color={colors.primary} />
+                            <Text style={[styles.uploadStatusText, { color: colors.textSecondary }]}>{uploadStatusText}</Text>
+                        </View>
+                    ) : null}
+
                     <View style={[styles.inputContainer, { backgroundColor: isDark ? '#1C1C1E' : '#F7F7F7' }]}>
+                        <TouchableOpacity
+                            onPress={handlePickMedia}
+                            style={styles.attachButton}
+                            disabled={isUploadingMedia}
+                        >
+                            {isUploadingMedia ? (
+                                <ActivityIndicator size="small" color={colors.primary} />
+                            ) : (
+                                <Ionicons name="attach-outline" size={24} color={colors.primary} style={{ transform: [{ rotate: '45deg' }] }} />
+                            )}
+                        </TouchableOpacity>
+
                         <TextInput
                             style={[styles.input, { color: colors.text }]}
                             placeholder="Mensaje..."
@@ -704,21 +950,60 @@ export default function ChatRoomScreen() {
 
                         <TouchableOpacity 
                             onPress={handleSend}
-                            disabled={!messageText.trim()}
+                            disabled={(!messageText.trim() && !imagePreview && !videoPreview) || isUploadingMedia}
                             style={[
                                 styles.sendButton, 
-                                { backgroundColor: messageText.trim().length > 0 ? colors.primary : (isDark ? '#2C2C2E' : '#E5E5EA') }
+                                { backgroundColor: (messageText.trim().length > 0 || imagePreview || videoPreview) && !isUploadingMedia ? colors.primary : (isDark ? '#2C2C2E' : '#E5E5EA') }
                             ]}
                         >
-                            <Ionicons 
-                                name="arrow-up" 
-                                size={20} 
-                                color={messageText.trim().length > 0 ? "#FFF" : colors.textSecondary} 
-                            />
+                            {isUploadingMedia ? (
+                                <ActivityIndicator size="small" color="#FFF" />
+                            ) : (
+                                <Ionicons 
+                                    name="arrow-up" 
+                                    size={20} 
+                                    color={(messageText.trim().length > 0 || imagePreview || videoPreview) ? "#FFF" : colors.textSecondary} 
+                                />
+                            )}
                         </TouchableOpacity>
                     </View>
                 </View>
             </Animated.View>
+
+            <Modal
+                visible={!!fullscreenImage || !!fullscreenVideo}
+                transparent
+                animationType="fade"
+                onRequestClose={() => { setFullscreenImage(null); setFullscreenVideo(null); }}
+            >
+                <View style={{ flex: 1, backgroundColor: 'black' }}>
+                    <TouchableOpacity
+                        style={[styles.fullscreenCloseBtn, { zIndex: 999 }]}
+                        onPress={() => { setFullscreenImage(null); setFullscreenVideo(null); }}
+                    >
+                        <Ionicons name="close" size={28} color="#FFF" />
+                    </TouchableOpacity>
+                    
+                    {fullscreenImage && (
+                        <ZoomableImageViewer
+                            url={fullscreenImage}
+                            mediaType="image"
+                            onClose={() => setFullscreenImage(null)}
+                        />
+                    )}
+                    {fullscreenVideo && (
+                        <ActualFullscreenVideo
+                            url={fullscreenVideo}
+                            isMuted={isMuted}
+                            toggleMute={() => setIsMuted(!isMuted)}
+                            colors={colors}
+                            insets={insets}
+                            isVisible={!!fullscreenVideo}
+                            onClose={() => setFullscreenVideo(null)}
+                        />
+                    )}
+                </View>
+            </Modal>
 
             {/* Modal de Acciones del Mensaje */}
             <Modal
@@ -1150,6 +1435,59 @@ const styles = StyleSheet.create({
     },
     confirmModalBtnText: {
         fontSize: 16,
+        fontWeight: '500',
+    },
+    imagePreviewBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
+        marginBottom: -4,
+    },
+    imagePreviewThumb: {
+        width: 40,
+        height: 40,
+        borderRadius: 8,
+        marginRight: 10,
+    },
+    imagePreviewText: {
+        flex: 1,
+        fontSize: 13,
+        fontWeight: '500',
+    },
+    imagePreviewClose: {
+        padding: 4,
+    },
+    fullscreenImageContainer: {
+        flex: 1,
+        backgroundColor: '#000',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    fullscreenCloseBtn: {
+        position: 'absolute',
+        top: 50,
+        right: 20,
+        zIndex: 10,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        borderRadius: 20,
+        padding: 8,
+    },
+    fullscreenImage: {
+        width: '100%',
+        height: '100%',
+    },
+    uploadStatusBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 6,
+        gap: 8,
+    },
+    uploadStatusText: {
+        fontSize: 12,
         fontWeight: '500',
     },
 });

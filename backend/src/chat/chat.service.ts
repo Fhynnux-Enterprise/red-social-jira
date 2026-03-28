@@ -64,7 +64,7 @@ export class ChatService {
         return savedConversation;
     }
 
-    async sendMessage(senderId: string, id_conversation: string, content: string): Promise<Message> {
+    async sendMessage(senderId: string, id_conversation: string, content: string, imageUrl?: string, videoUrl?: string): Promise<Message> {
         const conversation = await this.conversationRepository.findOne({
             where: { id_conversation },
             relations: ['participants']
@@ -81,7 +81,9 @@ export class ChatService {
         }
 
         const newMessage = this.messageRepository.create({
-            content,
+            content: content || '',
+            imageUrl: imageUrl || undefined,
+            videoUrl: videoUrl || undefined,
             id_conversation,
             id_user: senderId,
             isRead: false,
@@ -124,12 +126,14 @@ export class ChatService {
         return conversations;
     }
 
-    async getMessagesByConversation(id_conversation: string, currentUserId: string): Promise<Message[]> {
+    async getMessagesByConversation(id_conversation: string, currentUserId: string, limit = 20, offset = 0): Promise<Message[]> {
         return this.messageRepository.createQueryBuilder('message')
             .leftJoinAndSelect('message.sender', 'sender')
             .where('message.id_conversation = :id_conversation', { id_conversation })
             .andWhere('(message.deletedFor IS NULL OR NOT (:currentUserId = ANY (message.deletedFor)))', { currentUserId })
-            .orderBy('message.createdAt', 'ASC')
+            .orderBy('message.createdAt', 'DESC')
+            .take(limit)
+            .skip(offset)
             .getMany();
     }
 
@@ -150,7 +154,7 @@ export class ChatService {
         }
 
         const currentDeletedFor = message.deletedFor || [];
-        
+
         if (!currentDeletedFor.includes(currentUserId)) {
             message.deletedFor = [...currentDeletedFor, currentUserId];
             await this.messageRepository.save(message);
