@@ -87,9 +87,15 @@ export const apolloClient = new ApolloClient({
                         },
                     },
                     getCommentsByPost: {
-                        merge(existing, incoming) {
-                            return incoming;
+                        keyArgs: ['postId'],
+                        merge(existing = [], incoming) {
+                            const existingRefs = new Set(existing.map((ref: any) => ref.__ref));
+                            const uniqueIncoming = incoming.filter((ref: any) => !existingRefs.has(ref.__ref));
+                            return [...existing, ...uniqueIncoming];
                         },
+                    },
+                    getUserProfile: {
+                        keyArgs: ['id'],
                     },
                 },
             },

@@ -99,6 +99,44 @@ export class PostsService {
         return posts;
     }
 
+    async findByUser(authorId: string, limit: number = 5, offset: number = 0): Promise<Post[]> {
+        const posts = await this.postsRepository.createQueryBuilder('post')
+            .where('post.authorId = :authorId', { authorId })
+            .leftJoinAndSelect('post.author', 'author')
+            .leftJoinAndSelect('post.likes', 'likes')
+            .leftJoinAndSelect('likes.user', 'likeUser')
+            .leftJoinAndSelect('post.media', 'media')
+            .orderBy('post.createdAt', 'DESC')
+            .addOrderBy('post.id', 'DESC')
+            .take(limit)
+            .skip(offset)
+            .getMany();
+
+        posts.forEach(p => {
+            if (p.media && p.media.length > 1) {
+                p.media.sort((a, b) => a.order - b.order);
+            }
+        });
+
+        if (posts.length > 0) {
+            const postIds = posts.map(p => p.id);
+            const rows: { postId: string; count: string }[] = await this.postsRepository.manager
+                .query(
+                    `SELECT id_post as "postId", COUNT(id_comment) as "count"
+                     FROM comments
+                     WHERE id_post = ANY($1) AND "deletedAt" IS NULL
+                     GROUP BY id_post`,
+                    [postIds],
+                );
+            const countMap = new Map(rows.map(r => [r.postId, parseInt(r.count, 10)]));
+            posts.forEach(p => {
+                (p as any).commentsCount = countMap.get(p.id) ?? 0;
+            });
+        }
+
+        return posts;
+    }
+
     async updatePost(id: string, content: string, userId: string, title?: string): Promise<Post> {
         const post = await this.postsRepository.findOne({ where: { id }, relations: ['author', 'likes', 'likes.user', 'comments', 'media'] });
         if (!post) {
@@ -115,7 +153,7 @@ export class PostsService {
     }
 
     async deletePost(id: string, userId: string): Promise<boolean> {
-        const post = await this.postsRepository.findOne({ 
+        const post = await this.postsRepository.findOne({
             where: { id },
             relations: ['media'] // Importante cargar la relación para que el suscriptor de borrado tenga data
         });

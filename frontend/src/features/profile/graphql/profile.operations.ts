@@ -52,7 +52,7 @@ export const UPDATE_BADGE = gql`
 `;
 
 export const GET_USER_PROFILE = gql`
-  query GetUserProfile($id: String!) {
+  query GetUserProfile($id: String!, $limit: Int, $offset: Int) {
     getUserProfile(id: $id) {
       id
       firstName
@@ -76,9 +76,10 @@ export const GET_USER_PROFILE = gql`
       }
       followersCount
       followingCount
-      posts {
+      posts(limit: $limit, offset: $offset) {
         id
         content
+        title
         media {
             id
             url

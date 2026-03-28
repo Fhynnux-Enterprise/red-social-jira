@@ -7,12 +7,15 @@ import { User } from '../auth/entities/user.entity';
 import { JwtGqlGuard } from '../auth/guards/jwt-gql.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { FollowsService } from '../follows/follows.service';
+import { PostsService } from '../posts/posts.service';
+import { Post } from '../posts/entities/post.entity';
 
 @Resolver(() => User)
 export class UsersResolver {
   constructor(
     private readonly usersService: UsersService,
     private readonly followsService: FollowsService,
+    private readonly postsService: PostsService,
   ) { }
 
   @ResolveField(() => Int)
@@ -23,6 +26,15 @@ export class UsersResolver {
   @ResolveField(() => Int)
   async followingCount(@Parent() user: User): Promise<number> {
     return this.followsService.getFollowingCount(user.id);
+  }
+
+  @ResolveField(() => [Post])
+  async posts(
+    @Parent() user: User,
+    @Args('limit', { type: () => Int, defaultValue: 5, nullable: true }) limit: number,
+    @Args('offset', { type: () => Int, defaultValue: 0, nullable: true }) offset: number,
+  ): Promise<Post[]> {
+    return this.postsService.findByUser(user.id, limit ?? 5, offset ?? 0);
   }
 
   @Mutation(() => UserCustomField)

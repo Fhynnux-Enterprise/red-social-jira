@@ -1,16 +1,16 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, ScrollView, Alert, RefreshControl, Platform, FlatList } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect, useRoute, useIsFocused } from '@react-navigation/native';
-import { useCallback } from 'react';
 import { useAuth } from '../../auth/context/AuthContext';
 import { ProfileService, UserProfile } from '../services/profile.service';
 import ThemeSelectorModal from '../../../components/ThemeSelectorModal';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import Toast from 'react-native-toast-message';
 import { useQuery, useMutation } from '@apollo/client/react';
+import { NetworkStatus } from '@apollo/client';
 import { GET_USER_PROFILE } from '../graphql/profile.operations';
 import { DELETE_POST, GET_POSTS } from '../../feed/graphql/posts.operations';
 import { TOGGLE_FOLLOW, IS_FOLLOWING } from '../../follows/graphql/follows.operations';
@@ -51,11 +51,22 @@ export default function ProfileScreen() {
     const profileUserId = route.params?.userId || currentUserId;
     const isMyProfile = profileUserId === currentUserId;
 
-    const { data: gqlData, loading: gqlLoading, error: gqlError, refetch: refetchProfile } = useQuery(GET_USER_PROFILE, {
-        variables: { id: profileUserId },
+    const PROFILE_PAGE_SIZE = 5;
+
+    const { data: gqlData, loading: gqlLoading, error: gqlError, refetch: refetchProfile, fetchMore, networkStatus } = useQuery(GET_USER_PROFILE, {
+        variables: { id: profileUserId, limit: PROFILE_PAGE_SIZE, offset: 0 },
         skip: !profileUserId,
         fetchPolicy: 'cache-and-network',
+        notifyOnNetworkStatusChange: true,
     });
+
+    const [hasMore, setHasMore] = useState(true);
+    const [isFetchingMore, setIsFetchingMore] = useState(false);
+
+    // Reset hasMore when switching profiles
+    useEffect(() => {
+        setHasMore(true);
+    }, [profileUserId]);
 
     const { data: followData } = useQuery(IS_FOLLOWING, {
         variables: { id_following: profileUserId },
@@ -111,14 +122,50 @@ export default function ProfileScreen() {
 
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
+        setHasMore(true);
         try {
-            await refetchProfile();
+            await refetchProfile({ id: profileUserId, limit: PROFILE_PAGE_SIZE, offset: 0 });
         } catch (error) {
             console.error('Error refreshing profile:', error);
         } finally {
             setRefreshing(false);
         }
-    }, [refetchProfile]);
+    }, [refetchProfile, profileUserId]);
+
+    const loadMorePosts = useCallback(() => {
+        const currentPosts = gqlData?.getUserProfile?.posts;
+        if (isFetchingMore || !hasMore || !currentPosts) return;
+
+        setIsFetchingMore(true);
+        fetchMore({
+            variables: {
+                id: profileUserId,
+                limit: PROFILE_PAGE_SIZE,
+                offset: currentPosts.length,
+            },
+            updateQuery: (prev: any, { fetchMoreResult }: any) => {
+                if (!fetchMoreResult) return prev;
+                const newPosts = fetchMoreResult.getUserProfile?.posts ?? [];
+                if (newPosts.length < PROFILE_PAGE_SIZE) {
+                    setHasMore(false);
+                }
+                if (newPosts.length === 0) {
+                    setIsFetchingMore(false);
+                    return prev;
+                }
+                // Deduplicar
+                const existingIds = new Set((prev.getUserProfile?.posts ?? []).map((p: any) => p.id));
+                const uniqueNew = newPosts.filter((p: any) => !existingIds.has(p.id));
+                return {
+                    ...prev,
+                    getUserProfile: {
+                        ...prev.getUserProfile,
+                        posts: [...(prev.getUserProfile?.posts ?? []), ...uniqueNew],
+                    },
+                };
+            },
+        }).finally(() => setIsFetchingMore(false));
+    }, [isFetchingMore, hasMore, gqlData, profileUserId, fetchMore]);
 
     const [deletePost] = useMutation(DELETE_POST, {
         refetchQueries: [{ query: GET_POSTS }],
@@ -172,7 +219,7 @@ export default function ProfileScreen() {
         }
     };
 
-    if (gqlLoading && !userData) {
+    if (gqlLoading && networkStatus === NetworkStatus.loading && !gqlData) {
         return (
             <SafeAreaView style={styles.centerContainer}>
                 <ActivityIndicator size="large" color={colors.primary} />
@@ -280,8 +327,21 @@ export default function ProfileScreen() {
                 refreshControl={
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} tintColor={colors.primary} />
                 }
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 20 }}
+                onEndReached={loadMorePosts}
+                onEndReachedThreshold={0.4}
+                ListFooterComponent={
+                    isFetchingMore ? (
+                        <ActivityIndicator
+                            size="small"
+                            color={colors.primary}
+                            style={{ paddingVertical: 20 }}
+                        />
+                    ) : !hasMore && (userData?.posts?.length ?? 0) > 0 ? (
+                        <Text style={{ textAlign: 'center', color: colors.textSecondary, paddingVertical: 20, fontSize: 13 }}>
+                            Has visto todas las publicaciones
+                        </Text>
+                    ) : null
+                }
             />
 
             <Modal
@@ -376,10 +436,13 @@ export default function ProfileScreen() {
                 nextPost={(() => {
                     const posts = userData?.posts || [];
                     const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
-                    return (currentIndex !== -1 && currentIndex < posts.length - 1)
-                        ? { ...posts[currentIndex + 1], author: userData }
-                        : null;
+                    // Devolver el siguiente, o `true` si hay más en el server (para que el modal no bloquee)
+                    if (currentIndex !== -1 && currentIndex < posts.length - 1)
+                        return { ...posts[currentIndex + 1], author: userData };
+                    if (hasMore) return {} as any; // señal de que hay más
+                    return null;
                 })()}
+                hasMorePosts={hasMore}
                 prevPost={(() => {
                     const posts = userData?.posts || [];
                     const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
@@ -393,8 +456,22 @@ export default function ProfileScreen() {
                 onNextPost={() => {
                     const posts = userData?.posts || [];
                     const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
-                    if (currentIndex !== -1 && currentIndex < posts.length - 1) {
-                        setSelectedPostForComments({ post: { ...posts[currentIndex + 1], author: userData }, minimize: !!selectedPostForComments?.minimize, initialTab: selectedPostForComments?.initialTab });
+
+                    if (currentIndex !== -1) {
+                        // Pre-fetch: si estamos en los últimos 3, cargar más
+                        if (currentIndex >= posts.length - 3 && hasMore && !isFetchingMore) {
+                            loadMorePosts();
+                        }
+                        if (currentIndex < posts.length - 1) {
+                            setSelectedPostForComments({
+                                post: { ...posts[currentIndex + 1], author: userData },
+                                minimize: !!selectedPostForComments?.minimize,
+                                initialTab: selectedPostForComments?.initialTab,
+                            });
+                        } else if (hasMore) {
+                            Toast.show({ type: 'info', text1: 'Cargando más...', text2: 'Desliza de nuevo en un momento.' });
+                            if (!isFetchingMore) loadMorePosts();
+                        }
                     }
                 }}
                 onPrevPost={() => {

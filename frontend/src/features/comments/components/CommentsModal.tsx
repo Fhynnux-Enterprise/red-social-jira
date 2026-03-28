@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
     View, Text, TouchableOpacity, Platform, StyleSheet,
     Image, ActivityIndicator, TouchableWithoutFeedback,
@@ -724,18 +724,46 @@ export default function CommentsModal({
     };
 
     // ── Comments query ─────────────────────────────────────────────────────
-    const { data, loading, error, refetch } = useQuery(GET_COMMENTS, {
-        variables: { postId },
+    const COMMENTS_PAGE_SIZE = 10;
+    const { data, loading, error, refetch, fetchMore: fetchMoreComments } = useQuery(GET_COMMENTS, {
+        variables: { postId, limit: COMMENTS_PAGE_SIZE, offset: 0 },
         skip: !postId,
         fetchPolicy: 'cache-and-network',
     });
+
+    const [hasMoreComments, setHasMoreComments] = useState(true);
+    const [isFetchingMoreComments, setIsFetchingMoreComments] = useState(false);
+
+    // Reset al cambiar de post
+    useEffect(() => {
+        setHasMoreComments(true);
+    }, [postId]);
+
+    const loadMoreComments = useCallback(() => {
+        const currentComments = data?.getCommentsByPost;
+        if (isFetchingMoreComments || !hasMoreComments || !currentComments) return;
+
+        setIsFetchingMoreComments(true);
+        fetchMoreComments({
+            variables: {
+                postId,
+                limit: COMMENTS_PAGE_SIZE,
+                offset: currentComments.length,
+            },
+        }).then((result: any) => {
+            const newComments = result?.data?.getCommentsByPost ?? [];
+            if (newComments.length < COMMENTS_PAGE_SIZE) {
+                setHasMoreComments(false);
+            }
+        }).finally(() => setIsFetchingMoreComments(false));
+    }, [data?.getCommentsByPost, isFetchingMoreComments, hasMoreComments, postId, fetchMoreComments]);
 
     // Preferimos post.commentsCount (total con respuestas, viene del feed)
     // Si no está disponible, contamos los comentarios raíz de la query local
     const commentsCount = post?.commentsCount ?? data?.getCommentsByPost?.length ?? 0;
 
     const [createComment, { loading: creating }] = useMutation(CREATE_COMMENT, {
-        refetchQueries: [{ query: GET_COMMENTS, variables: { postId } }],
+        refetchQueries: [{ query: GET_COMMENTS, variables: { postId, limit: COMMENTS_PAGE_SIZE, offset: 0 } }],
         update(cache, { data: { createComment: newComment } }) {
             if (!postId) return;
             cache.modify({
@@ -834,7 +862,7 @@ export default function CommentsModal({
                         // Forzamos la actualización de la lista de comentarios en el cache
                         const existing = cache.readQuery<{ getCommentsByPost: any[] }>({
                             query: GET_COMMENTS,
-                            variables: { postId }
+                            variables: { postId, limit: COMMENTS_PAGE_SIZE, offset: 0 }
                         });
 
                         if (existing) {
@@ -843,7 +871,7 @@ export default function CommentsModal({
                             );
                             cache.writeQuery({
                                 query: GET_COMMENTS,
-                                variables: { postId },
+                                variables: { postId, limit: COMMENTS_PAGE_SIZE, offset: 0 },
                                 data: { getCommentsByPost: newComments }
                             });
                         }
@@ -1221,7 +1249,14 @@ export default function CommentsModal({
                                         scrollContentHeight.current = h;
                                     }}
                                     onScroll={(e) => {
-                                        commentsScrollY.current = e.nativeEvent.contentOffset.y;
+                                        const y = e.nativeEvent.contentOffset.y;
+                                        commentsScrollY.current = y;
+                                        // Auto-carga al acercarse al fondo
+                                        const contentH = scrollContentHeight.current;
+                                        const viewH = scrollViewHeight.current;
+                                        if (contentH > viewH && y + viewH >= contentH - 80 && activeTab === 'comments') {
+                                            loadMoreComments();
+                                        }
                                     }}
                                     onScrollBeginDrag={(e) => {
                                         scrollDragStartY.current = e.nativeEvent.contentOffset.y;
@@ -1292,6 +1327,14 @@ export default function CommentsModal({
                                                 {[...(data?.getCommentsByPost || [])]
                                                     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                                                     .map((item: any) => renderComment(item))}
+                                                {/* Spinner o mensaje de fin */}
+                                                {isFetchingMoreComments ? (
+                                                    <ActivityIndicator size="small" color={colors.primary} style={{ paddingVertical: 16 }} />
+                                                ) : !hasMoreComments && (data?.getCommentsByPost?.length ?? 0) > 0 ? (
+                                                    <Text style={{ textAlign: 'center', color: colors.textSecondary, paddingVertical: 12, fontSize: 12 }}>
+                                                        No hay más comentarios
+                                                    </Text>
+                                                ) : null}
                                                 {/* Zona arrastrable en espacio vacío bajo los últimos comentarios */}
                                                 <View style={{ flex: 1, minHeight: 80 }} {...emptyAreaPan.panHandlers} />
                                             </>

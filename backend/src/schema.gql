@@ -138,7 +138,7 @@ type User {
   bio: String
   photoUrl: String
   coverUrl: String
-  posts: [Post!]
+  posts(limit: Int = 5, offset: Int = 0): [Post!]
   customFields: [UserCustomField!]
   badge: UserBadge
   comments: [Comment!]
@@ -166,7 +166,7 @@ type Query {
   isFollowing(id_following: String!): Boolean!
   getFollowers(id_user: String!): [User!]!
   getFollowing(id_user: String!): [User!]!
-  getCommentsByPost(postId: String!): [Comment!]!
+  getCommentsByPost(postId: String!, limit: Int = 10, offset: Int = 0): [Comment!]!
   getUserConversations: [Conversation!]!
   getChatMessages(id_conversation: String!): [Message!]!
   searchMessagesInChat(id_conversation: String!, searchTerm: String!): [Message!]!

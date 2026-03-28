@@ -1,9 +1,10 @@
 import React from 'react';
-import { Platform } from 'react-native';
+import { Platform, View, StyleSheet, Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import MaskedView from '@react-native-masked-view/masked-view';
 import FeedScreen from '../features/feed/screens/FeedScreen';
 import ProfileScreen from '../features/profile/screens/ProfileScreen';
 import EditProfileScreen from '../features/profile/screens/EditProfileScreen';
@@ -12,6 +13,7 @@ import ChatRoomScreen from '../features/chat/screens/ChatRoomScreen';
 import ChatDetailsScreen from '../features/chat/screens/ChatDetailsScreen';
 import NewChatScreen from '../features/chat/screens/NewChatScreen';
 import { useTheme } from '../theme/ThemeContext';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export type AppStackParamList = {
     MainTabs: { screen?: string; params?: any } | undefined;
@@ -33,7 +35,7 @@ const Tab = createBottomTabNavigator<AppTabParamList>();
 
 function MainTabNavigator() {
     const insets = useSafeAreaInsets();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
 
     return (
         <Tab.Navigator
@@ -50,25 +52,64 @@ function MainTabNavigator() {
                         iconName = focused ? 'person' : 'person-outline';
                     }
 
-                    return <Ionicons name={iconName} size={22} color={color} />;
+                    const icon = <Ionicons name={iconName} size={24} color={focused ? 'white' : color} />;
+
+                    if (focused) {
+                        return (
+                            <MaskedView maskElement={<View style={styles.iconCenterer}>{icon}</View>}>
+                                <LinearGradient
+                                    colors={['#BF360C', '#FF5722', '#FF9800']} // De naranja tierra profundo a naranja fuego a naranja vibrante
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 0.7, y: 0.7 }}
+                                    style={{ width: 30, height: 30 }}
+                                />
+                            </MaskedView>
+                        );
+                    }
+
+                    return icon;
+                },
+                tabBarLabel: ({ focused, color, children }) => {
+                    const label = (
+                        <Text style={[styles.tabLabel, { color: focused ? 'white' : colors.textSecondary }]}>
+                            {children}
+                        </Text>
+                    );
+
+                    if (focused) {
+                        return (
+                            <MaskedView maskElement={<View style={styles.labelMaskContainer}>{label}</View>}>
+                                <LinearGradient
+                                    colors={['#BF360C', '#FF5722', '#FBC02D']} // Naranja rojizo -> naranja fuego -> ámbar
+                                    start={{ x: 0.2, y: 0 }}
+                                    end={{ x: 0.8, y: 0 }}
+                                    style={{ width: 80, height: 20 }}
+                                />
+                            </MaskedView>
+                        );
+                    }
+
+                    return label;
                 },
                 tabBarActiveTintColor: colors.primary,
                 tabBarInactiveTintColor: colors.textSecondary,
                 tabBarStyle: {
-                    backgroundColor: colors.surface,
+                    borderTopWidth: 1,
                     borderTopColor: colors.border,
-                    minHeight: Platform.OS === 'ios' ? 85 : 67 + insets.bottom,
-                    paddingBottom: Platform.OS === 'ios' ? 25 : Math.max(insets.bottom, 12) + 10,
+                    backgroundColor: colors.surface,
+                    minHeight: Platform.OS === 'ios' ? 92 : 72 + insets.bottom,
+                    paddingBottom: Platform.OS === 'ios' ? 32 : Math.max(insets.bottom, 12) + 10,
                     paddingTop: 8,
-                    elevation: 0, // Quita sombra oscura rara en android
-                },
-                tabBarLabelStyle: {
-                    fontSize: 10,
-                    fontWeight: 'bold',
-                    paddingBottom: 4,
+                    elevation: 8,
+                    shadowOpacity: 0.08,
+                    shadowRadius: 6,
                 },
                 tabBarIconStyle: {
-                    marginTop: 0, // Restauramos el margen porque son más pequeños
+                    marginTop: 0,
+                    width: 30,
+                    height: 30,
+                    justifyContent: 'center',
+                    alignItems: 'center',
                 }
             })}
         >
@@ -108,3 +149,23 @@ export default function AppNavigator() {
         </Stack.Navigator>
     );
 }
+
+const styles = StyleSheet.create({
+    iconCenterer: {
+        width: 30,
+        height: 30,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    tabLabel: {
+        fontSize: 11,
+        fontWeight: '700',
+        textAlign: 'center',
+    },
+    labelMaskContainer: {
+        width: 80,
+        height: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+    }
+});

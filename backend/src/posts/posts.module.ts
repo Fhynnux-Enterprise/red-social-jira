@@ -15,5 +15,6 @@ import { PostsSubscriber } from './subscribers/posts.subscriber';
         StorageModule,
     ],
     providers: [PostsResolver, PostsService, PostsSubscriber],
+    exports: [PostsService],
 })
 export class PostsModule { }
