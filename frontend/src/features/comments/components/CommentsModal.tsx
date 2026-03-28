@@ -1,17 +1,14 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
     View, Text, TouchableOpacity, Platform, StyleSheet,
     Image, ActivityIndicator, TouchableWithoutFeedback,
     Alert, Pressable, Keyboard, ScrollView, Modal,
     Dimensions, TextInput, PanResponder, Animated,
-    LayoutAnimation, UIManager, BackHandler
+    LayoutAnimation, BackHandler
 } from 'react-native';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-    UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 import { useNavigation } from '@react-navigation/native';
-import { useQuery, useMutation } from '@apollo/client';
+import { useQuery, useMutation } from '@apollo/client/react';
 import { Ionicons } from '@expo/vector-icons';
 import { GET_COMMENTS, CREATE_COMMENT, DELETE_COMMENT, UPDATE_COMMENT } from '../graphql/comments.operations';
 import { TOGGLE_LIKE } from '../../feed/graphql/posts.operations';
@@ -22,6 +19,7 @@ import CommentOptionsModal from './CommentOptionsModal';
 import ConfirmationModal from './ConfirmationModal';
 import CommentItem from './CommentItem';
 import CopyTextModal from '../../../components/CopyTextModal';
+import ImageCarousel from '../../feed/components/ImageCarousel';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -59,8 +57,18 @@ export interface CommentsModalProps {
     initialTab?: 'comments' | 'likes';
     onNextPost?: () => void;
     onPrevPost?: () => void;
+    nextPost?: any | null;
+    prevPost?: any | null;
+    hasMorePosts?: boolean;
+    onOptionsPress?: (post: any) => void;
+    initialExpanded?: boolean;
 }
-export default function CommentsModal({ visible, post, onClose, initialMinimized = false, initialTab = 'comments', onNextPost, onPrevPost }: CommentsModalProps) {
+export default function CommentsModal({
+    visible, post, onClose,
+    initialMinimized = false, initialTab = 'comments',
+    onNextPost, onPrevPost, nextPost, prevPost, hasMorePosts = false,
+    onOptionsPress, initialExpanded = false
+}: CommentsModalProps) {
     const { colors, isDark } = useTheme();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const insets = useSafeAreaInsets();
@@ -75,8 +83,59 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     const [isMinimized, setIsMinimized] = useState(false);
     const [activeTab, setActiveTab] = useState<'comments' | 'likes'>(initialTab);
     const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
     const inputRef = useRef<TextInput>(null);
+    const scrollViewRef = useRef<ScrollView>(null);
+    // postScrollEnabled: state para re-renderizar el ScrollView, ref para el PanResponder (closure-safe)
+    const [postScrollEnabled, setPostScrollEnabled] = React.useState(true);
+    const postScrollEnabledRef = useRef(true);
+    const setScrollEnabled = (val: boolean) => {
+        postScrollEnabledRef.current = val;
+        setPostScrollEnabled(val);
+    };
+    // Rastrea si el usuario ya hizo scroll hacia abajo en el post actual.
+    // La captura TikTok en el TOPE solo se activa si antes exploró el contenido hacia abajo.
+    const hasScrolledDown = useRef(false);
     const postId = post?.id;
+
+    // Resetear scroll al cambiar de post
+    useEffect(() => {
+        if (scrollViewRef.current && postId) {
+            scrollViewRef.current.scrollTo({ y: 0, animated: false });
+            currentScrollY.current = 0;
+        }
+        // Reset: el usuario aún no exploró este post hacia abajo
+        hasScrolledDown.current = false;
+        // Iniciar con scroll desactivado para que el primer toque en y=0
+        // sea capturado por tiktokSwipePan (prev post desde el primer drag).
+        setScrollEnabled(false);
+    }, [postId]);
+
+    // Lógica para determinar si el texto es largo
+    const TEXT_LIMIT = 90;
+    const isTextLong = (post?.content?.length || 0) > TEXT_LIMIT;
+    const displayContent = isTextLong && !isExpanded
+        ? post?.content.substring(0, TEXT_LIMIT).trimEnd()
+        : post?.content;
+
+    // =======================================================================================
+    // 🎛️ CONTROLES DE PANTALLA AJUSTABLES PARA EL TAMAÑO DE LA COMPOSICIÓN (MODIFICA AQUÍ)
+    // =======================================================================================
+
+    // 1. ESPACIO DESDE ARRIBA (Haz esto más pequeño para que la publicación suba)
+    // 0 es el límite absoluto de la zona segura (la cámara o barra de estado de tu celular).
+    // Ponlo en 0, 2 o 4 para aprovechar pantalla hacia arriba.
+    const TOP_SPACING = -12;
+
+    // 2. ESPACIO CON LA BARRA INFERIOR (Haz esto más pequeño para que baje MAS la tarjeta)
+    // Este valor restringe la tarjeta minimizada para que no se encima con tu barra negra.
+    // Bájalo a 45 o 40 si quieres que llegue rozando, o súbelo si la tapa.
+    const BOTTOM_SPACING = 40;
+
+    // 2. TAMAÑO CUANDO EL CAJÓN DE COMENTARIOS ESTÁ ABIERTO
+    // Puedes ajustar este multiplicador (p. ej 0.45) para que el post no se acorte tanto al leer comentarios.
+    const POST_EXPANDED_MAX_HEIGHT = SCREEN_HEIGHT * 0.35;
+    // =======================================================================================
 
     const navigateToProfile = (userId: string) => {
         onClose();
@@ -84,10 +143,13 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     };
 
     // Almacenamos los callbacks actualizados en una referencia porque el PanResponder guarda las variables del primer render
-    const callbacksRef = useRef({ onNextPost, onPrevPost });
+    const callbacksRef = useRef({ onNextPost, onPrevPost, hasMorePosts });
+    // IGUAL para nextPost/prevPost: el PanResponder los lee desde la ref, no del closure inicial
+    const navRef = useRef({ nextPost, prevPost });
     useEffect(() => {
-        callbacksRef.current = { onNextPost, onPrevPost };
-    }, [onNextPost, onPrevPost]);
+        callbacksRef.current = { onNextPost, onPrevPost, hasMorePosts };
+        navRef.current = { nextPost, prevPost };
+    }, [onNextPost, onPrevPost, nextPost, prevPost, hasMorePosts]);
 
     const toggleMinimize = () => {
         if (!isMinimized) {
@@ -102,47 +164,169 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     // Flag: solo habilita LayoutAnimation tras la animación de entrada del modal
     const bubbleAnimReady = useRef(false);
 
-    // ── PanResponder para el fondo transparente (Swipe para Next/Prev/Close) ──
+    // ── Animación entrada/salida + drag del modal entero ─────────────────
+    const panY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+    const currentGestureAxis = useRef<'none' | 'vertical' | 'horizontal'>('none');
+
+    // ── Animación para el cambio de post estilo TikTok (Físico) ──────────
+    const panYPost = useRef(new Animated.Value(0)).current;
+    const panX = useRef(new Animated.Value(0)).current;
+
+    // ── PanResponder para el fondo transparente (cierre + TikTok vertical) ──
     const backgroundSwipePan = useRef(PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_, g) =>
+            (Math.abs(g.dx) > Math.abs(g.dy) && g.dx < 0) ||
+            (Math.abs(g.dy) > Math.abs(g.dx) && Math.abs(g.dy) > 8),
+        onPanResponderGrant: () => {
+            // El backdrop siempre puede hacer TikTok — el postScrollEnabled no aplica aquí
+            // (el backdrop está FUERA del postBubble/ScrollView)
+            currentGestureAxis.current = 'none'; // Reset axis on grant
+        },
         onPanResponderMove: (_, g) => {
-            // Seguir el dedo solo hacia la izquierda
-            if (g.dx < 0 && Math.abs(g.dx) > Math.abs(g.dy)) {
+            if (currentGestureAxis.current === 'none') {
+                if (Math.abs(g.dy) > 12) currentGestureAxis.current = 'vertical';
+                else if (g.dx < -25) currentGestureAxis.current = 'horizontal';
+            }
+
+            if (currentGestureAxis.current === 'vertical') {
+                panYPost.setValue(g.dy);
+            } else if (currentGestureAxis.current === 'horizontal') {
                 panX.setValue(g.dx);
             }
         },
         onPanResponderRelease: (_, g) => {
-            const isTap = Math.abs(g.dx) < 15 && Math.abs(g.dy) < 15;
+            const currentAxis = currentGestureAxis.current;
+            currentGestureAxis.current = 'none';
+            setScrollEnabled(true); // Siempre limpiar estado al soltar desde el backdrop
+            const isTap = Math.abs(g.dx) < 10 && Math.abs(g.dy) < 10;
             if (isTap) {
-                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
                 closeWithAnimation();
-            } else if (g.dx < -80 && Math.abs(g.dy) < 80) {
-                // Cerrar deslizando de derecha a izquierda
+                return;
+            }
+
+            if (currentAxis === 'horizontal' && (g.dx < -80 || (g.vx < -0.8 && g.dx < -20))) {
                 closeWithXAnimation();
-            } else if (g.vx < -0.8 && Math.abs(g.vy) < 0.8 && g.dx < -20) {
-                // Cerrar por velocidad horizontal
-                closeWithXAnimation();
-            } else if (g.dy < -30 || g.vy < -0.3) {
-                // Desplazamiento hacia ARRIBA -> Siguiente post
-                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
-                lastSwipeDir.current = 'up';
-                callbacksRef.current.onNextPost?.();
-            } else if (g.dy > 30 || g.vy > 0.3) {
-                // Desplazamiento hacia ABAJO -> Post anterior
-                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
-                lastSwipeDir.current = 'down';
-                callbacksRef.current.onPrevPost?.();
+            } else if (currentAxis === 'vertical') {
+                const THRESHOLD = SCREEN_HEIGHT * 0.2;
+                if (g.dy < -THRESHOLD || g.vy < -0.7) {
+                    if (navRef.current.nextPost) {
+                        Animated.timing(panYPost, {
+                            toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                        }).start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                    } else {
+                        // Última publicación -> cerrar modal
+                        Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                    }
+                } else if (g.dy > THRESHOLD || g.vy > 0.7) {
+                    if (navRef.current.prevPost) {
+                        Animated.timing(panYPost, {
+                            toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                        }).start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                    } else {
+                        // Primera publicación -> cerrar modal
+                        Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                    }
+                } else {
+                    Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
+                }
             } else {
-                // Spring de regreso
                 Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
             }
         }
     })).current;
 
-    // ── Animación entrada/salida + drag ────────────────────────────────────
-    const panY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-    const panX = useRef(new Animated.Value(0)).current;
+    const currentScrollY = useRef(0);
+
+    // ── PanResponder TikTok: sigue el dedo en el postBubble ──────────────
+    // Este PanResponder puede capturar el gesto solo cuando scrollEnabled=false,
+    // ya que el ScrollView soltó el control del toque.
+    const tiktokSwipePan = useRef(PanResponder.create({
+        // Caso A: siguiente toque después de llegar al borde (scrollEnabled ya desactivado)
+        onStartShouldSetPanResponderCapture: () => !postScrollEnabledRef.current,
+        // Caso B: captura mid-gesture detectando la posición del scroll mientras arrastra
+        // Esto permite robar el gesto al ScrollView cuando llega al borde sin soltar el dedo
+        onMoveShouldSetPanResponderCapture: (_, g) => {
+            if (!(Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx))) return false;
+            if (!postScrollEnabledRef.current) return true;
+            // En el tope, si arrastra abajo (g.dy > 0) -> quiere el post anterior
+            const atTop = currentScrollY.current <= 5 && g.dy > 0;
+            // Captura al fondo arrastrando arriba (g.dy < 0) -> post siguiente
+            const atBottom =
+                currentScrollY.current + postScrollHeight.current >= postScrollContentHeight.current - 5
+                && g.dy < 0;
+            return atTop || atBottom;
+        },
+        onPanResponderMove: (_, g) => {
+            // Solo mover el bubble si el gesto va en la dirección correcta para la posición actual
+            const reallyAtBottom =
+                currentScrollY.current + postScrollHeight.current >= postScrollContentHeight.current - 5;
+            const reallyAtTop = currentScrollY.current <= 5;
+            if ((reallyAtBottom && g.dy < 0) || (reallyAtTop && g.dy > 0)) {
+                panYPost.setValue(g.dy);
+            }
+            // Si la dirección no coincide, no movemos nada (el release lo reseteará)
+        },
+        onPanResponderRelease: (_, g) => {
+            const THRESHOLD = SCREEN_HEIGHT * 0.2;
+            const actuallyAtBottom =
+                currentScrollY.current + postScrollHeight.current >= postScrollContentHeight.current - 5;
+            const actuallyAtTop = currentScrollY.current <= 5;
+
+            if (g.dy < -THRESHOLD || g.vy < -0.7) {
+                // Gesto HACIA ARRIBA (dedo sube) → siguiente post SOLO si realmente está al fondo
+                if (actuallyAtBottom) {
+                    if (navRef.current.nextPost) {
+                        Animated.timing(panYPost, {
+                            toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                        }).start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                    } else if (callbacksRef.current.hasMorePosts) {
+                        // Si hay más posts pero aún no se cargan, rebotamos pero avisamos al padre para que cargue
+                        Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                        callbacksRef.current.onNextPost?.();
+                    } else {
+                        // Última publicación y no hay más en la DB: rebote normal
+                        Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                    }
+                } else {
+                    // El usuario intentaba scrollear hacia abajo, no cambiar de post
+                    setScrollEnabled(true);
+                    hasScrolledDown.current = false;
+                    Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                }
+            } else if (g.dy > THRESHOLD || g.vy > 0.7) {
+                // Gesto HACIA ABAJO (dedo baja) → post anterior SOLO si realmente está en el tope
+                if (actuallyAtTop) {
+                    if (navRef.current.prevPost) {
+                        Animated.timing(panYPost, {
+                            toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                        }).start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                    } else {
+                        // Primera publicación: rebote
+                        Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                    }
+                } else {
+                    // El usuario intentaba scrollear hacia arriba, no cambiar de post
+                    setScrollEnabled(true);
+                    hasScrolledDown.current = false;
+                    Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                }
+            } else {
+                // Por debajo del umbral → rebote + rehabilitar scroll para uso normal
+                setScrollEnabled(true);
+                hasScrolledDown.current = false;
+                Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
+            }
+        },
+        onPanResponderTerminate: () => {
+            setScrollEnabled(true);
+            Animated.spring(panYPost, { toValue: 0, useNativeDriver: true }).start();
+        },
+        onPanResponderEnd: () => {
+            setScrollEnabled(true);
+        },
+    })).current;
+
 
     const closeWithAnimation = () => {
         Animated.timing(panY, {
@@ -172,12 +356,25 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
 
     useEffect(() => {
         if (visible && post?.id && prevPostId.current !== post.id) {
+            // Determinar desde dónde entra el nuevo post (opuesto a la dirección del swipe)
+            // swipe 'up' (siguiente) → nuevo post viene de abajo (+SCREEN_HEIGHT)
+            // swipe 'down' (anterior) → nuevo post viene de arriba (-SCREEN_HEIGHT)
+            const enterFrom = lastSwipeDir.current === 'up' ? SCREEN_HEIGHT * 0.6 : -SCREEN_HEIGHT * 0.6;
+            panYPost.setValue(enterFrom);
             postTransition.setValue(0);
-            Animated.timing(postTransition, {
-                toValue: 1,
-                duration: 250,
-                useNativeDriver: true,
-            }).start();
+            Animated.parallel([
+                Animated.spring(panYPost, {
+                    toValue: 0,
+                    useNativeDriver: true,
+                    speed: 16,
+                    bounciness: 0,
+                }),
+                Animated.timing(postTransition, {
+                    toValue: 1,
+                    duration: 220,
+                    useNativeDriver: true,
+                }),
+            ]).start();
             prevPostId.current = post.id;
         } else if (visible && post?.id) {
             prevPostId.current = post.id;
@@ -197,6 +394,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
             setIsMinimized(initialMinimized);
             setActiveTab(initialTab);
             activeTabRef.current = initialTab;
+            setIsExpanded(initialExpanded); // Inicializar según el prop
             Animated.spring(panY, {
                 toValue: 0,
                 useNativeDriver: true,
@@ -215,11 +413,15 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     useEffect(() => {
         if (!visible) return;
         const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-            closeWithAnimation();
+            if (!isMinimized) {
+                toggleMinimize();
+            } else {
+                closeWithAnimation();
+            }
             return true; // consume el evento para que no cierre la pantalla anterior
         });
         return () => sub.remove();
-    }, [visible]);
+    }, [visible, isMinimized]);
 
     // ── Teclado ────────────────────────────────────────────────────────────
     const keyboardOffset = useRef(new Animated.Value(Math.max(insets.bottom, 16))).current;
@@ -247,16 +449,44 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     // ── PanResponder: arrastra headers para cerrar ─────────────────────────
     const makeDragPan = () => PanResponder.create({
         onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 5 && g.dy > 0,
-        onPanResponderMove: (_, g) => { if (g.dy > 0) panY.setValue(g.dy); },
-        onPanResponderRelease: (_, g) => {
-            const shouldClose = g.dy > SCREEN_HEIGHT * 0.45 || g.vy > 1.2;
-            if (shouldClose) {
-                closeWithAnimation();
-            } else {
-                Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+        onMoveShouldSetPanResponder: (_, g) => (Math.abs(g.dy) > 5 && g.dy > 0) || (g.dx < -15 && Math.abs(g.dx) > Math.abs(g.dy)),
+        onPanResponderGrant: () => {
+            currentGestureAxis.current = 'none';
+        },
+        onPanResponderMove: (_, g) => {
+            if (currentGestureAxis.current === 'none') {
+                if (g.dy > 10 && Math.abs(g.dy) > Math.abs(g.dx)) currentGestureAxis.current = 'vertical';
+                else if (g.dx < -15 && Math.abs(g.dx) > Math.abs(g.dy)) currentGestureAxis.current = 'horizontal';
+            }
+
+            if (currentGestureAxis.current === 'vertical') {
+                if (g.dy > 0) panY.setValue(g.dy);
+            } else if (currentGestureAxis.current === 'horizontal') {
+                panX.setValue(g.dx);
             }
         },
+        onPanResponderRelease: (_, g) => {
+            const currentAxis = currentGestureAxis.current;
+            currentGestureAxis.current = 'none';
+
+            if (currentAxis === 'horizontal') {
+                const shouldClose = g.dx < -SCREEN_WIDTH * 0.4 || g.vx < -0.8;
+                if (shouldClose) closeWithXAnimation();
+                else Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+            } else {
+                const shouldClose = g.dy > SCREEN_HEIGHT * 0.15 || g.vy > 0.8;
+                if (shouldClose) {
+                    closeWithAnimation();
+                } else {
+                    Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+                }
+            }
+        },
+        onPanResponderTerminate: () => {
+            currentGestureAxis.current = 'none';
+            Animated.spring(panY, { toValue: 0, useNativeDriver: true }).start();
+            Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
+        }
     });
 
     const postHeaderPan = useRef(makeDragPan()).current;
@@ -338,44 +568,110 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     const postScrollDragStartY = useRef(0);
 
     // ── PanResponder para contenido corto en la publicación ─────────────────
+    // NOTA: ya NO intercepta gestos horizontales — el ImageCarousel los maneja internamente.
+    // Solo activamos para swipe vertical en contenido que no requiere scroll propio.
     const shortContentPan = useRef(PanResponder.create({
         onMoveShouldSetPanResponder: (_, g) => {
-            // Activar para swipe horizontal (cerrar) o vertical en contenido corto
-            if (g.dx < -15 && Math.abs(g.dy) < Math.abs(g.dx)) return true;
-            if (postScrollContentHeight.current <= postScrollHeight.current + 5) {
-                return Math.abs(g.dy) > 15;
-            }
-            return false;
+            // Caso vertical (TikTok) - solo si no necesita scroll
+            const isVertical = Math.abs(g.dy) > 12 && Math.abs(g.dy) > Math.abs(g.dx) &&
+                               postScrollContentHeight.current <= postScrollHeight.current + 5;
+            // Caso horizontal (Cierre) - siempre permitido
+            const isHorizontal = g.dx < -15 && Math.abs(g.dx) > Math.abs(g.dy);
+            
+            return isVertical || isHorizontal;
+        },
+        onPanResponderGrant: () => {
+            currentGestureAxis.current = 'none';
         },
         onPanResponderMove: (_, g) => {
-            // Seguir el dedo hacia la izquierda en tiempo real
-            if (g.dx < 0 && Math.abs(g.dx) > Math.abs(g.dy)) {
+            if (currentGestureAxis.current === 'none') {
+                if (Math.abs(g.dy) > 12) currentGestureAxis.current = 'vertical';
+                else if (g.dx < -15) currentGestureAxis.current = 'horizontal';
+            }
+
+            if (currentGestureAxis.current === 'vertical') {
+                panYPost.setValue(g.dy);
+            } else if (currentGestureAxis.current === 'horizontal') {
                 panX.setValue(g.dx);
             }
         },
         onPanResponderRelease: (_, g) => {
-            const vy = g.vy;
-            const dy = g.dy;
-            const dx = g.dx;
-            const vx = g.vx;
-            // Swipe derecha a izquierda -> Cerrar modal
-            if ((dx < -80 && Math.abs(dy) < 80) || (vx < -0.8 && Math.abs(g.vy) < 0.8 && dx < -20)) {
+            const currentAxis = currentGestureAxis.current;
+            currentGestureAxis.current = 'none';
+
+            if (currentAxis === 'horizontal') {
+                const shouldClose = g.dx < -SCREEN_WIDTH * 0.4 || g.vx < -0.8;
+                if (shouldClose) closeWithXAnimation();
+                else Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+            } else {
+                // Lógica vertical original de TikTok
+                const THRESHOLD = SCREEN_HEIGHT * 0.2;
+                if (g.dy > THRESHOLD || g.vy > 0.5) {
+                    Animated.timing(panYPost, { toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                        .start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                } else if (g.dy < -THRESHOLD || g.vy < -0.5) {
+                    Animated.timing(panYPost, { toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                        .start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                } else {
+                    Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
+                }
+            }
+        },
+        onPanResponderTerminate: () => {
+            currentGestureAxis.current = 'none';
+            Animated.spring(panYPost, { toValue: 0, useNativeDriver: true }).start();
+            Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
+        },
+    })).current;
+
+    // ── PanResponder: Footer (cambiar post + cerrar) ─────────────────────────
+    const footerSwipePan = useRef(PanResponder.create({
+        onMoveShouldSetPanResponderCapture: (_, g) => {
+            if (Math.abs(g.dy) > 10 && Math.abs(g.dy) > Math.abs(g.dx)) return true;
+            if (g.dx < -15 && Math.abs(g.dy) < Math.abs(g.dx)) return true;
+            return false;
+        },
+        onPanResponderMove: (_, g) => {
+            if (currentGestureAxis.current === 'none') {
+                if (Math.abs(g.dy) > 15) currentGestureAxis.current = 'vertical';
+                else if (g.dx < -25) currentGestureAxis.current = 'horizontal';
+            }
+
+            if (currentGestureAxis.current === 'vertical') {
+                panYPost.setValue(g.dy);
+            } else if (currentGestureAxis.current === 'horizontal') {
+                panX.setValue(g.dx);
+            }
+        },
+        onPanResponderRelease: (_, g) => {
+            const currentAxis = currentGestureAxis.current;
+            currentGestureAxis.current = 'none';
+
+            const vy = g.vy; const dy = g.dy; const dx = g.dx; const vx = g.vx;
+            if (currentAxis === 'horizontal' && ((dx < -(SCREEN_WIDTH * 0.45)) || (vx < -0.9 && dx < -50))) {
                 closeWithXAnimation();
-            } else if (dy > 40 || vy > 0.5) {
-                // Hacia abajo -> Anterior
-                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
-                lastSwipeDir.current = 'down';
-                callbacksRef.current.onPrevPost?.();
-            } else if (dy < -40 || vy < -0.5) {
-                // Hacia arriba -> Siguiente
-                Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
-                lastSwipeDir.current = 'up';
-                callbacksRef.current.onNextPost?.();
+            } else if (currentAxis === 'vertical') {
+                const THRESHOLD = SCREEN_HEIGHT * 0.2;
+                if (dy > THRESHOLD || vy > 0.5) {
+                    Animated.timing(panYPost, { toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                        .start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                } else if (dy < -THRESHOLD || vy < -0.5) {
+                    Animated.timing(panYPost, { toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                        .start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                } else {
+                    Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
+                }
             } else {
                 Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
             }
-        }
+        },
+        onPanResponderTerminate: () => {
+            currentGestureAxis.current = 'none';
+            Animated.spring(panYPost, { toValue: 0, useNativeDriver: true }).start();
+            Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
+        },
     })).current;
+
 
     // ── Likes ──────────────────────────────────────────────────────────────
     const displayLiked = post?.likes?.some((l: any) => l.user?.id === currentUser?.id) || false;
@@ -428,18 +724,46 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
     };
 
     // ── Comments query ─────────────────────────────────────────────────────
-    const { data, loading, error, refetch } = useQuery(GET_COMMENTS, {
-        variables: { postId },
+    const COMMENTS_PAGE_SIZE = 10;
+    const { data, loading, error, refetch, fetchMore: fetchMoreComments } = useQuery(GET_COMMENTS, {
+        variables: { postId, limit: COMMENTS_PAGE_SIZE, offset: 0 },
         skip: !postId,
         fetchPolicy: 'cache-and-network',
     });
+
+    const [hasMoreComments, setHasMoreComments] = useState(true);
+    const [isFetchingMoreComments, setIsFetchingMoreComments] = useState(false);
+
+    // Reset al cambiar de post
+    useEffect(() => {
+        setHasMoreComments(true);
+    }, [postId]);
+
+    const loadMoreComments = useCallback(() => {
+        const currentComments = data?.getCommentsByPost;
+        if (isFetchingMoreComments || !hasMoreComments || !currentComments) return;
+
+        setIsFetchingMoreComments(true);
+        fetchMoreComments({
+            variables: {
+                postId,
+                limit: COMMENTS_PAGE_SIZE,
+                offset: currentComments.length,
+            },
+        }).then((result: any) => {
+            const newComments = result?.data?.getCommentsByPost ?? [];
+            if (newComments.length < COMMENTS_PAGE_SIZE) {
+                setHasMoreComments(false);
+            }
+        }).finally(() => setIsFetchingMoreComments(false));
+    }, [data?.getCommentsByPost, isFetchingMoreComments, hasMoreComments, postId, fetchMoreComments]);
 
     // Preferimos post.commentsCount (total con respuestas, viene del feed)
     // Si no está disponible, contamos los comentarios raíz de la query local
     const commentsCount = post?.commentsCount ?? data?.getCommentsByPost?.length ?? 0;
 
     const [createComment, { loading: creating }] = useMutation(CREATE_COMMENT, {
-        refetchQueries: [{ query: GET_COMMENTS, variables: { postId } }],
+        refetchQueries: [{ query: GET_COMMENTS, variables: { postId, limit: COMMENTS_PAGE_SIZE, offset: 0 } }],
         update(cache, { data: { createComment: newComment } }) {
             if (!postId) return;
             cache.modify({
@@ -538,7 +862,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                         // Forzamos la actualización de la lista de comentarios en el cache
                         const existing = cache.readQuery<{ getCommentsByPost: any[] }>({
                             query: GET_COMMENTS,
-                            variables: { postId }
+                            variables: { postId, limit: COMMENTS_PAGE_SIZE, offset: 0 }
                         });
 
                         if (existing) {
@@ -547,7 +871,7 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                             );
                             cache.writeQuery({
                                 query: GET_COMMENTS,
-                                variables: { postId },
+                                variables: { postId, limit: COMMENTS_PAGE_SIZE, offset: 0 },
                                 data: { getCommentsByPost: newComments }
                             });
                         }
@@ -619,28 +943,57 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
         new Date(post.updatedAt).getTime() > new Date(post.createdAt).getTime() + 2000;
 
     return (
-        <Modal visible={visible} transparent animationType="none" onRequestClose={() => { }} statusBarTranslucent>
+        <Modal
+            visible={visible}
+            transparent
+            animationType="none"
+            onRequestClose={() => {
+                if (!isMinimized) {
+                    toggleMinimize();
+                } else {
+                    closeWithAnimation();
+                }
+            }}
+            statusBarTranslucent
+        >
 
-            {/* Este fondo atrapará los taps y los deslizamientos en toda su superficie libre */}
+
+
+            {/* Este fondo ahora es semi-transparente para dar enfoque pero dejar ver lo de abajo */}
             <Animated.View
-                style={styles.backdrop}
+                style={[styles.backdrop, { backgroundColor: 'rgba(0,0,0,0.7)' }]}
                 {...backgroundSwipePan.panHandlers}
             />
 
             {/* Exterior: mueve bottom con el teclado (JS driver) */}
             <Animated.View
-                style={[styles.container, { top: insets.top + 20, bottom: keyboardOffset }]}
+                style={[styles.container, { top: insets.top + TOP_SPACING, bottom: keyboardOffset }]}
                 pointerEvents="box-none"
             >
                 {/* Interior: drag translateY (native driver) */}
-                <Animated.View style={[{ flex: 1, gap: 8 }, { transform: [{ translateY: panY }] }]} pointerEvents="box-none">
-
-                    {/* Vacío superior flexible que empuja al medio */}
-                    {isMinimized && <View style={{ flex: 1 }} pointerEvents="none" />}
+                {/* Cuando minimizado: centra el postBubble verticalmente con justifyContent */}
+                <Animated.View
+                    style={[
+                        { flex: 1, gap: 8 },
+                        isMinimized ? { justifyContent: 'center', paddingBottom: BOTTOM_SPACING } : {},
+                        { transform: [{ translateY: panY }, { translateY: panYPost }] }
+                    ]}
+                    pointerEvents="box-none"
+                >
 
                     {/* ── BURBUJA PUBLICACIÓN ── */}
                     {post && (
-                        <Animated.View style={[styles.postBubble, { maxHeight: isMinimized ? SCREEN_HEIGHT * 0.75 : SCREEN_HEIGHT * 0.35 }, { opacity: postTransition, transform: [{ translateY: slideY }, { translateX: panX }] }]}>
+                        <Animated.View
+                            style={[
+                                styles.postBubble,
+                                isMinimized
+                                    ? { flexShrink: 1, maxHeight: SCREEN_HEIGHT - insets.top - TOP_SPACING - BOTTOM_SPACING }
+                                    // POST_EXPANDED_MAX_HEIGHT en línea superior: ajusta su fracción
+                                    : { maxHeight: POST_EXPANDED_MAX_HEIGHT, flexShrink: 1 },
+                                { opacity: postTransition, transform: [{ translateY: slideY }, { translateX: panX }] }
+                            ]}
+                            {...tiktokSwipePan.panHandlers}
+                        >
                             <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
                                 <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
                                 <TouchableOpacity
@@ -666,21 +1019,35 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                     </View>
                                 </TouchableOpacity>
 
-                                <TouchableOpacity onPress={closeWithAnimation} style={styles.postCloseBtn}
-                                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                                    <Ionicons name="close" size={24} color={colors.textSecondary} />
-                                </TouchableOpacity>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', position: 'absolute', right: 14, top: 14, zIndex: 10 }}>
+                                    {post.author?.id === currentUser?.id && (
+                                        <TouchableOpacity
+                                            onPress={() => onOptionsPress?.(post)}
+                                            style={{ marginRight: 16 }}
+                                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                                        >
+                                            <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                    )}
+
+                                    <TouchableOpacity onPress={closeWithAnimation}
+                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                                        <Ionicons name="close" size={24} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                </View>
                             </View>
 
                             <ScrollView
+                                ref={scrollViewRef}
                                 showsVerticalScrollIndicator={true}
                                 persistentScrollbar={true}
                                 indicatorStyle={isDark ? 'white' : 'black'}
                                 nestedScrollEnabled={true}
-                                bounces={true}
-                                alwaysBounceVertical={true}
-                                overScrollMode="always"
-                                contentContainerStyle={styles.postScrollContent}
+                                scrollEnabled={postScrollEnabled}
+                                bounces={false}
+                                alwaysBounceVertical={false}
+                                overScrollMode="never"
+                                contentContainerStyle={{ paddingBottom: 0 }}
                                 style={styles.postScrollView}
                                 scrollEventThrottle={8}
                                 onLayout={(e) => {
@@ -689,41 +1056,127 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                 onContentSizeChange={(_, h) => {
                                     postScrollContentHeight.current = h;
                                 }}
+                                onScroll={(e) => {
+                                    const y = e.nativeEvent.contentOffset.y;
+                                    currentScrollY.current = y;
+                                    // Registrar que el usuario exploró hacia abajo
+                                    if (y > 10) hasScrolledDown.current = true;
+                                }}
                                 onScrollBeginDrag={(e) => {
                                     postScrollDragStartY.current = e.nativeEvent.contentOffset.y;
+                                    setScrollEnabled(true); // Siempre re-habilitar al iniciar un drag
+                                }}
+                                onMomentumScrollEnd={(e) => {
+                                    const y = e.nativeEvent.contentOffset.y;
+                                    currentScrollY.current = y;
+                                    const atTop = y <= 2;
+                                    const atBottom = y + postScrollHeight.current >= postScrollContentHeight.current - 2;
+                                    if (atTop || atBottom) {
+                                        setScrollEnabled(false);
+                                    } else {
+                                        setScrollEnabled(true);
+                                    }
                                 }}
                                 onScrollEndDrag={(e) => {
                                     const endY = e.nativeEvent.contentOffset.y;
                                     const vy = e.nativeEvent.velocity?.y ?? 0;
+                                    const atTop = endY <= 3;
+                                    const atBottom = endY + postScrollHeight.current >= postScrollContentHeight.current - 3;
 
-                                    // Drag hacia abajo desde arriba del todo -> Post Anterior
-                                    if (postScrollDragStartY.current <= 5 && endY <= 5 && vy > 0.3) {
-                                        lastSwipeDir.current = 'down';
-                                        callbacksRef.current.onPrevPost?.();
+                                    if (atTop && vy >= -0.1) {
+                                        // En el tope quieto → siguiente gesto DOWN = prev post
+                                        setScrollEnabled(false);
+                                    } else if (atBottom && vy <= 0.1) {
+                                        // En el fondo quieto → siguiente gesto UP = next post
+                                        setScrollEnabled(false);
+                                    } else if (!atTop && !atBottom) {
+                                        setScrollEnabled(true);
                                     }
-                                    // Drag hacia arriba desde el fondo del todo -> Post Siguiente
-                                    else if (
+
+                                    // Transición automática rápida (velocidad bruta)
+
+                                    if (postScrollDragStartY.current <= 5 && endY <= 5 && vy > 0.5) {
+                                        Animated.timing(panYPost, {
+                                            toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                                        }).start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                                    } else if (
                                         postScrollDragStartY.current + postScrollHeight.current >= postScrollContentHeight.current - 5 &&
                                         endY + postScrollHeight.current >= postScrollContentHeight.current - 5 &&
-                                        vy < -0.3
+                                        vy < -0.5
                                     ) {
-                                        lastSwipeDir.current = 'up';
-                                        callbacksRef.current.onNextPost?.();
-                                    } else {
-                                        Animated.spring(panY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+                                        if (navRef.current.nextPost) {
+                                            Animated.timing(panYPost, {
+                                                toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                                            }).start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                                        } else if (callbacksRef.current.hasMorePosts) {
+                                            Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                                            callbacksRef.current.onNextPost?.();
+                                        }
                                     }
                                 }}
                             >
-                                <Animated.View {...shortContentPan.panHandlers}>
-                                    <TouchableOpacity activeOpacity={0.8} onLongPress={() => setIsCopyModalVisible(true)} delayLongPress={250}>
-                                        <Text style={[styles.postContent, { color: colors.text }]}>{post.content}</Text>
-                                    </TouchableOpacity>
+                                <Animated.View collapsable={false} {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 8, overflow: 'hidden', zIndex: 1 }}>
+                                    <View style={{ marginBottom: 1 }}>
+                                        <TouchableOpacity
+                                            activeOpacity={0.8}
+                                            onPress={() => isTextLong && setIsExpanded(!isExpanded)}
+                                            onLongPress={() => setIsCopyModalVisible(true)}
+                                            delayLongPress={250}
+                                        >
+                                            {post.title && (
+                                                <Text style={[styles.postTitleTitle, { color: colors.text }]}>{post.title}</Text>
+                                            )}
+                                            <Text style={[styles.postContent, { color: colors.text }]}>
+                                                {displayContent}
+                                                {isTextLong && !isExpanded && (
+                                                    <Text 
+                                                        onPress={() => setIsExpanded(true)} 
+                                                        style={[styles.seeMoreText, { color: colors.primary }]}
+                                                    >
+                                                        ... más
+                                                    </Text>
+                                                )}
+                                            </Text>
+                                        </TouchableOpacity>
+
+                                        {isTextLong && isExpanded && (
+                                            <TouchableOpacity
+                                                onPress={() => setIsExpanded(false)}
+                                                style={styles.seeMoreBtn}
+                                            >
+                                                <Text style={[styles.seeMoreText, { color: colors.primary }]}>
+                                                    Ver menos
+                                                </Text>
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
+
+                                    {/* ── Media Adjunta (Carrusel) dentro del Modal ── */}
+                                    {post.media && post.media.length > 0 && (
+                                        <View collapsable={false} style={{ marginTop: 12, marginHorizontal: -16, overflow: 'hidden', borderRadius: 0.1, zIndex: 5, backgroundColor: '#000' }}>
+                                            <ImageCarousel
+                                                key={post?.id}
+                                                media={post.media}
+                                                containerWidth={SCREEN_WIDTH}
+                                                imageResizeMode="cover"
+                                                dynamicAspectRatio={false}
+                                                customAspectRatio={1080 / 1440}
+                                                isInteractive={true}
+                                                onSwipeClose={(carouselPanX) => {
+                                                    // Sincronizamos el panX del modal con el que viene del carrusel
+                                                    // para que el efecto visual ya esté en marcha antes de cerrar
+                                                    carouselPanX.addListener(({ value }) => panX.setValue(value));
+                                                    closeWithXAnimation();
+                                                }}
+                                            />
+                                        </View>
+                                    )}
                                 </Animated.View>
                             </ScrollView>
 
-                            <View style={[styles.postFooterFixed, { borderTopColor: colors.border }]}>
+                            <Animated.View {...footerSwipePan.panHandlers} style={[styles.postFooterFixed, { borderTopColor: colors.border }]}>
                                 {(localCount > 0 || commentsCount > 0) && (
-                                    <View style={styles.statsRow}>
+                                    <TouchableOpacity activeOpacity={1} style={styles.statsRow}>
                                         {/* Comentarios a la izquierda */}
                                         <TouchableOpacity onPress={() => { setActiveTab('comments'); if (isMinimized) toggleMinimize(); }}>
                                             {commentsCount > 0 && (
@@ -742,9 +1195,10 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                                 </View>
                                             )}
                                         </TouchableOpacity>
-                                    </View>
+                                    </TouchableOpacity>
                                 )}
-                                <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
+                                {/* actionsRow como TouchableOpacity para capturar gestos en huecos */}
+                                <TouchableOpacity activeOpacity={1} style={[styles.actionsRow, { borderTopColor: colors.border }]}>
                                     <TouchableOpacity style={styles.actionBtn} onPress={handleLike}>
                                         <Ionicons name={localLiked ? 'heart' : 'heart-outline'} size={20}
                                             color={localLiked ? '#FF3B30' : colors.textSecondary} />
@@ -753,24 +1207,19 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                     </TouchableOpacity>
                                     <TouchableOpacity style={styles.actionBtn} onPress={() => {
                                         setActiveTab('comments');
-                                        if (isMinimized) {
-                                            toggleMinimize();
-                                        }
+                                        if (isMinimized) toggleMinimize();
                                     }}>
                                         <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
                                         <Text style={[styles.actionText, { color: colors.textSecondary }]}>Comentar</Text>
                                     </TouchableOpacity>
-                                </View>
-                            </View>
+                                </TouchableOpacity>
+                            </Animated.View>
                         </Animated.View>
                     )}
 
-                    {/* Vacío inferior que mantiene la simetría */}
-                    {isMinimized && <View style={{ flex: 1 }} pointerEvents="none" />}
-
                     {/* ── BUBBLE COMENTARIOS NORMAL (Visible cuando maximizado) ── */}
                     {!isMinimized && (
-                        <Animated.View style={[styles.commentsBubble, { backgroundColor: colors.surface, flex: 1 }, { opacity: postTransition, transform: [{ translateY: slideY }] }]} {...tabSwipePan.panHandlers}>
+                        <Animated.View style={[styles.commentsBubble, { flex: 1 }, { opacity: postTransition, transform: [{ translateY: slideY }] }]} {...tabSwipePan.panHandlers}>
 
                             <View style={[styles.commentsHeader, { borderBottomColor: colors.border }]} {...commentsHeaderPan.panHandlers}>
                                 <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
@@ -800,7 +1249,14 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                         scrollContentHeight.current = h;
                                     }}
                                     onScroll={(e) => {
-                                        commentsScrollY.current = e.nativeEvent.contentOffset.y;
+                                        const y = e.nativeEvent.contentOffset.y;
+                                        commentsScrollY.current = y;
+                                        // Auto-carga al acercarse al fondo
+                                        const contentH = scrollContentHeight.current;
+                                        const viewH = scrollViewHeight.current;
+                                        if (contentH > viewH && y + viewH >= contentH - 80 && activeTab === 'comments') {
+                                            loadMoreComments();
+                                        }
                                     }}
                                     onScrollBeginDrag={(e) => {
                                         scrollDragStartY.current = e.nativeEvent.contentOffset.y;
@@ -871,6 +1327,14 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                                 {[...(data?.getCommentsByPost || [])]
                                                     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                                                     .map((item: any) => renderComment(item))}
+                                                {/* Spinner o mensaje de fin */}
+                                                {isFetchingMoreComments ? (
+                                                    <ActivityIndicator size="small" color={colors.primary} style={{ paddingVertical: 16 }} />
+                                                ) : !hasMoreComments && (data?.getCommentsByPost?.length ?? 0) > 0 ? (
+                                                    <Text style={{ textAlign: 'center', color: colors.textSecondary, paddingVertical: 12, fontSize: 12 }}>
+                                                        No hay más comentarios
+                                                    </Text>
+                                                ) : null}
                                                 {/* Zona arrastrable en espacio vacío bajo los últimos comentarios */}
                                                 <View style={{ flex: 1, minHeight: 80 }} {...emptyAreaPan.panHandlers} />
                                             </>
@@ -901,10 +1365,10 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                                 )}
 
                                 {activeTab === 'comments' && (
-                                    <View style={[styles.inputContainer, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
+                                    <View style={[styles.inputContainer, { borderTopColor: colors.border }]}>
                                         <TextInput
                                             ref={inputRef}
-                                            style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                                            style={[styles.input, { color: colors.text }]}
                                             placeholder="Escribe un comentario..."
                                             placeholderTextColor={colors.textSecondary}
                                             value={content}
@@ -928,31 +1392,33 @@ export default function CommentsModal({ visible, post, onClose, initialMinimized
                         </Animated.View>
                     )}
 
-                    {/* ── NAV BAR INFERIOR CUADRADA NEGRA (Minimizado) ── */}
-                    {isMinimized && (
-                        <View style={{
-                            backgroundColor: '#000000',
-                            marginLeft: -8,
-                            marginRight: -8,
-                            marginBottom: -Math.max(insets.bottom, 16),
-                            paddingBottom: Math.max(insets.bottom, 16) + 12,
-                            paddingTop: 16,
-                            borderTopWidth: StyleSheet.hairlineWidth,
-                            borderTopColor: '#222222'
-                        }}>
-                            <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-around', alignItems: 'center' }}>
-                                <TouchableOpacity onPress={() => { setActiveTab('likes'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
-                                    <Ionicons name="heart-outline" size={26} color={activeTab === 'likes' ? colors.primary : "#FFFFFF"} />
-                                    <Text style={{ color: activeTab === 'likes' ? colors.primary : '#FFFFFF', marginTop: 4, fontSize: 13, fontWeight: '500' }}>Likes</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity onPress={() => { setActiveTab('comments'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
-                                    <Ionicons name="chatbubbles-outline" size={26} color={activeTab === 'comments' ? colors.primary : "#FFFFFF"} />
-                                    <Text style={{ color: activeTab === 'comments' ? colors.primary : '#FFFFFF', marginTop: 4, fontSize: 13, fontWeight: '500' }}>Comentarios</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    )}
                 </Animated.View>
+
+                {/* ── NAV BAR INFERIOR NEGRA (Minimizado) – Anclada al fondo ABS ── */}
+                {isMinimized && (
+                    <View style={{
+                        position: 'absolute',
+                        left: -4,
+                        right: -4,
+                        bottom: -Math.max(insets.bottom, 16),
+                        backgroundColor: '#000000',
+                        paddingBottom: Math.max(insets.bottom, 16) + 4,
+                        paddingTop: 10,
+                        borderTopWidth: StyleSheet.hairlineWidth,
+                        borderTopColor: '#333333'
+                    }}>
+                        <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-around', alignItems: 'center' }}>
+                            <TouchableOpacity onPress={() => { setActiveTab('likes'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
+                                <Ionicons name="heart-outline" size={22} color={activeTab === 'likes' ? colors.primary : "#FFFFFF"} />
+                                <Text style={{ color: activeTab === 'likes' ? colors.primary : '#FFFFFF', marginTop: 2, fontSize: 11, fontWeight: '500' }}>Likes</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => { setActiveTab('comments'); if (isMinimized) toggleMinimize(); }} style={{ alignItems: 'center', flex: 1 }}>
+                                <Ionicons name="chatbubbles-outline" size={22} color={activeTab === 'comments' ? colors.primary : "#FFFFFF"} />
+                                <Text style={{ color: activeTab === 'comments' ? colors.primary : '#FFFFFF', marginTop: 2, fontSize: 11, fontWeight: '500' }}>Comentarios</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                )}
             </Animated.View>
 
             <CommentOptionsModal
@@ -999,8 +1465,8 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     },
     container: {
         position: 'absolute',
-        left: 8,
-        right: 8,
+        left: 4,
+        right: 4,
     },
     postBubble: {
         borderRadius: 24,
@@ -1010,26 +1476,20 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
-        // Fondo gris un poco más oscuro en light mode para resaltar el scrollbar
-        backgroundColor: isDark ? colors.surface : '#EBEBEB',
+        borderWidth: 0,
+        // Fondo adaptado al tema (no negro total)
+        backgroundColor: colors.surface,
     },
     postScrollView: {
         flexShrink: 1,
-        // Un borde sutil a la derecha que simula el rail del scroll
-        borderRightWidth: 1.5,
-        borderRightColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
     },
     postScrollContent: {
-        paddingLeft: 16,
-        paddingRight: 12,
-        paddingTop: 10,
         paddingBottom: 16
     },
     postHeader: {
         paddingTop: 14,
         paddingBottom: 10,
         paddingHorizontal: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
         alignItems: 'center',
     },
     postAuthorRow: {
@@ -1041,8 +1501,18 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     },
     postAuthorName: { fontWeight: 'bold', fontSize: 15, marginBottom: 2 },
     postDate: { fontSize: 12 },
-    postContent: { fontSize: 15, lineHeight: 23 },
-    postFooterFixed: { borderTopWidth: StyleSheet.hairlineWidth },
+    postTitleTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 6 },
+    postContent: { fontSize: 15, lineHeight: 22 },
+    seeMoreBtn: {
+        marginTop: 4,
+        alignSelf: 'flex-start',
+        paddingVertical: 2,
+    },
+    seeMoreText: {
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    postFooterFixed: { },
     statsRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -1054,7 +1524,6 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         flexDirection: 'row',
         paddingHorizontal: 14,
         paddingVertical: 8,
-        borderTopWidth: StyleSheet.hairlineWidth,
     },
     actionBtn: { flexDirection: 'row', alignItems: 'center', marginRight: 24, paddingVertical: 2 },
     actionText: { marginLeft: 6, fontSize: 14, fontWeight: '500' },
@@ -1067,14 +1536,14 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
+        borderWidth: 0,
         backgroundColor: colors.surface,
     },
     commentsHeader: {
         alignItems: 'center',
         justifyContent: 'center',
-        paddingTop: 16,
-        paddingBottom: 12,
-        borderBottomWidth: StyleSheet.hairlineWidth,
+        paddingTop: 7,
+        paddingBottom: 6,
         backgroundColor: colors.surface,
     },
     dragHandle: {

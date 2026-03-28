@@ -52,7 +52,7 @@ export const UPDATE_BADGE = gql`
 `;
 
 export const GET_USER_PROFILE = gql`
-  query GetUserProfile($id: String!) {
+  query GetUserProfile($id: String!, $limit: Int, $offset: Int) {
     getUserProfile(id: $id) {
       id
       firstName
@@ -62,6 +62,7 @@ export const GET_USER_PROFILE = gql`
       bio
       phone
       photoUrl
+      coverUrl
       customFields {
         id
         title
@@ -75,9 +76,16 @@ export const GET_USER_PROFILE = gql`
       }
       followersCount
       followingCount
-      posts {
+      posts(limit: $limit, offset: $offset) {
         id
         content
+        title
+        media {
+            id
+            url
+            type
+            order
+        }
         createdAt
         updatedAt
         likes {
@@ -90,13 +98,31 @@ export const GET_USER_PROFILE = gql`
           }
         }
         commentsCount
-        author {
-          id
-          firstName
-          lastName
-          photoUrl
-        }
       }
+    }
+  }
+`;
+
+export const UPDATE_PROFILE_MEDIA = gql`
+  mutation UpdateProfileMedia($photoUrl: String, $coverUrl: String) {
+    updateProfileMedia(photoUrl: $photoUrl, coverUrl: $coverUrl) {
+      id
+      photoUrl
+      coverUrl
+    }
+  }
+`;
+
+export const GET_ME = gql`
+  query GetMe {
+    me {
+      id
+      firstName
+      lastName
+      username
+      email
+      photoUrl
+      coverUrl
     }
   }
 `;

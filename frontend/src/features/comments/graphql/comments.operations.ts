@@ -1,8 +1,8 @@
 import { gql } from '@apollo/client';
 
 export const GET_COMMENTS = gql`
-  query GetCommentsByPost($postId: String!) {
-    getCommentsByPost(postId: $postId) {
+  query GetCommentsByPost($postId: String!, $limit: Int, $offset: Int) {
+    getCommentsByPost(postId: $postId, limit: $limit, offset: $offset) {
       id
       content
       createdAt

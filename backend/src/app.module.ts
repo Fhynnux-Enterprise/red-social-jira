@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
 import { join } from 'path';
 import { HealthModule } from './health/health.module';
@@ -12,6 +13,8 @@ import { UsersModule } from './users/users.module';
 import { CommentsModule } from './comments/comments.module';
 import { ChatModule } from './chat/chat.module';
 import { FollowsModule } from './follows/follows.module';
+import { StorageModule } from './storage/storage.module';
+import { StoriesModule } from './stories/stories.module';
 
 @Module({
   imports: [
@@ -20,6 +23,7 @@ import { FollowsModule } from './follows/follows.module';
       isGlobal: true, // Esto permite leer las variables en cualquier parte sin importar ConfigModule nuevamente
       envFilePath: '.env', // Ruta al archivo .env (dentro de /backend)
     }),
+    ScheduleModule.forRoot(),
 
     // 2. Configuración de la Base de Datos con TypeORM
     TypeOrmModule.forRootAsync({
@@ -53,6 +57,8 @@ import { FollowsModule } from './follows/follows.module';
     CommentsModule,
     ChatModule,
     FollowsModule,
+    StorageModule,
+    StoriesModule,
   ],
   controllers: [],
   providers: [],

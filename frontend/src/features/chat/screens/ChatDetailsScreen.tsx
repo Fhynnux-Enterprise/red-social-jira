@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useQuery, useMutation, useApolloClient } from '@apollo/client';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { AppStackParamList } from '../../../navigation/AppNavigator';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';

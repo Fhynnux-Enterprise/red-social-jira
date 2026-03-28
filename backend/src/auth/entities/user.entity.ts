@@ -7,6 +7,7 @@ import { Comment } from '../../comments/entities/comment.entity';
 import { Participant } from '../../chat/entities/participant.entity';
 import { Message } from '../../chat/entities/message.entity';
 import { Follow } from '../../follows/entities/follow.entity';
+import { Story } from '../../stories/entities/story.entity';
 
 
 @ObjectType()
@@ -43,6 +44,10 @@ export class User {
     @Field({ nullable: true })
     @Column({ nullable: true })
     photoUrl: string;
+
+    @Field({ nullable: true })
+    @Column({ name: 'cover_url', nullable: true })
+    coverUrl: string;
 
     @Column({ default: 'USER' })
     role: string;
@@ -90,4 +95,8 @@ export class User {
     @Field(() => [Follow], { nullable: true })
     @OneToMany(() => Follow, follow => follow.follower)
     following: Follow[];
+
+    @Field(() => [Story], { nullable: true })
+    @OneToMany(() => Story, (story) => story.user)
+    stories: Story[];
 }

@@ -4,23 +4,42 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import { useMutation } from '@apollo/client';
+import { useMutation } from '@apollo/client/react';
 import { TOGGLE_LIKE } from '../graphql/posts.operations';
 import CopyTextModal from '../../../components/CopyTextModal';
+import ImageCarousel from './ImageCarousel';
+import { Dimensions } from 'react-native';
 
-const MAX_CHARS = 220;
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_MARGIN = 4;
+const CARD_WIDTH = SCREEN_WIDTH - (CARD_MARGIN * 2);
+
+const MAX_CHARS = 125;
 
 export interface PostCardProps {
     item: any;
     currentUserId?: string;
     onOptionsPress?: (post: any) => void;
-    onOpenComments?: (postId: string, initialTab?: 'comments' | 'likes', minimize?: boolean) => void;
+    onOpenComments?: (postId: string, initialTab?: 'comments' | 'likes', minimize?: boolean, initialExpanded?: boolean) => void;
     isModalView?: boolean;
     headerPanHandlers?: any;
     onScroll?: (event: any) => void;
+    isViewable?: boolean;
+    isFocused?: boolean;
+    isOverlayActive?: boolean;
 }
 
-export default function PostCard({ item, currentUserId, onOptionsPress, onOpenComments, isModalView, headerPanHandlers }: PostCardProps) {
+export default function PostCard({
+    item,
+    currentUserId,
+    onOptionsPress,
+    onOpenComments,
+    isModalView,
+    headerPanHandlers,
+    isViewable,
+    isFocused,
+    isOverlayActive,
+}: PostCardProps) {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
@@ -62,17 +81,17 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
         if (displayLiked) {
             optimisticLikes = optimisticLikes.filter((like: any) => like.user?.id !== userId);
         } else {
-        optimisticLikes.push({
-            __typename: 'PostLike',
-            id_post_like: `temp-${Date.now()}`,
-            user: {
-                __typename: 'User',
-                id: userId,
-                firstName: authContext.user?.firstName || '',
-                lastName: authContext.user?.lastName || '',
-                photoUrl: authContext.user?.photoUrl || null,
-            }
-        });
+            optimisticLikes.push({
+                __typename: 'PostLike',
+                id_post_like: `temp-${Date.now()}`,
+                user: {
+                    __typename: 'User',
+                    id: userId,
+                    firstName: authContext.user?.firstName || '',
+                    lastName: authContext.user?.lastName || '',
+                    photoUrl: authContext.user?.photoUrl || null,
+                }
+            });
         }
 
         toggleLikeMutation({
@@ -154,23 +173,27 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
             </View>
 
             {/* ── Contenido ── */}
-            <TouchableOpacity 
-                activeOpacity={0.8} 
-                onPress={() => onOpenComments?.(item.id, 'comments', true)}
+            <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => onOpenComments?.(item.id, 'comments', true, isTruncatable)}
                 onLongPress={() => setIsCopyModalVisible(true)}
                 delayLongPress={250}
             >
-                <Text style={styles.content}>{displayContent}</Text>
+                {item.title && (
+                    <Text style={styles.postTitle}>{item.title}</Text>
+                )}
+                <Text style={styles.content}>
+                    {displayContent}
+                    {isTruncatable && !isExpanded && (
+                        <Text 
+                            onPress={() => setIsExpanded(true)} 
+                            style={styles.verMasLink}
+                        >
+                             ... más
+                        </Text>
+                    )}
+                </Text>
             </TouchableOpacity>
-            {isTruncatable && !isExpanded && (
-                <TouchableOpacity
-                    onPress={() => setIsExpanded(true)}
-                    style={styles.verMasBtn}
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                >
-                    <Text style={styles.verMasLink}>Ver más.</Text>
-                </TouchableOpacity>
-            )}
             {isTruncatable && isExpanded && (
                 <TouchableOpacity
                     onPress={() => setIsExpanded(false)}
@@ -181,15 +204,31 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
                 </TouchableOpacity>
             )}
 
+            {/* ── Media Adjunta ── */}
+            {item.media && item.media.length > 0 && (
+                <View style={{ marginTop: 6 }}>
+                    <ImageCarousel
+                        media={item.media}
+                        onPress={() => onOpenComments?.(item.id, 'comments', true, false)}
+                        disableFullscreen={true}
+                        isViewable={isViewable}
+                        isFocused={isFocused}
+                        isOverlayActive={isOverlayActive}
+                        containerWidth={CARD_WIDTH}
+                        customAspectRatio={1080 / 1485}
+                    />
+                </View>
+            )}
+
             {/* ── Divider ── */}
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
             {/* ── Actions + stats ── */}
             <View style={styles.actionsRow}>
                 {/* Like */}
-                <TouchableOpacity 
-                    style={styles.actionBtn} 
-                    onPress={handleLikePress} 
+                <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={handleLikePress}
                     activeOpacity={0.7}
                 >
                     <Ionicons
@@ -207,7 +246,7 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
                 {/* Comentar */}
                 <TouchableOpacity
                     style={styles.actionBtn}
-                    onPress={() => onOpenComments?.(item.id, 'comments', false)}
+                    onPress={() => onOpenComments?.(item.id, 'comments', false, false)}
                     activeOpacity={0.7}
                 >
                     <Ionicons name="chatbubble-outline" size={19} color={colors.textSecondary} />
@@ -228,11 +267,12 @@ export default function PostCard({ item, currentUserId, onOptionsPress, onOpenCo
 const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     card: {
         backgroundColor: colors.surface,
-        marginHorizontal: 12,
+        marginHorizontal: 4,
         marginVertical: 6,
         borderRadius: 16,
         paddingTop: 14,
         paddingBottom: 4,
+        overflow: 'hidden', // CRÍTICO: Evita que el carrusel se desborde del recuadro
         // Sombra moderna
         ...Platform.select({
             ios: {
@@ -249,8 +289,9 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 14,
+        paddingHorizontal: 16,
         marginBottom: 10,
+        justifyContent: 'space-between',
     },
     authorRow: {
         flexDirection: 'row',
@@ -309,11 +350,18 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         padding: 4,
         marginLeft: 8,
     },
+    postTitle: {
+        color: colors.text,
+        fontSize: 16,
+        fontWeight: 'bold',
+        paddingHorizontal: 16,
+        marginBottom: 6,
+    },
     content: {
         color: colors.text,
         fontSize: 15,
         lineHeight: 23,
-        paddingHorizontal: 14,
+        paddingHorizontal: 16,
         marginBottom: 4,
     },
     verMas: {
@@ -321,7 +369,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         fontSize: 15,
     },
     verMasBtn: {
-        paddingHorizontal: 14,
+        paddingHorizontal: 16,
         paddingVertical: 2,
         marginBottom: 10,
     },
@@ -353,4 +401,14 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         fontWeight: '500',
         marginLeft: 5,
     },
+    mediaContainer: {
+        width: '100%',
+        marginTop: 6,
+        marginBottom: 8,
+    },
+    mediaPlaceholder: {
+        width: '100%',
+        height: 300,
+        backgroundColor: colors.surface,
+    }
 });

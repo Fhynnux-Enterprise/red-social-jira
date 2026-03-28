@@ -3,6 +3,7 @@ import { UseGuards } from '@nestjs/common';
 import { PostsService } from './posts.service';
 import { Post } from './entities/post.entity';
 import { JwtGqlGuard } from '../auth/guards/jwt-gql.guard';
+import { PostMediaInput } from './dto/post-media.input';
 
 @Resolver(() => Post)
 export class PostsResolver {
@@ -10,23 +11,32 @@ export class PostsResolver {
 
     @ResolveField(() => Int)
     async commentsCount(@Parent() post: Post): Promise<number> {
+        // If loaded via loadRelationCountAndMap
+        if (post.commentsCount !== undefined) {
+            return post.commentsCount;
+        }
         return post.comments?.length ?? 0;
     }
 
     @Query(() => [Post], { name: 'getPosts' })
     @UseGuards(JwtGqlGuard)
-    async getPosts(): Promise<Post[]> {
-        return this.postsService.findAll();
+    async getPosts(
+        @Args('limit', { type: () => Int, defaultValue: 5 }) limit: number,
+        @Args('offset', { type: () => Int, defaultValue: 0 }) offset: number,
+    ): Promise<Post[]> {
+        return this.postsService.findAll(limit, offset);
     }
 
     @Mutation(() => Post, { name: 'createPost' })
     @UseGuards(JwtGqlGuard)
     async createPost(
         @Args('content') content: string,
+        @Args('title', { nullable: true }) title: string,
+        @Args('media', { type: () => [PostMediaInput], nullable: true }) media: PostMediaInput[],
         @Context() context: any,
     ): Promise<Post> {
         const authorId = context.req.user.id;
-        return this.postsService.createPost(content, authorId);
+        return this.postsService.createPost(content, authorId, media, title);
     }
 
     @Mutation(() => Post, { name: 'updatePost' })
@@ -34,10 +44,11 @@ export class PostsResolver {
     async updatePost(
         @Args('id') id: string,
         @Args('content') content: string,
+        @Args('title', { nullable: true }) title: string,
         @Context() context: any,
     ): Promise<Post> {
         const userId = context.req.user.id;
-        return this.postsService.updatePost(id, content, userId);
+        return this.postsService.updatePost(id, content, userId, title);
     }
 
     @Mutation(() => Boolean, { name: 'deletePost' })

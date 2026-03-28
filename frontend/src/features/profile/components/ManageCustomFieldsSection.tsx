@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, Modal, KeyboardAvoidingView, ScrollView, TextInput, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useMutation } from '@apollo/client';
+import { useMutation } from '@apollo/client/react';
 import Toast from 'react-native-toast-message';
 import { ADD_CUSTOM_FIELD, UPDATE_CUSTOM_FIELD, DELETE_CUSTOM_FIELD } from '../graphql/profile.operations';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';

@@ -10,7 +10,7 @@ import {
     Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useMutation } from '@apollo/client';
+import { useMutation } from '@apollo/client/react';
 import { TOGGLE_LIKE_COMMENT } from '../graphql/comments.operations';
 import { useTheme } from '../../../theme/ThemeContext';
 

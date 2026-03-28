@@ -28,11 +28,13 @@ export class CommentsService {
         return this.mapComment(result!, userId);
     }
 
-    async getCommentsByPost(postId: string, userId?: string): Promise<Comment[]> {
+    async getCommentsByPost(postId: string, userId?: string, limit: number = 10, offset: number = 0): Promise<Comment[]> {
         const comments = await this.commentRepository.find({
             where: { postId, parentId: IsNull() },
             relations: ['user', 'likes'],
             order: { createdAt: 'DESC' },
+            take: limit,
+            skip: offset,
         });
         return comments.map(comment => this.mapComment(comment, userId));
     }

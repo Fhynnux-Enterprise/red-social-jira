@@ -1,10 +1,17 @@
 import { gql } from '@apollo/client';
 
 export const GET_POSTS = gql`
-    query GetPosts {
-        getPosts {
+    query GetPosts($limit: Int, $offset: Int) {
+        getPosts(limit: $limit, offset: $offset) {
             id
             content
+            title
+            media {
+                id
+                url
+                type
+                order
+            }
             createdAt
             updatedAt
             commentsCount
@@ -30,10 +37,17 @@ export const GET_POSTS = gql`
 `;
 
 export const CREATE_POST = gql`
-    mutation CreatePost($content: String!) {
-        createPost(content: $content) {
+    mutation CreatePost($content: String!, $title: String, $media: [PostMediaInput!]) {
+        createPost(content: $content, title: $title, media: $media) {
             id
             content
+            title
+            media {
+                id
+                url
+                type
+                order
+            }
             createdAt
             comments {
                 id
@@ -50,10 +64,17 @@ export const CREATE_POST = gql`
 `;
 
 export const UPDATE_POST = gql`
-    mutation UpdatePost($id: String!, $content: String!) {
-        updatePost(id: $id, content: $content) {
+    mutation UpdatePost($id: String!, $content: String!, $title: String) {
+        updatePost(id: $id, content: $content, title: $title) {
             id
             content
+            title
+            media {
+                id
+                url
+                type
+                order
+            }
             createdAt
             comments {
                 id

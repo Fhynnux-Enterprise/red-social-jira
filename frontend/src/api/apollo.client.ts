@@ -30,7 +30,13 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
 
     if (graphQLErrors) {
         graphQLErrors.forEach(({ extensions, message }) => {
-            if (extensions?.code === 'UNAUTHENTICATED' || message.includes('Unauthorized')) {
+            // Buscamos el código estándar UNAUTHENTICATED o la palabra Unauthorized en el mensaje
+            if (
+                extensions?.code === 'UNAUTHENTICATED' || 
+                extensions?.code === '401' ||
+                message.includes('Unauthorized') || 
+                message.includes('not authenticated')
+            ) {
                 isUnauthorized = true;
             }
         });
@@ -51,8 +57,16 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
     }
 
     if (isUnauthorized) {
+        // Limpiamos la caché de Apollo inmediatamente para mayor seguridad
+        apolloClient.clearStore().catch(e => console.error('Error clearing store:', e));
+        
         DeviceEventEmitter.emit('session_expired');
-        Toast.show({ type: 'error', text1: 'Sesión expirada', text2: 'Por favor, inicia sesión nuevamente.' });
+        Toast.show({ 
+            type: 'error', 
+            text1: 'Sesión expirada', 
+            text2: 'Tus credenciales han caducado, por favor inicia sesión de nuevo.',
+            visibilityTime: 4000
+        });
     }
 });
 
@@ -63,8 +77,37 @@ export const apolloClient = new ApolloClient({
         typePolicies: {
             Query: {
                 fields: {
+                    getPosts: {
+                        keyArgs: false,
+                        merge(existing = [], incoming) {
+                            // Deduplicación basada en las referencias internas de Apollo (__ref)
+                            const existingRefs = new Set(existing.map((ref: any) => ref.__ref));
+                            const uniqueIncoming = incoming.filter((ref: any) => !existingRefs.has(ref.__ref));
+                            return [...existing, ...uniqueIncoming];
+                        },
+                    },
                     getCommentsByPost: {
+                        keyArgs: ['postId'],
+                        merge(existing = [], incoming) {
+                            const existingRefs = new Set(existing.map((ref: any) => ref.__ref));
+                            const uniqueIncoming = incoming.filter((ref: any) => !existingRefs.has(ref.__ref));
+                            return [...existing, ...uniqueIncoming];
+                        },
+                    },
+                    getUserProfile: {
+                        keyArgs: ['id'],
+                    },
+                },
+            },
+            // Política para la entidad Post normalizada:
+            // Apollo la identifica por __typename + id automáticamente.
+            // Aquí le decimos que cuando lleguen nuevos 'likes', reemplace (no mezcle)
+            // el array completo para evitar duplicados o datos rancios.
+            Post: {
+                fields: {
+                    likes: {
                         merge(existing, incoming) {
+                            // Siempre tomamos la lista más reciente del servidor
                             return incoming;
                         },
                     },

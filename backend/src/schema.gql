@@ -43,9 +43,20 @@ type Comment {
   isLikedByMe: Boolean!
 }
 
+type PostMedia {
+  id: ID!
+  url: String!
+  type: String!
+  order: Int!
+  post: Post!
+  createdAt: DateTime!
+}
+
 type Post {
   id: ID!
   content: String!
+  title: String
+  media: [PostMedia]
   author: User!
   authorId: String!
   likes: [PostLike!]
@@ -107,6 +118,16 @@ type Follow {
   following: User!
 }
 
+type Story {
+  id: ID!
+  user: User!
+  userId: String!
+  mediaUrl: String!
+  mediaType: String!
+  createdAt: DateTime!
+  expiresAt: DateTime!
+}
+
 type User {
   id: ID!
   email: String!
@@ -116,7 +137,8 @@ type User {
   phone: String
   bio: String
   photoUrl: String
-  posts: [Post!]
+  coverUrl: String
+  posts(limit: Int = 5, offset: Int = 0): [Post!]
   customFields: [UserCustomField!]
   badge: UserBadge
   comments: [Comment!]
@@ -124,39 +146,46 @@ type User {
   sentMessages: [Message!]
   followers: [Follow!]
   following: [Follow!]
+  stories: [Story!]
   followersCount: Int!
   followingCount: Int!
+}
+
+type UploadUrlResponse {
+  signedUrl: String!
+  publicUrl: String!
 }
 
 type Query {
   """Verifica si el servidor GraphQL está funcionando"""
   ping: String!
-
-  """Obtiene los datos del usuario logueado en base al token JWT"""
-  me: String!
-  getPosts: [Post!]!
+  getPosts(limit: Int! = 5, offset: Int! = 0): [Post!]!
   getUserProfile(id: String!): User!
+  me: User!
   searchUsers(searchTerm: String!): [User!]!
   isFollowing(id_following: String!): Boolean!
   getFollowers(id_user: String!): [User!]!
   getFollowing(id_user: String!): [User!]!
-  getCommentsByPost(postId: String!): [Comment!]!
+  getCommentsByPost(postId: String!, limit: Int = 10, offset: Int = 0): [Comment!]!
   getUserConversations: [Conversation!]!
   getChatMessages(id_conversation: String!): [Message!]!
   searchMessagesInChat(id_conversation: String!, searchTerm: String!): [Message!]!
   getConversation(id_conversation: String!): Conversation
+  getActiveStories: [Story!]!
 }
 
 type Mutation {
-  createPost(content: String!): Post!
-  updatePost(id: String!, content: String!): Post!
+  createPost(content: String!, title: String, media: [PostMediaInput!]): Post!
+  updatePost(id: String!, content: String!, title: String): Post!
   deletePost(id: String!): Boolean!
   toggleLike(postId: String!): Post!
+  generateUploadUrl(fileName: String!, fileType: String!, folder: String!): UploadUrlResponse!
   addCustomField(title: String!, value: String!): UserCustomField!
   updateCustomField(id: String!, title: String!, value: String!): UserCustomField!
   deleteCustomField(id: String!): Boolean!
   updateBadge(title: String!, theme: String = "default"): UserBadge!
   updateProfile(firstName: String, lastName: String, bio: String, username: String, phone: String): User!
+  updateProfileMedia(photoUrl: String, coverUrl: String): User!
   toggleFollow(id_following: String!): Boolean!
   createComment(postId: String!, content: String!, parentId: String): Comment!
   deleteComment(id: String!): Boolean!
@@ -168,4 +197,12 @@ type Mutation {
   editMessage(id_message: String!, newContent: String!): Message!
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
   sendMessage(id_conversation: String!, content: String!): Message!
+  createStory(mediaUrl: String!, mediaType: String!): Story!
+  deleteStory(id: String!): Boolean!
+}
+
+input PostMediaInput {
+  url: String!
+  type: String!
+  order: Int!
 }

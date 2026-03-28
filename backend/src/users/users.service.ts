@@ -4,6 +4,7 @@ import { Repository, Not } from 'typeorm';
 import { UserCustomField } from './entities/user-custom-field.entity';
 import { UserBadge } from './entities/user-badge.entity';
 import { User } from '../auth/entities/user.entity';
+import { Comment } from '../comments/entities/comment.entity';
 
 @Injectable()
 export class UsersService {
@@ -58,13 +59,11 @@ export class UsersService {
   }
 
   async findById(id: string): Promise<User> {
-    const user = await this.userRepository.findOne({
-      where: { id },
-      relations: ['customFields', 'badge', 'posts', 'posts.author', 'posts.likes', 'posts.likes.user', 'comments', 'posts.comments'],
-      order: {
-        posts: { createdAt: 'DESC' },
-      },
-    });
+    const user = await this.userRepository.createQueryBuilder('user')
+      .where('user.id = :id', { id })
+      .leftJoinAndSelect('user.customFields', 'customFields')
+      .leftJoinAndSelect('user.badge', 'badge')
+      .getOne();
     if (!user) {
       throw new BadRequestException('Usuario no encontrado');
     }
@@ -135,9 +134,25 @@ export class UsersService {
     return this.userRepository.save(user);
   }
 
+  async updateProfileMedia(
+    userId: string,
+    photoUrl?: string,
+    coverUrl?: string,
+  ): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado');
+    }
+
+    if (photoUrl !== undefined) user.photoUrl = photoUrl;
+    if (coverUrl !== undefined) user.coverUrl = coverUrl;
+
+    return this.userRepository.save(user);
+  }
+
   async searchUsers(searchTerm: string, currentUserId: string): Promise<User[]> {
     if (!searchTerm) return [];
-    
+
     return this.userRepository.createQueryBuilder('user')
       .where('(user.username ILIKE :term OR user.firstName ILIKE :term OR user.lastName ILIKE :term)', { term: `%${searchTerm}%` })
       .andWhere('user.id != :currentUserId', { currentUserId })

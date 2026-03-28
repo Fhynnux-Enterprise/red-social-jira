@@ -1,4 +1,4 @@
-import { Resolver, Query, Mutation, Args, Context, ResolveField, Parent } from '@nestjs/graphql';
+import { Resolver, Query, Mutation, Args, Context, ResolveField, Parent, Int } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { CommentsService } from './comments.service';
 import { Comment } from './entities/comment.entity';
@@ -24,10 +24,12 @@ export class CommentsResolver {
     @UseGuards(JwtGqlGuard)
     async getCommentsByPost(
         @Args('postId') postId: string,
+        @Args('limit', { type: () => Int, defaultValue: 10, nullable: true }) limit: number,
+        @Args('offset', { type: () => Int, defaultValue: 0, nullable: true }) offset: number,
         @Context() context: any,
     ): Promise<Comment[]> {
         const userId = context.req?.user?.id;
-        return this.commentsService.getCommentsByPost(postId, userId);
+        return this.commentsService.getCommentsByPost(postId, userId, limit ?? 10, offset ?? 0);
     }
 
     @Mutation(() => Boolean, { name: 'deleteComment' })
