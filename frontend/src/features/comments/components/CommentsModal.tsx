@@ -59,13 +59,14 @@ export interface CommentsModalProps {
     onPrevPost?: () => void;
     nextPost?: any | null;
     prevPost?: any | null;
+    hasMorePosts?: boolean;
     onOptionsPress?: (post: any) => void;
     initialExpanded?: boolean;
 }
 export default function CommentsModal({
     visible, post, onClose,
     initialMinimized = false, initialTab = 'comments',
-    onNextPost, onPrevPost, nextPost, prevPost,
+    onNextPost, onPrevPost, nextPost, prevPost, hasMorePosts = false,
     onOptionsPress, initialExpanded = false
 }: CommentsModalProps) {
     const { colors, isDark } = useTheme();
@@ -142,13 +143,13 @@ export default function CommentsModal({
     };
 
     // Almacenamos los callbacks actualizados en una referencia porque el PanResponder guarda las variables del primer render
-    const callbacksRef = useRef({ onNextPost, onPrevPost });
+    const callbacksRef = useRef({ onNextPost, onPrevPost, hasMorePosts });
     // IGUAL para nextPost/prevPost: el PanResponder los lee desde la ref, no del closure inicial
     const navRef = useRef({ nextPost, prevPost });
     useEffect(() => {
-        callbacksRef.current = { onNextPost, onPrevPost };
+        callbacksRef.current = { onNextPost, onPrevPost, hasMorePosts };
         navRef.current = { nextPost, prevPost };
-    }, [onNextPost, onPrevPost, nextPost, prevPost]);
+    }, [onNextPost, onPrevPost, nextPost, prevPost, hasMorePosts]);
 
     const toggleMinimize = () => {
         if (!isMinimized) {
@@ -279,8 +280,12 @@ export default function CommentsModal({
                         Animated.timing(panYPost, {
                             toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
                         }).start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                    } else if (callbacksRef.current.hasMorePosts) {
+                        // Si hay más posts pero aún no se cargan, rebotamos pero avisamos al padre para que cargue
+                        Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                        callbacksRef.current.onNextPost?.();
                     } else {
-                        // Última publicación: rebote
+                        // Última publicación y no hay más en la DB: rebote normal
                         Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
                     }
                 } else {
@@ -1071,9 +1076,14 @@ export default function CommentsModal({
                                         endY + postScrollHeight.current >= postScrollContentHeight.current - 5 &&
                                         vy < -0.5
                                     ) {
-                                        Animated.timing(panYPost, {
-                                            toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
-                                        }).start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                                        if (navRef.current.nextPost) {
+                                            Animated.timing(panYPost, {
+                                                toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
+                                            }).start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                                        } else if (callbacksRef.current.hasMorePosts) {
+                                            Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                                            callbacksRef.current.onNextPost?.();
+                                        }
                                     }
                                 }}
                             >

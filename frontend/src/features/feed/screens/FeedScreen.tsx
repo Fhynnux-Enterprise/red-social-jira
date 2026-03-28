@@ -324,8 +324,28 @@ export default function FeedScreen() {
                 onNextPost={() => {
                     const posts = data?.getPosts || [];
                     const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
-                    if (currentIndex !== -1 && currentIndex < posts.length - 1) {
-                        setSelectedPostForComments({ post: posts[currentIndex + 1], minimize: !!selectedPostForComments?.minimize, initialTab: selectedPostForComments?.initialTab, initialExpanded: false });
+                    
+                    if (currentIndex !== -1) {
+                        // PREFETCH: Cargamos más datos desde el servidor ANTES de que el usuario llegue al final
+                        if (currentIndex >= posts.length - 3 && hasMore && !isFetchingMore) {
+                            loadMorePosts();
+                        }
+
+                        if (currentIndex < posts.length - 1) {
+                            setSelectedPostForComments({ 
+                                post: posts[currentIndex + 1], 
+                                minimize: !!selectedPostForComments?.minimize, 
+                                initialTab: selectedPostForComments?.initialTab, 
+                                initialExpanded: false 
+                            });
+                        } else if (hasMore) {
+                            // Si deslizó pero no se ha cargado todavía
+                            Toast.show({ type: 'info', text1: 'Cargando más...', text2: 'Por favor, intenta deslizar de nuevo en un segundo.' });
+                            if (!isFetchingMore) loadMorePosts();
+                        } else {
+                            // Se acabó la base de datos
+                            Toast.show({ type: 'info', text1: 'Has visto todo', text2: 'Llegaste al final de las publicaciones.' });
+                        }
                     }
                 }}
                 onPrevPost={() => {
@@ -339,6 +359,7 @@ export default function FeedScreen() {
                     setSelectedPost(post);
                     setIsOptionsMenuVisible(true);
                 }}
+                hasMorePosts={hasMore}
             />
         </SafeAreaView>
     );
