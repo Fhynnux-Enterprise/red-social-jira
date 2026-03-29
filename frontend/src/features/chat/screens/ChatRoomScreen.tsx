@@ -35,6 +35,30 @@ import { OnlineStatusIndicator } from '../components/OnlineStatusIndicator';
 import { ChatBubbleVideo } from '../components/ChatBubbleVideo';
 import ZoomableImageViewer from '../../feed/components/ZoomableImageViewer';
 import { InteractiveVideoPlayer } from '../../feed/components/ImageCarousel';
+import { VideoView, useVideoPlayer } from 'expo-video';
+
+// Componente para manejar la miniatura de respuesta a historia (especialmente para videos)
+const StoryReplyThumbnail = ({ uri, isVideo, style }: { uri: string; isVideo: boolean; style: any }) => {
+    const player = useVideoPlayer(isVideo ? uri : null, (p) => {
+        p.muted = true;
+        p.pause();
+    });
+
+    if (isVideo && player) {
+        return (
+            <View style={[style, { overflow: 'hidden', backgroundColor: '#000' }]}>
+                <VideoView 
+                    player={player} 
+                    style={StyleSheet.absoluteFill} 
+                    contentFit="cover" 
+                    nativeControls={false}
+                />
+            </View>
+        );
+    }
+
+    return <Image source={{ uri }} style={style} />;
+};
 
 export default function ChatRoomScreen() {
     const { colors, isDark } = useTheme();
@@ -188,8 +212,8 @@ export default function ChatRoomScreen() {
 
             // Si ALGUIEN MÁS leyó mis mensajes, actualizamos isRead a true para todos mis mensajes
             if (payload.readerId !== currentUser?.id) {
-                setLocalMessages(prev => 
-                    prev.map(m => m.sender?.id === currentUser?.id ? { ...m, isRead: true } : m)
+                setLocalMessages((prev: any[]) => 
+                    prev.map((m: any) => m.sender?.id === currentUser?.id ? { ...m, isRead: true } : m)
                 );
             }
         }
@@ -775,7 +799,47 @@ export default function ChatRoomScreen() {
                     delayLongPress={200}
                     style={bubbleStyles}
                 >
-                    {item.imageUrl && (
+                    {item.storyId && (
+                        <TouchableOpacity 
+                            style={[
+                                styles.storyReplyContainer, 
+                                { 
+                                    backgroundColor: isMine ? 'rgba(0,0,0,0.15)' : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'),
+                                    borderColor: isMine ? 'rgba(255,255,255,0.2)' : colors.border,
+                                    borderWidth: isMine ? 0 : 0.5
+                                }
+                            ]}
+                            onPress={() => {
+                                navigation.navigate('StoryViewer', { 
+                                    userId: item.sender?.id, 
+                                    initialStoryId: item.storyId 
+                                });
+                            }}
+                        >
+                            <View style={[styles.storyReplyIndicator, { backgroundColor: isMine ? '#FFF' : colors.primary }]} />
+                            <View style={{ flex: 1, paddingVertical: 4 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                                    <Ionicons name="flash-outline" size={12} color={isMine ? 'rgba(255,255,255,0.9)' : colors.primary} style={{ marginRight: 4 }} />
+                                    <Text style={[styles.storyReplyLabel, { color: isMine ? 'rgba(255,255,255,0.9)' : colors.primary, marginBottom: 0 }]}>Historia</Text>
+                                </View>
+                                <Text style={[styles.storyReplyText, { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]} numberOfLines={1}>
+                                    Ver historia original
+                                </Text>
+                            </View>
+                            {(item.imageUrl || item.videoUrl) ? (
+                                <StoryReplyThumbnail 
+                                    uri={(item.imageUrl || item.videoUrl) as string} 
+                                    isVideo={!!item.videoUrl} 
+                                    style={styles.storyReplyThumb} 
+                                />
+                            ) : (
+                                <View style={[styles.storyReplyThumb, { justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#333' : '#EEE' }]}>
+                                    <Ionicons name="alert-circle-outline" size={20} color={colors.textSecondary} />
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                    )}
+                    {item.imageUrl && !item.storyId && (
                         <TouchableOpacity
                             activeOpacity={0.9}
                             onPress={() => {
@@ -798,7 +862,7 @@ export default function ChatRoomScreen() {
                             />
                         </TouchableOpacity>
                     )}
-                    {item.videoUrl && (
+                    {item.videoUrl && !item.storyId && (
                         <View style={{ width: screenWidth * 0.55, borderRadius: 12, overflow: 'hidden', marginBottom: item.content ? 6 : 0 }}>
                             <ChatBubbleVideo
                                 url={item.videoUrl}
@@ -1604,5 +1668,35 @@ const styles = StyleSheet.create({
     uploadStatusText: {
         fontSize: 12,
         fontWeight: '500',
+    },
+    storyReplyContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 12,
+        marginBottom: 8,
+        minWidth: 150,
+    },
+    storyReplyIndicator: {
+        width: 3,
+        height: '80%',
+        borderRadius: 2,
+        marginRight: 10,
+    },
+    storyReplyLabel: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        marginBottom: 2,
+    },
+    storyReplyText: {
+        fontSize: 12,
+    },
+    storyReplyThumb: {
+        width: 36,
+        height: 36,
+        borderRadius: 6,
+        marginLeft: 10,
+        backgroundColor: '#000',
     },
 });

@@ -132,7 +132,7 @@ export class ChatResolver {
         @CurrentUser() user: User,
         @Args() args: SendMessageArgs,
     ) {
-        const newMessage = await this.chatService.sendMessage(user.id, args.id_conversation, args.content, args.imageUrl, args.videoUrl);
+        const newMessage = await this.chatService.sendMessage(user.id, args.id_conversation, args.content, args.imageUrl, args.videoUrl, args.storyId);
         pubSub.publish('MESSAGE_ADDED_EVENT', { 
             messageAdded: newMessage, 
             inboxUpdate: newMessage 

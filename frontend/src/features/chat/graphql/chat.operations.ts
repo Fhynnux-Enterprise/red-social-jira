@@ -57,6 +57,7 @@ export const GET_CHAT_MESSAGES = gql`
       isRead
       isDeletedForAll
       editedAt
+      storyId
       sender {
         id
       }
@@ -75,6 +76,7 @@ export const MESSAGE_ADDED_SUBSCRIPTION = gql`
       isRead
       isDeletedForAll
       editedAt
+      storyId
       sender {
         id
       }
@@ -119,8 +121,8 @@ export const EDIT_MESSAGE = gql`
 `;
 
 export const SEND_MESSAGE = gql`
-  mutation SendMessage($id_conversation: String!, $content: String, $imageUrl: String, $videoUrl: String) {
-    sendMessage(id_conversation: $id_conversation, content: $content, imageUrl: $imageUrl, videoUrl: $videoUrl) {
+  mutation SendMessage($id_conversation: String!, $content: String, $imageUrl: String, $videoUrl: String, $storyId: String) {
+    sendMessage(id_conversation: $id_conversation, content: $content, imageUrl: $imageUrl, videoUrl: $videoUrl, storyId: $storyId) {
       id_message
       content
       imageUrl
@@ -129,6 +131,7 @@ export const SEND_MESSAGE = gql`
       isRead
       isDeletedForAll
       editedAt
+      storyId
       sender {
         id
       }
@@ -181,6 +184,7 @@ export const MESSAGES_READ_SUBSCRIPTION = gql`
       videoUrl
       createdAt
       id_conversation
+      storyId
       sender {
         id
       }

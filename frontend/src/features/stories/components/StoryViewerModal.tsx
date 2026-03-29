@@ -9,7 +9,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import ConfirmationModal from '../../../features/comments/components/ConfirmationModal';
 
-import { PanResponder } from 'react-native';
+import { PanResponder, TextInput, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { useMutation } from '@apollo/client/react';
+import { GET_OR_CREATE_CHAT, SEND_MESSAGE } from '../../chat/graphql/chat.operations';
+import Toast from 'react-native-toast-message';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -27,15 +30,23 @@ interface StoryViewerModalProps {
  * REPRODUCTOR INTERNO PARA VIDEOS EN HISTORIAS
  * Utiliza el sistema de caché para optimizar el consumo de datos.
  */
-const StoryVideoPlayer = ({ url, onFinish }: { url: string, onFinish: () => void }) => {
+const StoryVideoPlayer = ({ url, onFinish, isPaused = false }: { url: string, onFinish: () => void, isPaused?: boolean }) => {
     const { cachedSource } = useVideoCache(url);
     const isMounted = useRef(true);
     
-    // Usamos el hook de expo-video con la URL definitiva (caché o red)
     const player = useVideoPlayer(cachedSource || url, (p) => {
         p.loop = false;
-        p.play();
+        if (!isPaused) p.play();
     });
+
+    useEffect(() => {
+        if (!player) return;
+        if (isPaused) {
+            player.pause();
+        } else {
+            player.play();
+        }
+    }, [player, isPaused]);
 
     useEffect(() => {
         isMounted.current = true;
@@ -71,8 +82,36 @@ export const StoryViewerModal = ({ visible, stories, initialIndex, onClose, onSt
     const [currentIndex, setCurrentIndex] = useState(initialIndex);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
+    const [reply, setReply] = useState('');
+    const [isSending, setIsSending] = useState(false);
     const { colors } = useTheme();
     const insets = useSafeAreaInsets();
+    
+    // Animación de Teclado (Estilo CommentsModal)
+    const keyboardOffset = useRef(new Animated.Value(Math.max(insets.bottom, 15))).current;
+
+    useEffect(() => {
+        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+        
+        const showSub = Keyboard.addListener(showEvent, (e) => {
+            Animated.timing(keyboardOffset, {
+                toValue: e.endCoordinates.height + 55,
+                duration: Platform.OS === 'ios' ? e.duration || 250 : 200,
+                useNativeDriver: false,
+            }).start();
+        });
+        
+        const hideSub = Keyboard.addListener(hideEvent, (e) => {
+            Animated.timing(keyboardOffset, {
+                toValue: Math.max(insets.bottom, 15),
+                duration: Platform.OS === 'ios' ? e.duration || 250 : 200,
+                useNativeDriver: false,
+            }).start();
+        });
+        
+        return () => { showSub.remove(); hideSub.remove(); };
+    }, [insets.bottom]);
     
     // Animación de la barra de progreso
     const animValue = useRef(new Animated.Value(0)).current;
@@ -84,7 +123,56 @@ export const StoryViewerModal = ({ visible, stories, initialIndex, onClose, onSt
     const longPressTimeout = useRef<any>(null);
     const isClosing = useRef(false);
 
+    const [getOrCreateChat] = useMutation<any>(GET_OR_CREATE_CHAT);
+    const [sendMessage] = useMutation<any>(SEND_MESSAGE);
+
     const currentStory = stories[currentIndex];
+
+    const handleSendReply = async () => {
+        if (!reply.trim() || isSending) return;
+        
+        try {
+            setIsSending(true);
+            setIsPaused(true);
+
+            // 1. Obtener o crear la conversación con el autor de la historia
+            const { data: chatData } = await getOrCreateChat({
+                variables: { targetUserId: currentStory.userId }
+            });
+
+            const conversationId = chatData?.getOrCreateOneOnOneChat?.id_conversation;
+
+            if (!conversationId) throw new Error("No se pudo iniciar el chat");
+
+            // 2. Enviar el mensaje (Podríamos incluir el link de la historia si quisiéramos)
+            await sendMessage({
+                variables: {
+                    id_conversation: conversationId,
+                    content: `Respondió a tu historia: "${reply.trim()}"`,
+                    imageUrl: currentStory.mediaType === 'image' ? currentStory.mediaUrl : null,
+                    videoUrl: currentStory.mediaType === 'video' ? currentStory.mediaUrl : null,
+                    storyId: currentStory.id
+                }
+            });
+
+            Toast.show({
+                type: 'success',
+                text1: 'Respuesta enviada',
+                text2: `Tu mensaje ha sido enviado a ${displayName}`
+            });
+
+            setReply('');
+            setIsPaused(false);
+            Keyboard.dismiss();
+            // Opcional: Avanzar a la siguiente historia tras responder
+            // handleNext();
+        } catch (error: any) {
+            console.error("Error al enviar respuesta:", error);
+            Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo enviar la respuesta' });
+        } finally {
+            setIsSending(false);
+        }
+    };
 
     // GESTO: Arrastrar SOLO abajo para cerrar (Estilo Instagram/TikTok)
     const panResponder = useRef(
@@ -253,7 +341,7 @@ export const StoryViewerModal = ({ visible, stories, initialIndex, onClose, onSt
                     styles.container, 
                     { 
                         paddingTop: insets.top, 
-                        paddingBottom: insets.bottom,
+                        // Eliminamos paddingBottom aquí para que no interfiera con el bottom absoluto de la barra
                         opacity: backdropOpacity,
                         transform: [{ translateY: pan.y }]
                     }
@@ -267,6 +355,7 @@ export const StoryViewerModal = ({ visible, stories, initialIndex, onClose, onSt
                             key={currentStory.mediaUrl} 
                             url={currentStory.mediaUrl!} 
                             onFinish={handleNext} 
+                            isPaused={isPaused}
                         />
                     ) : (
                         <Image 
@@ -298,6 +387,48 @@ export const StoryViewerModal = ({ visible, stories, initialIndex, onClose, onSt
                             </TouchableOpacity>
                         </View>
                     </View>
+                )}
+
+                {/* TAREA: Barra de Respuesta (Solo para otros usuarios) */}
+                {!isClosing.current && currentUserId !== currentStory.userId && (
+                    <Animated.View style={[styles.replyContainer, { bottom: keyboardOffset }]}>
+                        <View style={styles.replyInputWrapper}>
+                            <TextInput
+                                style={styles.replyInput}
+                                placeholder="Enviar mensaje..."
+                                placeholderTextColor="rgba(255,255,255,0.7)"
+                                value={reply}
+                                onChangeText={setReply}
+                                onFocus={() => setIsPaused(true)}
+                                onBlur={() => setIsPaused(false)}
+                                multiline
+                            />
+                            {reply.trim().length > 0 && (
+                                <TouchableOpacity 
+                                    style={styles.sendButton} 
+                                    onPress={handleSendReply}
+                                    disabled={isSending}
+                                >
+                                    {isSending ? (
+                                        <ActivityIndicator size="small" color="white" />
+                                    ) : (
+                                        <Ionicons name="send" size={20} color="white" />
+                                    )}
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                        <View style={{ flexDirection: 'row', gap: 15, marginLeft: 10 }}>
+                            <TouchableOpacity onPress={() => { setReply('🔥'); handleSendReply(); }}>
+                                <Text style={{ fontSize: 24 }}>🔥</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => { setReply('❤️'); handleSendReply(); }}>
+                                <Text style={{ fontSize: 24 }}>❤️</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => { setReply('😮'); handleSendReply(); }}>
+                                <Text style={{ fontSize: 24 }}>😮</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </Animated.View>
                 )}
 
                 {/* TAREA 1: Gestos de navegación invisibles con Hold-to-Pause Retardado */}
@@ -333,6 +464,8 @@ export const StoryViewerModal = ({ visible, stories, initialIndex, onClose, onSt
                         );
                     })}
                 </View>
+
+                {/* NOTA: Eliminamos el /KeyboardAvoidingView de aquí */}
 
                 <ConfirmationModal 
                     visible={showDeleteConfirm}
@@ -428,5 +561,59 @@ const styles = StyleSheet.create({
     },
     progressBar: {
         height: '100%',
+    },
+    captionContainer: {
+        position: 'absolute',
+        bottom: 50,
+        left: 0,
+        right: 0,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        paddingHorizontal: 20,
+        paddingVertical: 15,
+        zIndex: 5,
+    },
+    captionText: {
+        color: '#FFF',
+        fontSize: 16,
+        textAlign: 'center',
+        lineHeight: 22,
+        textShadowColor: 'rgba(0,0,0,0.7)',
+        textShadowOffset: { width: 1, height: 1 },
+        textShadowRadius: 4,
+    },
+    replyContainer: {
+        position: 'absolute',
+        left: 16,
+        right: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        zIndex: 20,
+    },
+    replyInputWrapper: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        borderRadius: 25,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.2)',
+    },
+    replyInput: {
+        flex: 1,
+        color: 'white',
+        fontSize: 14,
+        maxHeight: 100,
+        paddingTop: Platform.OS === 'ios' ? 0 : 4,
+    },
+    sendButton: {
+        marginLeft: 10,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        justifyContent: 'center',
+        alignItems: 'center',
     }
 });

@@ -85,6 +85,7 @@ type Message {
   content: String!
   imageUrl: String
   videoUrl: String
+  storyId: String
   id_conversation: String!
   isRead: Boolean!
   createdAt: DateTime!
@@ -127,6 +128,7 @@ type Story {
   user: User!
   userId: String!
   mediaUrl: String!
+  content: String
   mediaType: String!
   createdAt: DateTime!
   expiresAt: DateTime!
@@ -210,9 +212,9 @@ type Mutation {
   deleteConversationForMe(id_conversation: String!): Boolean!
   editMessage(id_message: String!, newContent: String!): Message!
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
-  sendMessage(id_conversation: String!, content: String = "", imageUrl: String, videoUrl: String): Message!
+  sendMessage(id_conversation: String!, content: String = "", imageUrl: String, videoUrl: String, storyId: String): Message!
   markMessagesAsRead(id_conversation: String!): Boolean!
-  createStory(mediaUrl: String!, mediaType: String!): Story!
+  createStory(mediaUrl: String!, mediaType: String!, content: String): Story!
   deleteStory(id: String!): Boolean!
 }
 

@@ -14,9 +14,10 @@ export class StoriesResolver {
     @Context() context: any,
     @Args('mediaUrl') mediaUrl: string,
     @Args('mediaType') mediaType: string,
+    @Args('content', { nullable: true }) content?: string,
   ) {
     const userId = context.req.user.id;
-    return this.storiesService.create(userId, mediaUrl, mediaType);
+    return this.storiesService.create(userId, mediaUrl, mediaType, content);
   }
 
   @Query(() => [Story], { name: 'getActiveStories' })

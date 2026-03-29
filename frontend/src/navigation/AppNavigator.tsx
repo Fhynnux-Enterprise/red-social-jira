@@ -12,6 +12,7 @@ import ChatListScreen from '../features/chat/screens/ChatListScreen';
 import ChatRoomScreen from '../features/chat/screens/ChatRoomScreen';
 import ChatDetailsScreen from '../features/chat/screens/ChatDetailsScreen';
 import NewChatScreen from '../features/chat/screens/NewChatScreen';
+import StoryViewerScreen from '../features/stories/screens/StoryViewerScreen';
 import { useTheme } from '../theme/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery, useSubscription } from '@apollo/client/react';
@@ -25,6 +26,7 @@ export type AppStackParamList = {
     ChatDetails: { id_conversation: string };
     NewChat: undefined;
     Profile: { userId?: string } | undefined;
+    StoryViewer: { userId: string; initialStoryId?: string };
 };
 
 export type AppTabParamList = {
@@ -187,6 +189,14 @@ export default function AppNavigator() {
                 options={{ 
                     presentation: 'fullScreenModal',
                     animation: 'slide_from_bottom' 
+                }} 
+            />
+            <Stack.Screen 
+                name="StoryViewer" 
+                component={StoryViewerScreen} 
+                options={{ 
+                    presentation: 'fullScreenModal',
+                    animation: 'fade' 
                 }} 
             />
         </Stack.Navigator>

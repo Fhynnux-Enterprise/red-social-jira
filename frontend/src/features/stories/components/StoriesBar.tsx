@@ -14,7 +14,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { useAuth } from '../../../features/auth/context/AuthContext';
 import { useTheme } from '../../../theme/ThemeContext';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { StoryViewerModal } from './StoryViewerModal';
+import CreateStoryModal from './CreateStoryModal';
 
 const VIEWED_STORIES_BASE_KEY = '@chunchi_viewed_stories_';
 
@@ -34,6 +36,7 @@ export interface Story {
     mediaType?: string;
     createdAt?: string;
     expiresAt?: string;
+    content?: string;
 }
 
 interface GetActiveStoriesData {
@@ -48,6 +51,7 @@ const GET_ACTIVE_STORIES = gql`
       mediaUrl
       mediaType
       createdAt
+      content
       user {
         id
         username
@@ -60,11 +64,12 @@ const GET_ACTIVE_STORIES = gql`
 `;
 
 const CREATE_STORY = gql`
-  mutation CreateStory($mediaUrl: String!, $mediaType: String!) {
-    createStory(mediaUrl: $mediaUrl, mediaType: $mediaType) {
+  mutation CreateStory($mediaUrl: String!, $mediaType: String!, $content: String) {
+    createStory(mediaUrl: $mediaUrl, mediaType: $mediaType, content: $content) {
       id
       mediaUrl
       mediaType
+      content
     }
   }
 `;
@@ -152,11 +157,45 @@ const BrandingCircle = ({
     );
 };
 
+/**
+ * Componente para mostrar la miniatura de una historia.
+ * Si es video, muestra el primer frame usando expo-video.
+ */
+const StoryMediaThumbnail = ({ uri, type, style }: { uri: string, type?: string, style: any }) => {
+    const isVideo = type === 'video' || uri.toLowerCase().includes('.mp4');
+    
+    // Solo inicializamos el player si es video
+    const player = useVideoPlayer(isVideo ? uri : null, (p) => {
+        p.muted = true;
+        p.pause();
+    });
+
+    if (isVideo && player) {
+        return (
+            <View style={[style, { overflow: 'hidden', backgroundColor: '#000' }]}>
+                <VideoView
+                    player={player}
+                    style={StyleSheet.absoluteFill}
+                    contentFit="cover"
+                    nativeControls={false}
+                />
+                <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.1)' }]}>
+                    <Ionicons name="play" size={24} color="rgba(255,255,255,0.6)" />
+                </View>
+            </View>
+        );
+    }
+
+    return <Image source={{ uri }} style={style} />;
+};
+
 export const StoriesBar = () => {
     const { user: currentUser } = useAuth();
     const { colors } = useTheme();
     const [isCreating, setIsCreating] = useState(false);
-    const [viewerVisible, setViewerVisible] = useState(false);
+    const [isViewerVisible, setIsViewerVisible] = useState(false);
+    const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
+    const [viewerInitialIndex, setViewerInitialIndex] = useState(0);
     const [selectedUserStories, setSelectedUserStories] = useState<Story[]>([]);
     const [viewedStoryIds, setViewedStoryIds] = useState<string[]>([]); // El cerebro de la app
     const { uploadMedia } = useMediaUpload();
@@ -227,41 +266,11 @@ export const StoriesBar = () => {
 
     const handleDeleteStory = (storyId: string) => {
         deleteStory({ variables: { id: storyId } });
-        setViewerVisible(false);
+        setIsViewerVisible(false);
     };
 
-    const handleCreateStory = async () => {
-        try {
-            const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ['images', 'videos'],
-                allowsEditing: true,
-                aspect: [9, 16],
-                quality: 0.8,
-                videoMaxDuration: 45,
-            });
-
-            if (result.canceled || !result.assets[0]) return;
-
-            setIsCreating(true);
-            const asset = result.assets[0];
-            const type = asset.type === 'video' ? 'video' : 'image';
-            let finalUri = asset.uri;
-
-            if (type === 'video') {
-                finalUri = await VideoCompressor.compress(asset.uri, { compressionMethod: 'auto', maxSize: 720 });
-            } else {
-                finalUri = await ImageCompressor.compress(asset.uri, { maxWidth: 720, quality: 0.8 });
-            }
-
-            const mediaUrl = await uploadMedia(finalUri, type === 'video' ? 'video/mp4' : 'image/jpeg', 'stories');
-            await createStory({ variables: { mediaUrl, mediaType: type } });
-
-        } catch (err: any) {
-            console.error('Error al crear historia:', err);
-            Toast.show({ type: 'error', text1: 'Error en la subida', text2: err.message });
-        } finally {
-            setIsCreating(false);
-        }
+    const handleAddStory = async () => {
+        setIsCreateModalVisible(true);
     };
 
     const storiesByUser = useMemo(() => {
@@ -277,6 +286,7 @@ export const StoriesBar = () => {
         });
         return Array.from(groupedMap.values()).reverse();
     }, [data, currentUser]);
+    
     const handleOpenStories = (userId: string) => {
         const userStories = data?.getActiveStories
             ?.filter((s: Story) => s.userId === userId)
@@ -284,7 +294,7 @@ export const StoriesBar = () => {
             
         if (userStories.length > 0) {
             setSelectedUserStories(userStories);
-            setViewerVisible(true);
+            setIsViewerVisible(true);
         }
     };
 
@@ -305,7 +315,11 @@ export const StoriesBar = () => {
                     userStories={userStories} 
                     viewedStoryIds={viewedStoryIds}
                 >
-                    <Image source={{ uri: item.mediaUrl }} style={styles.previewImage} />
+                    <StoryMediaThumbnail 
+                        uri={item.mediaUrl!} 
+                        type={item.mediaType} 
+                        style={styles.previewImage} 
+                    />
                     <View style={[styles.badgeAvatarContainer, { borderColor: colors.background }]}>
                         <Image 
                             source={{ uri: item.user?.photoUrl || 'https://via.placeholder.com/150' }} 
@@ -321,7 +335,6 @@ export const StoriesBar = () => {
     }
 
     const renderAddStory = () => {
-        // Obtenemos las historias del usuario actual y las ordenamos ASCENDENTE
         const myStories = data?.getActiveStories
             ?.filter((s: Story) => s.userId === currentUser?.id)
             ?.sort((a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime()) || [];
@@ -331,8 +344,7 @@ export const StoriesBar = () => {
 
         return (
             <View style={styles.userControlsContainer}>
-                {/* BOTÓN AGREGAR CON DEGRADADO COMPLETO */}
-                <TouchableOpacity style={styles.storyItem} onPress={handleCreateStory} disabled={isCreating}>
+                <TouchableOpacity style={styles.storyItem} onPress={handleAddStory} disabled={isCreating}>
                     <BrandingCircle isActive={!isCreating} colors={colors} userStories={[{ id: 'dummy' }] as Story[]} viewedStoryIds={[]}>
                         <View style={[styles.addBtnContent, { backgroundColor: colors.surface }]}>
                             {isCreating ? (
@@ -345,7 +357,6 @@ export const StoriesBar = () => {
                     <Text style={[styles.username, { color: colors.text }]}>Agregar</Text>
                 </TouchableOpacity>
 
-                {/* MI HISTORIA CON DEGRADADO SEGMENTADO INDIVIDUAL - Solo aparece si hay historias */}
                 {hasStories && (
                     <TouchableOpacity 
                         style={styles.storyItem} 
@@ -357,8 +368,9 @@ export const StoriesBar = () => {
                             userStories={myStories} 
                             viewedStoryIds={viewedStoryIds}
                         >
-                            <Image 
-                                source={{ uri: lastMyStory?.mediaUrl || currentUser?.photoUrl || 'https://via.placeholder.com/150' }} 
+                            <StoryMediaThumbnail 
+                                uri={lastMyStory?.mediaUrl || currentUser?.photoUrl || 'https://via.placeholder.com/150'} 
+                                type={lastMyStory?.mediaType}
                                 style={styles.previewImage}
                             />
                             <View style={[styles.badgeAvatarContainer, { borderColor: colors.background }]}>
@@ -390,17 +402,26 @@ export const StoriesBar = () => {
                 contentContainerStyle={styles.listContent}
             />
 
-            {viewerVisible && (
+            {isViewerVisible && (
                 <StoryViewerModal 
-                    visible={viewerVisible} 
+                    visible={isViewerVisible} 
                     stories={selectedUserStories} 
-                    initialIndex={0} 
-                    onClose={() => setViewerVisible(false)} 
+                    initialIndex={viewerInitialIndex} 
+                    onClose={() => setIsViewerVisible(false)} 
                     onStorySeen={markStoryAsViewed}
                     onDeleteStory={handleDeleteStory}
                     currentUserId={currentUser?.id}
                 />
             )}
+
+            <CreateStoryModal 
+                visible={isCreateModalVisible}
+                onClose={() => setIsCreateModalVisible(false)}
+                onStoryCreated={() => {
+                    setIsCreateModalVisible(false);
+                    refetch();
+                }}
+            />
         </View>
     );
 };

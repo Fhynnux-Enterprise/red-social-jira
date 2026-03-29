@@ -84,7 +84,7 @@ export class ChatService {
         return savedConversation;
     }
 
-    async sendMessage(senderId: string, id_conversation: string, content: string, imageUrl?: string, videoUrl?: string): Promise<Message> {
+    async sendMessage(senderId: string, id_conversation: string, content: string, imageUrl?: string, videoUrl?: string, storyId?: string): Promise<Message> {
         const conversation = await this.conversationRepository.findOne({
             where: { id_conversation },
             relations: ['participants']
@@ -104,6 +104,7 @@ export class ChatService {
             content: content || '',
             imageUrl: imageUrl || undefined,
             videoUrl: videoUrl || undefined,
+            storyId: storyId || undefined,
             id_conversation,
             id_user: senderId,
             isRead: false,

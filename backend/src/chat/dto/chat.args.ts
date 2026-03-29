@@ -30,4 +30,9 @@ export class SendMessageArgs {
     @IsString()
     @IsOptional()
     videoUrl?: string;
+
+    @Field({ nullable: true })
+    @IsString()
+    @IsOptional()
+    storyId?: string;
 }
