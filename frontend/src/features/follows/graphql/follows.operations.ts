@@ -32,6 +32,26 @@ export const GET_FOLLOWING = gql`
       lastName
       username
       photoUrl
+      lastActiveAt
     }
+  }
+`;
+
+export const GET_ONLINE_FOLLOWING = gql`
+  query GetOnlineFollowing {
+    getOnlineFollowing {
+      id
+      firstName
+      lastName
+      username
+      photoUrl
+      lastActiveAt
+    }
+  }
+`;
+
+export const GET_ONLINE_FOLLOWING_COUNT = gql`
+  query GetOnlineFollowingCount {
+    getOnlineFollowingCount
   }
 `;

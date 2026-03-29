@@ -20,26 +20,39 @@ export class ChatService {
     ) { }
 
     async getOrCreateOneOnOneChat(currentUserId: string, targetUserId: string): Promise<Conversation> {
-        if (currentUserId === targetUserId) {
-            throw new BadRequestException('No puedes crear un chat contigo mismo');
-        }
+        const isSelfChat = currentUserId === targetUserId;
 
-        // 1. Buscar si ya existe la conversación entre ambos (y que sea solo de 2 personas)
-        const existingConversation = await this.conversationRepository
+        // 1. Buscar si ya existe la conversación entre ambos (o consigo mismo)
+        let existingQuery = this.conversationRepository
             .createQueryBuilder('conversation')
             .innerJoin('conversation.participants', 'p1')
-            .innerJoin('conversation.participants', 'p2')
-            .where('p1.id_user = :currentUserId', { currentUserId })
-            .andWhere('p2.id_user = :targetUserId', { targetUserId })
-            .andWhere((qb) => {
+            .where('p1.id_user = :currentUserId', { currentUserId });
+
+        if (isSelfChat) {
+            existingQuery = existingQuery.andWhere((qb) => {
                 const subQuery = qb.subQuery()
                     .select('COUNT(*)')
                     .from(Participant, 'p')
                     .where('p.id_conversation = conversation.id_conversation')
                     .getQuery();
-                return subQuery + ' = 2';
-            })
-            .getOne();
+                // Self chat tiene solo 1 participante
+                return subQuery + ' = 1';
+            });
+        } else {
+            existingQuery = existingQuery
+                .innerJoin('conversation.participants', 'p2')
+                .andWhere('p2.id_user = :targetUserId', { targetUserId })
+                .andWhere((qb) => {
+                    const subQuery = qb.subQuery()
+                        .select('COUNT(*)')
+                        .from(Participant, 'p')
+                        .where('p.id_conversation = conversation.id_conversation')
+                        .getQuery();
+                    return subQuery + ' = 2';
+                });
+        }
+
+        const existingConversation = await existingQuery.getOne();
 
         if (existingConversation) {
             return existingConversation;
@@ -50,16 +63,23 @@ export class ChatService {
         const savedConversation = await this.conversationRepository.save(newConversation);
 
         // 3. Crear los participantes
+        const participantsToSave: Participant[] = [];
+        
         const p1 = this.participantRepository.create({
             id_user: currentUserId,
             id_conversation: savedConversation.id_conversation,
         });
-        const p2 = this.participantRepository.create({
-            id_user: targetUserId,
-            id_conversation: savedConversation.id_conversation,
-        });
+        participantsToSave.push(p1);
 
-        await this.participantRepository.save([p1, p2]);
+        if (!isSelfChat) {
+            const p2 = this.participantRepository.create({
+                id_user: targetUserId,
+                id_conversation: savedConversation.id_conversation,
+            });
+            participantsToSave.push(p2);
+        }
+
+        await this.participantRepository.save(participantsToSave);
 
         return savedConversation;
     }
@@ -269,5 +289,15 @@ export class ChatService {
         }
 
         return true;
+    }
+
+    async getChatMedia(id_conversation: string, currentUserId: string): Promise<Message[]> {
+        return this.messageRepository.createQueryBuilder('message')
+            .where('message.id_conversation = :id_conversation', { id_conversation })
+            .andWhere('(message.imageUrl IS NOT NULL OR message.videoUrl IS NOT NULL)')
+            .andWhere('message.isDeletedForAll = false')
+            .andWhere('(message.deletedFor IS NULL OR NOT (:currentUserId = ANY (message.deletedFor)))', { currentUserId })
+            .orderBy('message.createdAt', 'DESC')
+            .getMany();
     }
 }

@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { GET_USER_CONVERSATIONS, DELETE_CONVERSATION_FOR_ME, INBOX_UPDATE_SUBSCRIPTION, GET_OR_CREATE_CHAT } from '../graphql/chat.operations';
+import { GET_ONLINE_FOLLOWING, GET_ONLINE_FOLLOWING_COUNT } from '../../follows/graphql/follows.operations';
 import { useQuery, useMutation, useSubscription, useApolloClient } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
@@ -35,11 +36,24 @@ export default function ChatListScreen() {
     const [isConfirmModalVisible, setIsConfirmModalVisible] = React.useState(false);
 
     const [isRefreshing, setIsRefreshing] = React.useState(false);
+    const [searchQuery, setSearchQuery] = React.useState('');
 
     const { data: queryData, loading, refetch } = useQuery<any>(GET_USER_CONVERSATIONS, {
         fetchPolicy: 'cache-and-network',
         notifyOnNetworkStatusChange: false,
         pollInterval: 60000, // Tarea 2: 1 minuto para actualizar silenciosamente presencias (Offline -> Online)
+    });
+
+    const { data: onlineData, refetch: refetchOnline } = useQuery<any>(GET_ONLINE_FOLLOWING, {
+        skip: !currentUser?.id,
+        fetchPolicy: 'cache-and-network',
+        pollInterval: 60000,
+    });
+
+    const { data: onlineCountData, refetch: refetchOnlineCount } = useQuery<any>(GET_ONLINE_FOLLOWING_COUNT, {
+        skip: !currentUser?.id,
+        fetchPolicy: 'cache-and-network',
+        pollInterval: 60000,
     });
 
     const [conversations, setConversations] = React.useState<any[]>([]);
@@ -85,7 +99,7 @@ export default function ChatListScreen() {
     const handleRefresh = async () => {
         setIsRefreshing(true);
         try {
-            await refetch();
+            await Promise.all([refetch(), refetchOnline(), refetchOnlineCount()]);
         } finally {
             setIsRefreshing(false);
         }
@@ -96,7 +110,9 @@ export default function ChatListScreen() {
     useFocusEffect(
         useCallback(() => {
             refetch();
-        }, [refetch])
+            refetchOnline();
+            refetchOnlineCount();
+        }, [refetch, refetchOnline, refetchOnlineCount])
     );
 
     const [deleteConversationForMeMutation] = useMutation(DELETE_CONVERSATION_FOR_ME);
@@ -120,8 +136,25 @@ export default function ChatListScreen() {
     };
 
     const getOtherParticipant = useCallback((participants: any[]) => {
-        return participants?.find(p => p.user.id !== currentUser?.id)?.user || null;
+        if (!participants || participants.length === 0) return null;
+        const other = participants.find(p => p.user.id !== currentUser?.id);
+        return other ? other.user : participants[0].user; // Si no hay otro, es un chat propio, devolvemos a sí mismo
     }, [currentUser?.id]);
+
+    const filteredConversations = React.useMemo(() => {
+        if (!searchQuery.trim()) return conversations;
+        
+        const query = searchQuery.toLowerCase();
+        return conversations.filter(conv => {
+            const otherUser = getOtherParticipant(conv.participants);
+            if (!otherUser) return false;
+            
+            const fullName = `${otherUser.firstName} ${otherUser.lastName}`.toLowerCase();
+            const username = (otherUser.username || '').toLowerCase();
+            
+            return fullName.includes(query) || username.includes(query);
+        });
+    }, [conversations, searchQuery, getOtherParticipant]);
 
     const formatChatDate = (dateStr: string) => {
         if (!dateStr) return '';
@@ -175,20 +208,17 @@ export default function ChatListScreen() {
     };
 
     const renderActiveUsers = () => {
-        // Filtrar activos y dedup
-        const activeUsersList = conversations
-            .map((conv: any) => ({
-                user: getOtherParticipant(conv.participants),
-                id_conversation: conv.id_conversation
-            }))
-            .filter((item) => item.user && getUserOnlineStatus(item.user.lastActiveAt).isOnline);
-
-        // Remover duplicados (por si un usuario está en multiples conversaciones o grupos en el futuro)
-        const uniqueActiveUsers = Array.from(new Map(activeUsersList.map(item => [item.user.id, item])).values());
+        // Obtenemos los usuarios ya filtrados y limitados desde el backend
+        const activeUsersList = onlineData?.getOnlineFollowing || [];
+        const totalOnlineCount = onlineCountData?.getOnlineFollowingCount || 0;
+        
+        // Remover duplicados (por si acaso) y a nosotros mismos
+        const uniqueActiveUsers = Array.from(new Map(activeUsersList.map((user: any) => [user.id, user])).values())
+            .filter((u: any) => u.id !== currentUser?.id);
         
         return (
             <View style={styles.activeUsersSection}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>Activos ahora ({uniqueActiveUsers.length})</Text>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Activos ahora ({totalOnlineCount})</Text>
                 <ScrollView 
                     horizontal 
                     showsHorizontalScrollIndicator={false} 
@@ -214,28 +244,28 @@ export default function ChatListScreen() {
                         </Text>
                     </TouchableOpacity>
 
-                    {uniqueActiveUsers.map((item: any, index: number) => (
+                    {uniqueActiveUsers.map((user: any, index: number) => (
                         <TouchableOpacity 
-                            key={index} 
+                            key={user.id || index} 
                             style={styles.activeUserItem}
-                            onPress={() => handleOpenDirectChat(item.user.id, item.id_conversation)}
+                            onPress={() => handleOpenDirectChat(user.id)}
                         >
                             <View style={styles.activeAvatarWrapper}>
-                                {item.user.photoUrl ? (
-                                    <Image source={{ uri: item.user.photoUrl }} style={styles.activeAvatar} />
+                                {user.photoUrl ? (
+                                    <Image source={{ uri: user.photoUrl }} style={styles.activeAvatar} />
                                 ) : (
                                     <View style={[styles.activeAvatarPlaceholder, { backgroundColor: colors.primary + '20' }]}>
-                                        <Text style={[styles.activeAvatarText, { color: colors.primary }]}>{item.user.firstName?.[0]}</Text>
+                                        <Text style={[styles.activeAvatarText, { color: colors.primary }]}>{user.firstName?.[0]}</Text>
                                     </View>
                                 )}
                                 <OnlineStatusIndicator 
-                                    lastActiveAt={item.user.lastActiveAt} 
+                                    lastActiveAt={user.lastActiveAt} 
                                     style={styles.onlineIndicator} 
                                 />
                             </View>
 
                             <Text style={[styles.activeUserName, { color: colors.text }]} numberOfLines={1}>
-                                {item.user.firstName}
+                                {user.firstName}
                             </Text>
                         </TouchableOpacity>
                     ))}
@@ -281,7 +311,7 @@ export default function ChatListScreen() {
                 <View style={styles.chatInfo}>
                     <View style={styles.chatHeader}>
                         <Text style={[styles.userName, { color: colors.text }]} numberOfLines={1}>
-                            {otherUser.firstName} {otherUser.lastName}
+                            {otherUser.firstName} {otherUser.lastName} {otherUser.id === currentUser?.id ? '(Tú)' : ''}
                         </Text>
                         <Text style={[styles.chatDate, { color: colors.textSecondary }]}>
                             {formatChatDate(lastMessage?.createdAt || item.updatedAt)}
@@ -343,6 +373,9 @@ export default function ChatListScreen() {
                         placeholder="Buscar chats..." 
                         placeholderTextColor={colors.textSecondary}
                         style={[styles.searchInput, { color: colors.text }]}
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        autoCapitalize="none"
                     />
                 </View>
             </View>
@@ -357,7 +390,7 @@ export default function ChatListScreen() {
                 </View>
             ) : (
                 <FlatList
-                    data={conversations}
+                    data={filteredConversations}
                     renderItem={renderChatItem}
                     keyExtractor={(item) => item.id_conversation}
                     contentContainerStyle={styles.listContainer}

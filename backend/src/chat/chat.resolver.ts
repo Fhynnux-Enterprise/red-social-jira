@@ -207,4 +207,19 @@ export class ChatResolver {
     inboxUpdate() {
         return pubSub.asyncIterableIterator('MESSAGE_ADDED_EVENT');
     }
+
+    @Query(() => [Message], { name: 'getChatMedia' })
+    @UseGuards(GqlAuthGuard)
+    async getChatMedia(
+        @CurrentUser() user: User,
+        @Args('id_conversation') id_conversation: string,
+    ) {
+        // Validación de seguridad
+        const isParticipant = await this.chatService.isUserParticipant(id_conversation, user.id);
+        if (!isParticipant) {
+            throw new Error('No tienes permiso para ver los archivos de esta conversación');
+        }
+
+        return this.chatService.getChatMedia(id_conversation, user.id);
+    }
 }

@@ -187,3 +187,13 @@ export const MESSAGES_READ_SUBSCRIPTION = gql`
     }
   }
 `;
+
+export const GET_CHAT_MEDIA = gql`
+  query GetChatMedia($id_conversation: String!) {
+    getChatMedia(id_conversation: $id_conversation) {
+      id_message
+      imageUrl
+      videoUrl
+    }
+  }
+`;

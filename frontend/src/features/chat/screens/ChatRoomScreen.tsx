@@ -25,7 +25,7 @@ import { AppStackParamList } from '../../../navigation/AppNavigator';
 import { useQuery, useMutation, useSubscription, useApolloClient } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION, DELETE_MESSAGE_FOR_ME, DELETE_MESSAGE_FOR_ALL, EDIT_MESSAGE, SEARCH_MESSAGES_IN_CHAT, MESSAGE_ADDED_SUBSCRIPTION, MARK_MESSAGES_AS_READ, MESSAGES_READ_SUBSCRIPTION } from '../graphql/chat.operations';
+import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION, DELETE_MESSAGE_FOR_ME, DELETE_MESSAGE_FOR_ALL, EDIT_MESSAGE, SEARCH_MESSAGES_IN_CHAT, MESSAGE_ADDED_SUBSCRIPTION, MARK_MESSAGES_AS_READ, MESSAGES_READ_SUBSCRIPTION, GET_CHAT_MEDIA } from '../graphql/chat.operations';
 import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
 import Toast from 'react-native-toast-message';
@@ -34,7 +34,7 @@ import { Video as VideoCompressor } from 'react-native-compressor';
 import { OnlineStatusIndicator } from '../components/OnlineStatusIndicator';
 import { ChatBubbleVideo } from '../components/ChatBubbleVideo';
 import ZoomableImageViewer from '../../feed/components/ZoomableImageViewer';
-import { ActualFullscreenVideo } from '../../feed/components/ActualFullscreenVideo';
+import { InteractiveVideoPlayer } from '../../feed/components/ImageCarousel';
 
 export default function ChatRoomScreen() {
     const { colors, isDark } = useTheme();
@@ -68,36 +68,44 @@ export default function ChatRoomScreen() {
     const [uploadStatusText, setUploadStatusText] = useState('');
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [videoPreview, setVideoPreview] = useState<string | null>(null);
-    const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
-    const [fullscreenVideo, setFullscreenVideo] = useState<string | null>(null);
     const [isMuted, setIsMuted] = useState(true);
+    
+    // Visor de Galería Unificado
+    const [viewerVisible, setViewerVisible] = useState(false);
+    const [viewerActiveIndex, setViewerActiveIndex] = useState(0);
 
     const screenWidth = Dimensions.get('window').width;
 
     const MESSAGES_LIMIT = 20;
     const [hasMore, setHasMore] = useState(true);
     const [isFetchingMore, setIsFetchingMore] = useState(false);
+    
     // Estado local de mensajes — fuente única de verdad para la UI
     const [localMessages, setLocalMessages] = useState<any[]>([]);
 
-    // cache-and-network: muestra datos de caché INMEDIATAMENTE al regresar al chat,
-    // y en paralelo hace un fetch al servidor para actualizar.
-    // Esto es clave: cuando el usuario regresa, ve sus mensajes al instante (desde la caché)
-    // en lugar de una pantalla en blanco mientras espera la respuesta de la red.
     const { loading, data: queryData, fetchMore } = useQuery(GET_CHAT_MESSAGES, {
         variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
         skip: !id_conversation,
-        fetchPolicy: 'cache-and-network', // Lee caché primero, luego actualiza desde red
-        nextFetchPolicy: 'cache-first',   // Después del primer fetch, usa caché (evita double-fetch loops)
+        fetchPolicy: 'cache-and-network', 
+        nextFetchPolicy: 'cache-first',   
         notifyOnNetworkStatusChange: false,
     });
 
-    // Estrategia de MERGE: cuando el servidor responde (carga inicial o refetch al volver),
-    // mezclamos los mensajes del servidor con los que ya teníamos en estado local.
-    // Esto garantiza que:
-    // 1. Los mensajes enviados por el usuario (onCompleted) no se pierden
-    // 2. Los mensajes de la otra cuenta que llegaron mientras estábamos fuera sí aparecen
-    // 3. No hay duplicados gracias al Map keyed por id_message
+    const { data: mediaData } = useQuery<any>(GET_CHAT_MEDIA, {
+        variables: { id_conversation },
+        skip: !id_conversation,
+    });
+
+    // Fuente única para la galería: si ya cargó mediaData, la usamos.
+    // Si no, usamos lo que haya cargado en el chat localmente.
+    const chatMediaList = useMemo(() => {
+        if (mediaData?.getChatMedia) {
+            return mediaData.getChatMedia; 
+        }
+        return localMessages
+            .filter((m: any) => (m.imageUrl || m.videoUrl) && !m.isDeletedForAll)
+            .reverse();
+    }, [mediaData, localMessages]);
     useEffect(() => {
         const serverMsgs: any[] = (queryData as any)?.getChatMessages || [];
         if (serverMsgs.length === 0) return;
@@ -233,7 +241,9 @@ export default function ChatRoomScreen() {
 
     const otherUser = useMemo(() => {
         const participants = (convData as any)?.getConversation?.participants;
-        return participants?.find((p: any) => p.user.id !== currentUser?.id)?.user || null;
+        if (!participants || participants.length === 0) return null;
+        const other = participants.find((p: any) => p.user.id !== currentUser?.id);
+        return other ? other.user : participants[0].user;
     }, [convData, currentUser?.id]);
 
     const [deleteMessageForMeMutation] = useMutation(DELETE_MESSAGE_FOR_ME);
@@ -768,7 +778,13 @@ export default function ChatRoomScreen() {
                     {item.imageUrl && (
                         <TouchableOpacity
                             activeOpacity={0.9}
-                            onPress={() => setFullscreenImage(item.imageUrl)}
+                            onPress={() => {
+                                const mIdx = chatMediaList.findIndex(m => m.id_message === item.id_message);
+                                if (mIdx !== -1) {
+                                    setViewerActiveIndex(mIdx);
+                                    setViewerVisible(true);
+                                }
+                            }}
                         >
                             <Image
                                 source={{ uri: item.imageUrl }}
@@ -789,8 +805,12 @@ export default function ChatRoomScreen() {
                                 width={screenWidth * 0.55}
                                 height={screenWidth * 0.55 * 0.75}
                                 onPressFullScreen={() => {
-                                    setIsMuted(false); // Activamos audio automáticamente para el visor
-                                    setFullscreenVideo(item.videoUrl);
+                                    setIsMuted(false);
+                                    const mIdx = chatMediaList.findIndex(m => m.id_message === item.id_message);
+                                    if (mIdx !== -1) {
+                                        setViewerActiveIndex(mIdx);
+                                        setViewerVisible(true);
+                                    }
                                 }}
                             />
                         </View>
@@ -893,7 +913,7 @@ export default function ChatRoomScreen() {
                         )}
                         <View style={styles.headerTextContainer}>
                             <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-                                {otherUser ? `${otherUser.firstName} ${otherUser.lastName}` : 'Cargando...'}
+                                {otherUser ? `${otherUser.firstName} ${otherUser.lastName} ${otherUser.id === currentUser?.id ? '(Tú)' : ''}` : 'Cargando...'}
                             </Text>
                             <View style={styles.onlineStatus}>
                                 <OnlineStatusIndicator 
@@ -909,13 +929,6 @@ export default function ChatRoomScreen() {
                         onPress={() => setIsSearchMode(true)}
                     >
                         <Ionicons name="search" size={22} color={colors.textSecondary} />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity 
-                        style={styles.headerAction}
-                        onPress={() => navigation.navigate('ChatDetails', { id_conversation })}
-                    >
-                        <Ionicons name="ellipsis-vertical" size={22} color={colors.textSecondary} />
                     </TouchableOpacity>
                 </View>
             )}
@@ -1050,37 +1063,60 @@ export default function ChatRoomScreen() {
             </Animated.View>
 
             <Modal
-                visible={!!fullscreenImage || !!fullscreenVideo}
+                visible={viewerVisible}
                 transparent
                 animationType="fade"
-                onRequestClose={() => { setFullscreenImage(null); setFullscreenVideo(null); }}
+                onRequestClose={() => setViewerVisible(false)}
             >
                 <View style={{ flex: 1, backgroundColor: 'black' }}>
                     <TouchableOpacity
-                        style={[styles.fullscreenCloseBtn, { zIndex: 999 }]}
-                        onPress={() => { setFullscreenImage(null); setFullscreenVideo(null); }}
+                        style={[styles.fullscreenCloseBtn, { zIndex: 999, top: insets.top + 20 }]}
+                        onPress={() => setViewerVisible(false)}
                     >
                         <Ionicons name="close" size={28} color="#FFF" />
                     </TouchableOpacity>
-                    
-                    {fullscreenImage && (
-                        <ZoomableImageViewer
-                            url={fullscreenImage}
-                            mediaType="image"
-                            onClose={() => setFullscreenImage(null)}
-                        />
-                    )}
-                    {fullscreenVideo && (
-                        <ActualFullscreenVideo
-                            url={fullscreenVideo}
-                            isMuted={isMuted}
-                            toggleMute={() => setIsMuted(!isMuted)}
-                            colors={colors}
-                            insets={insets}
-                            isVisible={!!fullscreenVideo}
-                            onClose={() => setFullscreenVideo(null)}
-                        />
-                    )}
+
+                    <FlatList
+                        data={chatMediaList}
+                        horizontal
+                        pagingEnabled
+                        initialScrollIndex={viewerActiveIndex}
+                        getItemLayout={(_, index) => ({
+                            length: screenWidth,
+                            offset: screenWidth * index,
+                            index,
+                        })}
+                        showsHorizontalScrollIndicator={false}
+                        keyExtractor={(item) => item.id_message}
+                        onMomentumScrollEnd={(event) => {
+                            const xOffset = event.nativeEvent.contentOffset.x;
+                            const index = Math.round(xOffset / screenWidth);
+                            setViewerActiveIndex(index);
+                        }}
+                        renderItem={({ item, index }) => (
+                            <View style={{ width: screenWidth, height: Dimensions.get('window').height, justifyContent: 'center' }}>
+                                {item.videoUrl ? (
+                                    <InteractiveVideoPlayer
+                                        url={item.videoUrl}
+                                        width={screenWidth}
+                                        height={Dimensions.get('window').height}
+                                        isMuted={isMuted}
+                                        shouldPlay={viewerActiveIndex === index && viewerVisible}
+                                        toggleMute={() => setIsMuted(!isMuted)}
+                                        isInteractive={true}
+                                        hideExpand={true}
+                                        contentFit="contain"
+                                        insets={insets}
+                                    />
+                                ) : (
+                                    <ZoomableImageViewer
+                                        url={item.imageUrl}
+                                        onClose={() => setViewerVisible(false)}
+                                    />
+                                )}
+                            </View>
+                        )}
+                    />
                 </View>
             </Modal>
 
