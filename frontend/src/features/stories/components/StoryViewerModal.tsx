@@ -1,15 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableWithoutFeedback, Animated, Dimensions, TouchableOpacity, ActivityIndicator, Image, StatusBar } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, Modal, TouchableWithoutFeedback, Animated, Dimensions, TouchableOpacity, ActivityIndicator, Image, StatusBar, ScrollView, FlatList, PanResponder, TextInput, Platform, Keyboard } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoCache } from '../../../hooks/useVideoCache';
 import { Story } from '../components/StoriesBar';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
 import ConfirmationModal from '../../../features/comments/components/ConfirmationModal';
-
-import { PanResponder, TextInput, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { useMutation } from '@apollo/client/react';
 import { GET_OR_CREATE_CHAT, SEND_MESSAGE } from '../../chat/graphql/chat.operations';
 import Toast from 'react-native-toast-message';
@@ -18,8 +15,9 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface StoryViewerModalProps {
     visible: boolean;
-    stories: Story[];
-    initialIndex: number;
+    userQueue: Story[]; // Lista representativa de usuarios
+    allActiveStories: Story[]; // Todas las historias de todos
+    initialUserIndex: number;
     onClose: () => void;
     onStorySeen?: (id: string) => void;
     onDeleteStory?: (id: string) => void;
@@ -27,13 +25,10 @@ interface StoryViewerModalProps {
 }
 
 /**
- * REPRODUCTOR INTERNO PARA VIDEOS EN HISTORIAS
- * Utiliza el sistema de caché para optimizar el consumo de datos.
+ * REPRODUCTOR INTERNO PARA VIDEOS
  */
 const StoryVideoPlayer = ({ url, onFinish, isPaused = false }: { url: string, onFinish: () => void, isPaused?: boolean }) => {
     const { cachedSource } = useVideoCache(url);
-    const isMounted = useRef(true);
-    
     const player = useVideoPlayer(cachedSource || url, (p) => {
         p.loop = false;
         if (!isPaused) p.play();
@@ -41,243 +36,99 @@ const StoryVideoPlayer = ({ url, onFinish, isPaused = false }: { url: string, on
 
     useEffect(() => {
         if (!player) return;
-        if (isPaused) {
-            player.pause();
-        } else {
-            player.play();
-        }
+        if (isPaused) player.pause();
+        else player.play();
     }, [player, isPaused]);
 
     useEffect(() => {
-        isMounted.current = true;
-        const subscription = player.addListener('playToEnd', () => {
-            if (isMounted.current) onFinish();
-        });
-        return () => {
-            isMounted.current = false;
-            subscription.remove();
-        };
+        if (!player) return;
+        const sub = player.addListener('playToEnd', onFinish);
+        return () => sub.remove();
     }, [player, onFinish]);
 
-    // CRÍTICO: Si no hay player o no hay puente con la URL, mostramos loader
     if (!player || !cachedSource) {
         return (
-            <View style={styles.loaderContainer}>
+            <View style={[styles.loaderContainer, { backgroundColor: 'transparent' }]}>
                 <ActivityIndicator color="white" size="large" />
             </View>
         );
     }
 
-    return (
-        <VideoView 
-            player={player} 
-            style={StyleSheet.absoluteFill} 
-            contentFit="cover" 
-            nativeControls={false} 
-        />
-    );
+    return <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />;
 };
 
-export const StoryViewerModal = ({ visible, stories, initialIndex, onClose, onStorySeen, onDeleteStory, currentUserId }: StoryViewerModalProps) => {
-    const [currentIndex, setCurrentIndex] = useState(initialIndex);
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+/**
+ * PÁGINA INDIVIDUAL PARA UN USUARIO (Bloque de sus historias)
+ */
+const UserStoryPage = ({ 
+    userId, 
+    userStories, 
+    isActiveUser, 
+    onFinishUser, 
+    onClose,
+    onStorySeen,
+    onDeleteStory,
+    currentUserId,
+    getOrCreateChat,
+    sendMessage 
+}: any) => {
+    const [currentIndex, setCurrentIndex] = useState(0);
     const [isPaused, setIsPaused] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [reply, setReply] = useState('');
     const [isSending, setIsSending] = useState(false);
+    const animValue = useRef(new Animated.Value(0)).current;
     const { colors } = useTheme();
     const insets = useSafeAreaInsets();
-    
-    // Animación de Teclado (Estilo CommentsModal)
-    const keyboardOffset = useRef(new Animated.Value(Math.max(insets.bottom, 15))).current;
+    const currentStory = userStories[currentIndex] || userStories[0];
 
+    // Resetear historias de este usuario al activarse
     useEffect(() => {
-        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-        const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-        
-        const showSub = Keyboard.addListener(showEvent, (e) => {
-            Animated.timing(keyboardOffset, {
-                toValue: e.endCoordinates.height + 55,
-                duration: Platform.OS === 'ios' ? e.duration || 250 : 200,
-                useNativeDriver: false,
-            }).start();
-        });
-        
-        const hideSub = Keyboard.addListener(hideEvent, (e) => {
-            Animated.timing(keyboardOffset, {
-                toValue: Math.max(insets.bottom, 15),
-                duration: Platform.OS === 'ios' ? e.duration || 250 : 200,
-                useNativeDriver: false,
-            }).start();
-        });
-        
-        return () => { showSub.remove(); hideSub.remove(); };
-    }, [insets.bottom]);
-    
-    // Animación de la barra de progreso
-    const animValue = useRef(new Animated.Value(0)).current;
-    const animRef = useRef<Animated.CompositeAnimation | null>(null);
-    
-    // Animación de arrastre (Gesto)
-    const pan = useRef(new Animated.ValueXY()).current;
-    const [isDragging, setIsDragging] = useState(false);
-    const longPressTimeout = useRef<any>(null);
-    const isClosing = useRef(false);
-
-    const [getOrCreateChat] = useMutation<any>(GET_OR_CREATE_CHAT);
-    const [sendMessage] = useMutation<any>(SEND_MESSAGE);
-
-    const currentStory = stories[currentIndex];
-
-    const handleSendReply = async () => {
-        if (!reply.trim() || isSending) return;
-        
-        try {
-            setIsSending(true);
-            setIsPaused(true);
-
-            // 1. Obtener o crear la conversación con el autor de la historia
-            const { data: chatData } = await getOrCreateChat({
-                variables: { targetUserId: currentStory.userId }
-            });
-
-            const conversationId = chatData?.getOrCreateOneOnOneChat?.id_conversation;
-
-            if (!conversationId) throw new Error("No se pudo iniciar el chat");
-
-            // 2. Enviar el mensaje (Podríamos incluir el link de la historia si quisiéramos)
-            await sendMessage({
-                variables: {
-                    id_conversation: conversationId,
-                    content: `Respondió a tu historia: "${reply.trim()}"`,
-                    imageUrl: currentStory.mediaType === 'image' ? currentStory.mediaUrl : null,
-                    videoUrl: currentStory.mediaType === 'video' ? currentStory.mediaUrl : null,
-                    storyId: currentStory.id
-                }
-            });
-
-            Toast.show({
-                type: 'success',
-                text1: 'Respuesta enviada',
-                text2: `Tu mensaje ha sido enviado a ${displayName}`
-            });
-
-            setReply('');
+        if (isActiveUser) {
+            setCurrentIndex(0);
+            animValue.setValue(0);
             setIsPaused(false);
-            Keyboard.dismiss();
-            // Opcional: Avanzar a la siguiente historia tras responder
-            // handleNext();
-        } catch (error: any) {
-            console.error("Error al enviar respuesta:", error);
-            Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo enviar la respuesta' });
-        } finally {
-            setIsSending(false);
         }
-    };
+    }, [isActiveUser]);
 
-    // GESTO: Arrastrar SOLO abajo para cerrar (Estilo Instagram/TikTok)
-    const panResponder = useRef(
-        PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
-            onMoveShouldSetPanResponder: (_, gestureState) => {
-                if (isClosing.current) return false;
-                // Solo activamos si el arrastre es predominantemente vertical y hacia ABAJO
-                return Math.abs(gestureState.dy) > 10 && gestureState.dy > 0;
-            },
-            onPanResponderGrant: () => {
-                // No pausamos aquí, esperamos el timeout del Touchable
-                setIsDragging(true);
-            },
-            onPanResponderMove: (_, gestureState) => {
-                const newY = Math.max(0, gestureState.dy);
-                pan.setValue({ x: 0, y: newY });
-                // Si arrastramos, cancelamos cualquier intento de pausa por long press
-                if (longPressTimeout.current) {
-                    clearTimeout(longPressTimeout.current);
-                    longPressTimeout.current = null;
-                }
-            },
-            onPanResponderRelease: (_, gestureState) => {
-                const threshold = 150;
-                if (gestureState.dy > threshold) {
-                    isClosing.current = true;
-                    Animated.timing(pan, {
-                        toValue: { x: 0, y: SCREEN_HEIGHT + 100 },
-                        duration: 200,
-                        useNativeDriver: true
-                    }).start(() => {
-                        pan.setValue({ x: 0, y: SCREEN_HEIGHT + 100 });
-                        onClose();
-                    });
-                } else {
-                    Animated.spring(pan, {
-                        toValue: { x: 0, y: 0 },
-                        friction: 8,
-                        tension: 40,
-                        useNativeDriver: true
-                    }).start(() => {
-                        setIsPaused(false);
-                        setIsDragging(false);
-                    });
-                }
-            }
-        })
-    ).current;
-
-    // Interpolación para el fondo: Solo se desvanece al bajar
-    const backdropOpacity = pan.y.interpolate({
-        inputRange: [0, SCREEN_HEIGHT / 2],
-        outputRange: [1, 0],
-        extrapolate: 'clamp'
-    });
-
-    // Resetear el índice cuando se abre el modal
     useEffect(() => {
-        if (visible) {
-            setCurrentIndex(initialIndex);
-            setIsPaused(false);
-            isClosing.current = false;
-            pan.setValue({ x: 0, y: 0 });
-            setIsDragging(false);
-            if (longPressTimeout.current) clearTimeout(longPressTimeout.current);
-        }
-    }, [visible, initialIndex]);
-
-    // MARCAR COMO VISTA CADA VEZ QUE CAMBIA EL ÍNDICE
-    useEffect(() => {
-        if (visible && currentStory && onStorySeen) {
+        if (isActiveUser && currentStory && onStorySeen) {
             onStorySeen(currentStory.id);
         }
-    }, [currentIndex, visible, currentStory, onStorySeen]);
+    }, [currentIndex, isActiveUser, currentStory, onStorySeen]);
 
-    // Motor de Animación de la Barra
-    const startProgressAnim = useCallback(() => {
-        // @ts-ignore
-        const currentValue = animValue._value || 0;
-        const totalDuration = currentStory?.mediaType === 'image' ? 5000 : 45000;
-        const remainingDuration = (1 - currentValue) * totalDuration;
+    // Timer de progreso
+    useEffect(() => {
+        if (!isActiveUser || isPaused || showDeleteConfirm) {
+            animValue.stopAnimation();
+            return;
+        }
 
-        animRef.current = Animated.timing(animValue, {
+        const duration = currentStory?.mediaType === 'image' ? 5000 : 45000;
+        
+        animValue.setValue(0); // Reiniciamos siempre al inicio del efecto
+        const anim = Animated.timing(animValue, {
             toValue: 1,
-            duration: remainingDuration,
+            duration: duration,
             useNativeDriver: false,
         });
 
-        animRef.current.start(({ finished }: { finished: boolean }) => {
-            if (finished) if (!showDeleteConfirm && !isPaused) handleNext();
+        anim.start(({ finished }) => {
+            if (finished) handleNext();
         });
-    }, [currentStory, currentIndex, showDeleteConfirm, isPaused]);
 
-    // Función para avanzar
+        return () => animValue.stopAnimation();
+    }, [isActiveUser, currentIndex, isPaused, showDeleteConfirm, currentStory]);
+
     const handleNext = () => {
         animValue.setValue(0);
-        if (currentIndex < stories.length - 1) {
+        if (currentIndex < userStories.length - 1) {
             setCurrentIndex(prev => prev + 1);
         } else {
-            onClose();
+            onFinishUser();
         }
     };
 
-    // Función para retroceder
     const handlePrev = () => {
         animValue.setValue(0);
         if (currentIndex > 0) {
@@ -285,200 +136,204 @@ export const StoryViewerModal = ({ visible, stories, initialIndex, onClose, onSt
         }
     };
 
-    // Iniciar o reanudar animación
-    useEffect(() => {
-        if (visible && currentStory && !showDeleteConfirm && !isPaused && !isClosing.current) {
-            startProgressAnim();
-        } else {
-            animValue.stopAnimation();
-        }
-        return () => animValue.stopAnimation();
-    }, [visible, currentIndex, currentStory, showDeleteConfirm, isPaused]);
-
     const handleTap = (evt: any) => {
-        // Si ya está pausado, significa que fue un Long Press, no navegamos
-        if (showDeleteConfirm || isPaused || isClosing.current) return;
-        
         const x = evt.nativeEvent.locationX;
-        if (x < SCREEN_WIDTH / 2) {
-            handlePrev();
-        } else {
-            handleNext();
-        }
+        if (x < SCREEN_WIDTH * 0.3) handlePrev();
+        else handleNext();
     };
 
-    const handlePressIn = () => {
-        // Iniciamos el timer para pausa (Long Press) 200ms
-        longPressTimeout.current = setTimeout(() => {
-            setIsPaused(true);
-        }, 200);
+    const handleSendReply = async () => {
+        if (!reply.trim() || isSending) return;
+        try {
+            setIsSending(true); setIsPaused(true);
+            const { data } = await getOrCreateChat({ variables: { targetUserId: userId } });
+            const convId = data?.getOrCreateOneOnOneChat?.id_conversation;
+            if (!convId) throw new Error("No chat");
+            await sendMessage({
+                variables: {
+                    id_conversation: convId,
+                    content: `Respondió a tu historia: "${reply.trim()}"`,
+                    imageUrl: currentStory.mediaType === 'image' ? currentStory.mediaUrl : null,
+                    videoUrl: currentStory.mediaType === 'video' ? currentStory.mediaUrl : null,
+                    storyId: currentStory.id
+                }
+            });
+            Toast.show({ type: 'success', text1: 'Respuesta enviada' });
+            setReply(''); Keyboard.dismiss();
+        } catch (e) { Toast.show({ type: 'error', text1: 'Error al enviar' }); }
+        finally { setIsSending(false); setIsPaused(false); }
     };
 
-    const handlePressOut = () => {
-        if (longPressTimeout.current) {
-            clearTimeout(longPressTimeout.current);
-            longPressTimeout.current = null;
-        }
-        setIsPaused(false);
-    };
-
-    if (!currentStory) return null;
-
-    // TAREA 2: Mostrar Nombre Apellido si existen, sino Username
-    const displayName = currentStory.user.firstName || currentStory.user.lastName
+    const displayName = (currentStory?.user?.firstName || currentStory?.user?.lastName)
         ? `${currentStory.user.firstName || ''} ${currentStory.user.lastName || ''}`.trim()
-        : `@${currentStory.user.username}`;
+        : `@${currentStory?.user?.username || 'Usuario'}`;
 
     return (
-        <Modal
-            visible={visible}
-            animationType="none"
-            transparent={true}
-            onRequestClose={onClose}
-        >
-            <Animated.View 
-                style={[
-                    styles.container, 
-                    { 
-                        paddingTop: insets.top, 
-                        // Eliminamos paddingBottom aquí para que no interfiera con el bottom absoluto de la barra
-                        opacity: backdropOpacity,
-                        transform: [{ translateY: pan.y }]
-                    }
-                ]}
-                {...panResponder.panHandlers}
+        <View style={{ width: SCREEN_WIDTH, height: '100%' }}>
+            {/* Medios */}
+            <TouchableWithoutFeedback 
+                onPressIn={() => setIsPaused(true)} 
+                onPressOut={() => setIsPaused(false)} 
+                onPress={handleTap}
             >
-                {/* Renderizado de Medios */}
                 <View style={styles.mediaWrapper}>
-                    {currentStory.mediaType === 'video' ? (
-                        <StoryVideoPlayer 
-                            key={currentStory.mediaUrl} 
-                            url={currentStory.mediaUrl!} 
-                            onFinish={handleNext} 
-                            isPaused={isPaused}
-                        />
+                    {currentStory?.mediaType === 'video' ? (
+                        <StoryVideoPlayer key={currentStory.mediaUrl} url={currentStory.mediaUrl} onFinish={handleNext} isPaused={isPaused || !isActiveUser} />
                     ) : (
-                        <Image 
-                            source={{ uri: currentStory.mediaUrl }} 
-                            style={styles.fullImage} 
-                            resizeMode="contain"
-                        />
+                        <Image source={{ uri: currentStory?.mediaUrl }} style={styles.fullImage} resizeMode="contain" />
                     )}
                 </View>
+            </TouchableWithoutFeedback>
 
-                {/* Header Info - Ahora más abajo (insets.top + 30) */}
-                {!isPaused && !isClosing.current && (
-                    <View style={[styles.header, { top: insets.top + 35 }]}>
-                        <View style={styles.userInfo}>
-                            <Image source={{ uri: currentStory.user.photoUrl || '' }} style={styles.avatar} />
-                            <Text style={styles.username}>{displayName}</Text>
-                        </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            {currentUserId === currentStory.userId && (
-                                <TouchableOpacity 
-                                    onPress={() => setShowDeleteConfirm(true)} 
-                                    style={[styles.closeButton, { marginRight: 15 }]}
-                                >
-                                    <Ionicons name="ellipsis-horizontal" size={26} color="white" />
-                                </TouchableOpacity>
-                            )}
-                            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                                <Ionicons name="close" size={28} color="white" />
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                )}
-
-                {/* TAREA: Barra de Respuesta (Solo para otros usuarios) */}
-                {!isClosing.current && currentUserId !== currentStory.userId && (
-                    <Animated.View style={[styles.replyContainer, { bottom: keyboardOffset }]}>
-                        <View style={styles.replyInputWrapper}>
-                            <TextInput
-                                style={styles.replyInput}
-                                placeholder="Enviar mensaje..."
-                                placeholderTextColor="rgba(255,255,255,0.7)"
-                                value={reply}
-                                onChangeText={setReply}
-                                onFocus={() => setIsPaused(true)}
-                                onBlur={() => setIsPaused(false)}
-                                multiline
-                            />
-                            {reply.trim().length > 0 && (
-                                <TouchableOpacity 
-                                    style={styles.sendButton} 
-                                    onPress={handleSendReply}
-                                    disabled={isSending}
-                                >
-                                    {isSending ? (
-                                        <ActivityIndicator size="small" color="white" />
-                                    ) : (
-                                        <Ionicons name="send" size={20} color="white" />
-                                    )}
-                                </TouchableOpacity>
-                            )}
-                        </View>
-                        <View style={{ flexDirection: 'row', gap: 15, marginLeft: 10 }}>
-                            <TouchableOpacity onPress={() => { setReply('🔥'); handleSendReply(); }}>
-                                <Text style={{ fontSize: 24 }}>🔥</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => { setReply('❤️'); handleSendReply(); }}>
-                                <Text style={{ fontSize: 24 }}>❤️</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => { setReply('😮'); handleSendReply(); }}>
-                                <Text style={{ fontSize: 24 }}>😮</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </Animated.View>
-                )}
-
-                {/* TAREA 1: Gestos de navegación invisibles con Hold-to-Pause Retardado */}
-                <TouchableWithoutFeedback 
-                    onPressIn={handlePressIn}
-                    onPressOut={handlePressOut}
-                    onPress={handleTap}
-                >
-                    <View style={styles.gestureOverlay} />
-                </TouchableWithoutFeedback>
-
-                {/* TAREA 3: Barra de progreso Animada */}
-                <View style={[styles.progressContainer, { top: insets.top + 10 }]}>
-                    {stories.map((_, index) => {
-                        let barWidth: any = '0%';
-                        if (index < currentIndex) barWidth = '100%';
-                        if (index === currentIndex) {
-                            barWidth = animValue.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: ['0%', '100%']
-                            });
-                        }
-
-                        return (
-                            <View key={index} style={styles.barBackground}>
-                                <Animated.View 
-                                    style={[
-                                        styles.progressBar, 
-                                        { width: barWidth, backgroundColor: 'white' }
-                                    ]} 
-                                />
-                            </View>
-                        );
-                    })}
+            {/* Descripcion */}
+            {currentStory?.content && !isPaused && (
+                <View style={[styles.captionContainer, { bottom: 170 }]}>
+                    <Text style={styles.captionText}>{currentStory.content}</Text>
                 </View>
+            )}
 
-                {/* NOTA: Eliminamos el /KeyboardAvoidingView de aquí */}
+            {/* Header */}
+            <View style={[styles.header, { top: insets.top + 35 }]}>
+                <View style={styles.userInfo}>
+                    <Image source={{ uri: currentStory?.user?.photoUrl || '' }} style={styles.avatar} />
+                    <Text style={styles.username}>{displayName}</Text>
+                </View>
+                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                    <Ionicons name="close" size={28} color="white" />
+                </TouchableOpacity>
+            </View>
 
-                <ConfirmationModal 
-                    visible={showDeleteConfirm}
-                    title="Eliminar Historia"
-                    message="¿Estás seguro de que deseas eliminar esta historia? Esta acción no se puede deshacer."
-                    confirmText="Eliminar"
-                    cancelText="Cancelar"
-                    confirmColor={colors.primary}
-                    onConfirm={() => {
-                        setShowDeleteConfirm(false);
-                        onDeleteStory?.(currentStory.id);
+            {/* Progress Bar */}
+            <View style={[styles.progressContainer, { top: insets.top + 10 }]}>
+                {userStories.map((_: any, idx: number) => {
+                    let w: any = '0%';
+                    if (idx < currentIndex) w = '100%';
+                    if (idx === currentIndex) w = animValue.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+                    return (
+                        <View key={idx} style={styles.barBackground}>
+                            <Animated.View style={[styles.progressBar, { width: w, backgroundColor: 'white' }]} />
+                        </View>
+                    );
+                })}
+            </View>
+
+            {/* Answer Bar */}
+            {currentUserId !== userId && (
+                <View style={[styles.commentInputContainer, { bottom: 34 + insets.bottom }]}>
+                    <View style={styles.commentInputWrapper}>
+                        <TextInput
+                            style={styles.commentInput}
+                            placeholder="Enviar mensaje..."
+                            placeholderTextColor="rgba(255,255,255,0.6)"
+                            value={reply}
+                            onChangeText={setReply}
+                            onFocus={() => setIsPaused(true)}
+                        />
+                        {reply.trim().length > 0 && (
+                            <TouchableOpacity style={styles.commentSendBtn} onPress={handleSendReply}>
+                                <Ionicons name="send" size={20} color="white" />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                    <View style={styles.quickReactions}>
+                        <TouchableOpacity onPress={() => { setReply('🔥'); handleSendReply(); }}><Text style={styles.reactionText}>🔥</Text></TouchableOpacity>
+                        <TouchableOpacity onPress={() => { setReply('❤️'); handleSendReply(); }}><Text style={styles.reactionText}>❤️</Text></TouchableOpacity>
+                    </View>
+                </View>
+            )}
+        </View>
+    );
+};
+
+/**
+ * MODAL PRINCIPAL: CARROUSEL DE USUARIOS
+ */
+export const StoryViewerModal = ({ visible, userQueue, allActiveStories, initialUserIndex, onClose, onStorySeen, onDeleteStory, currentUserId }: StoryViewerModalProps) => {
+    const [activeUserIndex, setActiveUserIndex] = useState(initialUserIndex);
+    const flatListRef = useRef<FlatList>(null);
+    const pan = useRef(new Animated.ValueXY()).current;
+    const isClosing = useRef(false);
+
+    const [getOrCreateChat] = useMutation<any>(GET_OR_CREATE_CHAT);
+    const [sendMessage] = useMutation<any>(SEND_MESSAGE);
+
+    const panResponder = useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => false,
+            onMoveShouldSetPanResponder: (_, gs) => gs.dy > 10 && Math.abs(gs.dx) < 10,
+            onPanResponderMove: (_, gs) => {
+                pan.setValue({ x: 0, y: Math.max(0, gs.dy) });
+            },
+            onPanResponderRelease: (_, gs) => {
+                if (gs.dy > 150) {
+                    isClosing.current = true;
+                    Animated.timing(pan, { toValue: { x: 0, y: SCREEN_HEIGHT }, duration: 200, useNativeDriver: true }).start(onClose);
+                } else {
+                    Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: true }).start();
+                }
+            }
+        })
+    ).current;
+
+    const onScroll = (e: any) => {
+        const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+        if (index !== activeUserIndex) setActiveUserIndex(index);
+    };
+
+    const handleFinishUser = () => {
+        if (activeUserIndex < userQueue.length - 1) {
+            flatListRef.current?.scrollToIndex({ index: activeUserIndex + 1, animated: true });
+        } else {
+            onClose();
+        }
+    };
+
+    return (
+        <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+            <Animated.View 
+                style={[styles.container, { transform: [{ translateY: pan.y }] }]}
+                {...panResponder.panHandlers}
+            >
+                <FlatList
+                    ref={flatListRef}
+                    data={userQueue}
+                    keyExtractor={(item) => item.userId}
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    initialScrollIndex={initialUserIndex >= 0 ? initialUserIndex : 0}
+                    getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
+                    onScroll={onScroll}
+                    scrollEventThrottle={16}
+                    extraData={activeUserIndex}
+                    windowSize={3}
+                    renderItem={({ item, index }) => {
+                        const userStories = allActiveStories.filter(s => s.userId === item.userId).sort((a,b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime());
+                        return (
+                            <UserStoryPage 
+                                userId={item.userId}
+                                userStories={userStories}
+                                isActiveUser={index === activeUserIndex}
+                                onFinishUser={handleFinishUser}
+                                onClose={onClose}
+                                onStorySeen={onStorySeen}
+                                onDeleteStory={onDeleteStory}
+                                currentUserId={currentUserId}
+                                getOrCreateChat={getOrCreateChat}
+                                sendMessage={sendMessage}
+                            />
+                        );
                     }}
-                    onCancel={() => setShowDeleteConfirm(false)}
+                />
+
+                <Toast 
+                    position="bottom"
+                    bottomOffset={SCREEN_HEIGHT / 2 - 50} 
+                    config={{
+                        success: ({ text1 }: any) => (
+                            <View style={styles.squareToast}><Ionicons name="checkmark-circle" size={50} color="white" /><Text style={styles.squareToastText}>{text1}</Text></View>
+                        )
+                    }}
                 />
             </Animated.View>
         </Modal>
@@ -486,134 +341,26 @@ export const StoryViewerModal = ({ visible, stories, initialIndex, onClose, onSt
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: 'black',
-    },
-    gestureOverlay: {
-        ...StyleSheet.absoluteFillObject,
-    },
-    header: {
-        position: 'absolute',
-        top: 50,
-        left: 16,
-        right: 16,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        zIndex: 10,
-    },
-    userInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    avatar: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        marginRight: 10,
-        borderWidth: 1,
-        borderColor: 'white',
-    },
-    username: {
-        color: 'white',
-        fontWeight: 'bold',
-        fontSize: 14,
-        textShadowColor: 'rgba(0,0,0,0.5)',
-        textShadowOffset: { width: 1, height: 1 },
-        textShadowRadius: 3,
-    },
-    closeButton: {
-        padding: 4,
-    },
-    loaderContainer: {
-        ...StyleSheet.absoluteFillObject,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: 'black',
-    },
-    mediaWrapper: {
-        flex: 1,
-        borderRadius: 20,
-        overflow: 'hidden',
-        marginHorizontal: 8,
-    },
-    fullImage: {
-        flex: 1,
-        width: '100%',
-        height: '100%',
-    },
-    progressContainer: {
-        position: 'absolute',
-        top: 40,
-        left: 10,
-        right: 10,
-        flexDirection: 'row',
-        height: 2,
-        gap: 4,
-    },
-    barBackground: {
-        flex: 1,
-        height: 2,
-        backgroundColor: 'rgba(255,255,255,0.3)',
-        borderRadius: 1,
-        overflow: 'hidden',
-    },
-    progressBar: {
-        height: '100%',
-    },
-    captionContainer: {
-        position: 'absolute',
-        bottom: 50,
-        left: 0,
-        right: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        paddingHorizontal: 20,
-        paddingVertical: 15,
-        zIndex: 5,
-    },
-    captionText: {
-        color: '#FFF',
-        fontSize: 16,
-        textAlign: 'center',
-        lineHeight: 22,
-        textShadowColor: 'rgba(0,0,0,0.7)',
-        textShadowOffset: { width: 1, height: 1 },
-        textShadowRadius: 4,
-    },
-    replyContainer: {
-        position: 'absolute',
-        left: 16,
-        right: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-        zIndex: 20,
-    },
-    replyInputWrapper: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.15)',
-        borderRadius: 25,
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.2)',
-    },
-    replyInput: {
-        flex: 1,
-        color: 'white',
-        fontSize: 14,
-        maxHeight: 100,
-        paddingTop: Platform.OS === 'ios' ? 0 : 4,
-    },
-    sendButton: {
-        marginLeft: 10,
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    }
+    container: { flex: 1, backgroundColor: 'black' },
+    mediaWrapper: { flex: 1, marginHorizontal: 8, borderRadius: 20, overflow: 'hidden' },
+    fullImage: { flex: 1, width: '100%', height: '100%' },
+    header: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 },
+    userInfo: { flexDirection: 'row', alignItems: 'center' },
+    avatar: { width: 32, height: 32, borderRadius: 16, marginRight: 10, borderWidth: 1, borderColor: 'white' },
+    username: { color: 'white', fontWeight: 'bold' },
+    closeButton: { padding: 8, zIndex: 20 },
+    progressContainer: { position: 'absolute', left: 10, right: 10, flexDirection: 'row', height: 2, gap: 4 },
+    barBackground: { flex: 1, height: 2, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 1, overflow: 'hidden' },
+    progressBar: { height: '100%' },
+    captionContainer: { position: 'absolute', left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.35)', padding: 15, zIndex: 5 },
+    captionText: { color: '#FFF', fontSize: 16, textAlign: 'center' },
+    commentInputContainer: { position: 'absolute', left: 0, right: 0, flexDirection: 'row', padding: 16, alignItems: 'center' },
+    commentInputWrapper: { flex: 1, flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 22, paddingHorizontal: 16, marginRight: 10 },
+    commentInput: { flex: 1, color: 'white', paddingVertical: 10 },
+    commentSendBtn: { backgroundColor: '#FF6524', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+    quickReactions: { flexDirection: 'row', gap: 12 },
+    reactionText: { fontSize: 24 },
+    loaderContainer: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
+    squareToast: { backgroundColor: 'rgba(0,0,0,0.85)', width: 150, height: 150, borderRadius: 25, justifyContent: 'center', alignItems: 'center' },
+    squareToastText: { color: 'white', fontWeight: 'bold', marginTop: 12 }
 });

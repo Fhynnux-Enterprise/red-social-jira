@@ -273,19 +273,45 @@ export const StoriesBar = () => {
         setIsCreateModalVisible(true);
     };
 
-    const storiesByUser = useMemo(() => {
+    const allStoriesByUser = useMemo(() => {
         if (!data?.getActiveStories) return [];
         const groupedMap = new Map<string, Story>();
         const sorted = [...data.getActiveStories].sort((a, b) => 
             new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime()
         );
         sorted.forEach((story) => {
-            if (story.userId !== currentUser?.id) {
-                groupedMap.set(story.userId, story);
-            }
+            groupedMap.set(story.userId, story);
         });
         return Array.from(groupedMap.values()).reverse();
-    }, [data, currentUser]);
+    }, [data]);
+
+    const myStories = useMemo(() => {
+        return data?.getActiveStories
+            ?.filter((s: Story) => s.userId === currentUser?.id)
+            ?.sort((a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime()) || [];
+    }, [data, currentUser?.id]);
+
+    const hasMyStories = myStories.length > 0;
+
+    const navigationQueue = useMemo(() => {
+        const queue: Story[] = [];
+        // Primero mis historias si existen
+        if (hasMyStories) {
+            const myStory = allStoriesByUser.find(s => s.userId === currentUser?.id);
+            if (myStory) queue.push(myStory);
+        }
+        // Luego las de los amigos en el orden en que salen en la barra (reverse())
+        allStoriesByUser.forEach(s => {
+            if (s.userId !== currentUser?.id) {
+                queue.push(s);
+            }
+        });
+        return queue;
+    }, [allStoriesByUser, currentUser?.id, hasMyStories]);
+
+    const storiesByUser = useMemo(() => {
+        return navigationQueue.filter(s => s.userId !== currentUser?.id);
+    }, [navigationQueue, currentUser?.id]);
     
     const handleOpenStories = (userId: string) => {
         const userStories = data?.getActiveStories
@@ -294,7 +320,7 @@ export const StoriesBar = () => {
             
         if (userStories.length > 0) {
             setSelectedUserStories(userStories);
-            setIsViewerVisible(true);
+            if (!isViewerVisible) setIsViewerVisible(true);
         }
     };
 
@@ -335,10 +361,6 @@ export const StoriesBar = () => {
     }
 
     const renderAddStory = () => {
-        const myStories = data?.getActiveStories
-            ?.filter((s: Story) => s.userId === currentUser?.id)
-            ?.sort((a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime()) || [];
-            
         const hasStories = myStories.length > 0;
         const lastMyStory = hasStories ? [...myStories].reverse()[0] : null;
 
@@ -405,9 +427,13 @@ export const StoriesBar = () => {
             {isViewerVisible && (
                 <StoryViewerModal 
                     visible={isViewerVisible} 
-                    stories={selectedUserStories} 
-                    initialIndex={viewerInitialIndex} 
-                    onClose={() => setIsViewerVisible(false)} 
+                    userQueue={navigationQueue}
+                    allActiveStories={data?.getActiveStories || []}
+                    initialUserIndex={navigationQueue.findIndex(u => u.userId === (selectedUserStories[0]?.userId || currentUser?.id))}
+                    onClose={() => {
+                        setIsViewerVisible(false);
+                        setSelectedUserStories([]);
+                    }} 
                     onStorySeen={markStoryAsViewed}
                     onDeleteStory={handleDeleteStory}
                     currentUserId={currentUser?.id}
