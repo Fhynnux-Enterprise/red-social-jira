@@ -31,6 +31,7 @@ import * as Clipboard from 'expo-clipboard';
 import Toast from 'react-native-toast-message';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { Video as VideoCompressor } from 'react-native-compressor';
+import { OnlineStatusIndicator } from '../components/OnlineStatusIndicator';
 import { ChatBubbleVideo } from '../components/ChatBubbleVideo';
 import ZoomableImageViewer from '../../feed/components/ZoomableImageViewer';
 import { ActualFullscreenVideo } from '../../feed/components/ActualFullscreenVideo';
@@ -895,8 +896,10 @@ export default function ChatRoomScreen() {
                                 {otherUser ? `${otherUser.firstName} ${otherUser.lastName}` : 'Cargando...'}
                             </Text>
                             <View style={styles.onlineStatus}>
-                                <View style={[styles.onlineDot, { backgroundColor: '#4CD964' }]} />
-                                <Text style={[styles.onlineText, { color: colors.textSecondary }]}>En línea</Text>
+                                <OnlineStatusIndicator 
+                                    lastActiveAt={otherUser?.lastActiveAt} 
+                                    showText={true} 
+                                />
                             </View>
                         </View>
                     </TouchableOpacity>

@@ -85,6 +85,7 @@ type Message {
   content: String!
   imageUrl: String
   videoUrl: String
+  id_conversation: String!
   isRead: Boolean!
   createdAt: DateTime!
   updatedAt: DateTime!
@@ -102,6 +103,7 @@ type Conversation {
   participants: [Participant!]
   messages: [Message!]
   lastMessage: Message
+  unreadCount: Float
 }
 
 type Participant {
@@ -140,6 +142,7 @@ type User {
   bio: String
   photoUrl: String
   coverUrl: String
+  lastActiveAt: DateTime
   posts(limit: Int = 5, offset: Int = 0): [Post!]
   customFields: [UserCustomField!]
   badge: UserBadge
@@ -193,6 +196,7 @@ type Mutation {
   updateBadge(title: String!, theme: String = "default"): UserBadge!
   updateProfile(firstName: String, lastName: String, bio: String, username: String, phone: String): User!
   updateProfileMedia(photoUrl: String, coverUrl: String): User!
+  pingPresence: Boolean!
   toggleFollow(id_following: String!): Boolean!
   createComment(postId: String!, content: String!, parentId: String): Comment!
   deleteComment(id: String!): Boolean!
@@ -218,4 +222,5 @@ input PostMediaInput {
 type Subscription {
   messageAdded(id_conversation: String!): Message!
   messagesRead(id_conversation: String!): ReadMessagesPayload!
+  inboxUpdate: Message!
 }

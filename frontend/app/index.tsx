@@ -9,9 +9,13 @@ import { useTheme } from '../src/theme/ThemeContext';
 import { colors as baseColors } from '../src/theme/colors';
 import { StatusBar } from 'expo-status-bar';
 
+import { usePresencePing } from '../src/hooks/usePresencePing';
+
 function RootNavigator() {
     const { userToken, isLoading } = useAuth();
     const { colors, isDark } = useTheme();
+
+    usePresencePing(!!userToken);
 
     if (isLoading) {
         return (

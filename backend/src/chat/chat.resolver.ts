@@ -10,7 +10,7 @@ import { GqlAuthGuard } from '../auth/guards/gql-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User } from '../auth/entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not } from 'typeorm';
 import { CreateChatArgs, SendMessageArgs } from './dto/chat.args';
 
 @ObjectType()
@@ -133,7 +133,10 @@ export class ChatResolver {
         @Args() args: SendMessageArgs,
     ) {
         const newMessage = await this.chatService.sendMessage(user.id, args.id_conversation, args.content, args.imageUrl, args.videoUrl);
-        pubSub.publish('MESSAGE_ADDED_EVENT', { messageAdded: newMessage });
+        pubSub.publish('MESSAGE_ADDED_EVENT', { 
+            messageAdded: newMessage, 
+            inboxUpdate: newMessage 
+        });
         return newMessage;
     }
 
@@ -159,6 +162,21 @@ export class ChatResolver {
             .getOne();
     }
 
+    @ResolveField(() => Number, { nullable: true })
+    @UseGuards(GqlAuthGuard)
+    async unreadCount(
+        @Parent() conversation: Conversation,
+        @CurrentUser() user: User,
+    ) {
+        return this.messageRepository.count({
+            where: {
+                id_conversation: conversation.id_conversation,
+                id_user: Not(user.id),
+                isRead: false
+            }
+        });
+    }
+
     @Mutation(() => Boolean, { name: 'markMessagesAsRead' })
     @UseGuards(GqlAuthGuard)
     async markMessagesAsRead(
@@ -177,5 +195,16 @@ export class ChatResolver {
     })
     messagesRead(@Args('id_conversation') id_conversation: string) {
         return pubSub.asyncIterableIterator('MESSAGES_READ_EVENT');
+    }
+
+    @Subscription(() => Message, {
+        name: 'inboxUpdate',
+        filter: (payload, variables) => {
+            // En una app real filtraríamos por el ID del usuario actual aquí
+            return true;
+        }
+    })
+    inboxUpdate() {
+        return pubSub.asyncIterableIterator('MESSAGE_ADDED_EVENT');
     }
 }

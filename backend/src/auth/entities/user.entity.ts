@@ -64,6 +64,10 @@ export class User {
     @DeleteDateColumn({ type: 'timestamptz' })
     deletedAt: Date;
 
+    @Field(() => Date, { nullable: true })
+    @Column({ type: 'timestamptz', nullable: true })
+    lastActiveAt?: Date;
+
     @Field(() => [Post], { nullable: true })
     @OneToMany(() => Post, (post) => post.author)
     posts: Post[];

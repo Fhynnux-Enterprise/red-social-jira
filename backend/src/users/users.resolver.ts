@@ -122,4 +122,10 @@ export class UsersResolver {
   ): Promise<User[]> {
     return this.usersService.searchUsers(searchTerm, user.id);
   }
+
+  @Mutation(() => Boolean)
+  @UseGuards(JwtGqlGuard)
+  async pingPresence(@CurrentUser() user: any): Promise<boolean> {
+    return this.usersService.pingPresence(user.id);
+  }
 }

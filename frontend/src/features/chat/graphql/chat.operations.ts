@@ -11,6 +11,7 @@ export const GET_CONVERSATION = gql`
           lastName
           username
           photoUrl
+          lastActiveAt
           badge {
             title
           }
@@ -31,6 +32,7 @@ export const GET_USER_CONVERSATIONS = gql`
           firstName
           lastName
           photoUrl
+          lastActiveAt
         }
       }
       lastMessage {
@@ -39,6 +41,7 @@ export const GET_USER_CONVERSATIONS = gql`
         videoUrl
         createdAt
       }
+      unreadCount
     }
   }
 `;
@@ -169,5 +172,18 @@ export const MESSAGES_READ_SUBSCRIPTION = gql`
       readerId
     }
   }
+`;export const INBOX_UPDATE_SUBSCRIPTION = gql`
+  subscription OnInboxUpdate {
+    inboxUpdate {
+      id_message
+      content
+      imageUrl
+      videoUrl
+      createdAt
+      id_conversation
+      sender {
+        id
+      }
+    }
+  }
 `;
-

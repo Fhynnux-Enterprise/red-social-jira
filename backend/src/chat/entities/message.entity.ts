@@ -25,6 +25,7 @@ export class Message {
     @Column({ name: 'id_user' })
     id_user: string;
 
+    @Field()
     @Column({ name: 'id_conversation' })
     id_conversation: string;
 
