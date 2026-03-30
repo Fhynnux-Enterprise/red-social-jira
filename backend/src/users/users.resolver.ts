@@ -118,9 +118,11 @@ export class UsersResolver {
   @UseGuards(JwtGqlGuard)
   async searchUsers(
     @Args('searchTerm') searchTerm: string,
+    @Args('limit', { type: () => Int, defaultValue: 5, nullable: true }) limit: number,
+    @Args('offset', { type: () => Int, defaultValue: 0, nullable: true }) offset: number,
     @CurrentUser() user: any,
   ): Promise<User[]> {
-    return this.usersService.searchUsers(searchTerm, user.id);
+    return this.usersService.searchUsers(searchTerm, user.id, limit ?? 5, offset ?? 0);
   }
 
   @Mutation(() => Boolean)

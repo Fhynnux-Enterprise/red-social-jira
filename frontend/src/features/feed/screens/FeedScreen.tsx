@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, Image, Platform, Alert, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation } from '@apollo/client/react';
@@ -9,6 +9,7 @@ import { useAuth } from '../../auth/context/AuthContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import CreatePostModal from '../components/CreatePostModal';
+import { useRouter } from 'expo-router';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import { GET_ME } from '../../profile/graphql/profile.operations';
 import Toast from 'react-native-toast-message';
@@ -68,6 +69,7 @@ export default function FeedScreen() {
     const { signOut } = useAuth();
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
+    const router = useRouter();
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [editingPostId, setEditingPostId] = useState<string | undefined>(undefined);
     const [editingPostContent, setEditingPostContent] = useState<string>('');
@@ -80,6 +82,8 @@ export default function FeedScreen() {
     // Estado para trackear qué post está visible en pantalla (para autoplay)
     const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
     const [hasMore, setHasMore] = useState(true);
+    const [scrollOffset, setScrollOffset] = useState(0);
+    const flatListRef = useRef<FlatList>(null);
 
     const { data, loading, error, refetch, fetchMore, networkStatus } = useQuery<GetPostsData>(GET_POSTS, {
         variables: { limit: 5, offset: 0 },
@@ -125,6 +129,23 @@ export default function FeedScreen() {
         setHasMore(true);
         await refetch();
     }, [refetch]);
+
+    // Lógica para el botón de Home (Scroll + Refresh)
+    useEffect(() => {
+        const unsubscribe = (navigation as any).addListener('tabPress', (e: any) => {
+            // Si el usuario ya está en esta pantalla
+            if (isFocused) {
+                if (scrollOffset > 20) {
+                    // Si ha bajado, subir al inicio
+                    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+                } else {
+                    // Si ya está arriba, recargar
+                    handleRefresh();
+                }
+            }
+        });
+        return unsubscribe;
+    }, [navigation, isFocused, scrollOffset, handleRefresh]);
 
     const renderFooter = useCallback(() => {
         if (!hasMore) return null;
@@ -197,11 +218,12 @@ export default function FeedScreen() {
                     </MaskedView>
                 </View>
                 <View style={styles.headerIcons}>
-                    <TouchableOpacity style={styles.iconButton}>
+                    <TouchableOpacity 
+                        style={styles.iconButton}
+                        onPress={() => router.push('/search')}
+                        activeOpacity={0.7}
+                    >
                         <Ionicons name="search-outline" size={22} color={colors.text} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.iconButton}>
-                        <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.text} />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -215,6 +237,7 @@ export default function FeedScreen() {
                     <Text style={styles.errorText}>No se pudieron cargar los posts.</Text>
                 ) : (
                     <FlatList
+                        ref={flatListRef}
                         ListHeaderComponent={
                             <>
                                 {/* ARCHITECTURE TASK 3: Barra de historias primero con aislamiento de sesión */}
@@ -256,6 +279,9 @@ export default function FeedScreen() {
                         showsVerticalScrollIndicator={false}
                         refreshing={loading && networkStatus !== 3}
                         onRefresh={handleRefresh}
+                        onScroll={(event) => {
+                            setScrollOffset(event.nativeEvent.contentOffset.y);
+                        }}
                         onEndReached={loadMorePosts}
                         onEndReachedThreshold={0.5}
                         ListFooterComponent={renderFooter}

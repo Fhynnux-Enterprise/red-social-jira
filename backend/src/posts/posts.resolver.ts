@@ -70,4 +70,14 @@ export class PostsResolver {
         const userId = context.req.user.id;
         return this.postsService.toggleLike(postId, userId);
     }
+
+    @Query(() => [Post], { name: 'searchPosts' })
+    @UseGuards(JwtGqlGuard)
+    async searchPosts(
+        @Args('query') query: string,
+        @Args('limit', { type: () => Int, defaultValue: 5 }) limit: number,
+        @Args('offset', { type: () => Int, defaultValue: 0 }) offset: number,
+    ): Promise<Post[]> {
+        return this.postsService.searchPosts(query, limit, offset);
+    }
 }

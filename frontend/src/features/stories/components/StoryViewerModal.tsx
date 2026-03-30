@@ -21,6 +21,7 @@ interface StoryViewerModalProps {
     onStorySeen?: (id: string) => void;
     onDeleteStory?: (id: string) => void;
     currentUserId?: string;
+    initialStoryId?: string;
 }
 
 /**
@@ -77,7 +78,8 @@ const StoryVideoPlayer = ({ url, onFinish, isPaused = false, onDurationLoaded }:
 
 const UserStoryPage = ({ 
     userId, userStories, isActiveUser, onFinishUser, onClose,
-    onStorySeen, onDeleteStory, currentUserId, getOrCreateChat, sendMessage, panHandlers 
+    onStorySeen, onDeleteStory, currentUserId, getOrCreateChat, sendMessage, panHandlers,
+    initialStoryId 
 }: any) => {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isPaused, setIsPaused] = useState(false);
@@ -91,12 +93,19 @@ const UserStoryPage = ({
 
     useEffect(() => {
         if (isActiveUser) {
-            setCurrentIndex(0);
+            // TAREA: Calcular el índice inicial si hay un initialStoryId
+            let startIdx = 0;
+            if (initialStoryId) {
+                const foundIdx = userStories.findIndex((s: any) => s.id === initialStoryId);
+                if (foundIdx !== -1) startIdx = foundIdx;
+            }
+
+            setCurrentIndex(startIdx);
             animValue.setValue(0);
             setIsPaused(false);
             setStoryDuration(currentStory?.mediaType === 'image' ? 5000 : 15000); 
         }
-    }, [isActiveUser, userStories]);
+    }, [isActiveUser, userStories, initialStoryId]);
 
     const handleDurationLoaded = (duration: number) => {
         if (currentStory?.mediaType === 'video') {
@@ -274,7 +283,7 @@ const UserStoryPage = ({
     );
 };
 
-export const StoryViewerModal = ({ visible, userQueue, allActiveStories, initialUserIndex, onClose, onStorySeen, onDeleteStory, currentUserId }: StoryViewerModalProps) => {
+export const StoryViewerModal = ({ visible, userQueue, allActiveStories, initialUserIndex, onClose, onStorySeen, onDeleteStory, currentUserId, initialStoryId }: StoryViewerModalProps) => {
     const [activeUserIndex, setActiveUserIndex] = useState(initialUserIndex);
     const flatListRef = useRef<FlatList>(null);
     const pan = useRef(new Animated.ValueXY()).current;
@@ -321,7 +330,28 @@ export const StoryViewerModal = ({ visible, userQueue, allActiveStories, initial
 
     return (
         <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-            <Animated.View style={[styles.container, { transform: [{ translateY: pan.y }] }]}>
+            <Animated.View 
+                style={[
+                    styles.container, 
+                    { 
+                        transform: [
+                            { translateY: pan.y },
+                            { 
+                                scale: pan.y.interpolate({
+                                    inputRange: [0, SCREEN_HEIGHT],
+                                    outputRange: [1, 0.85],
+                                    extrapolate: 'clamp'
+                                })
+                            }
+                        ],
+                        backgroundColor: pan.y.interpolate({
+                            inputRange: [0, SCREEN_HEIGHT * 0.3],
+                            outputRange: ['black', 'rgba(0,0,0,0.5)'],
+                            extrapolate: 'clamp'
+                        })
+                    }
+                ]}
+            >
                 <FlatList
                     ref={flatListRef}
                     data={userQueue}
@@ -349,6 +379,7 @@ export const StoryViewerModal = ({ visible, userQueue, allActiveStories, initial
                                 getOrCreateChat={getOrCreateChat}
                                 sendMessage={sendMessage}
                                 panHandlers={panResponder.panHandlers}
+                                initialStoryId={index === initialUserIndex ? initialStoryId : undefined}
                             />
                         );
                     }}
@@ -369,7 +400,7 @@ export const StoryViewerModal = ({ visible, userQueue, allActiveStories, initial
 };
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: 'black' },
+    container: { flex: 1 },
     mediaWrapper: { flex: 1, marginHorizontal: 8, borderRadius: 20, overflow: 'hidden', backgroundColor: '#111' },
     fullImage: { flex: 1, width: '100%', height: '100%' },
     header: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 },

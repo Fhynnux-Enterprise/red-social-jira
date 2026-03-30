@@ -150,13 +150,14 @@ export class UsersService {
     return this.userRepository.save(user);
   }
 
-  async searchUsers(searchTerm: string, currentUserId: string): Promise<User[]> {
+  async searchUsers(searchTerm: string, currentUserId: string, limit: number = 5, offset: number = 0): Promise<User[]> {
     if (!searchTerm) return [];
 
     return this.userRepository.createQueryBuilder('user')
       .where('(user.username ILIKE :term OR user.firstName ILIKE :term OR user.lastName ILIKE :term)', { term: `%${searchTerm}%` })
       .andWhere('user.id != :currentUserId', { currentUserId })
-      .take(20)
+      .take(limit)
+      .skip(offset)
       .getMany();
   }
 

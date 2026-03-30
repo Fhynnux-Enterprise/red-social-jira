@@ -361,9 +361,6 @@ export default function ChatListScreen() {
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
             <View style={styles.header}>
                 <Text style={[styles.headerTitle, { color: colors.text }]}>Chats</Text>
-                <TouchableOpacity style={[styles.iconButton, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }]}>
-                    <Ionicons name="camera-outline" size={22} color={colors.text} />
-                </TouchableOpacity>
             </View>
 
             <View style={styles.searchContainer}>

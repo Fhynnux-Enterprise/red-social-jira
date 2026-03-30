@@ -67,31 +67,43 @@ export default function StoryViewerScreen() {
         fetchPolicy: 'network-only'
     });
 
-    const userStories = useMemo(() => {
+    const navigationQueue = useMemo(() => {
         if (!data?.getActiveStories) return [];
         
-        let targetId = userId;
-        
-        // Si no tenemos userId o queremos asegurar que buscamos al dueño de la historia
+        // TAREA: Si venimos del chat (initialStoryId), solo mostramos las historias de ESE usuario
+        let targetUserId = userId;
         if (initialStoryId) {
-            const foundStory = data.getActiveStories.find((s: any) => s.id === initialStoryId);
-            if (foundStory) {
-                targetId = foundStory.userId;
-            }
+            const found = data.getActiveStories.find((s: any) => s.id === initialStoryId);
+            if (found) targetUserId = found.userId;
         }
 
-        if (!targetId) return [];
+        // Agrupar por usuario único
+        const groupedMap = new Map<string, any>();
+        data.getActiveStories.forEach((s: any) => {
+            if (!groupedMap.has(s.userId)) {
+                // Si estamos en modo "solo un usuario", filtramos aquí
+                if (!initialStoryId || s.userId === targetUserId) {
+                    groupedMap.set(s.userId, s);
+                }
+            }
+        });
+        
+        return Array.from(groupedMap.values());
+    }, [data, initialStoryId, userId]);
 
-        return data.getActiveStories
-            .filter((s: any) => s.userId === targetId)
-            .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    }, [data, userId, initialStoryId]);
+    const initialUserIndex = useMemo(() => {
+        if (!userId || navigationQueue.length === 0) return 0;
+        
+        let targetId = userId;
+        // Si hay una historia inicial, nos aseguramos de que el target sea el dueño de esa historia
+        if (initialStoryId && data?.getActiveStories) {
+            const s = data.getActiveStories.find((st: any) => st.id === initialStoryId);
+            if (s) targetId = s.userId;
+        }
 
-    const initialIndex = useMemo(() => {
-        if (!initialStoryId || userStories.length === 0) return 0;
-        const idx = userStories.findIndex((s: any) => s.id === initialStoryId);
+        const idx = navigationQueue.findIndex((u: any) => u.userId === targetId);
         return idx !== -1 ? idx : 0;
-    }, [userStories, initialStoryId]);
+    }, [navigationQueue, userId, initialStoryId, data]);
 
     if (loading) {
         return (
@@ -101,7 +113,7 @@ export default function StoryViewerScreen() {
         );
     }
 
-    if (error || userStories.length === 0) {
+    if (error || navigationQueue.length === 0) {
         return (
             <View style={[styles.container, { backgroundColor: '#000' }]}>
                 <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.goBack()}>
@@ -116,8 +128,10 @@ export default function StoryViewerScreen() {
         <View style={styles.container}>
             <StoryViewerModal
                 visible={true}
-                stories={userStories}
-                initialIndex={initialIndex}
+                userQueue={navigationQueue}
+                allActiveStories={data?.getActiveStories || []}
+                initialUserIndex={initialUserIndex}
+                initialStoryId={initialStoryId}
                 onClose={() => navigation.goBack()}
                 onStorySeen={markStoryAsViewed}
                 currentUserId={currentUser?.id}
