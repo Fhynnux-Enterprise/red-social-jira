@@ -1,5 +1,5 @@
 import { ArgsType, Field } from '@nestjs/graphql';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 @ArgsType()
 export class CreateChatArgs {
@@ -16,8 +16,23 @@ export class SendMessageArgs {
     @IsNotEmpty()
     id_conversation: string;
 
-    @Field()
+    @Field({ nullable: true, defaultValue: '' })
     @IsString()
-    @IsNotEmpty()
+    @IsOptional()
     content: string;
+
+    @Field({ nullable: true })
+    @IsString()
+    @IsOptional()
+    imageUrl?: string;
+
+    @Field({ nullable: true })
+    @IsString()
+    @IsOptional()
+    videoUrl?: string;
+
+    @Field({ nullable: true })
+    @IsString()
+    @IsOptional()
+    storyId?: string;
 }

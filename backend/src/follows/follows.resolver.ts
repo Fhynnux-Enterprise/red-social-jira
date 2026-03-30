@@ -1,4 +1,4 @@
-import { Resolver, Query, Mutation, Args } from '@nestjs/graphql';
+import { Resolver, Query, Mutation, Args, Int } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { FollowsService } from './follows.service';
 import { User } from '../auth/entities/user.entity';
@@ -41,5 +41,21 @@ export class FollowsResolver {
         @Args('id_user') id_user: string,
     ): Promise<User[]> {
         return this.followsService.getFollowing(id_user);
+    }
+
+    @Query(() => [User], { name: 'getOnlineFollowing' })
+    @UseGuards(JwtGqlGuard)
+    async getOnlineFollowing(
+        @CurrentUser() user: any,
+    ): Promise<User[]> {
+        return this.followsService.getOnlineFollowing(user.id);
+    }
+
+    @Query(() => Int, { name: 'getOnlineFollowingCount' })
+    @UseGuards(JwtGqlGuard)
+    async getOnlineFollowingCount(
+        @CurrentUser() user: any,
+    ): Promise<number> {
+        return this.followsService.getOnlineFollowingCount(user.id);
     }
 }

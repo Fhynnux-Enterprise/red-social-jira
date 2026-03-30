@@ -83,6 +83,10 @@ type UserBadge {
 type Message {
   id_message: ID!
   content: String!
+  imageUrl: String
+  videoUrl: String
+  storyId: String
+  id_conversation: String!
   isRead: Boolean!
   createdAt: DateTime!
   updatedAt: DateTime!
@@ -100,6 +104,7 @@ type Conversation {
   participants: [Participant!]
   messages: [Message!]
   lastMessage: Message
+  unreadCount: Float
 }
 
 type Participant {
@@ -123,6 +128,7 @@ type Story {
   user: User!
   userId: String!
   mediaUrl: String!
+  content: String
   mediaType: String!
   createdAt: DateTime!
   expiresAt: DateTime!
@@ -138,6 +144,7 @@ type User {
   bio: String
   photoUrl: String
   coverUrl: String
+  lastActiveAt: DateTime
   posts(limit: Int = 5, offset: Int = 0): [Post!]
   customFields: [UserCustomField!]
   badge: UserBadge
@@ -156,6 +163,11 @@ type UploadUrlResponse {
   publicUrl: String!
 }
 
+type ReadMessagesPayload {
+  id_conversation: String!
+  readerId: String!
+}
+
 type Query {
   """Verifica si el servidor GraphQL está funcionando"""
   ping: String!
@@ -166,12 +178,16 @@ type Query {
   isFollowing(id_following: String!): Boolean!
   getFollowers(id_user: String!): [User!]!
   getFollowing(id_user: String!): [User!]!
+  getOnlineFollowing: [User!]!
+  getOnlineFollowingCount: Int!
   getCommentsByPost(postId: String!, limit: Int = 10, offset: Int = 0): [Comment!]!
   getUserConversations: [Conversation!]!
-  getChatMessages(id_conversation: String!): [Message!]!
+  getChatMessages(id_conversation: String!, limit: Float, offset: Float): [Message!]!
   searchMessagesInChat(id_conversation: String!, searchTerm: String!): [Message!]!
   getConversation(id_conversation: String!): Conversation
-  getActiveStories: [Story!]!
+  getChatMedia(id_conversation: String!): [Message!]!
+  getActiveStories(limit: Int! = 20, offset: Int! = 0): [Story!]!
+  getViewedStoryIds: [String!]!
 }
 
 type Mutation {
@@ -186,6 +202,7 @@ type Mutation {
   updateBadge(title: String!, theme: String = "default"): UserBadge!
   updateProfile(firstName: String, lastName: String, bio: String, username: String, phone: String): User!
   updateProfileMedia(photoUrl: String, coverUrl: String): User!
+  pingPresence: Boolean!
   toggleFollow(id_following: String!): Boolean!
   createComment(postId: String!, content: String!, parentId: String): Comment!
   deleteComment(id: String!): Boolean!
@@ -196,8 +213,10 @@ type Mutation {
   deleteConversationForMe(id_conversation: String!): Boolean!
   editMessage(id_message: String!, newContent: String!): Message!
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
-  sendMessage(id_conversation: String!, content: String!): Message!
-  createStory(mediaUrl: String!, mediaType: String!): Story!
+  sendMessage(id_conversation: String!, content: String = "", imageUrl: String, videoUrl: String, storyId: String): Message!
+  markMessagesAsRead(id_conversation: String!): Boolean!
+  createStory(mediaUrl: String!, mediaType: String!, content: String): Story!
+  markStoryAsViewed(storyId: String!): Boolean!
   deleteStory(id: String!): Boolean!
 }
 
@@ -205,4 +224,10 @@ input PostMediaInput {
   url: String!
   type: String!
   order: Int!
+}
+
+type Subscription {
+  messageAdded(id_conversation: String!): Message!
+  messagesRead(id_conversation: String!): ReadMessagesPayload!
+  inboxUpdate: Message!
 }

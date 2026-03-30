@@ -22,6 +22,10 @@ export class Story {
   @Column()
   mediaUrl: string;
 
+  @Field({ nullable: true })
+  @Column({ nullable: true, type: 'text' })
+  content?: string;
+
   @Field()
   @Column({ type: 'varchar', length: 10 })
   mediaType: string; // 'image' | 'video'

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -15,19 +15,50 @@ import {
     Modal,
     Dimensions,
     Alert,
+    PanResponder,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '../../../navigation/AppNavigator';
-import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
+import { useQuery, useMutation, useSubscription, useApolloClient } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION, DELETE_MESSAGE_FOR_ME, DELETE_MESSAGE_FOR_ALL, EDIT_MESSAGE, SEARCH_MESSAGES_IN_CHAT } from '../graphql/chat.operations';
+import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION, DELETE_MESSAGE_FOR_ME, DELETE_MESSAGE_FOR_ALL, EDIT_MESSAGE, SEARCH_MESSAGES_IN_CHAT, MESSAGE_ADDED_SUBSCRIPTION, MARK_MESSAGES_AS_READ, MESSAGES_READ_SUBSCRIPTION, GET_CHAT_MEDIA } from '../graphql/chat.operations';
 import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
 import Toast from 'react-native-toast-message';
+import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
+import { Video as VideoCompressor } from 'react-native-compressor';
+import { OnlineStatusIndicator } from '../components/OnlineStatusIndicator';
+import { ChatBubbleVideo } from '../components/ChatBubbleVideo';
+import ZoomableImageViewer from '../../feed/components/ZoomableImageViewer';
+import { InteractiveVideoPlayer } from '../../feed/components/ImageCarousel';
+import { VideoView, useVideoPlayer } from 'expo-video';
+
+// Componente para manejar la miniatura de respuesta a historia (especialmente para videos)
+const StoryReplyThumbnail = ({ uri, isVideo, style }: { uri: string; isVideo: boolean; style: any }) => {
+    const player = useVideoPlayer(isVideo ? uri : null, (p) => {
+        p.muted = true;
+        p.pause();
+    });
+
+    if (isVideo && player) {
+        return (
+            <View style={[style, { overflow: 'hidden', backgroundColor: '#000' }]}>
+                <VideoView 
+                    player={player} 
+                    style={StyleSheet.absoluteFill} 
+                    contentFit="cover" 
+                    nativeControls={false}
+                />
+            </View>
+        );
+    }
+
+    return <Image source={{ uri }} style={style} />;
+};
 
 export default function ChatRoomScreen() {
     const { colors, isDark } = useTheme();
@@ -56,24 +87,175 @@ export default function ChatRoomScreen() {
 
     const flatListRef = useRef<FlatList>(null);
     const client = useApolloClient();
-
-    // Cargar búsqueda si viene de información
-    useEffect(() => {
-        if (route.params?.activateSearch) {
-            setIsSearchMode(true);
-            // Limpiar el parámetro para que no se re-active solo
-            navigation.setParams({ activateSearch: undefined } as any);
-        }
-    }, [route.params?.activateSearch]);
+    const { pickImage, uploadMedia } = useMediaUpload();
+    const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+    const [uploadStatusText, setUploadStatusText] = useState('');
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
+    const [videoPreview, setVideoPreview] = useState<string | null>(null);
+    const [isMuted, setIsMuted] = useState(true);
+    
+    // Visor de Galería Unificado
+    const [viewerVisible, setViewerVisible] = useState(false);
+    const [viewerActiveIndex, setViewerActiveIndex] = useState(0);
 
     const screenWidth = Dimensions.get('window').width;
 
-    // Query para obtener mensajes
-    const { data, loading, error } = useQuery(GET_CHAT_MESSAGES, {
+    const MESSAGES_LIMIT = 20;
+    const [hasMore, setHasMore] = useState(true);
+    const [isFetchingMore, setIsFetchingMore] = useState(false);
+    
+    // Estado local de mensajes — fuente única de verdad para la UI
+    const [localMessages, setLocalMessages] = useState<any[]>([]);
+
+    const { loading, data: queryData, fetchMore } = useQuery(GET_CHAT_MESSAGES, {
+        variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
+        skip: !id_conversation,
+        fetchPolicy: 'cache-and-network', 
+        nextFetchPolicy: 'cache-first',   
+        notifyOnNetworkStatusChange: false,
+    });
+
+    const { data: mediaData } = useQuery<any>(GET_CHAT_MEDIA, {
         variables: { id_conversation },
         skip: !id_conversation,
-        pollInterval: 3000,
     });
+
+    // Fuente única para la galería: si ya cargó mediaData, la usamos.
+    // Si no, usamos lo que haya cargado en el chat localmente.
+    const chatMediaList = useMemo(() => {
+        if (mediaData?.getChatMedia) {
+            return mediaData.getChatMedia; 
+        }
+        return localMessages
+            .filter((m: any) => (m.imageUrl || m.videoUrl) && !m.isDeletedForAll)
+            .reverse();
+    }, [mediaData, localMessages]);
+    useEffect(() => {
+        const serverMsgs: any[] = (queryData as any)?.getChatMessages || [];
+        if (serverMsgs.length === 0) return;
+
+        setLocalMessages(prev => {
+            const isFirstLoad = prev.length === 0;
+
+            if (isFirstLoad) {
+                // Primera carga: simplemente usar los mensajes del servidor
+                if (serverMsgs.length < MESSAGES_LIMIT) setHasMore(false);
+                return serverMsgs;
+            }
+
+            // Re-carga (al volver al chat): MERGE inteligente
+            // Construimos un Map preservando todos los mensajes locales Y los nuevos del servidor
+            const msgMap = new Map<string, any>();
+            // Primero los mensajes locales (incluyen los enviados y recibidos por WS)
+            prev.forEach((m: any) => msgMap.set(m.id_message, m));
+            // Luego los del servidor (sobrescriben si hay actualizaciones de contenido, ej: mensajes editados)
+            serverMsgs.forEach((m: any) => msgMap.set(m.id_message, m));
+
+            // Ordenamos DESC por fecha (el más nuevo primero, como necesita el FlatList invertido)
+            const merged = Array.from(msgMap.values()).sort(
+                (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+            return merged;
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [queryData]);
+
+
+    const [markMessagesAsReadMutation] = useMutation(MARK_MESSAGES_AS_READ);
+
+    const markAsRead = useCallback(async () => {
+        if (!id_conversation) return;
+        try {
+            await markMessagesAsReadMutation({ variables: { id_conversation } });
+        } catch (e) {
+            console.log('[Chat] Error marking as read:', e);
+        }
+    }, [id_conversation, markMessagesAsReadMutation]);
+
+    // Marcar como leído al entrar o enfocar el chat
+    useFocusEffect(
+        useCallback(() => {
+            markAsRead();
+        }, [markAsRead])
+    );
+
+    // Subscription WebSocket — mensajes nuevos
+    useSubscription(MESSAGE_ADDED_SUBSCRIPTION, {
+        variables: { id_conversation },
+        skip: !id_conversation,
+        onData: ({ data: subResult }: any) => {
+            const newMsg = subResult?.data?.messageAdded;
+            if (!newMsg) return;
+            
+            setLocalMessages(prev => {
+                if (prev.some((m: any) => m.id_message === newMsg.id_message)) return prev;
+                return [newMsg, ...prev];
+            });
+
+            // Si el mensaje es de la otra persona y estamos viendo el chat, marcar como leído
+            if (newMsg.sender.id !== currentUser?.id) {
+                markAsRead();
+            }
+        },
+        onError: (e: any) => {
+            console.log('[WS Chat] Subscription error silenciado:', e.message);
+        },
+    });
+
+    // Subscription WebSocket — confirmación de lectura (Visto azul)
+    useSubscription(MESSAGES_READ_SUBSCRIPTION, {
+        variables: { id_conversation },
+        skip: !id_conversation,
+        onData: ({ data: subResult }: any) => {
+            const payload = subResult?.data?.messagesRead;
+            if (!payload) return;
+
+            // Si ALGUIEN MÁS leyó mis mensajes, actualizamos isRead a true para todos mis mensajes
+            if (payload.readerId !== currentUser?.id) {
+                setLocalMessages((prev: any[]) => 
+                    prev.map((m: any) => m.sender?.id === currentUser?.id ? { ...m, isRead: true } : m)
+                );
+            }
+        }
+    });
+
+    // Cargar mensajes más antiguos (infinite scroll)
+    const loadOlderMessages = async () => {
+        if (isFetchingMore || !hasMore) return;
+        setIsFetchingMore(true);
+        try {
+            const { data: moreData } = await fetchMore({
+                variables: {
+                    id_conversation,
+                    limit: MESSAGES_LIMIT,
+                    offset: localMessages.length,
+                },
+            }) as any;
+
+            const newMsgs: any[] = moreData?.getChatMessages || [];
+            if (newMsgs.length < MESSAGES_LIMIT) {
+                setHasMore(false);
+            }
+            if (newMsgs.length > 0) {
+                setLocalMessages(prev => {
+                    const existingIds = new Set(prev.map((m: any) => m.id_message));
+                    const unique = newMsgs.filter((m: any) => !existingIds.has(m.id_message));
+                    return [...prev, ...unique];
+                });
+            }
+        } catch (e) {
+            console.error('Error cargando historial:', e);
+            setHasMore(false);
+        } finally {
+            setIsFetchingMore(false);
+        }
+    };
+
+    // Reset al cambiar de conversación
+    useEffect(() => {
+        setLocalMessages([]);
+        setHasMore(true);
+    }, [id_conversation]);
 
     // Query para obtener info de la conversación (para el header)
     const { data: convData } = useQuery(GET_CONVERSATION, {
@@ -82,71 +264,123 @@ export default function ChatRoomScreen() {
     });
 
     const otherUser = useMemo(() => {
-        const participants = convData?.getConversation?.participants;
-        return participants?.find((p: any) => p.user.id !== currentUser?.id)?.user || null;
+        const participants = (convData as any)?.getConversation?.participants;
+        if (!participants || participants.length === 0) return null;
+        const other = participants.find((p: any) => p.user.id !== currentUser?.id);
+        return other ? other.user : participants[0].user;
     }, [convData, currentUser?.id]);
 
     const [deleteMessageForMeMutation] = useMutation(DELETE_MESSAGE_FOR_ME);
     const [deleteMessageForAllMutation] = useMutation(DELETE_MESSAGE_FOR_ALL);
-    const [editMessageMutation] = useMutation(EDIT_MESSAGE);
-
-    // Mutación para enviar mensaje
-    const [sendMessageMutation] = useMutation(SEND_MESSAGE, {
-        update(cache, { data: { sendMessage } }) {
-            const queryData: any = cache.readQuery({
-                query: GET_CHAT_MESSAGES,
-                variables: { id_conversation },
-            });
-
-            if (queryData && sendMessage) {
-                const existingMessages = queryData.getChatMessages || [];
-                // Evitar duplicados (especialmente entre el optimistic y el real)
-                const isDuplicate = existingMessages.some((msg: any) => msg.id_message === sendMessage.id_message);
-
-                if (!isDuplicate) {
-                    cache.writeQuery({
+    const [editMessageMutation] = useMutation(EDIT_MESSAGE, {
+        // Actualiza el mensaje en el estado local inmediatamente al guardar la edición
+        onCompleted: ({ editMessage }: any) => {
+            if (!editMessage) return;
+            // 1. Actualizar el estado local para que la UI refleje el cambio al instante
+            setLocalMessages(prev =>
+                prev.map((m: any) =>
+                    m.id_message === editMessage.id_message
+                        ? { ...m, content: editMessage.content, editedAt: editMessage.editedAt }
+                        : m
+                )
+            );
+            // 2. Actualizar la caché Apollo para que persista si el usuario navega fuera y vuelve
+            try {
+                const existing: any = client.readQuery({
+                    query: GET_CHAT_MESSAGES,
+                    variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
+                });
+                if (existing?.getChatMessages) {
+                    client.writeQuery({
                         query: GET_CHAT_MESSAGES,
-                        variables: { id_conversation },
+                        variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
                         data: {
-                            getChatMessages: [...existingMessages, sendMessage],
+                            getChatMessages: existing.getChatMessages.map((m: any) =>
+                                m.id_message === editMessage.id_message
+                                    ? { ...m, content: editMessage.content, editedAt: editMessage.editedAt }
+                                    : m
+                            ),
                         },
                     });
                 }
+            } catch {
+                // Cache vacía, no hay problema
             }
         },
     });
 
+    // Mutación para enviar mensaje
+    // update(): escribe el mensaje enviado en la caché de Apollo con las variables exactas de la query.
+    // Esto es CRUCIAL: si el usuario sale del chat y vuelve, Apollo lee la caché primero
+    // (gracias a cache-and-network), y verá el mensaje enviado INMEDIATAMENTE.
+    const [sendMessageMutation] = useMutation(SEND_MESSAGE, {
+        update(cache, result: any) {
+            const sentMsg = result?.data?.sendMessage;
+            if (!sentMsg) return;
+            try {
+                const existing: any = cache.readQuery({
+                    query: GET_CHAT_MESSAGES,
+                    variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
+                });
+                if (existing?.getChatMessages) {
+                    const msgs: any[] = existing.getChatMessages;
+                    if (!msgs.some((m: any) => m.id_message === sentMsg.id_message)) {
+                        cache.writeQuery({
+                            query: GET_CHAT_MESSAGES,
+                            variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
+                            data: { getChatMessages: [sentMsg, ...msgs] },
+                        });
+                    }
+                }
+            } catch {
+                // La caché puede estar vacía la primera vez, está bien ignorar el error
+            }
+        },
+        onCompleted: ({ sendMessage }: any) => {
+            if (!sendMessage) return;
+            setLocalMessages(prev => {
+                if (prev.some((m: any) => m.id_message === sendMessage.id_message)) return prev;
+                return [sendMessage, ...prev];
+            });
+        },
+    });
+
     const messages = useMemo(() => {
-        if (!data?.getChatMessages) return [];
-        // rawMessages: del más nuevo (index 0) al más viejo
-        const rawMessages = [...data.getChatMessages].reverse();
-        
         const grouped: any[] = [];
+        // Usamos un Set para evitar claves duplicadas de separadores de fecha.
+        // Esto ocurre cuando hay mensajes del mismo día en posiciones no contiguas
+        // (e.g., primera página y página de historial cargada después).
+        const usedDateKeys = new Set<string>();
 
-        rawMessages.forEach((msg, index) => {
-            // Empujar el mensaje actual (siendo FlatList invertido, se pinta de abajo hacia arriba)
+        localMessages.forEach((msg: any, index: number) => {
             grouped.push({ ...msg, type: 'MESSAGE', id: msg.id_message });
-            
-            // Checar la fecha del mensaje que sigue (que cronológicamente es más viejo)
             const currentDate = new Date(msg.createdAt).toDateString();
-            const nextMsg = rawMessages[index + 1];
+            const nextMsg = localMessages[index + 1];
             const nextDate = nextMsg ? new Date(nextMsg.createdAt).toDateString() : null;
-
-            // Si el siguiente mensaje tiene fecha diferente (o no hay siguiente, o sea este es el más antiguo)
-            // Agregamos el separador. Como FlatList invierte, este separador quedará VISUALMENTE ARRIBA de este mensaje.
             if (currentDate !== nextDate) {
-                grouped.push({ type: 'DATE_SEPARATOR', date: msg.createdAt, id: `date-${currentDate}` });
+                // Garantizamos unicidad de la key aunque haya repetición de fecha
+                let sepKey = `date-${currentDate}`;
+                if (usedDateKeys.has(sepKey)) {
+                    sepKey = `${sepKey}-${index}`;
+                }
+                usedDateKeys.add(`date-${currentDate}`);
+                grouped.push({ type: 'DATE_SEPARATOR', date: msg.createdAt, id: sepKey });
             }
         });
-
         return grouped;
-    }, [data]);
+    }, [localMessages]);
 
     const handleSend = async () => {
-        if (!messageText.trim() || !id_conversation) return;
+        const hasText = messageText.trim().length > 0;
+        const hasMedia = !!imagePreview || !!videoPreview;
+        if ((!hasText && !hasMedia) || !id_conversation) return;
 
         const content = messageText.trim();
+        const pendingImage = imagePreview;
+        const pendingVideo = videoPreview;
         setMessageText('');
+        setImagePreview(null);
+        setVideoPreview(null);
 
         try {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -159,26 +393,92 @@ export default function ChatRoomScreen() {
                 return;
             }
 
+            let uploadedImageUrl: string | undefined;
+            let uploadedVideoUrl: string | undefined;
+
+            // Subir imagen
+            if (pendingImage) {
+                setIsUploadingMedia(true);
+                setUploadStatusText('Subiendo imagen...');
+                try {
+                    const ext = pendingImage.split('.').pop() || 'jpg';
+                    const mimeType = `image/${ext === 'png' ? 'png' : 'jpeg'}`;
+                    uploadedImageUrl = await uploadMedia(pendingImage, mimeType, 'chat-images');
+                } catch (uploadErr) {
+                    console.error('Error uploading image:', uploadErr);
+                    Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo subir la imagen' });
+                    setIsUploadingMedia(false);
+                    setUploadStatusText('');
+                    return;
+                }
+            }
+
+            // Comprimir y subir video
+            if (pendingVideo) {
+                setIsUploadingMedia(true);
+                setUploadStatusText('Comprimiendo video...');
+                try {
+                    const compressedUri = await VideoCompressor.compress(pendingVideo, {
+                        compressionMethod: 'auto',
+                        maxSize: 720,
+                    });
+                    setUploadStatusText('Subiendo video...');
+                    uploadedVideoUrl = await uploadMedia(compressedUri, 'video/mp4', 'chat-videos');
+                } catch (uploadErr) {
+                    console.error('Error uploading video:', uploadErr);
+                    Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo subir el video' });
+                    setIsUploadingMedia(false);
+                    setUploadStatusText('');
+                    return;
+                }
+            }
+
+            setIsUploadingMedia(false);
+            setUploadStatusText('');
+
             await sendMessageMutation({
-                variables: { id_conversation, content },
-                optimisticResponse: {
-                    sendMessage: {
-                        __typename: 'Message',
-                        id_message: `temp-${Date.now()}`,
-                        content,
-                        createdAt: new Date().toISOString(),
-                        isRead: false,
-                        isDeletedForAll: false,
-                        editedAt: null,
-                        sender: {
-                            __typename: 'User',
-                            id: currentUser.id,
-                        },
-                    },
+                variables: {
+                    id_conversation,
+                    content: content || '',
+                    imageUrl: uploadedImageUrl || undefined,
+                    videoUrl: uploadedVideoUrl || undefined,
                 },
             });
         } catch (err) {
             console.error("Error sending message:", err);
+        }
+    };
+
+    const handlePickMedia = async () => {
+        try {
+            // Tarea 2: Usar editor integrado de expo-image-picker
+            const result = await pickImage(true, 'All', 60, 0.7);
+            if (result) {
+                if (result.mimeType?.startsWith('video')) {
+                    // Validar duración (máx 60 segundos)
+                    // expo-image-picker entrega la duración en milisegundos en versiones recientes
+                    const durationInSeconds = result.duration ? (result.duration > 1000 ? result.duration / 1000 : result.duration) : 0;
+                    
+                    if (durationInSeconds > 60.5) {
+                        Toast.show({
+                            type: 'error',
+                            text1: 'Video muy largo',
+                            text2: 'Solo se permiten videos de hasta 1 minuto.'
+                        });
+                        return;
+                    }
+                    
+                    setVideoPreview(result.localUri);
+                    setImagePreview(null);
+                } else {
+                    setImagePreview(result.localUri);
+                    setVideoPreview(null);
+                }
+            }
+        } catch (error: any) {
+            if (error.message?.includes('denegados')) {
+                Toast.show({ type: 'error', text1: 'Permisos', text2: 'Permite el acceso a tu galería' });
+            }
         }
     };
 
@@ -200,8 +500,8 @@ export default function ChatRoomScreen() {
     useEffect(() => {
         const performSearch = async () => {
             if (searchTerm.trim().length > 1) {
-                const { data } = await searchMessagesQuery({ id_conversation, searchTerm });
-                const ids = data?.searchMessagesInChat?.map((m: any) => m.id_message) || [];
+                const { data: searchData } = await searchMessagesQuery({ id_conversation, searchTerm });
+                const ids = (searchData as any)?.searchMessagesInChat?.map((m: any) => m.id_message) || [];
                 setSearchResults(ids);
                 setCurrentSearchIndex(0);
                 if (ids.length > 0) jumpToMatch(0, ids);
@@ -258,61 +558,20 @@ export default function ChatRoomScreen() {
     };
 
     const handleHideMessageFromUI = (msgId: string) => {
-        try {
-            const queryData: any = client.readQuery({
-                query: GET_CHAT_MESSAGES,
-                variables: { id_conversation },
-            });
-
-            if (queryData) {
-                const newMessages = queryData.getChatMessages.filter(
-                    (msg: any) => msg.id_message !== msgId
-                );
-                
-                client.writeQuery({
-                    query: GET_CHAT_MESSAGES,
-                    variables: { id_conversation },
-                    data: {
-                        getChatMessages: newMessages,
-                    },
-                });
-            }
-        } catch (e) {
-            console.error("Error al actualizar la cache para ocultar el mensaje", e);
-        }
+        setLocalMessages(prev => prev.filter((m: any) => m.id_message !== msgId));
     };
 
     const handleTombstoneMessageFromUI = (msgId: string) => {
-        try {
-            const queryData: any = client.readQuery({
-                query: GET_CHAT_MESSAGES,
-                variables: { id_conversation },
-            });
-
-            if (queryData) {
-                const newMessages = queryData.getChatMessages.map((msg: any) => 
-                    msg.id_message === msgId 
-                        ? { ...msg, isDeletedForAll: true, content: "" }
-                        : msg
-                );
-                
-                client.writeQuery({
-                    query: GET_CHAT_MESSAGES,
-                    variables: { id_conversation },
-                    data: {
-                        getChatMessages: newMessages,
-                    },
-                });
-            }
-        } catch (e) {
-            console.error("Error al actualizar la cache para poner lápida al mensaje", e);
-        }
+        setLocalMessages(prev => prev.map((m: any) =>
+            m.id_message === msgId ? { ...m, isDeletedForAll: true, content: '' } : m
+        ));
     };
 
     const revertHideMessageUI = () => {
-        client.refetchQueries({
-            include: [GET_CHAT_MESSAGES],
-        });
+        // Con estado local, para 'revertir' simplemente hacemos un refetch completo
+        setLocalMessages([]);
+        setHasMore(true);
+        // El useQuery con network-only va a correr de nuevo en el próximo render gracias al cambio de estado
     };
 
     const handleDeleteForMe = () => {
@@ -540,7 +799,89 @@ export default function ChatRoomScreen() {
                     delayLongPress={200}
                     style={bubbleStyles}
                 >
-                    <HighlightedText text={item.content} sub={searchTerm} mine={isMine} />
+                    {item.storyId && (
+                        <TouchableOpacity 
+                            style={[
+                                styles.storyReplyContainer, 
+                                { 
+                                    backgroundColor: isMine ? 'rgba(0,0,0,0.15)' : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'),
+                                    borderColor: isMine ? 'rgba(255,255,255,0.2)' : colors.border,
+                                    borderWidth: isMine ? 0 : 0.5
+                                }
+                            ]}
+                            onPress={() => {
+                                navigation.navigate('StoryViewer', { 
+                                    userId: item.sender?.id, 
+                                    initialStoryId: item.storyId 
+                                });
+                            }}
+                        >
+                            <View style={[styles.storyReplyIndicator, { backgroundColor: isMine ? '#FFF' : colors.primary }]} />
+                            <View style={{ flex: 1, paddingVertical: 4 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                                    <Ionicons name="flash-outline" size={12} color={isMine ? 'rgba(255,255,255,0.9)' : colors.primary} style={{ marginRight: 4 }} />
+                                    <Text style={[styles.storyReplyLabel, { color: isMine ? 'rgba(255,255,255,0.9)' : colors.primary, marginBottom: 0 }]}>Historia</Text>
+                                </View>
+                                <Text style={[styles.storyReplyText, { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]} numberOfLines={1}>
+                                    Ver historia original
+                                </Text>
+                            </View>
+                            {(item.imageUrl || item.videoUrl) ? (
+                                <StoryReplyThumbnail 
+                                    uri={(item.imageUrl || item.videoUrl) as string} 
+                                    isVideo={!!item.videoUrl} 
+                                    style={styles.storyReplyThumb} 
+                                />
+                            ) : (
+                                <View style={[styles.storyReplyThumb, { justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#333' : '#EEE' }]}>
+                                    <Ionicons name="alert-circle-outline" size={20} color={colors.textSecondary} />
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                    )}
+                    {item.imageUrl && !item.storyId && (
+                        <TouchableOpacity
+                            activeOpacity={0.9}
+                            onPress={() => {
+                                const mIdx = chatMediaList.findIndex(m => m.id_message === item.id_message);
+                                if (mIdx !== -1) {
+                                    setViewerActiveIndex(mIdx);
+                                    setViewerVisible(true);
+                                }
+                            }}
+                        >
+                            <Image
+                                source={{ uri: item.imageUrl }}
+                                style={{
+                                    width: screenWidth * 0.55,
+                                    height: screenWidth * 0.55 * 0.75,
+                                    borderRadius: 12,
+                                    marginBottom: item.content ? 6 : 0,
+                                }}
+                                resizeMode="cover"
+                            />
+                        </TouchableOpacity>
+                    )}
+                    {item.videoUrl && !item.storyId && (
+                        <View style={{ width: screenWidth * 0.55, borderRadius: 12, overflow: 'hidden', marginBottom: item.content ? 6 : 0 }}>
+                            <ChatBubbleVideo
+                                url={item.videoUrl}
+                                width={screenWidth * 0.55}
+                                height={screenWidth * 0.55 * 0.75}
+                                onPressFullScreen={() => {
+                                    setIsMuted(false);
+                                    const mIdx = chatMediaList.findIndex(m => m.id_message === item.id_message);
+                                    if (mIdx !== -1) {
+                                        setViewerActiveIndex(mIdx);
+                                        setViewerVisible(true);
+                                    }
+                                }}
+                            />
+                        </View>
+                    )}
+                    {item.content ? (
+                        <HighlightedText text={item.content} sub={searchTerm} mine={isMine} />
+                    ) : null}
                     <View style={styles.messageFooter}>
                         {item.editedAt && (
                             <Text style={[
@@ -552,15 +893,16 @@ export default function ChatRoomScreen() {
                         )}
                         <Text style={[
                             styles.messageTime,
-                            { color: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary }
+                            { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }
                         ]}>
                             {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
                         </Text>
                         {isMine && (
                             <Ionicons 
                                 name="checkmark-done" 
-                                size={14} 
-                                color="rgba(255,255,255,0.7)" 
+                                size={16} 
+                                color={item.isRead ? "#00E5FF" : "rgba(255,255,255,0.4)"} 
+                                style={{ marginLeft: 4, marginBottom: -1 }}
                             />
                         )}
                     </View>
@@ -635,11 +977,13 @@ export default function ChatRoomScreen() {
                         )}
                         <View style={styles.headerTextContainer}>
                             <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-                                {otherUser ? `${otherUser.firstName} ${otherUser.lastName}` : 'Cargando...'}
+                                {otherUser ? `${otherUser.firstName} ${otherUser.lastName} ${otherUser.id === currentUser?.id ? '(Tú)' : ''}` : 'Cargando...'}
                             </Text>
                             <View style={styles.onlineStatus}>
-                                <View style={[styles.onlineDot, { backgroundColor: '#4CD964' }]} />
-                                <Text style={[styles.onlineText, { color: colors.textSecondary }]}>En línea</Text>
+                                <OnlineStatusIndicator 
+                                    lastActiveAt={otherUser?.lastActiveAt} 
+                                    showText={true} 
+                                />
                             </View>
                         </View>
                     </TouchableOpacity>
@@ -650,13 +994,6 @@ export default function ChatRoomScreen() {
                     >
                         <Ionicons name="search" size={22} color={colors.textSecondary} />
                     </TouchableOpacity>
-
-                    <TouchableOpacity 
-                        style={styles.headerAction}
-                        onPress={() => navigation.navigate('ChatDetails', { id_conversation })}
-                    >
-                        <Ionicons name="ellipsis-vertical" size={22} color={colors.textSecondary} />
-                    </TouchableOpacity>
                 </View>
             )}
 
@@ -664,35 +1001,100 @@ export default function ChatRoomScreen() {
             <Animated.View style={{ flex: 1, paddingBottom: keyboardOffset }}>
                 {/* Lista de Mensajes */}
                 <View style={styles.chatContainer}>
-                    {loading && !data ? (
+                    {loading && localMessages.length === 0 ? (
                         <View style={styles.center}>
                             <ActivityIndicator color={colors.primary} />
                         </View>
                     ) : (
-                        <FlatList
-                            ref={flatListRef}
-                            data={messages}
-                            renderItem={renderMessage}
-                            keyExtractor={(item) => item.id}
-                            inverted={true}
-                            contentContainerStyle={styles.listContent}
-                            showsVerticalScrollIndicator={false}
-                            ListFooterComponent={renderProfileSummary}
-                            onScrollToIndexFailed={handleScrollToIndexFailed}
-                        />
+                            <FlatList
+                                ref={flatListRef}
+                                data={messages}
+                                renderItem={renderMessage}
+                                keyExtractor={(item) => item.id}
+                                inverted={true} // Los mensajes nuevos se mantienen al fondo
+                                contentContainerStyle={styles.listContent}
+                                showsVerticalScrollIndicator={false}
+                                // Optimización de rendimiento para Android y Videos
+                                initialNumToRender={10}
+                                maxToRenderPerBatch={5}
+                                windowSize={5}
+                                removeClippedSubviews={Platform.OS === 'android'}
+                                
+                                // Indicador de carga (el Footer aparece VISUALMENTE ARRIBA cuando inverted=true)
+                                ListFooterComponent={() => {
+                                    if (isFetchingMore) {
+                                        return (
+                                            <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                                                <ActivityIndicator color={colors.primary} />
+                                            </View>
+                                        );
+                                    }
+                                    if (!hasMore) {
+                                        return (
+                                            <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                                                {renderProfileSummary()}
+                                            </View>
+                                        );
+                                    }
+                                    // hasMore=true y no estamos cargando: no mostrar nada
+                                    return null;
+                                }}
+                                
+                                // Configuración de Infinite Scroll
+                                onEndReached={loadOlderMessages}
+                                onEndReachedThreshold={0.5} // Carga cuando falte un 50% para ver el tope
+                                onScrollToIndexFailed={handleScrollToIndexFailed}
+                            />
                     )}
                 </View>
 
                 {/* Input de Mensajes */}
-                <View style={[
-                    styles.inputWrapper, 
+                <View style={[styles.inputWrapper, 
                     { 
                         borderTopColor: colors.border, 
                         backgroundColor: colors.background,
                         paddingBottom: 10
                     }
                 ]}>
+                    {/* Preview de media seleccionada */}
+                    {(imagePreview || videoPreview) && (
+                        <View style={[styles.imagePreviewBar, { backgroundColor: isDark ? '#1C1C1E' : '#F0F0F0' }]}>
+                            {imagePreview && <Image source={{ uri: imagePreview }} style={styles.imagePreviewThumb} />}
+                            {videoPreview && (
+                                <View style={[styles.imagePreviewThumb, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }]}>
+                                    <Ionicons name="videocam" size={20} color="#FFF" />
+                                </View>
+                            )}
+                            <Text style={[styles.imagePreviewText, { color: colors.textSecondary }]} numberOfLines={1}>
+                                {videoPreview ? 'Video adjunto' : 'Imagen adjunta'}
+                            </Text>
+                            <TouchableOpacity onPress={() => { setImagePreview(null); setVideoPreview(null); }} style={styles.imagePreviewClose}>
+                                <Ionicons name="close-circle" size={22} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
+                    )}
+
+                    {/* Status de subida */}
+                    {isUploadingMedia && uploadStatusText ? (
+                        <View style={[styles.uploadStatusBar, { backgroundColor: isDark ? '#1C1C1E' : '#F0F0F0' }]}>
+                            <ActivityIndicator size="small" color={colors.primary} />
+                            <Text style={[styles.uploadStatusText, { color: colors.textSecondary }]}>{uploadStatusText}</Text>
+                        </View>
+                    ) : null}
+
                     <View style={[styles.inputContainer, { backgroundColor: isDark ? '#1C1C1E' : '#F7F7F7' }]}>
+                        <TouchableOpacity
+                            onPress={handlePickMedia}
+                            style={styles.attachButton}
+                            disabled={isUploadingMedia}
+                        >
+                            {isUploadingMedia ? (
+                                <ActivityIndicator size="small" color={colors.primary} />
+                            ) : (
+                                <Ionicons name="attach-outline" size={24} color={colors.primary} style={{ transform: [{ rotate: '45deg' }] }} />
+                            )}
+                        </TouchableOpacity>
+
                         <TextInput
                             style={[styles.input, { color: colors.text }]}
                             placeholder="Mensaje..."
@@ -704,21 +1106,83 @@ export default function ChatRoomScreen() {
 
                         <TouchableOpacity 
                             onPress={handleSend}
-                            disabled={!messageText.trim()}
+                            disabled={(!messageText.trim() && !imagePreview && !videoPreview) || isUploadingMedia}
                             style={[
                                 styles.sendButton, 
-                                { backgroundColor: messageText.trim().length > 0 ? colors.primary : (isDark ? '#2C2C2E' : '#E5E5EA') }
+                                { backgroundColor: (messageText.trim().length > 0 || imagePreview || videoPreview) && !isUploadingMedia ? colors.primary : (isDark ? '#2C2C2E' : '#E5E5EA') }
                             ]}
                         >
-                            <Ionicons 
-                                name="arrow-up" 
-                                size={20} 
-                                color={messageText.trim().length > 0 ? "#FFF" : colors.textSecondary} 
-                            />
+                            {isUploadingMedia ? (
+                                <ActivityIndicator size="small" color="#FFF" />
+                            ) : (
+                                <Ionicons 
+                                    name="arrow-up" 
+                                    size={20} 
+                                    color={(messageText.trim().length > 0 || imagePreview || videoPreview) ? "#FFF" : colors.textSecondary} 
+                                />
+                            )}
                         </TouchableOpacity>
                     </View>
                 </View>
             </Animated.View>
+
+            <Modal
+                visible={viewerVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setViewerVisible(false)}
+            >
+                <View style={{ flex: 1, backgroundColor: 'black' }}>
+                    <TouchableOpacity
+                        style={[styles.fullscreenCloseBtn, { zIndex: 999, top: insets.top + 20 }]}
+                        onPress={() => setViewerVisible(false)}
+                    >
+                        <Ionicons name="close" size={28} color="#FFF" />
+                    </TouchableOpacity>
+
+                    <FlatList
+                        data={chatMediaList}
+                        horizontal
+                        pagingEnabled
+                        initialScrollIndex={viewerActiveIndex}
+                        getItemLayout={(_, index) => ({
+                            length: screenWidth,
+                            offset: screenWidth * index,
+                            index,
+                        })}
+                        showsHorizontalScrollIndicator={false}
+                        keyExtractor={(item) => item.id_message}
+                        onMomentumScrollEnd={(event) => {
+                            const xOffset = event.nativeEvent.contentOffset.x;
+                            const index = Math.round(xOffset / screenWidth);
+                            setViewerActiveIndex(index);
+                        }}
+                        renderItem={({ item, index }) => (
+                            <View style={{ width: screenWidth, height: Dimensions.get('window').height, justifyContent: 'center' }}>
+                                {item.videoUrl ? (
+                                    <InteractiveVideoPlayer
+                                        url={item.videoUrl}
+                                        width={screenWidth}
+                                        height={Dimensions.get('window').height}
+                                        isMuted={isMuted}
+                                        shouldPlay={viewerActiveIndex === index && viewerVisible}
+                                        toggleMute={() => setIsMuted(!isMuted)}
+                                        isInteractive={true}
+                                        hideExpand={true}
+                                        contentFit="contain"
+                                        insets={insets}
+                                    />
+                                ) : (
+                                    <ZoomableImageViewer
+                                        url={item.imageUrl}
+                                        onClose={() => setViewerVisible(false)}
+                                    />
+                                )}
+                            </View>
+                        )}
+                    />
+                </View>
+            </Modal>
 
             {/* Modal de Acciones del Mensaje */}
             <Modal
@@ -1151,5 +1615,88 @@ const styles = StyleSheet.create({
     confirmModalBtnText: {
         fontSize: 16,
         fontWeight: '500',
+    },
+    imagePreviewBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
+        marginBottom: -4,
+    },
+    imagePreviewThumb: {
+        width: 40,
+        height: 40,
+        borderRadius: 8,
+        marginRight: 10,
+    },
+    imagePreviewText: {
+        flex: 1,
+        fontSize: 13,
+        fontWeight: '500',
+    },
+    imagePreviewClose: {
+        padding: 4,
+    },
+    fullscreenImageContainer: {
+        flex: 1,
+        backgroundColor: '#000',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    fullscreenCloseBtn: {
+        position: 'absolute',
+        top: 50,
+        right: 20,
+        zIndex: 10,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        borderRadius: 20,
+        padding: 8,
+    },
+    fullscreenImage: {
+        width: '100%',
+        height: '100%',
+    },
+    uploadStatusBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 6,
+        gap: 8,
+    },
+    uploadStatusText: {
+        fontSize: 12,
+        fontWeight: '500',
+    },
+    storyReplyContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 12,
+        marginBottom: 8,
+        minWidth: 150,
+    },
+    storyReplyIndicator: {
+        width: 3,
+        height: '80%',
+        borderRadius: 2,
+        marginRight: 10,
+    },
+    storyReplyLabel: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        marginBottom: 2,
+    },
+    storyReplyText: {
+        fontSize: 12,
+    },
+    storyReplyThumb: {
+        width: 36,
+        height: 36,
+        borderRadius: 6,
+        marginLeft: 10,
+        backgroundColor: '#000',
     },
 });

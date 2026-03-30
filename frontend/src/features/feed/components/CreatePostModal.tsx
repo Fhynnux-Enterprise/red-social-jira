@@ -87,7 +87,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
     const styles = useMemo(() => getStyles(colors), [colors]);
 
     const { data: meData } = useQuery<any>(GET_ME, {
-        fetchPolicy: 'cache-only', // Since the feed already fetches it, we can read it from cache
+        fetchPolicy: 'cache-only',
     });
     const currentUser = meData?.me;
 
@@ -104,13 +104,11 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
     const handlePickMedia = async () => {
         const results = await pickMultipleMedia('All');
         if (results && results.length > 0) {
-            // Tarea 1: Marcado de Estado Individual y Validación
             const newMedia = results.map(res => {
                 const type = res.mimeType.startsWith('video/') ? 'video' : 'image';
                 let isValid = true;
                 let errorMessage = '';
 
-                // Regla 1: Duración de video > 1 minuto (milisegundos)
                 if (type === 'video' && res.duration && res.duration > 60000) {
                     isValid = false;
                     errorMessage = 'Máx 1 minuto';
@@ -128,10 +126,8 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                 };
             });
 
-            // Combinamos con lo que ya tenemos
             const updatedTotal = [...localMediaList, ...newMedia];
 
-            // Regla 2: Límite de 3 videos en total
             let videoCount = 0;
             const validatedList = updatedTotal.map((item, index) => {
                 if (item.type === 'video') {
@@ -141,7 +137,6 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                     }
                 }
 
-                // Regla 3: Máximo 10 archivos en total
                 if (index >= 10) {
                     return { ...item, isValid: false, errorMessage: 'Límite 10 archivos' };
                 }
@@ -156,7 +151,6 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
     const handlePublish = async () => {
         if (!content.trim() && localMediaList.length === 0) return;
 
-        // Verificación de archivos inválidos
         const hasInvalidItems = localMediaList.some(m => !m.isValid);
 
         if (hasInvalidItems) {
@@ -184,7 +178,6 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
             ? localMediaList.filter(m => m.isValid)
             : localMediaList;
 
-        // Validación de seguridad corregida y estilizada
         if (mediaToUpload.length === 0 && !content.trim()) {
             setAlertConfig({
                 visible: true,
@@ -204,9 +197,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                 setIsUploadingMedia(true);
                 const uploadPromises = mediaToUpload.map(async (media, index) => {
                     let finalUri = media.uri;
-                    const mediaIndex = localMediaList.findIndex(m => m.uri === media.uri);
 
-                    // Función para simular porcentaje fluido
                     const startProgress = (status: any) => {
                         let currentProgress = 0;
                         const interval = setInterval(() => {
@@ -220,7 +211,6 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                         return interval;
                     };
 
-                    // 1. Fase de Compresión
                     if (media.type === 'video') {
                         const compInterval = startProgress('compressing');
                         try {
@@ -233,13 +223,10 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                         }
                     }
 
-                    // 2. Fase de Subida Real
                     const uploadInterval = startProgress('uploading');
                     try {
                         const uploadedUrl = await uploadMedia(finalUri, media.mimeType, 'posts');
                         clearInterval(uploadInterval);
-
-                        // 3. ¡Terminado al 100%!
                         setLocalMediaList(prev => prev.map(m => m.uri === media.uri ? { ...m, uploadStatus: 'done' as const, progress: 100 } : m));
 
                         return {
@@ -277,7 +264,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
     };
 
     const handleClose = () => {
-        setContent(''); // Clean the input when closing
+        setContent(''); 
         setTitle('');
         setLocalMediaList([]);
         onClose();
@@ -295,7 +282,6 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                     style={styles.container}
                     behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 >
-                    {/* Header */}
                     <View style={styles.header}>
                         <TouchableOpacity onPress={handleClose} style={styles.iconButton}>
                             <Ionicons name="close" size={28} color={colors.text} />
@@ -317,7 +303,6 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                         </TouchableOpacity>
                     </View>
 
-                    {/* Editor Area */}
                     <ScrollView style={styles.editorContainer} keyboardShouldPersistTaps="handled">
                         <View style={styles.userInfo}>
                             <View style={[styles.smallAvatarPlaceholder, { overflow: 'hidden', backgroundColor: currentUser && !currentUser.photoUrl ? 'rgba(255, 101, 36, 0.15)' : colors.surface }]}>
@@ -364,15 +349,13 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                             onChangeText={setContent}
                             editable={!isLoading}
                             textAlignVertical="top"
-                            scrollEnabled={false} // Since it's inside a ScrollView now
+                            scrollEnabled={false} 
                         />
 
-                        {/* Media Preview - Horizontal Scroll */}
                         {localMediaList.length > 0 && (
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaPreviewListContainer}>
                                 {localMediaList.map((mediaItem, index) => (
                                     <View key={index} style={styles.mediaPreviewContainer}>
-                                        {/* 1. La Imagen/Video Base */}
                                         {mediaItem.type === 'video' ? (
                                             <View style={styles.mediaPreview}>
                                                 <Image source={{ uri: mediaItem.uri }} style={styles.mediaPreview} />
@@ -384,14 +367,12 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                                             <Image source={{ uri: mediaItem.uri }} style={styles.mediaPreview} resizeMode="cover" />
                                         )}
 
-                                        {/* Indicador de "Listo para subir" (Check azul en esquina) */}
                                         {mediaItem.isValid && (!mediaItem.uploadStatus || mediaItem.uploadStatus === 'idle') && (
                                             <View style={styles.readyBadge}>
                                                 <Ionicons name="checkmark-done-circle" size={24} color="#007AFF" />
                                             </View>
                                         )}
 
-                                        {/* 2. Botón de Eliminar (Solo si NO está subiendo) */}
                                         {(!mediaItem.uploadStatus || mediaItem.uploadStatus === 'idle') && (
                                             <TouchableOpacity
                                                 style={styles.removeMediaButton}
@@ -401,7 +382,6 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                                             </TouchableOpacity>
                                         )}
 
-                                        {/* 3. Feedback Visual Overlay de Error (Inválidos) */}
                                         {!mediaItem.isValid && (
                                             <View style={styles.invalidOverlay}>
                                                 <Ionicons name="close-outline" size={32} color="#FFF" />
@@ -409,7 +389,6 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                                             </View>
                                         )}
 
-                                        {/* 4. Feedback Visual Overlay de Subida (Activo) */}
                                         {mediaItem.uploadStatus && mediaItem.uploadStatus !== 'idle' && (
                                             <View style={[
                                                 styles.uploadOverlay,
@@ -438,7 +417,6 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                         )}
                     </ScrollView>
 
-                    {/* Alerta Estilizada Personalizada */}
                     <Modal visible={alertConfig.visible} transparent animationType="fade">
                         <View style={styles.alertOverlay}>
                             <View style={styles.alertContent}>
@@ -461,7 +439,6 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                         </View>
                     </Modal>
 
-                    {/* Toolbar Opciones de Publicación */}
                     <View style={styles.toolbar}>
                         <TouchableOpacity style={styles.mediaButton} activeOpacity={0.7} onPress={handlePickMedia}>
                             <View style={styles.mediaButtonIconGradientWrapper}>
@@ -551,7 +528,7 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     },
     titleInput: {
         color: colors.text,
-        fontSize: 20, // Increased from 19 to 20
+        fontSize: 20, 
         fontWeight: 'bold',
         marginBottom: 0,
     },
@@ -605,7 +582,7 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     },
     mediaPreviewContainer: {
         width: 250,
-        height: 312, // Taller portrait aspect ratio to match the feed changes
+        height: 312, 
         marginRight: 12,
         position: 'relative',
         borderRadius: 16,
@@ -640,7 +617,6 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
         textAlign: 'center',
         marginTop: 4,
     },
-    // Estilos del Alerta Personalizado (Luxury Minimal)
     alertOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.4)',
@@ -666,13 +642,6 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
         fontWeight: 'bold',
         marginBottom: 12,
         textAlign: 'center',
-    },
-    postTitle: {
-        color: colors.text,
-        fontSize: 16,
-        fontWeight: 'bold',
-        paddingHorizontal: 14,
-        marginBottom: 6,
     },
     alertMessage: {
         color: colors.textSecondary,
@@ -702,7 +671,6 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
         fontWeight: 'bold',
         fontSize: 15,
     },
-    // Nuevos estilos de Feedback de subida rediseñados
     uploadOverlay: {
         ...StyleSheet.absoluteFillObject,
         backgroundColor: 'rgba(0,0,0,0.5)',
@@ -733,12 +701,6 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
         right: 8,
         backgroundColor: 'rgba(255,255,255,0.9)',
         borderRadius: 16,
-    },
-    doneText: {
-        color: '#4ADE80',
-        fontWeight: 'bold',
-        fontSize: 16,
-        marginTop: 5,
     },
     readyBadge: {
         position: 'absolute',

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
-    View, Text, FlatList, StyleSheet, Image, 
+    View, Text, FlatList, StyleSheet, 
     TouchableOpacity, ActivityIndicator 
 } from 'react-native';
+import { Image } from 'expo-image';
 import { gql } from '@apollo/client';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,9 +13,12 @@ import Toast from 'react-native-toast-message';
 import Svg, { Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 import { useAuth } from '../../../features/auth/context/AuthContext';
 import { useTheme } from '../../../theme/ThemeContext';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { StoryViewerModal } from './StoryViewerModal';
+import CreateStoryModal from './CreateStoryModal';
 
 const VIEWED_STORIES_BASE_KEY = '@chunchi_viewed_stories_';
 
@@ -34,6 +38,7 @@ export interface Story {
     mediaType?: string;
     createdAt?: string;
     expiresAt?: string;
+    content?: string;
 }
 
 interface GetActiveStoriesData {
@@ -41,13 +46,14 @@ interface GetActiveStoriesData {
 }
 
 const GET_ACTIVE_STORIES = gql`
-  query getActiveStories {
-    getActiveStories {
+  query getActiveStories($limit: Int, $offset: Int) {
+    getActiveStories(limit: $limit, offset: $offset) {
       id
       userId
       mediaUrl
       mediaType
       createdAt
+      content
       user {
         id
         username
@@ -59,12 +65,25 @@ const GET_ACTIVE_STORIES = gql`
   }
 `;
 
+const GET_VIEWED_STORY_IDS = gql`
+  query getViewedStoryIds {
+    getViewedStoryIds
+  }
+`;
+
+const MARK_STORY_AS_VIEWED = gql`
+  mutation MarkStoryAsViewed($storyId: String!) {
+    markStoryAsViewed(storyId: $storyId)
+  }
+`;
+
 const CREATE_STORY = gql`
-  mutation CreateStory($mediaUrl: String!, $mediaType: String!) {
-    createStory(mediaUrl: $mediaUrl, mediaType: $mediaType) {
+  mutation CreateStory($mediaUrl: String!, $mediaType: String!, $content: String) {
+    createStory(mediaUrl: $mediaUrl, mediaType: $mediaType, content: $content) {
       id
       mediaUrl
       mediaType
+      content
     }
   }
 `;
@@ -152,56 +171,91 @@ const BrandingCircle = ({
     );
 };
 
+/**
+ * Componente para mostrar la miniatura de una historia.
+ * Si es video, muestra el primer frame usando expo-video.
+ */
+/**
+ * Componente optimizado para mostrar miniaturas.
+ * Si es video, genera una miniatura estática en lugar de usar un reproductor real.
+ */
+const StoryMediaThumbnail = ({ uri, type, style }: { uri: string, type?: string, style: any }) => {
+    const [thumb, setThumb] = useState<string | null>(null);
+    const isVideo = type === 'video' || uri.toLowerCase().includes('.mp4');
+
+    useEffect(() => {
+        if (isVideo) {
+            const getThumb = async () => {
+                try {
+                    const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(uri, { time: 0 });
+                    setThumb(thumbUri);
+                } catch (e) {
+                    console.warn("Error generando miniatura:", e);
+                }
+            };
+            getThumb();
+        }
+    }, [uri, isVideo]);
+
+    if (isVideo) {
+        return (
+            <View style={[style, { overflow: 'hidden', backgroundColor: '#000' }]}>
+                {thumb ? (
+                    <Image source={{ uri: thumb }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                ) : (
+                    <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111', justifyContent: 'center', alignItems: 'center' }]}>
+                        <ActivityIndicator size="small" color="white" />
+                    </View>
+                )}
+                <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.1)' }]}>
+                    <Ionicons name="play" size={24} color="rgba(255,255,255,0.6)" />
+                </View>
+            </View>
+        );
+    }
+
+    return <Image source={{ uri }} style={style} contentFit="cover" />;
+};
+
 export const StoriesBar = () => {
     const { user: currentUser } = useAuth();
     const { colors } = useTheme();
     const [isCreating, setIsCreating] = useState(false);
-    const [viewerVisible, setViewerVisible] = useState(false);
+    const [isViewerVisible, setIsViewerVisible] = useState(false);
+    const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
+    const [viewerInitialIndex, setViewerInitialIndex] = useState(0);
     const [selectedUserStories, setSelectedUserStories] = useState<Story[]>([]);
     const [viewedStoryIds, setViewedStoryIds] = useState<string[]>([]); // El cerebro de la app
     const { uploadMedia } = useMediaUpload();
 
-    // TAREA 2: CARGAR MEMORIA AL MONTAR O CAMBIAR USUARIO
+    const { data: viewedData } = useQuery<{ getViewedStoryIds: string[] }>(GET_VIEWED_STORY_IDS);
+
     useEffect(() => {
-        if (!currentUser?.id) {
-            setViewedStoryIds([]);
-            return;
+        if (viewedData?.getViewedStoryIds) {
+            setViewedStoryIds(viewedData.getViewedStoryIds);
         }
+    }, [viewedData]);
 
-        const loadViewedStories = async () => {
-            try {
-                const key = `${VIEWED_STORIES_BASE_KEY}${currentUser.id}`;
-                const saved = await AsyncStorage.getItem(key);
-                if (saved) {
-                    setViewedStoryIds(JSON.parse(saved));
-                } else {
-                    setViewedStoryIds([]);
-                }
-            } catch (err) {
-                console.error("Error cargando vistos:", err);
-            }
-        };
-        loadViewedStories();
-    }, [currentUser?.id]);
+    const [markViewedMutation] = useMutation(MARK_STORY_AS_VIEWED);
 
-    // TAREA 2: FUNCIÓN PARA AGREGAR A MEMORIA
+    // TAREA 2: FUNCIÓN PARA AGREGAR A MEMORIA (AHORA CLOUD)
     const markStoryAsViewed = async (storyId: string) => {
         if (!currentUser?.id) return;
+        if (viewedStoryIds.includes(storyId)) return;
 
-        setViewedStoryIds(prev => {
-            if (prev.includes(storyId)) return prev;
-            const updated = [...prev, storyId];
-            
-            // Guardamos inmediatamente con la llave del usuario
-            const key = `${VIEWED_STORIES_BASE_KEY}${currentUser.id}`;
-            AsyncStorage.setItem(key, JSON.stringify(updated)).catch(err => {
-                console.error("Error guardando vistos:", err);
-            });
-            return updated;
-        });
+        // Update local instantaneo
+        setViewedStoryIds(prev => [...prev, storyId]);
+
+        // Sincronizar con servidor
+        try {
+            await markViewedMutation({ variables: { storyId } });
+        } catch (err) {
+            console.error("Error al sincronizar vista con servidor:", err);
+        }
     };
 
     const { data, loading, refetch } = useQuery<GetActiveStoriesData>(GET_ACTIVE_STORIES, {
+        variables: { limit: 20, offset: 0 },
         pollInterval: 300000,
     });
 
@@ -227,56 +281,53 @@ export const StoriesBar = () => {
 
     const handleDeleteStory = (storyId: string) => {
         deleteStory({ variables: { id: storyId } });
-        setViewerVisible(false);
+        setIsViewerVisible(false);
     };
 
-    const handleCreateStory = async () => {
-        try {
-            const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ['images', 'videos'],
-                allowsEditing: true,
-                aspect: [9, 16],
-                quality: 0.8,
-                videoMaxDuration: 45,
-            });
-
-            if (result.canceled || !result.assets[0]) return;
-
-            setIsCreating(true);
-            const asset = result.assets[0];
-            const type = asset.type === 'video' ? 'video' : 'image';
-            let finalUri = asset.uri;
-
-            if (type === 'video') {
-                finalUri = await VideoCompressor.compress(asset.uri, { compressionMethod: 'auto', maxSize: 720 });
-            } else {
-                finalUri = await ImageCompressor.compress(asset.uri, { maxWidth: 720, quality: 0.8 });
-            }
-
-            const mediaUrl = await uploadMedia(finalUri, type === 'video' ? 'video/mp4' : 'image/jpeg', 'stories');
-            await createStory({ variables: { mediaUrl, mediaType: type } });
-
-        } catch (err: any) {
-            console.error('Error al crear historia:', err);
-            Toast.show({ type: 'error', text1: 'Error en la subida', text2: err.message });
-        } finally {
-            setIsCreating(false);
-        }
+    const handleAddStory = async () => {
+        setIsCreateModalVisible(true);
     };
 
-    const storiesByUser = useMemo(() => {
+    const allStoriesByUser = useMemo(() => {
         if (!data?.getActiveStories) return [];
         const groupedMap = new Map<string, Story>();
         const sorted = [...data.getActiveStories].sort((a, b) => 
             new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime()
         );
         sorted.forEach((story) => {
-            if (story.userId !== currentUser?.id) {
-                groupedMap.set(story.userId, story);
-            }
+            groupedMap.set(story.userId, story);
         });
         return Array.from(groupedMap.values()).reverse();
-    }, [data, currentUser]);
+    }, [data]);
+
+    const myStories = useMemo(() => {
+        return data?.getActiveStories
+            ?.filter((s: Story) => s.userId === currentUser?.id)
+            ?.sort((a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime()) || [];
+    }, [data, currentUser?.id]);
+
+    const hasMyStories = myStories.length > 0;
+
+    const navigationQueue = useMemo(() => {
+        const queue: Story[] = [];
+        // Primero mis historias si existen
+        if (hasMyStories) {
+            const myStory = allStoriesByUser.find(s => s.userId === currentUser?.id);
+            if (myStory) queue.push(myStory);
+        }
+        // Luego las de los amigos en el orden en que salen en la barra (reverse())
+        allStoriesByUser.forEach(s => {
+            if (s.userId !== currentUser?.id) {
+                queue.push(s);
+            }
+        });
+        return queue;
+    }, [allStoriesByUser, currentUser?.id, hasMyStories]);
+
+    const storiesByUser = useMemo(() => {
+        return navigationQueue.filter(s => s.userId !== currentUser?.id);
+    }, [navigationQueue, currentUser?.id]);
+    
     const handleOpenStories = (userId: string) => {
         const userStories = data?.getActiveStories
             ?.filter((s: Story) => s.userId === userId)
@@ -284,7 +335,7 @@ export const StoriesBar = () => {
             
         if (userStories.length > 0) {
             setSelectedUserStories(userStories);
-            setViewerVisible(true);
+            if (!isViewerVisible) setIsViewerVisible(true);
         }
     };
 
@@ -305,7 +356,11 @@ export const StoriesBar = () => {
                     userStories={userStories} 
                     viewedStoryIds={viewedStoryIds}
                 >
-                    <Image source={{ uri: item.mediaUrl }} style={styles.previewImage} />
+                    <StoryMediaThumbnail 
+                        uri={item.mediaUrl!} 
+                        type={item.mediaType} 
+                        style={styles.previewImage} 
+                    />
                     <View style={[styles.badgeAvatarContainer, { borderColor: colors.background }]}>
                         <Image 
                             source={{ uri: item.user?.photoUrl || 'https://via.placeholder.com/150' }} 
@@ -321,18 +376,12 @@ export const StoriesBar = () => {
     }
 
     const renderAddStory = () => {
-        // Obtenemos las historias del usuario actual y las ordenamos ASCENDENTE
-        const myStories = data?.getActiveStories
-            ?.filter((s: Story) => s.userId === currentUser?.id)
-            ?.sort((a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime()) || [];
-            
         const hasStories = myStories.length > 0;
         const lastMyStory = hasStories ? [...myStories].reverse()[0] : null;
 
         return (
             <View style={styles.userControlsContainer}>
-                {/* BOTÓN AGREGAR CON DEGRADADO COMPLETO */}
-                <TouchableOpacity style={styles.storyItem} onPress={handleCreateStory} disabled={isCreating}>
+                <TouchableOpacity style={styles.storyItem} onPress={handleAddStory} disabled={isCreating}>
                     <BrandingCircle isActive={!isCreating} colors={colors} userStories={[{ id: 'dummy' }] as Story[]} viewedStoryIds={[]}>
                         <View style={[styles.addBtnContent, { backgroundColor: colors.surface }]}>
                             {isCreating ? (
@@ -345,7 +394,6 @@ export const StoriesBar = () => {
                     <Text style={[styles.username, { color: colors.text }]}>Agregar</Text>
                 </TouchableOpacity>
 
-                {/* MI HISTORIA CON DEGRADADO SEGMENTADO INDIVIDUAL - Solo aparece si hay historias */}
                 {hasStories && (
                     <TouchableOpacity 
                         style={styles.storyItem} 
@@ -357,8 +405,9 @@ export const StoriesBar = () => {
                             userStories={myStories} 
                             viewedStoryIds={viewedStoryIds}
                         >
-                            <Image 
-                                source={{ uri: lastMyStory?.mediaUrl || currentUser?.photoUrl || 'https://via.placeholder.com/150' }} 
+                            <StoryMediaThumbnail 
+                                uri={lastMyStory?.mediaUrl || currentUser?.photoUrl || 'https://via.placeholder.com/150'} 
+                                type={lastMyStory?.mediaType}
                                 style={styles.previewImage}
                             />
                             <View style={[styles.badgeAvatarContainer, { borderColor: colors.background }]}>
@@ -390,17 +439,30 @@ export const StoriesBar = () => {
                 contentContainerStyle={styles.listContent}
             />
 
-            {viewerVisible && (
+            {isViewerVisible && (
                 <StoryViewerModal 
-                    visible={viewerVisible} 
-                    stories={selectedUserStories} 
-                    initialIndex={0} 
-                    onClose={() => setViewerVisible(false)} 
+                    visible={isViewerVisible} 
+                    userQueue={navigationQueue}
+                    allActiveStories={data?.getActiveStories || []}
+                    initialUserIndex={navigationQueue.findIndex(u => u.userId === (selectedUserStories[0]?.userId || currentUser?.id))}
+                    onClose={() => {
+                        setIsViewerVisible(false);
+                        setSelectedUserStories([]);
+                    }} 
                     onStorySeen={markStoryAsViewed}
                     onDeleteStory={handleDeleteStory}
                     currentUserId={currentUser?.id}
                 />
             )}
+
+            <CreateStoryModal 
+                visible={isCreateModalVisible}
+                onClose={() => setIsCreateModalVisible(false)}
+                onStoryCreated={() => {
+                    setIsCreateModalVisible(false);
+                    refetch();
+                }}
+            />
         </View>
     );
 };

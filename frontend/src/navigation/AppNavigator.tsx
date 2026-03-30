@@ -12,8 +12,12 @@ import ChatListScreen from '../features/chat/screens/ChatListScreen';
 import ChatRoomScreen from '../features/chat/screens/ChatRoomScreen';
 import ChatDetailsScreen from '../features/chat/screens/ChatDetailsScreen';
 import NewChatScreen from '../features/chat/screens/NewChatScreen';
+import StoryViewerScreen from '../features/stories/screens/StoryViewerScreen';
 import { useTheme } from '../theme/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useQuery, useSubscription } from '@apollo/client/react';
+import { GET_USER_CONVERSATIONS, INBOX_UPDATE_SUBSCRIPTION } from '../features/chat/graphql/chat.operations';
+import { useAuth } from '../features/auth/context/AuthContext';
 
 export type AppStackParamList = {
     MainTabs: { screen?: string; params?: any } | undefined;
@@ -22,6 +26,7 @@ export type AppStackParamList = {
     ChatDetails: { id_conversation: string };
     NewChat: undefined;
     Profile: { userId?: string } | undefined;
+    StoryViewer: { userId: string; initialStoryId?: string };
 };
 
 export type AppTabParamList = {
@@ -36,6 +41,26 @@ const Tab = createBottomTabNavigator<AppTabParamList>();
 function MainTabNavigator() {
     const insets = useSafeAreaInsets();
     const { colors, isDark } = useTheme();
+    const { user } = useAuth() as any;
+
+    // Obtener conversaciones para calcular el total de mensajes no leídos
+    const { data: convData, refetch } = useQuery<any>(GET_USER_CONVERSATIONS, {
+        skip: !user,
+        fetchPolicy: 'cache-and-network',
+    });
+
+    // Suscribirse a nuevos mensajes para actualizar el badge en tiempo real
+    useSubscription(INBOX_UPDATE_SUBSCRIPTION, {
+        skip: !user,
+        onData: () => {
+            refetch();
+        }
+    });
+
+    const totalUnread = React.useMemo(() => {
+        if (!convData?.getUserConversations) return 0;
+        return convData.getUserConversations.reduce((acc: number, conv: any) => acc + (conv.unreadCount || 0), 0);
+    }, [convData]);
 
     return (
         <Tab.Navigator
@@ -114,7 +139,27 @@ function MainTabNavigator() {
             })}
         >
             <Tab.Screen name="Feed" component={FeedScreen} options={{ tabBarLabel: 'Inicio' }} />
-            <Tab.Screen name="ChatList" component={ChatListScreen} options={{ tabBarLabel: 'Mensajes' }} />
+            <Tab.Screen 
+                name="ChatList" 
+                component={ChatListScreen} 
+                options={{ 
+                    tabBarLabel: 'Mensajes',
+                    tabBarBadge: totalUnread > 0 ? totalUnread : undefined,
+                    tabBarBadgeStyle: {
+                        backgroundColor: '#FF3B30',
+                        color: 'white',
+                        fontSize: 10,
+                        fontWeight: 'bold',
+                        minWidth: 18,
+                        height: 18,
+                        borderRadius: 9,
+                        textAlign: 'center',
+                        textAlignVertical: 'center',
+                        lineHeight: Platform.OS === 'ios' ? 18 : 16, // El lineHeight ayuda mucho en iOS
+                        padding: 0,
+                    }
+                }} 
+            />
             <Tab.Screen
                 name="Profile"
                 component={ProfileScreen}
@@ -144,6 +189,14 @@ export default function AppNavigator() {
                 options={{ 
                     presentation: 'fullScreenModal',
                     animation: 'slide_from_bottom' 
+                }} 
+            />
+            <Stack.Screen 
+                name="StoryViewer" 
+                component={StoryViewerScreen} 
+                options={{ 
+                    presentation: 'fullScreenModal',
+                    animation: 'fade' 
                 }} 
             />
         </Stack.Navigator>

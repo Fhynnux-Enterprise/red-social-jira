@@ -7,7 +7,9 @@ export const useMediaUpload = () => {
 
   const pickImage = async (
     allowsEditing: boolean = true,
-    mediaTypes: 'Images' | 'Videos' | 'All' = 'Images'
+    mediaTypes: 'Images' | 'Videos' | 'All' = 'Images',
+    videoMaxDuration: number = 60,
+    quality: number = 0.7
   ) => {
     // 1. Pedir permisos
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -19,10 +21,11 @@ export const useMediaUpload = () => {
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
       allowsEditing,
       mediaTypes:
-        mediaTypes === 'Images' ? ['images' as const] :
-        mediaTypes === 'Videos' ? ['videos' as const] :
-        ['images', 'videos'] as const,
-      quality: 0.8,
+        mediaTypes === 'Images' ? ImagePicker.MediaTypeOptions.Images :
+        mediaTypes === 'Videos' ? ImagePicker.MediaTypeOptions.Videos :
+        ImagePicker.MediaTypeOptions.All,
+      videoMaxDuration,
+      quality,
     });
 
     if (pickerResult.canceled) {

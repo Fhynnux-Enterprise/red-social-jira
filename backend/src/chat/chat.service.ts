@@ -20,26 +20,39 @@ export class ChatService {
     ) { }
 
     async getOrCreateOneOnOneChat(currentUserId: string, targetUserId: string): Promise<Conversation> {
-        if (currentUserId === targetUserId) {
-            throw new BadRequestException('No puedes crear un chat contigo mismo');
-        }
+        const isSelfChat = currentUserId === targetUserId;
 
-        // 1. Buscar si ya existe la conversación entre ambos (y que sea solo de 2 personas)
-        const existingConversation = await this.conversationRepository
+        // 1. Buscar si ya existe la conversación entre ambos (o consigo mismo)
+        let existingQuery = this.conversationRepository
             .createQueryBuilder('conversation')
             .innerJoin('conversation.participants', 'p1')
-            .innerJoin('conversation.participants', 'p2')
-            .where('p1.id_user = :currentUserId', { currentUserId })
-            .andWhere('p2.id_user = :targetUserId', { targetUserId })
-            .andWhere((qb) => {
+            .where('p1.id_user = :currentUserId', { currentUserId });
+
+        if (isSelfChat) {
+            existingQuery = existingQuery.andWhere((qb) => {
                 const subQuery = qb.subQuery()
                     .select('COUNT(*)')
                     .from(Participant, 'p')
                     .where('p.id_conversation = conversation.id_conversation')
                     .getQuery();
-                return subQuery + ' = 2';
-            })
-            .getOne();
+                // Self chat tiene solo 1 participante
+                return subQuery + ' = 1';
+            });
+        } else {
+            existingQuery = existingQuery
+                .innerJoin('conversation.participants', 'p2')
+                .andWhere('p2.id_user = :targetUserId', { targetUserId })
+                .andWhere((qb) => {
+                    const subQuery = qb.subQuery()
+                        .select('COUNT(*)')
+                        .from(Participant, 'p')
+                        .where('p.id_conversation = conversation.id_conversation')
+                        .getQuery();
+                    return subQuery + ' = 2';
+                });
+        }
+
+        const existingConversation = await existingQuery.getOne();
 
         if (existingConversation) {
             return existingConversation;
@@ -50,21 +63,28 @@ export class ChatService {
         const savedConversation = await this.conversationRepository.save(newConversation);
 
         // 3. Crear los participantes
+        const participantsToSave: Participant[] = [];
+        
         const p1 = this.participantRepository.create({
             id_user: currentUserId,
             id_conversation: savedConversation.id_conversation,
         });
-        const p2 = this.participantRepository.create({
-            id_user: targetUserId,
-            id_conversation: savedConversation.id_conversation,
-        });
+        participantsToSave.push(p1);
 
-        await this.participantRepository.save([p1, p2]);
+        if (!isSelfChat) {
+            const p2 = this.participantRepository.create({
+                id_user: targetUserId,
+                id_conversation: savedConversation.id_conversation,
+            });
+            participantsToSave.push(p2);
+        }
+
+        await this.participantRepository.save(participantsToSave);
 
         return savedConversation;
     }
 
-    async sendMessage(senderId: string, id_conversation: string, content: string): Promise<Message> {
+    async sendMessage(senderId: string, id_conversation: string, content: string, imageUrl?: string, videoUrl?: string, storyId?: string): Promise<Message> {
         const conversation = await this.conversationRepository.findOne({
             where: { id_conversation },
             relations: ['participants']
@@ -81,7 +101,10 @@ export class ChatService {
         }
 
         const newMessage = this.messageRepository.create({
-            content,
+            content: content || '',
+            imageUrl: imageUrl || undefined,
+            videoUrl: videoUrl || undefined,
+            storyId: storyId || undefined,
             id_conversation,
             id_user: senderId,
             isRead: false,
@@ -124,12 +147,14 @@ export class ChatService {
         return conversations;
     }
 
-    async getMessagesByConversation(id_conversation: string, currentUserId: string): Promise<Message[]> {
+    async getMessagesByConversation(id_conversation: string, currentUserId: string, limit = 20, offset = 0): Promise<Message[]> {
         return this.messageRepository.createQueryBuilder('message')
             .leftJoinAndSelect('message.sender', 'sender')
             .where('message.id_conversation = :id_conversation', { id_conversation })
             .andWhere('(message.deletedFor IS NULL OR NOT (:currentUserId = ANY (message.deletedFor)))', { currentUserId })
-            .orderBy('message.createdAt', 'ASC')
+            .orderBy('message.createdAt', 'DESC')
+            .take(limit)
+            .skip(offset)
             .getMany();
     }
 
@@ -150,7 +175,7 @@ export class ChatService {
         }
 
         const currentDeletedFor = message.deletedFor || [];
-        
+
         if (!currentDeletedFor.includes(currentUserId)) {
             message.deletedFor = [...currentDeletedFor, currentUserId];
             await this.messageRepository.save(message);
@@ -234,6 +259,43 @@ export class ChatService {
         return this.messageRepository.createQueryBuilder('message')
             .where('message.id_conversation = :id_conversation', { id_conversation })
             .andWhere('message.content ILIKE :term', { term: `%${searchTerm}%` })
+            .andWhere('message.isDeletedForAll = false')
+            .andWhere('(message.deletedFor IS NULL OR NOT (:currentUserId = ANY (message.deletedFor)))', { currentUserId })
+            .orderBy('message.createdAt', 'DESC')
+            .getMany();
+    }
+
+    async markMessagesAsRead(id_conversation: string, userId: string): Promise<boolean> {
+        // Marcamos como leídos todos los mensajes de la conversación que no fueron enviados por el usuario actual
+        // y que aún no están marcados como leídos.
+        await this.messageRepository.createQueryBuilder()
+            .update(Message)
+            .set({ isRead: true })
+            .where('id_conversation = :id_conversation', { id_conversation })
+            .andWhere('id_user != :userId', { userId })
+            .andWhere('isRead = false')
+            .execute();
+
+        // Buscamos el último mensaje para guardarlo como referencia en el participante
+        const lastMessage = await this.messageRepository.findOne({
+            where: { id_conversation },
+            order: { createdAt: 'DESC' }
+        });
+
+        if (lastMessage) {
+            await this.participantRepository.update(
+                { id_conversation, id_user: userId },
+                { id_last_read_message: lastMessage.id_message }
+            );
+        }
+
+        return true;
+    }
+
+    async getChatMedia(id_conversation: string, currentUserId: string): Promise<Message[]> {
+        return this.messageRepository.createQueryBuilder('message')
+            .where('message.id_conversation = :id_conversation', { id_conversation })
+            .andWhere('(message.imageUrl IS NOT NULL OR message.videoUrl IS NOT NULL)')
             .andWhere('message.isDeletedForAll = false')
             .andWhere('(message.deletedFor IS NULL OR NOT (:currentUserId = ANY (message.deletedFor)))', { currentUserId })
             .orderBy('message.createdAt', 'DESC')

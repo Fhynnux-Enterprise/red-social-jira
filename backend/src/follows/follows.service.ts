@@ -65,4 +65,30 @@ export class FollowsService {
     async getFollowingCount(id_user: string): Promise<number> {
         return this.followRepository.count({ where: { id_follower: id_user } });
     }
+
+    async getOnlineFollowing(id_user: string): Promise<User[]> {
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+        
+        const follows = await this.followRepository
+            .createQueryBuilder('follow')
+            .innerJoinAndSelect('follow.following', 'following')
+            .where('follow.id_follower = :id_user', { id_user })
+            .andWhere('following.lastActiveAt > :fiveMinutesAgo', { fiveMinutesAgo })
+            .orderBy('following.lastActiveAt', 'DESC')
+            .take(30) // Límite de seguridad para el carrusel
+            .getMany();
+            
+        return follows.map(f => f.following);
+    }
+
+    async getOnlineFollowingCount(id_user: string): Promise<number> {
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+        
+        return this.followRepository
+            .createQueryBuilder('follow')
+            .innerJoin('follow.following', 'following')
+            .where('follow.id_follower = :id_user', { id_user })
+            .andWhere('following.lastActiveAt > :fiveMinutesAgo', { fiveMinutesAgo })
+            .getCount();
+    }
 }

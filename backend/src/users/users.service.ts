@@ -159,4 +159,9 @@ export class UsersService {
       .take(20)
       .getMany();
   }
+
+  async pingPresence(userId: string): Promise<boolean> {
+    await this.userRepository.update({ id: userId }, { lastActiveAt: new Date() });
+    return true;
+  }
 }

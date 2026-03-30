@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, MoreThan } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Story } from './entities/story.entity';
+import { StoryView } from './entities/story-view.entity';
 import { SupabaseService } from '../storage/supabase.service';
 
 @Injectable()
@@ -12,28 +13,46 @@ export class StoriesService {
   constructor(
     @InjectRepository(Story)
     private readonly storiesRepository: Repository<Story>,
+    @InjectRepository(StoryView)
+    private readonly storyViewsRepository: Repository<StoryView>,
     private readonly supabaseService: SupabaseService,
   ) {}
 
-  async create(userId: string, mediaUrl: string, mediaType: string) {
+  async create(userId: string, mediaUrl: string, mediaType: string, content?: string) {
     const story = this.storiesRepository.create({
       userId,
       mediaUrl,
       mediaType,
+      content,
     });
     return this.storiesRepository.save(story);
   }
 
-  // Obtiene historias activas agrupadas por usuario
-  async getActiveStories() {
-    const now = new Date();
-    // NOTA: Para agrupamiento real complejo se puede hacer en el resolver o con QueryBuilder
-    // Aquí traemos todas las vigentes ordenadas por fecha
-    return this.storiesRepository.find({
-      where: { expiresAt: MoreThan(now) },
-      relations: ['user'],
-      order: { createdAt: 'DESC' },
-    });
+  // Obtiene historias activas agrupadas por usuario (paginado)
+  async getActiveStories(skip: number = 0, take: number = 20) {
+    return this.storiesRepository.createQueryBuilder('story')
+      .leftJoinAndSelect('story.user', 'user')
+      .where('story.expiresAt > CURRENT_TIMESTAMP')
+      .orderBy('story.createdAt', 'DESC')
+      .skip(skip)
+      .take(take)
+      .getMany();
+  }
+
+  async markAsViewed(userId: string, storyId: string) {
+    const existing = await this.storyViewsRepository.findOne({ where: { userId, storyId } });
+    if (existing) return existing;
+
+    const view = this.storyViewsRepository.create({ userId, storyId });
+    return this.storyViewsRepository.save(view);
+  }
+
+  async getViewedStoryIds(userId: string): Promise<string[]> {
+      const views = await this.storyViewsRepository.find({
+          where: { userId },
+          select: ['storyId']
+      });
+      return views.map(v => v.storyId);
   }
 
   async delete(userId: string, storyId: string): Promise<boolean> {
@@ -70,19 +89,19 @@ export class StoriesService {
 
     for (const story of expiredStories) {
       try {
-        // Extraemos la ruta relativa al bucket 'chunchi-media'
-        // La URL suele ser: .../chunchi-media/stories/usuario/archivo.ext
         const urlParts = story.mediaUrl.split('/chunchi-media/');
         if (urlParts.length > 1) {
           const filePath = urlParts[1];
           await this.supabaseService.deleteFile(filePath);
           this.logger.log(`Archivo eliminado de Storage: ${filePath}`);
         }
-
-        await this.storiesRepository.remove(story);
-        this.logger.log(`Registro de historia ${story.id} eliminado correctamente.`);
       } catch (error) {
-        this.logger.error(`Error al limpiar historia ${story.id}: ${error.message}`);
+        this.logger.error(`Error al limpiar archivo en storage para historia ${story.id}: ${error.message}`);
+      } finally {
+        // IMPORTANTE: Eliminamos el registro de la BD siempre, 
+        // para evitar que la historia siga apareciendo si falla el storage.
+        await this.storiesRepository.remove(story);
+        this.logger.log(`Registro de historia ${story.id} eliminado de la base de datos.`);
       }
     }
 

@@ -15,6 +15,7 @@ import { customToastConfig } from '../../../components/CustomToast';
 
 import { useMute } from '../../../contexts/MuteContext';
 import { useVideoCache } from '../../../hooks/useVideoCache';
+import { ActualFullscreenVideo } from './ActualFullscreenVideo';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -521,147 +522,7 @@ const styles = StyleSheet.create({
     },
 });
 
-/**
- * Bloque de reproducción nativo para el modo pantalla completa.
- * Aislado para asegurar que useVideoPlayer reciba una URL válida desde el primer render.
- */
-const ActualFullscreenVideo = ({ 
-    url, isMuted, toggleMute, colors, insets, isVisible, onClose 
-}: any) => {
-    const [showFsControls, setShowFsControls] = useState(false);
-    const [isScrubbing, setIsScrubbing] = useState(false);
-    const [scrubPosition, setScrubPosition] = useState(0);
-    const [duration, setDuration] = useState(0);
-    const [position, setPosition] = useState(0);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const fsControlsTimeout = useRef<any>(null);
-    const top = insets?.top ?? 12;
-    const safeBottom = (insets?.bottom ?? 0) + 56;
-
-    const fsPlayer = useVideoPlayer(url, (player: any) => {
-        player.loop = true;
-        player.muted = isMuted;
-        player.play();
-    });
-
-    useEffect(() => {
-        if (fsPlayer) fsPlayer.muted = isMuted;
-    }, [isMuted, fsPlayer]);
-
-    const isMounted = useRef(true);
-    useEffect(() => {
-        isMounted.current = true;
-        return () => { isMounted.current = false; };
-    }, []);
-
-    useEffect(() => {
-        if (!fsPlayer || !isVisible) return;
-        const interval = setInterval(() => {
-            if (!isMounted.current) return;
-            try {
-                if (fsPlayer && typeof fsPlayer === 'object') {
-                    const dur = fsPlayer.duration;
-                    const pos = fsPlayer.currentTime;
-                    const playing = fsPlayer.playing;
-                    if (dur) setDuration(dur * 1000);
-                    setPosition(pos * 1000);
-                    setIsPlaying(playing);
-                }
-            } catch (e) {}
-        }, 250);
-        return () => clearInterval(interval);
-    }, [fsPlayer, isVisible]);
-
-    const swipeTranslateY = useRef(new Animated.Value(0)).current;
-    const swipePan = useRef(PanResponder.create({
-        onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 12 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5,
-        onPanResponderMove: (_, g) => swipeTranslateY.setValue(g.dy),
-        onPanResponderRelease: (_, g) => {
-            if (Math.abs(g.dy) > 100 || Math.abs(g.vy) > 0.9) {
-                Animated.timing(swipeTranslateY, {
-                    toValue: g.dy > 0 ? SCREEN_HEIGHT : -SCREEN_HEIGHT,
-                    duration: 220,
-                    useNativeDriver: true,
-                }).start(() => onClose());
-            } else {
-                Animated.spring(swipeTranslateY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
-            }
-        },
-        onPanResponderTerminate: () => Animated.spring(swipeTranslateY, { toValue: 0, useNativeDriver: true }).start(),
-    })).current;
-
-    const bgOpacity = swipeTranslateY.interpolate({
-        inputRange: [-SCREEN_HEIGHT, 0, SCREEN_HEIGHT],
-        outputRange: [0, 1, 0],
-    });
-
-    const handleFsPress = () => {
-        try {
-            if (fsPlayer && typeof fsPlayer.play === 'function') {
-                if (fsPlayer.playing) {
-                    fsPlayer.pause();
-                    setShowFsControls(true);
-                    if (fsControlsTimeout.current) clearTimeout(fsControlsTimeout.current);
-                } else {
-                    fsPlayer.play();
-                    setShowFsControls(false);
-                }
-            }
-        } catch (e) {}
-    };
-
-    const resetFsTimeout = () => {
-        if (fsControlsTimeout.current) clearTimeout(fsControlsTimeout.current);
-        fsControlsTimeout.current = setTimeout(() => setShowFsControls(false), 2500);
-    };
-
-    return (
-        <>
-            <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: bgOpacity }]} />
-            <Animated.View style={{ flex: 1, transform: [{ translateY: swipeTranslateY }] }} {...swipePan.panHandlers}>
-                {fsPlayer && (
-                    <VideoView key={url} player={fsPlayer} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls={false} />
-                )}
-                <TouchableOpacity activeOpacity={1} onPress={handleFsPress} style={StyleSheet.absoluteFill} />
-                {(showFsControls || !isPlaying) && (
-                    <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center' }]} pointerEvents="none">
-                        <View style={styles.centerControl}>
-                            <Ionicons name={isPlaying ? 'pause' : 'play'} size={60} color="white" style={{ marginLeft: isPlaying ? 0 : 6 }} />
-                        </View>
-                    </View>
-                )}
-                <TouchableOpacity onPress={() => onClose()} style={[styles.muteButtonContainer, { top: top + 16 }]} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                    <Ionicons name="close" size={20} color="white" />
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.muteButtonContainer, { top: top + 64 }]} activeOpacity={0.7} onPress={toggleMute} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                    <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={18} color="white" />
-                </TouchableOpacity>
-                {isScrubbing && (
-                    <View style={styles.timeDisplay} pointerEvents="none">
-                        <Text style={styles.timeText}>{Math.floor(scrubPosition/1000/60)}:{(Math.floor(scrubPosition/1000)%60).toString().padStart(2, '0')} / {Math.floor(duration/1000/60)}:{(Math.floor(duration/1000)%60).toString().padStart(2, '0')}</Text>
-                    </View>
-                )}
-                <View style={[styles.sliderContainer, { bottom: safeBottom }]}>
-                    <Slider
-                        style={{ width: SCREEN_WIDTH - 32, height: 40 }}
-                        minimumValue={0}
-                        maximumValue={duration || 1}
-                        value={isScrubbing ? scrubPosition : position}
-                        minimumTrackTintColor={colors.primary}
-                        maximumTrackTintColor="rgba(255,255,255,0.3)"
-                        thumbTintColor="#FFF"
-                        onValueChange={(v) => { setIsScrubbing(true); setScrubPosition(v); }}
-                        onSlidingComplete={(v) => {
-                            setIsScrubbing(false);
-                            if (fsPlayer) fsPlayer.currentTime = v / 1000;
-                            resetFsTimeout();
-                        }}
-                    />
-                </View>
-            </Animated.View>
-        </>
-    );
-};
+// El componente ActualFullscreenVideo ha sido extraído a su propio archivo.
 
 /**
  * Modal de pantalla completa con soporte de caché.

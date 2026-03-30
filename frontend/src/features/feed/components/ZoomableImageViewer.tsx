@@ -17,15 +17,21 @@ import {
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system/legacy';
 
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { useVideoCache } from '../../../hooks/useVideoCache';
+
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+const AnimatedVideoView = Animated.createAnimatedComponent(VideoView);
 
 interface ZoomableImageViewerProps {
     url: string;
+    mediaType?: 'image' | 'video';
     onClose: () => void;
     onZoomChange?: (isZoomed: boolean) => void;
 }
 
-export default function ZoomableImageViewer({ url, onClose, onZoomChange }: ZoomableImageViewerProps) {
+export default function ZoomableImageViewer({ url, mediaType = 'image', onClose, onZoomChange }: ZoomableImageViewerProps) {
     const [isMenuVisible, setIsMenuVisible] = useState(false);
     const scale = useSharedValue(1);
     const focalX = useSharedValue(0);
@@ -170,6 +176,14 @@ export default function ZoomableImageViewer({ url, onClose, onZoomChange }: Zoom
             runOnJS(setIsMenuVisible)(true);
         });
 
+    const { cachedSource } = useVideoCache(mediaType === 'video' ? url : '');
+    const player = useVideoPlayer(mediaType === 'video' ? (cachedSource || url) : null, (p) => {
+        if (p) {
+            p.loop = true;
+            p.play();
+        }
+    });
+
     const animatedStyle = useAnimatedStyle(() => {
         return {
             transform: [
@@ -193,11 +207,22 @@ export default function ZoomableImageViewer({ url, onClose, onZoomChange }: Zoom
     return (
         <GestureHandlerRootView style={styles.container}>
             <GestureDetector gesture={composedGestures}>
-                <Animated.Image
-                    source={{ uri: url }}
-                    style={[styles.image, animatedStyle]}
-                    resizeMode="contain"
-                />
+                <Animated.View style={[styles.image, animatedStyle]}>
+                    {mediaType === 'image' ? (
+                        <Animated.Image
+                            source={{ uri: url }}
+                            style={styles.image}
+                            resizeMode="contain"
+                        />
+                    ) : (
+                        <AnimatedVideoView
+                            player={player}
+                            style={styles.image}
+                            contentFit="contain"
+                            nativeControls={true}
+                        />
+                    )}
+                </Animated.View>
             </GestureDetector>
 
             {/* Modal de Opciones (Bottom Sheet) */}

@@ -17,8 +17,14 @@ import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { AppStackParamList } from '../../../navigation/AppNavigator';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import { GET_CONVERSATION, DELETE_CONVERSATION_FOR_ME, GET_USER_CONVERSATIONS } from '../graphql/chat.operations';
+import { GET_CONVERSATION, DELETE_CONVERSATION_FOR_ME, GET_USER_CONVERSATIONS, GET_CHAT_MEDIA } from '../graphql/chat.operations';
 import Toast from 'react-native-toast-message';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import ZoomableImageViewer from '../../feed/components/ZoomableImageViewer';
+import { InteractiveVideoPlayer } from '../../feed/components/ImageCarousel';
+import { Dimensions, FlatList, Animated } from 'react-native';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function ChatDetailsScreen() {
     const { colors, isDark } = useTheme();
@@ -28,8 +34,22 @@ export default function ChatDetailsScreen() {
     const { id_conversation } = route.params || {};
     const { user: currentUser } = useAuth() as any;
     const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
+    
+    // Estados para el visor multimedia
+    const [viewerVisible, setViewerVisible] = useState(false);
+    const [viewerActiveIndex, setViewerActiveIndex] = useState(0);
+    const viewerTranslateY = React.useRef(new Animated.Value(0)).current;
+    const viewerBgOpacity = viewerTranslateY.interpolate({
+        inputRange: [-SCREEN_HEIGHT, 0, SCREEN_HEIGHT],
+        outputRange: [0, 1, 0]
+    });
 
-    const { data, loading } = useQuery(GET_CONVERSATION, {
+    const { data, loading } = useQuery<any>(GET_CONVERSATION, {
+        variables: { id_conversation },
+        skip: !id_conversation,
+    });
+
+    const { data: mediaData, loading: loadingMedia } = useQuery<any>(GET_CHAT_MEDIA, {
         variables: { id_conversation },
         skip: !id_conversation,
     });
@@ -133,15 +153,47 @@ export default function ChatDetailsScreen() {
                 {/* Multimedia */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <Text style={[styles.sectionTitle, { color: colors.text }]}>Multimedia</Text>
-                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                                Multimedia ({mediaData?.getChatMedia?.length || 0})
+                            </Text>
+                        </View>
                     </View>
-                    <View style={styles.emptyMediaContainer}>
-                        <Ionicons name="image-outline" size={32} color={colors.textSecondary} style={{ marginBottom: 8, opacity: 0.5 }} />
-                        <Text style={[styles.emptyMediaText, { color: colors.textSecondary }]}>
-                            Aún no existen archivos multimedia compartidos.
-                        </Text>
-                    </View>
+                    
+                    {mediaData?.getChatMedia?.length > 0 ? (
+                        <FlatList 
+                            data={mediaData.getChatMedia}
+                            horizontal 
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.mediaScroll}
+                            keyExtractor={(item) => item.id_message}
+                            renderItem={({ item: msg, index }) => (
+                                <TouchableOpacity 
+                                    style={styles.mediaItem}
+                                    onPress={() => {
+                                        setViewerActiveIndex(index);
+                                        setViewerVisible(true);
+                                    }}
+                                >
+                                    {msg.videoUrl ? (
+                                        <ChatMediaThumbnail url={msg.videoUrl} />
+                                    ) : (
+                                        <Image 
+                                            source={{ uri: msg.imageUrl }} 
+                                            style={styles.mediaThumbnail} 
+                                        />
+                                    )}
+                                </TouchableOpacity>
+                            )}
+                        />
+                    ) : (
+                        <View style={styles.emptyMediaContainer}>
+                            <Ionicons name="image-outline" size={32} color={colors.textSecondary} style={{ marginBottom: 8, opacity: 0.5 }} />
+                            <Text style={[styles.emptyMediaText, { color: colors.textSecondary }]}>
+                                {loadingMedia ? 'Cargando multimedia...' : 'Aún no existen archivos multimedia compartidos.'}
+                            </Text>
+                        </View>
+                    )}
                 </View>
 
                 {/* Options List */}
@@ -190,6 +242,66 @@ export default function ChatDetailsScreen() {
                         </View>
                     </View>
                 </View>
+            </Modal>
+
+            {/* Visor Multimedia a Pantalla Completa */}
+            <Modal 
+                visible={viewerVisible} 
+                transparent 
+                animationType="fade"
+                onRequestClose={() => setViewerVisible(false)}
+            >
+                <Animated.View style={[styles.viewerContainer, { opacity: viewerBgOpacity }]}>
+                    <TouchableOpacity
+                        style={[styles.closeViewerButton, { top: insets.top + 20 }]}
+                        onPress={() => setViewerVisible(false)}
+                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                    >
+                        <Ionicons name="close" size={24} color="#FFF" />
+                    </TouchableOpacity>
+
+                    <FlatList
+                        data={mediaData?.getChatMedia || []}
+                        horizontal
+                        pagingEnabled
+                        initialScrollIndex={viewerActiveIndex}
+                        getItemLayout={(_, index) => ({
+                            length: SCREEN_WIDTH,
+                            offset: SCREEN_WIDTH * index,
+                            index,
+                        })}
+                        showsHorizontalScrollIndicator={false}
+                        keyExtractor={(item) => item.id_message}
+                        onMomentumScrollEnd={(event) => {
+                            const xOffset = event.nativeEvent.contentOffset.x;
+                            const index = Math.round(xOffset / SCREEN_WIDTH);
+                            setViewerActiveIndex(index);
+                        }}
+                        renderItem={({ item, index }) => (
+                            <View style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, justifyContent: 'center', backgroundColor: 'transparent' }}>
+                                {item.videoUrl ? (
+                                    <InteractiveVideoPlayer
+                                        url={item.videoUrl}
+                                        width={SCREEN_WIDTH}
+                                        height={SCREEN_HEIGHT}
+                                        isMuted={false}
+                                        shouldPlay={viewerActiveIndex === index && viewerVisible}
+                                        toggleMute={() => {}}
+                                        isInteractive={true}
+                                        hideExpand={true}
+                                        contentFit="contain"
+                                        insets={insets}
+                                    />
+                                ) : (
+                                    <ZoomableImageViewer 
+                                        url={item.imageUrl}
+                                        onClose={() => setViewerVisible(false)}
+                                    />
+                                )}
+                            </View>
+                        )}
+                    />
+                </Animated.View>
             </Modal>
         </View>
     );
@@ -296,6 +408,36 @@ const styles = StyleSheet.create({
         fontSize: 14,
         textAlign: 'center',
     },
+    mediaScroll: {
+        paddingLeft: 20,
+        paddingRight: 10,
+    },
+    mediaItem: {
+        width: 100,
+        height: 100,
+        marginRight: 10,
+        borderRadius: 12,
+        overflow: 'hidden',
+        backgroundColor: '#000',
+    },
+    mediaThumbnail: {
+        width: '100%',
+        height: '100%',
+    },
+    videoThumbnailContainer: {
+        flex: 1,
+        position: 'relative',
+    },
+    videoPlayOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.3)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     optionsList: {
         marginHorizontal: 20,
         borderRadius: 20,
@@ -359,4 +501,42 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '500',
     },
+    viewerContainer: {
+        flex: 1,
+        backgroundColor: '#000',
+    },
+    closeViewerButton: {
+        position: 'absolute',
+        right: 16,
+        zIndex: 100,
+        padding: 8,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        borderRadius: 20,
+    },
 });
+
+/**
+ * Componente para miniaturas de video visuales.
+ * Muestra el primer frame del video.
+ */
+const ChatMediaThumbnail = ({ url }: { url: string }) => {
+    const player = useVideoPlayer(url, (p) => {
+        p.muted = true;
+        p.loop = true;
+        p.pause(); // Mantener pausado, solo queremos el frame inicial
+    });
+
+    return (
+        <View style={styles.videoThumbnailContainer}>
+            <VideoView
+                player={player}
+                style={styles.mediaThumbnail}
+                contentFit="cover"
+                nativeControls={false}
+            />
+            <View style={styles.videoPlayOverlay}>
+                <Ionicons name="play" size={20} color="#FFF" />
+            </View>
+        </View>
+    );
+};
