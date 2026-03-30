@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableWithoutFeedback, Animated, Dimensions, TouchableOpacity, ActivityIndicator, Image, StatusBar, ScrollView, FlatList, PanResponder, TextInput, Platform, Keyboard } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, Modal, TouchableWithoutFeedback, Animated, Dimensions, TouchableOpacity, ActivityIndicator, Image, StatusBar, FlatList, PanResponder, TextInput, Platform, Keyboard } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoCache } from '../../../hooks/useVideoCache';
 import { Story } from '../components/StoriesBar';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import ConfirmationModal from '../../../features/comments/components/ConfirmationModal';
 import { useMutation } from '@apollo/client/react';
 import { GET_OR_CREATE_CHAT, SEND_MESSAGE } from '../../chat/graphql/chat.operations';
 import Toast from 'react-native-toast-message';
@@ -15,8 +14,8 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface StoryViewerModalProps {
     visible: boolean;
-    userQueue: Story[]; // Lista representativa de usuarios
-    allActiveStories: Story[]; // Todas las historias de todos
+    userQueue: Story[];
+    allActiveStories: Story[];
     initialUserIndex: number;
     onClose: () => void;
     onStorySeen?: (id: string) => void;
@@ -27,7 +26,7 @@ interface StoryViewerModalProps {
 /**
  * REPRODUCTOR INTERNO PARA VIDEOS
  */
-const StoryVideoPlayer = ({ url, onFinish, isPaused = false }: { url: string, onFinish: () => void, isPaused?: boolean }) => {
+const StoryVideoPlayer = ({ url, onFinish, isPaused = false, onDurationLoaded }: { url: string, onFinish: () => void, isPaused?: boolean, onDurationLoaded?: (d: number) => void }) => {
     const { cachedSource } = useVideoCache(url);
     const player = useVideoPlayer(cachedSource || url, (p) => {
         p.loop = false;
@@ -41,14 +40,33 @@ const StoryVideoPlayer = ({ url, onFinish, isPaused = false }: { url: string, on
     }, [player, isPaused]);
 
     useEffect(() => {
+        let mounted = true;
         if (!player) return;
+        
+        const checkDuration = async () => {
+            while (mounted) {
+                try {
+                    // Verificamos que el reproductor aún sea válido antes de acceder a duration
+                    if (player && typeof player.duration === 'number' && player.duration > 0) {
+                        onDurationLoaded?.(player.duration * 1000);
+                        break;
+                    }
+                } catch (e) { break; }
+                await new Promise(r => setTimeout(r, 300));
+            }
+        };
+        checkDuration();
+
         const sub = player.addListener('playToEnd', onFinish);
-        return () => sub.remove();
-    }, [player, onFinish]);
+        return () => {
+            mounted = false;
+            sub.remove();
+        };
+    }, [player, onFinish, onDurationLoaded]);
 
     if (!player || !cachedSource) {
         return (
-            <View style={[styles.loaderContainer, { backgroundColor: 'transparent' }]}>
+            <View style={styles.loaderContainer}>
                 <ActivityIndicator color="white" size="large" />
             </View>
         );
@@ -57,83 +75,64 @@ const StoryVideoPlayer = ({ url, onFinish, isPaused = false }: { url: string, on
     return <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />;
 };
 
-/**
- * PÁGINA INDIVIDUAL PARA UN USUARIO (Bloque de sus historias)
- */
 const UserStoryPage = ({ 
-    userId, 
-    userStories, 
-    isActiveUser, 
-    onFinishUser, 
-    onClose,
-    onStorySeen,
-    onDeleteStory,
-    currentUserId,
-    getOrCreateChat,
-    sendMessage 
+    userId, userStories, isActiveUser, onFinishUser, onClose,
+    onStorySeen, onDeleteStory, currentUserId, getOrCreateChat, sendMessage, panHandlers 
 }: any) => {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isPaused, setIsPaused] = useState(false);
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [reply, setReply] = useState('');
     const [isSending, setIsSending] = useState(false);
+    const [storyDuration, setStoryDuration] = useState(5000); // Default 5s
     const animValue = useRef(new Animated.Value(0)).current;
-    const { colors } = useTheme();
+    
     const insets = useSafeAreaInsets();
     const currentStory = userStories[currentIndex] || userStories[0];
 
-    // Resetear historias de este usuario al activarse
     useEffect(() => {
         if (isActiveUser) {
             setCurrentIndex(0);
             animValue.setValue(0);
             setIsPaused(false);
+            setStoryDuration(currentStory?.mediaType === 'image' ? 5000 : 15000); 
         }
-    }, [isActiveUser]);
+    }, [isActiveUser, userStories]);
+
+    const handleDurationLoaded = (duration: number) => {
+        if (currentStory?.mediaType === 'video') {
+            setStoryDuration(duration);
+        }
+    };
 
     useEffect(() => {
-        if (isActiveUser && currentStory && onStorySeen) {
-            onStorySeen(currentStory.id);
-        }
+        if (isActiveUser && currentStory && onStorySeen) onStorySeen(currentStory.id);
     }, [currentIndex, isActiveUser, currentStory, onStorySeen]);
 
-    // Timer de progreso
     useEffect(() => {
-        if (!isActiveUser || isPaused || showDeleteConfirm) {
+        if (!isActiveUser || isPaused) {
             animValue.stopAnimation();
             return;
         }
-
-        const duration = currentStory?.mediaType === 'image' ? 5000 : 45000;
         
-        animValue.setValue(0); // Reiniciamos siempre al inicio del efecto
+        animValue.setValue(0);
         const anim = Animated.timing(animValue, {
             toValue: 1,
-            duration: duration,
+            duration: storyDuration,
             useNativeDriver: false,
         });
-
-        anim.start(({ finished }) => {
-            if (finished) handleNext();
-        });
-
+        anim.start(({ finished }) => { if (finished) handleNext(); });
         return () => animValue.stopAnimation();
-    }, [isActiveUser, currentIndex, isPaused, showDeleteConfirm, currentStory]);
+    }, [isActiveUser, currentIndex, isPaused, currentStory, storyDuration]);
 
     const handleNext = () => {
         animValue.setValue(0);
-        if (currentIndex < userStories.length - 1) {
-            setCurrentIndex(prev => prev + 1);
-        } else {
-            onFinishUser();
-        }
+        if (currentIndex < userStories.length - 1) setCurrentIndex(prev => prev + 1);
+        else onFinishUser();
     };
 
     const handlePrev = () => {
         animValue.setValue(0);
-        if (currentIndex > 0) {
-            setCurrentIndex(prev => prev - 1);
-        }
+        if (currentIndex > 0) setCurrentIndex(prev => prev - 1);
     };
 
     const handleTap = (evt: any) => {
@@ -168,108 +167,140 @@ const UserStoryPage = ({
         ? `${currentStory.user.firstName || ''} ${currentStory.user.lastName || ''}`.trim()
         : `@${currentStory?.user?.username || 'Usuario'}`;
 
+    const getTimeAgo = (dateStr: string) => {
+        if (!dateStr) return '';
+        try {
+            const now = new Date();
+            const then = new Date(dateStr);
+            const diffMs = now.getTime() - then.getTime();
+            const diffMin = Math.floor(diffMs / 60000);
+            const diffHrs = Math.floor(diffMin / 60);
+
+            if (diffMin < 1) return 'Ahora';
+            if (diffMin < 60) return `${diffMin} min`;
+            return `${diffHrs} h`;
+        } catch (e) { return ''; }
+    };
+
     return (
         <View style={{ width: SCREEN_WIDTH, height: '100%' }}>
-            {/* Medios */}
-            <TouchableWithoutFeedback 
-                onPressIn={() => setIsPaused(true)} 
-                onPressOut={() => setIsPaused(false)} 
-                onPress={handleTap}
-            >
-                <View style={styles.mediaWrapper}>
-                    {currentStory?.mediaType === 'video' ? (
-                        <StoryVideoPlayer key={currentStory.mediaUrl} url={currentStory.mediaUrl} onFinish={handleNext} isPaused={isPaused || !isActiveUser} />
-                    ) : (
-                        <Image source={{ uri: currentStory?.mediaUrl }} style={styles.fullImage} resizeMode="contain" />
-                    )}
-                </View>
-            </TouchableWithoutFeedback>
-
-            {/* Descripcion */}
-            {currentStory?.content && !isPaused && (
-                <View style={[styles.captionContainer, { bottom: 170 }]}>
-                    <Text style={styles.captionText}>{currentStory.content}</Text>
-                </View>
-            )}
-
-            {/* Header */}
-            <View style={[styles.header, { top: insets.top + 35 }]}>
-                <View style={styles.userInfo}>
-                    <Image source={{ uri: currentStory?.user?.photoUrl || '' }} style={styles.avatar} />
-                    <Text style={styles.username}>{displayName}</Text>
-                </View>
-                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                    <Ionicons name="close" size={28} color="white" />
-                </TouchableOpacity>
-            </View>
-
-            {/* Progress Bar */}
-            <View style={[styles.progressContainer, { top: insets.top + 10 }]}>
-                {userStories.map((_: any, idx: number) => {
-                    let w: any = '0%';
-                    if (idx < currentIndex) w = '100%';
-                    if (idx === currentIndex) w = animValue.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
-                    return (
-                        <View key={idx} style={styles.barBackground}>
-                            <Animated.View style={[styles.progressBar, { width: w, backgroundColor: 'white' }]} />
+            {/* CAPA DE GESTOS UNIFICADA */}
+            <View style={StyleSheet.absoluteFill} {...panHandlers}>
+                <TouchableWithoutFeedback 
+                    onPressIn={() => setIsPaused(true)} 
+                    onPressOut={() => setIsPaused(false)} 
+                    onPress={handleTap}
+                >
+                    <View style={styles.mediaWrapper}>
+                        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+                            {currentStory?.mediaType === 'video' ? (
+                                <StoryVideoPlayer 
+                                    key={currentStory.mediaUrl} 
+                                    url={currentStory.mediaUrl} 
+                                    onFinish={handleNext} 
+                                    isPaused={isPaused || !isActiveUser} 
+                                    onDurationLoaded={handleDurationLoaded}
+                                />
+                            ) : (
+                                <Image source={{ uri: currentStory?.mediaUrl }} style={styles.fullImage} resizeMode="contain" />
+                            )}
                         </View>
-                    );
-                })}
+                    </View>
+                </TouchableWithoutFeedback>
             </View>
 
-            {/* Answer Bar */}
-            {currentUserId !== userId && (
-                <View style={[styles.commentInputContainer, { bottom: 34 + insets.bottom }]}>
-                    <View style={styles.commentInputWrapper}>
-                        <TextInput
-                            style={styles.commentInput}
-                            placeholder="Enviar mensaje..."
-                            placeholderTextColor="rgba(255,255,255,0.6)"
-                            value={reply}
-                            onChangeText={setReply}
-                            onFocus={() => setIsPaused(true)}
-                        />
-                        {reply.trim().length > 0 && (
-                            <TouchableOpacity style={styles.commentSendBtn} onPress={handleSendReply}>
-                                <Ionicons name="send" size={20} color="white" />
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                    <View style={styles.quickReactions}>
-                        <TouchableOpacity onPress={() => { setReply('🔥'); handleSendReply(); }}><Text style={styles.reactionText}>🔥</Text></TouchableOpacity>
-                        <TouchableOpacity onPress={() => { setReply('❤️'); handleSendReply(); }}><Text style={styles.reactionText}>❤️</Text></TouchableOpacity>
-                    </View>
+            <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                {/* Progress */}
+                <View style={[styles.progressContainer, { top: insets.top + 10 }]}>
+                    {userStories.map((_: any, idx: number) => {
+                        let w: any = '0%';
+                        if (idx < currentIndex) w = '100%';
+                        if (idx === currentIndex) w = animValue.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+                        return (
+                            <View key={idx} style={styles.barBackground}>
+                                <Animated.View style={[styles.progressBar, { width: w, backgroundColor: 'white' }]} />
+                            </View>
+                        );
+                    })}
                 </View>
-            )}
+
+                {/* Header */}
+                <View style={[styles.header, { top: insets.top + 35 }]}>
+                    <View style={styles.userInfo}>
+                        <Image source={{ uri: currentStory?.user?.photoUrl || '' }} style={styles.avatar} />
+                        <View>
+                            <Text style={styles.username}>{displayName}</Text>
+                            <Text style={styles.timeAgo}>Hace {getTimeAgo(currentStory?.createdAt)}</Text>
+                        </View>
+                    </View>
+                    <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                        <Ionicons name="close" size={28} color="white" />
+                    </TouchableOpacity>
+                </View>
+
+                {/* Caption */}
+                {currentStory?.content && !isPaused && (
+                    <View style={[styles.captionContainer, { bottom: 170 }]}>
+                        <Text style={styles.captionText}>{currentStory.content}</Text>
+                    </View>
+                )}
+
+                {/* Answer Bar */}
+                {currentUserId !== userId && (
+                    <View style={[styles.commentInputContainer, { bottom: 34 + insets.bottom }]}>
+                        <View style={styles.commentInputWrapper}>
+                            <TextInput
+                                style={styles.commentInput}
+                                placeholder="Enviar mensaje..."
+                                placeholderTextColor="rgba(255,255,255,0.6)"
+                                value={reply}
+                                onChangeText={setReply}
+                                onFocus={() => setIsPaused(true)}
+                            />
+                            {reply.trim().length > 0 && (
+                                <TouchableOpacity style={styles.commentSendBtn} onPress={handleSendReply}>
+                                    <Ionicons name="send" size={20} color="white" />
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                        <View style={styles.quickReactions}>
+                            <TouchableOpacity onPress={() => { setReply('🔥'); handleSendReply(); }}><Text style={styles.reactionText}>🔥</Text></TouchableOpacity>
+                            <TouchableOpacity onPress={() => { setReply('❤️'); handleSendReply(); }}><Text style={styles.reactionText}>❤️</Text></TouchableOpacity>
+                        </View>
+                    </View>
+                )}
+            </View>
         </View>
     );
 };
 
-/**
- * MODAL PRINCIPAL: CARROUSEL DE USUARIOS
- */
 export const StoryViewerModal = ({ visible, userQueue, allActiveStories, initialUserIndex, onClose, onStorySeen, onDeleteStory, currentUserId }: StoryViewerModalProps) => {
     const [activeUserIndex, setActiveUserIndex] = useState(initialUserIndex);
     const flatListRef = useRef<FlatList>(null);
     const pan = useRef(new Animated.ValueXY()).current;
     const isClosing = useRef(false);
-
+    
     const [getOrCreateChat] = useMutation<any>(GET_OR_CREATE_CHAT);
     const [sendMessage] = useMutation<any>(SEND_MESSAGE);
 
     const panResponder = useRef(
         PanResponder.create({
             onStartShouldSetPanResponder: () => false,
-            onMoveShouldSetPanResponder: (_, gs) => gs.dy > 10 && Math.abs(gs.dx) < 10,
+            onMoveShouldSetPanResponderCapture: (_, gs) => {
+                if (isClosing.current) return false;
+                return gs.dy > 10 && Math.abs(gs.dy) > Math.abs(gs.dx);
+            },
             onPanResponderMove: (_, gs) => {
+                if (isClosing.current) return;
                 pan.setValue({ x: 0, y: Math.max(0, gs.dy) });
             },
             onPanResponderRelease: (_, gs) => {
+                if (isClosing.current) return;
                 if (gs.dy > 150) {
                     isClosing.current = true;
-                    Animated.timing(pan, { toValue: { x: 0, y: SCREEN_HEIGHT }, duration: 200, useNativeDriver: true }).start(onClose);
+                    Animated.timing(pan, { toValue: { x: 0, y: SCREEN_HEIGHT }, duration: 180, useNativeDriver: true }).start(onClose);
                 } else {
-                    Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: true }).start();
+                    Animated.spring(pan, { toValue: { x: 0, y: 0 }, friction: 8, tension: 40, useNativeDriver: true }).start();
                 }
             }
         })
@@ -290,25 +321,21 @@ export const StoryViewerModal = ({ visible, userQueue, allActiveStories, initial
 
     return (
         <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-            <Animated.View 
-                style={[styles.container, { transform: [{ translateY: pan.y }] }]}
-                {...panResponder.panHandlers}
-            >
+            <Animated.View style={[styles.container, { transform: [{ translateY: pan.y }] }]}>
                 <FlatList
                     ref={flatListRef}
                     data={userQueue}
-                    keyExtractor={(item) => item.userId}
+                    keyExtractor={(u) => u.userId}
                     horizontal
                     pagingEnabled
                     showsHorizontalScrollIndicator={false}
                     initialScrollIndex={initialUserIndex >= 0 ? initialUserIndex : 0}
-                    getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
+                    getItemLayout={(_, i) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * i, index: i })}
                     onScroll={onScroll}
                     scrollEventThrottle={16}
                     extraData={activeUserIndex}
-                    windowSize={3}
                     renderItem={({ item, index }) => {
-                        const userStories = allActiveStories.filter(s => s.userId === item.userId).sort((a,b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime());
+                        const userStories = allActiveStories.filter((s: Story) => s.userId === item.userId).sort((a: Story, b: Story) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime());
                         return (
                             <UserStoryPage 
                                 userId={item.userId}
@@ -321,20 +348,21 @@ export const StoryViewerModal = ({ visible, userQueue, allActiveStories, initial
                                 currentUserId={currentUserId}
                                 getOrCreateChat={getOrCreateChat}
                                 sendMessage={sendMessage}
+                                panHandlers={panResponder.panHandlers}
                             />
                         );
                     }}
                 />
-
-                <Toast 
-                    position="bottom"
-                    bottomOffset={SCREEN_HEIGHT / 2 - 50} 
-                    config={{
-                        success: ({ text1 }: any) => (
-                            <View style={styles.squareToast}><Ionicons name="checkmark-circle" size={50} color="white" /><Text style={styles.squareToastText}>{text1}</Text></View>
-                        )
-                    }}
-                />
+                <Toast position="bottom" bottomOffset={SCREEN_HEIGHT / 2 - 75} config={{
+                    success: ({ text1 }: any) => (
+                        <View style={styles.toastContainer}>
+                            <View style={styles.squareToast}>
+                                <Ionicons name="checkmark-circle" size={50} color="white" />
+                                <Text style={styles.squareToastText}>{text1}</Text>
+                            </View>
+                        </View>
+                    )
+                }} />
             </Animated.View>
         </Modal>
     );
@@ -342,25 +370,27 @@ export const StoryViewerModal = ({ visible, userQueue, allActiveStories, initial
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: 'black' },
-    mediaWrapper: { flex: 1, marginHorizontal: 8, borderRadius: 20, overflow: 'hidden' },
+    mediaWrapper: { flex: 1, marginHorizontal: 8, borderRadius: 20, overflow: 'hidden', backgroundColor: '#111' },
     fullImage: { flex: 1, width: '100%', height: '100%' },
     header: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 },
     userInfo: { flexDirection: 'row', alignItems: 'center' },
-    avatar: { width: 32, height: 32, borderRadius: 16, marginRight: 10, borderWidth: 1, borderColor: 'white' },
-    username: { color: 'white', fontWeight: 'bold' },
-    closeButton: { padding: 8, zIndex: 20 },
+    avatar: { width: 44, height: 44, borderRadius: 22, marginRight: 12, borderWidth: 1.5, borderColor: 'white' },
+    username: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+    timeAgo: { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginTop: 0 },
+    closeButton: { padding: 8 },
     progressContainer: { position: 'absolute', left: 10, right: 10, flexDirection: 'row', height: 2, gap: 4 },
     barBackground: { flex: 1, height: 2, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 1, overflow: 'hidden' },
     progressBar: { height: '100%' },
-    captionContainer: { position: 'absolute', left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.35)', padding: 15, zIndex: 5 },
+    captionContainer: { position: 'absolute', left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.35)', padding: 15 },
     captionText: { color: '#FFF', fontSize: 16, textAlign: 'center' },
     commentInputContainer: { position: 'absolute', left: 0, right: 0, flexDirection: 'row', padding: 16, alignItems: 'center' },
-    commentInputWrapper: { flex: 1, flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 22, paddingHorizontal: 16, marginRight: 10 },
+    commentInputWrapper: { flex: 1, flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 22, paddingHorizontal: 16 },
     commentInput: { flex: 1, color: 'white', paddingVertical: 10 },
-    commentSendBtn: { backgroundColor: '#FF6524', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-    quickReactions: { flexDirection: 'row', gap: 12 },
+    commentSendBtn: { backgroundColor: '#FF6524', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
+    quickReactions: { flexDirection: 'row', gap: 12, marginLeft: 10 },
     reactionText: { fontSize: 24 },
-    loaderContainer: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
+    loaderContainer: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'black' },
     squareToast: { backgroundColor: 'rgba(0,0,0,0.85)', width: 150, height: 150, borderRadius: 25, justifyContent: 'center', alignItems: 'center' },
-    squareToastText: { color: 'white', fontWeight: 'bold', marginTop: 12 }
+    squareToastText: { color: 'white', fontWeight: 'bold', marginTop: 12, textAlign: 'center', paddingHorizontal: 10 },
+    toastContainer: { width: SCREEN_WIDTH, alignItems: 'center', justifyContent: 'center' }
 });

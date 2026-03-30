@@ -186,7 +186,8 @@ type Query {
   searchMessagesInChat(id_conversation: String!, searchTerm: String!): [Message!]!
   getConversation(id_conversation: String!): Conversation
   getChatMedia(id_conversation: String!): [Message!]!
-  getActiveStories: [Story!]!
+  getActiveStories(limit: Int! = 20, offset: Int! = 0): [Story!]!
+  getViewedStoryIds: [String!]!
 }
 
 type Mutation {
@@ -215,6 +216,7 @@ type Mutation {
   sendMessage(id_conversation: String!, content: String = "", imageUrl: String, videoUrl: String, storyId: String): Message!
   markMessagesAsRead(id_conversation: String!): Boolean!
   createStory(mediaUrl: String!, mediaType: String!, content: String): Story!
+  markStoryAsViewed(storyId: String!): Boolean!
   deleteStory(id: String!): Boolean!
 }
 

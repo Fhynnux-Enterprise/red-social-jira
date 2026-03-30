@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
-    View, Text, FlatList, StyleSheet, Image, 
+    View, Text, FlatList, StyleSheet, 
     TouchableOpacity, ActivityIndicator 
 } from 'react-native';
+import { Image } from 'expo-image';
 import { gql } from '@apollo/client';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +13,7 @@ import Toast from 'react-native-toast-message';
 import Svg, { Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 import { useAuth } from '../../../features/auth/context/AuthContext';
 import { useTheme } from '../../../theme/ThemeContext';
 import { VideoView, useVideoPlayer } from 'expo-video';
@@ -44,8 +46,8 @@ interface GetActiveStoriesData {
 }
 
 const GET_ACTIVE_STORIES = gql`
-  query getActiveStories {
-    getActiveStories {
+  query getActiveStories($limit: Int, $offset: Int) {
+    getActiveStories(limit: $limit, offset: $offset) {
       id
       userId
       mediaUrl
@@ -60,6 +62,18 @@ const GET_ACTIVE_STORIES = gql`
         photoUrl
       }
     }
+  }
+`;
+
+const GET_VIEWED_STORY_IDS = gql`
+  query getViewedStoryIds {
+    getViewedStoryIds
+  }
+`;
+
+const MARK_STORY_AS_VIEWED = gql`
+  mutation MarkStoryAsViewed($storyId: String!) {
+    markStoryAsViewed(storyId: $storyId)
   }
 `;
 
@@ -161,24 +175,38 @@ const BrandingCircle = ({
  * Componente para mostrar la miniatura de una historia.
  * Si es video, muestra el primer frame usando expo-video.
  */
+/**
+ * Componente optimizado para mostrar miniaturas.
+ * Si es video, genera una miniatura estática en lugar de usar un reproductor real.
+ */
 const StoryMediaThumbnail = ({ uri, type, style }: { uri: string, type?: string, style: any }) => {
+    const [thumb, setThumb] = useState<string | null>(null);
     const isVideo = type === 'video' || uri.toLowerCase().includes('.mp4');
-    
-    // Solo inicializamos el player si es video
-    const player = useVideoPlayer(isVideo ? uri : null, (p) => {
-        p.muted = true;
-        p.pause();
-    });
 
-    if (isVideo && player) {
+    useEffect(() => {
+        if (isVideo) {
+            const getThumb = async () => {
+                try {
+                    const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(uri, { time: 0 });
+                    setThumb(thumbUri);
+                } catch (e) {
+                    console.warn("Error generando miniatura:", e);
+                }
+            };
+            getThumb();
+        }
+    }, [uri, isVideo]);
+
+    if (isVideo) {
         return (
             <View style={[style, { overflow: 'hidden', backgroundColor: '#000' }]}>
-                <VideoView
-                    player={player}
-                    style={StyleSheet.absoluteFill}
-                    contentFit="cover"
-                    nativeControls={false}
-                />
+                {thumb ? (
+                    <Image source={{ uri: thumb }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                ) : (
+                    <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111', justifyContent: 'center', alignItems: 'center' }]}>
+                        <ActivityIndicator size="small" color="white" />
+                    </View>
+                )}
                 <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.1)' }]}>
                     <Ionicons name="play" size={24} color="rgba(255,255,255,0.6)" />
                 </View>
@@ -186,7 +214,7 @@ const StoryMediaThumbnail = ({ uri, type, style }: { uri: string, type?: string,
         );
     }
 
-    return <Image source={{ uri }} style={style} />;
+    return <Image source={{ uri }} style={style} contentFit="cover" />;
 };
 
 export const StoriesBar = () => {
@@ -200,47 +228,34 @@ export const StoriesBar = () => {
     const [viewedStoryIds, setViewedStoryIds] = useState<string[]>([]); // El cerebro de la app
     const { uploadMedia } = useMediaUpload();
 
-    // TAREA 2: CARGAR MEMORIA AL MONTAR O CAMBIAR USUARIO
+    const { data: viewedData } = useQuery<{ getViewedStoryIds: string[] }>(GET_VIEWED_STORY_IDS);
+
     useEffect(() => {
-        if (!currentUser?.id) {
-            setViewedStoryIds([]);
-            return;
+        if (viewedData?.getViewedStoryIds) {
+            setViewedStoryIds(viewedData.getViewedStoryIds);
         }
+    }, [viewedData]);
 
-        const loadViewedStories = async () => {
-            try {
-                const key = `${VIEWED_STORIES_BASE_KEY}${currentUser.id}`;
-                const saved = await AsyncStorage.getItem(key);
-                if (saved) {
-                    setViewedStoryIds(JSON.parse(saved));
-                } else {
-                    setViewedStoryIds([]);
-                }
-            } catch (err) {
-                console.error("Error cargando vistos:", err);
-            }
-        };
-        loadViewedStories();
-    }, [currentUser?.id]);
+    const [markViewedMutation] = useMutation(MARK_STORY_AS_VIEWED);
 
-    // TAREA 2: FUNCIÓN PARA AGREGAR A MEMORIA
+    // TAREA 2: FUNCIÓN PARA AGREGAR A MEMORIA (AHORA CLOUD)
     const markStoryAsViewed = async (storyId: string) => {
         if (!currentUser?.id) return;
+        if (viewedStoryIds.includes(storyId)) return;
 
-        setViewedStoryIds(prev => {
-            if (prev.includes(storyId)) return prev;
-            const updated = [...prev, storyId];
-            
-            // Guardamos inmediatamente con la llave del usuario
-            const key = `${VIEWED_STORIES_BASE_KEY}${currentUser.id}`;
-            AsyncStorage.setItem(key, JSON.stringify(updated)).catch(err => {
-                console.error("Error guardando vistos:", err);
-            });
-            return updated;
-        });
+        // Update local instantaneo
+        setViewedStoryIds(prev => [...prev, storyId]);
+
+        // Sincronizar con servidor
+        try {
+            await markViewedMutation({ variables: { storyId } });
+        } catch (err) {
+            console.error("Error al sincronizar vista con servidor:", err);
+        }
     };
 
     const { data, loading, refetch } = useQuery<GetActiveStoriesData>(GET_ACTIVE_STORIES, {
+        variables: { limit: 20, offset: 0 },
         pollInterval: 300000,
     });
 

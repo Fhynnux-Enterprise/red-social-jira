@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, MoreThan } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Story } from './entities/story.entity';
+import { StoryView } from './entities/story-view.entity';
 import { SupabaseService } from '../storage/supabase.service';
 
 @Injectable()
@@ -12,6 +13,8 @@ export class StoriesService {
   constructor(
     @InjectRepository(Story)
     private readonly storiesRepository: Repository<Story>,
+    @InjectRepository(StoryView)
+    private readonly storyViewsRepository: Repository<StoryView>,
     private readonly supabaseService: SupabaseService,
   ) {}
 
@@ -25,13 +28,31 @@ export class StoriesService {
     return this.storiesRepository.save(story);
   }
 
-  // Obtiene historias activas agrupadas por usuario (usando CURRENT_TIMESTAMP de la BD para máxima precisión)
-  async getActiveStories() {
+  // Obtiene historias activas agrupadas por usuario (paginado)
+  async getActiveStories(skip: number = 0, take: number = 20) {
     return this.storiesRepository.createQueryBuilder('story')
       .leftJoinAndSelect('story.user', 'user')
       .where('story.expiresAt > CURRENT_TIMESTAMP')
       .orderBy('story.createdAt', 'DESC')
+      .skip(skip)
+      .take(take)
       .getMany();
+  }
+
+  async markAsViewed(userId: string, storyId: string) {
+    const existing = await this.storyViewsRepository.findOne({ where: { userId, storyId } });
+    if (existing) return existing;
+
+    const view = this.storyViewsRepository.create({ userId, storyId });
+    return this.storyViewsRepository.save(view);
+  }
+
+  async getViewedStoryIds(userId: string): Promise<string[]> {
+      const views = await this.storyViewsRepository.find({
+          where: { userId },
+          select: ['storyId']
+      });
+      return views.map(v => v.storyId);
   }
 
   async delete(userId: string, storyId: string): Promise<boolean> {
