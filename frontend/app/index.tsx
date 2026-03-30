@@ -35,10 +35,6 @@ function RootNavigator() {
 
 export default function App() {
     return (
-        <ApolloProvider client={apolloClient}>
-            <AuthProvider>
-                <RootNavigator />
-            </AuthProvider>
-        </ApolloProvider>
+        <RootNavigator />
     );
 }

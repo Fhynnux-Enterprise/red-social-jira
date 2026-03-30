@@ -23,7 +23,11 @@ import ProfileActions from '../components/ProfileActions';
 import ProfileBio from '../components/ProfileBio';
 import { GET_OR_CREATE_CHAT } from '../../chat/graphql/chat.operations';
 
-export default function ProfileScreen() {
+interface ProfileScreenProps {
+    userId?: string;
+}
+
+export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProps) {
     const { signOut } = useAuth();
     const navigation = useNavigation();
     const { colors, themeMode, setThemeMode, isDark } = useTheme();
@@ -48,12 +52,12 @@ export default function ProfileScreen() {
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
 
     const route = useRoute<any>();
-    const profileUserId = route.params?.userId || currentUserId;
+    const profileUserId = propsUserId || route.params?.userId || currentUserId;
     const isMyProfile = profileUserId === currentUserId;
 
     const PROFILE_PAGE_SIZE = 5;
 
-    const { data: gqlData, loading: gqlLoading, error: gqlError, refetch: refetchProfile, fetchMore, networkStatus } = useQuery(GET_USER_PROFILE, {
+    const { data: gqlData, loading: gqlLoading, error: gqlError, refetch: refetchProfile, fetchMore, networkStatus } = useQuery<any>(GET_USER_PROFILE, {
         variables: { id: profileUserId, limit: PROFILE_PAGE_SIZE, offset: 0 },
         skip: !profileUserId,
         fetchPolicy: 'cache-and-network',
@@ -68,7 +72,7 @@ export default function ProfileScreen() {
         setHasMore(true);
     }, [profileUserId]);
 
-    const { data: followData } = useQuery(IS_FOLLOWING, {
+    const { data: followData } = useQuery<any>(IS_FOLLOWING, {
         variables: { id_following: profileUserId },
         skip: !profileUserId || isMyProfile,
         fetchPolicy: 'cache-and-network',
@@ -76,7 +80,7 @@ export default function ProfileScreen() {
 
     const isFollowing = followData?.isFollowing || false;
 
-    const [toggleFollow] = useMutation(TOGGLE_FOLLOW, {
+    const [toggleFollow] = useMutation<any>(TOGGLE_FOLLOW, {
         variables: { id_following: profileUserId },
         update(cache, { data: { toggleFollow: newValue } }) {
             cache.writeQuery({
@@ -171,7 +175,7 @@ export default function ProfileScreen() {
         refetchQueries: [{ query: GET_POSTS }],
     });
 
-    const [getOrCreateChat, { loading: creatingChat }] = useMutation(GET_OR_CREATE_CHAT);
+    const [getOrCreateChat, { loading: creatingChat }] = useMutation<any>(GET_OR_CREATE_CHAT);
 
     const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
         if (viewableItems.length > 0) {
@@ -219,7 +223,7 @@ export default function ProfileScreen() {
         }
     };
 
-    if (gqlLoading && networkStatus === NetworkStatus.loading && !gqlData) {
+    if (gqlLoading && !gqlData) {
         return (
             <SafeAreaView style={styles.centerContainer}>
                 <ActivityIndicator size="large" color={colors.primary} />
@@ -227,10 +231,12 @@ export default function ProfileScreen() {
         );
     }
 
-    if (!userData) {
+    if (!userData && !gqlLoading) {
         return (
             <SafeAreaView style={styles.centerContainer}>
-                <Text style={styles.errorText}>No se encontró el perfil</Text>
+                <Text style={styles.errorText}>
+                    {gqlError ? 'Error al cargar el perfil' : 'No se encontró el perfil'}
+                </Text>
             </SafeAreaView>
         );
     }
@@ -536,9 +542,9 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         fontSize: 13,
     },
     floatingMenuButton: {
-        width: 34,
-        height: 34,
-        borderRadius: 10,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         backgroundColor: 'rgba(0, 0, 0, 0.4)',
         justifyContent: 'center',
         alignItems: 'center',

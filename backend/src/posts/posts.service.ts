@@ -99,6 +99,45 @@ export class PostsService {
         return posts;
     }
 
+    async searchPosts(query: string, limit: number = 5, offset: number = 0): Promise<Post[]> {
+        const term = `%${query}%`;
+        const posts = await this.postsRepository.createQueryBuilder('post')
+            .leftJoinAndSelect('post.author', 'author')
+            .leftJoinAndSelect('post.likes', 'likes')
+            .leftJoinAndSelect('likes.user', 'likeUser')
+            .leftJoinAndSelect('post.media', 'media')
+            .where('post.title ILIKE :term OR post.content ILIKE :term', { term })
+            .andWhere('post.deletedAt IS NULL')
+            .orderBy('post.createdAt', 'DESC')
+            .take(limit)
+            .skip(offset)
+            .getMany();
+
+        posts.forEach(p => {
+            if (p.media && p.media.length > 1) {
+                p.media.sort((a, b) => a.order - b.order);
+            }
+        });
+
+        if (posts.length > 0) {
+            const postIds = posts.map(p => p.id);
+            const rows: { postId: string; count: string }[] = await this.postsRepository.manager
+                .query(
+                    `SELECT id_post as "postId", COUNT(id_comment) as "count"
+                     FROM comments
+                     WHERE id_post = ANY($1) AND "deletedAt" IS NULL
+                     GROUP BY id_post`,
+                    [postIds],
+                );
+            const countMap = new Map(rows.map(r => [r.postId, parseInt(r.count, 10)]));
+            posts.forEach(p => {
+                (p as any).commentsCount = countMap.get(p.id) ?? 0;
+            });
+        }
+
+        return posts;
+    }
+
     async findByUser(authorId: string, limit: number = 5, offset: number = 0): Promise<Post[]> {
         const posts = await this.postsRepository.createQueryBuilder('post')
             .where('post.authorId = :authorId', { authorId })

@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
 import { useMutation } from '@apollo/client/react';
@@ -27,6 +28,7 @@ export interface PostCardProps {
     isViewable?: boolean;
     isFocused?: boolean;
     isOverlayActive?: boolean;
+    onPressAuthor?: () => void;
 }
 
 export default function PostCard({
@@ -34,14 +36,16 @@ export default function PostCard({
     currentUserId,
     onOptionsPress,
     onOpenComments,
-    isModalView,
+    isModalView = false,
     headerPanHandlers,
     isViewable,
-    isFocused,
-    isOverlayActive,
+    isFocused = true,
+    isOverlayActive = false,
+    onPressAuthor,
 }: PostCardProps) {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
+    const router = useRouter();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
 
     const authContext = useAuth() as any;
@@ -125,9 +129,12 @@ export default function PostCard({
     };
 
     const goToProfile = () => {
-        (navigation.navigate as any)('Profile', {
-            userId: item.author.id === userId ? undefined : item.author.id,
-        });
+        if (onPressAuthor) {
+            onPressAuthor();
+            return;
+        }
+        const profileUserId = item.author.id === userId ? undefined : item.author.id;
+        router.push({ pathname: '/profile', params: { userId: profileUserId } });
     };
 
     const content = item.content || '';
