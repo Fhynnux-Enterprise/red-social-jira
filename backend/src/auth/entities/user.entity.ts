@@ -8,6 +8,9 @@ import { Participant } from '../../chat/entities/participant.entity';
 import { Message } from '../../chat/entities/message.entity';
 import { Follow } from '../../follows/entities/follow.entity';
 import { Story } from '../../stories/entities/story.entity';
+import { JobOffer } from '../../jobs/entities/job-offer.entity';
+import { ProfessionalProfile } from '../../jobs/entities/professional-profile.entity';
+import { JobApplication } from '../../jobs/entities/job-application.entity';
 
 
 @ObjectType()
@@ -103,4 +106,16 @@ export class User {
     @Field(() => [Story], { nullable: true })
     @OneToMany(() => Story, (story) => story.user)
     stories: Story[];
+
+    @Field(() => [JobOffer], { nullable: true })
+    @OneToMany(() => JobOffer, (job) => job.author)
+    jobOffers: JobOffer[];
+
+    @Field(() => ProfessionalProfile, { nullable: true })
+    @OneToOne(() => ProfessionalProfile, (profile) => profile.user)
+    professionalProfile: ProfessionalProfile;
+
+    @Field(() => [JobApplication], { nullable: true })
+    @OneToMany(() => JobApplication, (application) => application.applicant)
+    jobApplications: JobApplication[];
 }

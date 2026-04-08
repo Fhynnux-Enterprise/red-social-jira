@@ -87,7 +87,7 @@ export default function CreateStoryModal({ visible, onClose, onStoryCreated }: C
             if (results && results.length > 0) {
                 const res = results[0];
                 const type = res.mimeType.startsWith('video/') ? 'video' : 'image';
-                
+
                 // Validación de duración: Máximo 45 segundos (45000ms)
                 if (type === 'video' && res.duration && res.duration > 45000) {
                     setAlertConfig({
@@ -122,9 +122,13 @@ export default function CreateStoryModal({ visible, onClose, onStoryCreated }: C
                 interval = setInterval(() => {
                     setProgress(prev => (prev < 90 ? prev + 5 : 90));
                 }, 300);
-                
+
                 try {
-                    finalUri = await Compressor.compress(media.uri, { compressionMethod: 'auto', maxSize: 720 });
+                    finalUri = await Compressor.compress(media.uri, {
+                        compressionMethod: 'manual',
+                        bitrate: 3000000, // 3.0 Mbps para nitidez y optimización de datos
+                        maxSize: 720      // Resolución óptima
+                    });
                 } finally {
                     clearInterval(interval);
                 }
@@ -133,16 +137,16 @@ export default function CreateStoryModal({ visible, onClose, onStoryCreated }: C
             setUploadStatus('uploading');
             setProgress(50);
             const uploadedUrl = await uploadMedia(finalUri, media.mimeType, 'stories');
-            
+
             setProgress(100);
             setUploadStatus('done');
 
-            await createStory({ 
-                variables: { 
-                    mediaUrl: uploadedUrl, 
-                    mediaType: media.type, 
-                    content: content.trim() || null 
-                } 
+            await createStory({
+                variables: {
+                    mediaUrl: uploadedUrl,
+                    mediaType: media.type,
+                    content: content.trim() || null
+                }
             });
 
             Toast.show({ type: 'success', text1: '¡Historia publicada!', text2: 'Se verá por 24 horas.' });

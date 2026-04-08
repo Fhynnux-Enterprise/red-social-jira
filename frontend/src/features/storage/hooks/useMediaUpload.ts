@@ -104,7 +104,8 @@ export const useMediaUpload = () => {
 
       if (!uploadResponse.ok) {
         const errorText = await uploadResponse.text();
-        throw new Error(`Error al subir a Supabase: ${errorText}`);
+        throw new Error(`Error al subir a Cloudflare R2: ${errorText}`);
+
       }
 
       // 5. Retornar la URL pública para guardarla en la base de datos

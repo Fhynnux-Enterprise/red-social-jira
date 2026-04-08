@@ -20,6 +20,14 @@ export default function RootLayout() {
                 <Stack.Screen name="index" options={{ headerShown: false }} />
                 <Stack.Screen name="search" options={{ headerShown: false }} />
                 <Stack.Screen name="profile" options={{ headerShown: false }} />
+                <Stack.Screen 
+                  name="jobs/create" 
+                  options={{ 
+                    headerShown: false,
+                    presentation: 'fullScreenModal',
+                    animation: 'slide_from_bottom'
+                  }} 
+                />
               </Stack>
             </MuteProvider>
             <Toast config={customToastConfig} position="top" topOffset={60} />

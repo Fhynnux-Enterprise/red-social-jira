@@ -162,12 +162,40 @@ export default function FeedScreen() {
         setIsOptionsMenuVisible(true);
     }, []);
 
-    const handleCreatePostPress = () => {
+    const handleCreatePostPress = useCallback(() => {
         setEditingPostId(undefined);
         setEditingPostContent('');
         setEditingPostTitle('');
         setIsModalVisible(true);
-    };
+    }, []);
+
+    const renderEmpty = useCallback(() => {
+        if (loading && networkStatus === 1) return null;
+        return (
+            <View style={styles.emptyContainer}>
+                <Ionicons name="newspaper-outline" size={80} color={colors.textSecondary} style={{ opacity: 0.2, marginBottom: 20 }} />
+                <Text style={styles.emptyTextTitle}>No hay publicaciones aún</Text>
+                <Text style={styles.emptyTextSub}>¡Vuelve a intentar recargar el contenido para ver si hay algo nuevo!</Text>
+                <TouchableOpacity 
+                    style={styles.emptyButton}
+                    onPress={handleRefresh}
+                    activeOpacity={0.8}
+                >
+                    <LinearGradient
+                        colors={[colors.primary, colors.secondary]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.emptyButtonGradient}
+                    >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Ionicons name="refresh-outline" size={20} color="white" />
+                            <Text style={styles.emptyButtonText}>Actualizar</Text>
+                        </View>
+                    </LinearGradient>
+                </TouchableOpacity>
+            </View>
+        );
+    }, [loading, networkStatus, colors, styles, handleRefresh]);
 
     // Configuración para detectar visibilidad de elementos
     const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
@@ -285,6 +313,7 @@ export default function FeedScreen() {
                         onEndReached={loadMorePosts}
                         onEndReachedThreshold={0.5}
                         ListFooterComponent={renderFooter}
+                        ListEmptyComponent={renderEmpty}
                         onViewableItemsChanged={onViewableItemsChanged}
                         viewabilityConfig={viewabilityConfig}
                         initialNumToRender={5}
@@ -487,5 +516,45 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         color: colors.error,
         textAlign: 'center',
         marginTop: 40,
+    },
+    emptyContainer: {
+        paddingVertical: 60,
+        paddingHorizontal: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    emptyTextTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: colors.text,
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    emptyTextSub: {
+        fontSize: 16,
+        color: colors.textSecondary,
+        textAlign: 'center',
+        marginBottom: 24,
+        lineHeight: 22,
+    },
+    emptyButton: {
+        borderRadius: 25,
+        overflow: 'hidden',
+        elevation: 4,
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+    },
+    emptyButtonGradient: {
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    emptyButtonText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
     },
 });

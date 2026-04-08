@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, MoreThan } from 'typeorm';
+import { Repository, LessThan } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Story } from './entities/story.entity';
 import { StoryView } from './entities/story-view.entity';
-import { SupabaseService } from '../storage/supabase.service';
+import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class StoriesService {
@@ -15,7 +15,7 @@ export class StoriesService {
     private readonly storiesRepository: Repository<Story>,
     @InjectRepository(StoryView)
     private readonly storyViewsRepository: Repository<StoryView>,
-    private readonly supabaseService: SupabaseService,
+    private readonly storageService: StorageService,
   ) {}
 
   async create(userId: string, mediaUrl: string, mediaType: string, content?: string) {
@@ -59,10 +59,8 @@ export class StoriesService {
     const story = await this.storiesRepository.findOne({ where: { id: storyId, userId } });
     if (!story) throw new Error('Historia no encontrada o no autorizada');
     try {
-      const urlParts = story.mediaUrl.split('/chunchi-media/');
-      if (urlParts.length > 1) {
-        const filePath = urlParts[1];
-        await this.supabaseService.deleteFile(filePath);
+      if (story.mediaUrl) {
+        await this.storageService.deleteFile(story.mediaUrl);
       }
       await this.storiesRepository.remove(story);
       return true;
@@ -89,16 +87,14 @@ export class StoriesService {
 
     for (const story of expiredStories) {
       try {
-        const urlParts = story.mediaUrl.split('/chunchi-media/');
-        if (urlParts.length > 1) {
-          const filePath = urlParts[1];
-          await this.supabaseService.deleteFile(filePath);
-          this.logger.log(`Archivo eliminado de Storage: ${filePath}`);
+        if (story.mediaUrl) {
+          await this.storageService.deleteFile(story.mediaUrl);
+          this.logger.log(`Archivo eliminado de R2 Storage: ${story.mediaUrl}`);
         }
       } catch (error) {
-        this.logger.error(`Error al limpiar archivo en storage para historia ${story.id}: ${error.message}`);
+        this.logger.error(`Error al limpiar archivo en R2 para historia ${story.id}: ${error.message}`);
       } finally {
-        // IMPORTANTE: Eliminamos el registro de la BD siempre, 
+        // IMPORTANTE: Eliminamos el registro de la BD siempre,
         // para evitar que la historia siga apareciendo si falla el storage.
         await this.storiesRepository.remove(story);
         this.logger.log(`Registro de historia ${story.id} eliminado de la base de datos.`);
