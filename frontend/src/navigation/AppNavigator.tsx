@@ -13,6 +13,7 @@ import ChatRoomScreen from '../features/chat/screens/ChatRoomScreen';
 import ChatDetailsScreen from '../features/chat/screens/ChatDetailsScreen';
 import NewChatScreen from '../features/chat/screens/NewChatScreen';
 import StoryViewerScreen from '../features/stories/screens/StoryViewerScreen';
+import JobsScreen from '../features/jobs/screens/JobsScreen';
 import { useTheme } from '../theme/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery, useSubscription } from '@apollo/client/react';
@@ -31,6 +32,7 @@ export type AppStackParamList = {
 
 export type AppTabParamList = {
     Feed: undefined;
+    Jobs: undefined;
     ChatList: undefined;
     Profile: { userId?: string } | undefined;
 };
@@ -71,6 +73,8 @@ function MainTabNavigator() {
 
                     if (route.name === 'Feed') {
                         iconName = focused ? 'home' : 'home-outline';
+                    } else if (route.name === 'Jobs') {
+                        iconName = focused ? 'briefcase' : 'briefcase-outline';
                     } else if (route.name === 'ChatList') {
                         iconName = focused ? 'chatbubble-ellipses' : 'chatbubble-outline';
                     } else if (route.name === 'Profile') {
@@ -139,6 +143,7 @@ function MainTabNavigator() {
             })}
         >
             <Tab.Screen name="Feed" component={FeedScreen} options={{ tabBarLabel: 'Inicio' }} />
+            <Tab.Screen name="Jobs" component={JobsScreen} options={{ tabBarLabel: 'Empleos' }} />
             <Tab.Screen 
                 name="ChatList" 
                 component={ChatListScreen} 

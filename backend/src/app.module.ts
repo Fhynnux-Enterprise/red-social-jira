@@ -15,6 +15,7 @@ import { ChatModule } from './chat/chat.module';
 import { FollowsModule } from './follows/follows.module';
 import { StorageModule } from './storage/storage.module';
 import { StoriesModule } from './stories/stories.module';
+import { JobsModule } from './jobs/jobs.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { StoriesModule } from './stories/stories.module';
     FollowsModule,
     StorageModule,
     StoriesModule,
+    JobsModule,
   ],
   controllers: [],
   providers: [],

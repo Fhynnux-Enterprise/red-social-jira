@@ -9,7 +9,7 @@ import { StorageModule } from '../storage/storage.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Story, StoryView]),
-    StorageModule, // Importamos para poder borrar archivos de Supabase
+    StorageModule, // Importamos para poder borrar archivos de Cloudflare R2
   ],
   providers: [StoriesService, StoriesResolver],
   exports: [StoriesService],

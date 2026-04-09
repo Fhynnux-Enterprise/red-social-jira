@@ -134,6 +134,55 @@ type Story {
   expiresAt: DateTime!
 }
 
+type JobOfferMedia {
+  id_job_offer_media: ID!
+  url: String!
+  type: String!
+  order: Int!
+  createdAt: DateTime!
+  deletedAt: DateTime
+}
+
+type JobOffer {
+  id_job_offer: ID!
+  title: String!
+  description: String!
+  location: String!
+  salary: String
+  contactPhone: String!
+  createdAt: DateTime!
+  author: User!
+  media: [JobOfferMedia!]
+}
+
+type ProfessionalProfile {
+  id_professional_profile: ID!
+  profession: String!
+  description: String!
+  experienceYears: Int
+  contactPhone: String!
+  createdAt: DateTime!
+  user: User!
+}
+
+type JobApplication {
+  id_job_application: ID!
+  message: String
+  cvUrl: String
+  status: ApplicationStatus!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  applicant: User!
+  jobOffer: JobOffer!
+}
+
+"""Estado de una postulación a una oferta de empleo"""
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
 type User {
   id: ID!
   email: String!
@@ -154,6 +203,9 @@ type User {
   followers: [Follow!]
   following: [Follow!]
   stories: [Story!]
+  jobOffers: [JobOffer!]
+  professionalProfile: ProfessionalProfile
+  jobApplications: [JobApplication!]
   followersCount: Int!
   followingCount: Int!
 }
@@ -166,6 +218,12 @@ type UploadUrlResponse {
 type ReadMessagesPayload {
   id_conversation: String!
   readerId: String!
+}
+
+type ApplyToJobResponse {
+  application: JobApplication!
+  cvUploadUrl: String!
+  cvPublicUrl: String!
 }
 
 type Query {
@@ -189,6 +247,12 @@ type Query {
   getChatMedia(id_conversation: String!): [Message!]!
   getActiveStories(limit: Int! = 20, offset: Int! = 0): [Story!]!
   getViewedStoryIds: [String!]!
+  jobOffers(limit: Int! = 20, offset: Int! = 0): [JobOffer!]!
+  myJobOffers: [JobOffer!]!
+  professionalProfiles(limit: Int! = 20, offset: Int! = 0): [ProfessionalProfile!]!
+  myProfessionalProfile: [ProfessionalProfile!]!
+  jobApplications(id_job_offer: ID!): [JobApplication!]!
+  myApplications: [JobApplication!]!
 }
 
 type Mutation {
@@ -219,12 +283,48 @@ type Mutation {
   createStory(mediaUrl: String!, mediaType: String!, content: String): Story!
   markStoryAsViewed(storyId: String!): Boolean!
   deleteStory(id: String!): Boolean!
+  createJobOffer(createJobOfferInput: CreateJobOfferInput!): JobOffer!
+  upsertProfessionalProfile(upsertProfessionalProfileInput: UpsertProfessionalProfileInput!): ProfessionalProfile!
+  applyToJob(input: ApplyToJobInput!): ApplyToJobResponse!
+  updateApplicationStatus(input: UpdateApplicationStatusInput!): JobApplication!
 }
 
 input PostMediaInput {
   url: String!
   type: String!
   order: Int!
+}
+
+input CreateJobOfferInput {
+  title: String!
+  description: String!
+  location: String!
+  salary: String
+  contactPhone: String!
+  media: [JobOfferMediaInput!]
+}
+
+input JobOfferMediaInput {
+  url: String!
+  type: String!
+  order: Int!
+}
+
+input UpsertProfessionalProfileInput {
+  profession: String!
+  description: String!
+  experienceYears: Int
+  contactPhone: String!
+}
+
+input ApplyToJobInput {
+  id_job_offer: ID!
+  message: String
+}
+
+input UpdateApplicationStatusInput {
+  id_job_application: ID!
+  status: ApplicationStatus!
 }
 
 type Subscription {

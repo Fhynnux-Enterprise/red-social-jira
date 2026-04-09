@@ -215,8 +215,9 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                         const compInterval = startProgress('compressing');
                         try {
                             finalUri = await Compressor.compress(media.uri, {
-                                compressionMethod: 'auto',
-                                maxSize: 720
+                                compressionMethod: 'manual',
+                                bitrate: 3000000, // 3.0 Mbps para nitidez y optimización de datos
+                                maxSize: 720      // Resolución óptima
                             });
                         } finally {
                             clearInterval(compInterval);
@@ -264,7 +265,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
     };
 
     const handleClose = () => {
-        setContent(''); 
+        setContent('');
         setTitle('');
         setLocalMediaList([]);
         onClose();
@@ -332,7 +333,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                                 multiline
                             />
                             <Text style={[
-                                styles.charCounter, 
+                                styles.charCounter,
                                 title.length >= 90 ? { color: '#ff4444' } : { color: colors.textSecondary },
                                 { marginTop: 4 }
                             ]}>
@@ -349,7 +350,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                             onChangeText={setContent}
                             editable={!isLoading}
                             textAlignVertical="top"
-                            scrollEnabled={false} 
+                            scrollEnabled={false}
                         />
 
                         {localMediaList.length > 0 && (
@@ -528,7 +529,7 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     },
     titleInput: {
         color: colors.text,
-        fontSize: 20, 
+        fontSize: 20,
         fontWeight: 'bold',
         marginBottom: 0,
     },
@@ -582,7 +583,7 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     },
     mediaPreviewContainer: {
         width: 250,
-        height: 312, 
+        height: 312,
         marginRight: 12,
         position: 'relative',
         borderRadius: 16,
