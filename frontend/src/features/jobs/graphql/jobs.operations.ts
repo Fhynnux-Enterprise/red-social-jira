@@ -16,6 +16,11 @@ export const GET_JOB_OFFERS = gql`
         lastName
         photoUrl
       }
+      media {
+        url
+        type
+        order
+      }
     }
   }
 `;
@@ -51,6 +56,11 @@ export const CREATE_JOB_OFFER = gql`
         id
         username
         photoUrl
+      }
+      media {
+        url
+        type
+        order
       }
     }
   }
@@ -165,6 +175,11 @@ export const GET_MY_JOB_OFFERS = gql`
         firstName
         lastName
         photoUrl
+      }
+      media {
+        url
+        type
+        order
       }
     }
   }

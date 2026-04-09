@@ -1,5 +1,21 @@
-import { InputType, Field } from '@nestjs/graphql';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { InputType, Field, Int } from '@nestjs/graphql';
+import { IsNotEmpty, IsOptional, IsString, IsArray, IsEnum, IsNumber, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+@InputType()
+export class JobOfferMediaInput {
+  @Field()
+  @IsString()
+  url: string;
+
+  @Field()
+  @IsEnum(['IMAGE', 'VIDEO'])
+  type: string;
+
+  @Field(() => Int)
+  @IsNumber()
+  order: number;
+}
 
 @InputType()
 export class CreateJobOfferInput {
@@ -27,4 +43,11 @@ export class CreateJobOfferInput {
   @IsString()
   @IsNotEmpty()
   contactPhone: string;
+
+  @Field(() => [JobOfferMediaInput], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => JobOfferMediaInput)
+  media?: JobOfferMediaInput[];
 }

@@ -2,13 +2,18 @@ import React, { useState } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     TextInput, ScrollView, Platform, KeyboardAvoidingView,
-    ActivityIndicator, Alert
+    ActivityIndicator, Alert, Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
+import { LinearGradient } from 'expo-linear-gradient';
+import MaskedView from '@react-native-masked-view/masked-view';
+import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
+import { Video as Compressor } from 'react-native-compressor';
+import Toast from 'react-native-toast-message';
 import { CREATE_JOB_OFFER, UPSERT_PROFESSIONAL_PROFILE, GET_JOB_OFFERS, GET_PROFESSIONALS } from '../graphql/jobs.operations';
 
 export default function CreateJobScreen() {
@@ -18,6 +23,17 @@ export default function CreateJobScreen() {
     const [activeTab, setActiveTab] = useState<'offer' | 'profile'>('offer');
     const [loading, setLoading] = useState(false);
 
+    const [localMediaList, setLocalMediaList] = useState<{
+        uri: string,
+        type: string,
+        mimeType: string,
+        isValid: boolean,
+        errorMessage?: string,
+        uploadStatus?: 'idle' | 'compressing' | 'uploading' | 'done' | 'error',
+        progress: number
+    }[]>([]);
+    const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+    const { pickMultipleMedia, uploadMedia } = useMediaUpload();
     // Form states - Offer
     const [offerTitle, setOfferTitle] = useState('');
     const [offerDescription, setOfferDescription] = useState('');
@@ -55,14 +71,118 @@ export default function CreateJobScreen() {
         }
     });
 
+    const handlePickMedia = async () => {
+        const results = await pickMultipleMedia('All');
+        if (results && results.length > 0) {
+            const newMedia = results.map(res => {
+                const type = res.mimeType.startsWith('video/') ? 'video' : 'image';
+                let isValid = true;
+                let errorMessage = '';
+
+                if (type === 'video' && res.duration && res.duration > 60000) {
+                    isValid = false;
+                    errorMessage = 'Máx 1 minuto';
+                }
+
+                return {
+                    uri: res.localUri,
+                    type,
+                    mimeType: res.mimeType,
+                    isValid,
+                    errorMessage,
+                    uploadStatus: 'idle' as const,
+                    progress: 0
+                };
+            });
+
+            const updatedTotal = [...localMediaList, ...newMedia];
+
+            let videoCount = 0;
+            const validatedList = updatedTotal.map((item, index) => {
+                if (item.type === 'video') {
+                    videoCount++;
+                    if (videoCount > 3) {
+                        return { ...item, isValid: false, errorMessage: 'Límite de videos' };
+                    }
+                }
+                if (index >= 10) {
+                    return { ...item, isValid: false, errorMessage: 'Límite 10 archivos' };
+                }
+                return item;
+            });
+
+            setLocalMediaList(validatedList);
+        }
+    };
+
     const handleSave = async () => {
-        if (loading) return;
+        if (loading || isUploadingMedia) return;
 
         if (activeTab === 'offer') {
             if (!offerTitle || !offerDescription || !offerLocation || !offerPhone) {
                 Alert.alert('Campos obligatorios', 'Por favor completa los campos marcados con *');
                 return;
             }
+
+            const mediaToUpload = localMediaList.filter(m => m.isValid);
+            let mediaInput: { url: string, type: string, order: number }[] = [];
+
+            if (mediaToUpload.length > 0) {
+                setIsUploadingMedia(true);
+                try {
+                    const uploadPromises = mediaToUpload.map(async (media, index) => {
+                        let finalUri = media.uri;
+
+                        const startProgress = (status: any) => {
+                            let currentProgress = 0;
+                            const interval = setInterval(() => {
+                                currentProgress += Math.random() * 15;
+                                if (currentProgress >= 90) {
+                                    clearInterval(interval);
+                                    currentProgress = 90;
+                                }
+                                setLocalMediaList(prev => prev.map(m => m.uri === media.uri ? { ...m, uploadStatus: status, progress: Math.floor(currentProgress) } : m));
+                            }, 200);
+                            return interval;
+                        };
+
+                        if (media.type === 'video') {
+                            const compInterval = startProgress('compressing');
+                            try {
+                                finalUri = await Compressor.compress(media.uri, {
+                                    compressionMethod: 'manual',
+                                    bitrate: 3000000,
+                                    maxSize: 720
+                                });
+                            } finally {
+                                clearInterval(compInterval);
+                            }
+                        }
+
+                        const uploadInterval = startProgress('uploading');
+                        try {
+                            const uploadedUrl = await uploadMedia(finalUri, media.mimeType, 'job-offers');
+                            clearInterval(uploadInterval);
+                            setLocalMediaList(prev => prev.map(m => m.uri === media.uri ? { ...m, uploadStatus: 'done' as const, progress: 100 } : m));
+                            return {
+                                url: uploadedUrl,
+                                type: media.type === 'video' ? 'VIDEO' : 'IMAGE',
+                                order: index
+                            };
+                        } catch (e) {
+                            clearInterval(uploadInterval);
+                            throw e;
+                        }
+                    });
+                    
+                    mediaInput = await Promise.all(uploadPromises);
+                } catch (error: any) {
+                    setIsUploadingMedia(false);
+                    Toast.show({ type: 'error', text1: 'Error en la subida', text2: error.message });
+                    return;
+                }
+            }
+
             setLoading(true);
             createJobOffer({
                 variables: {
@@ -72,6 +192,7 @@ export default function CreateJobScreen() {
                         location: offerLocation,
                         salary: offerSalary || undefined,
                         contactPhone: offerPhone,
+                        media: mediaInput.length > 0 ? mediaInput : undefined,
                     }
                 }
             });
@@ -108,10 +229,10 @@ export default function CreateJobScreen() {
                 <Text style={[styles.headerTitle, { color: colors.text }]}>Nueva Publicación</Text>
                 <TouchableOpacity 
                     onPress={handleSave} 
-                    disabled={loading}
+                    disabled={loading || isUploadingMedia}
                     style={[styles.saveBtn, { backgroundColor: colors.primary }]}
                 >
-                    {loading ? (
+                    {loading || isUploadingMedia ? (
                         <ActivityIndicator size="small" color="#FFF" />
                     ) : (
                         <Text style={styles.saveBtnText}>Publicar</Text>
@@ -203,6 +324,75 @@ export default function CreateJobScreen() {
                                 />
                             </View>
                         </View>
+
+                        <Text style={[styles.label, { color: colors.textSecondary }]}>Multimedia (Opcional)</Text>
+                        <TouchableOpacity style={styles.mediaButton} activeOpacity={0.7} onPress={handlePickMedia}>
+                            <View style={styles.mediaButtonIconGradientWrapper}>
+                                <MaskedView style={{ width: 20, height: 20 }} maskElement={<Ionicons name="image" size={20} color="black" />}>
+                                    <LinearGradient colors={[colors.primary, colors.secondary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }} />
+                                </MaskedView>
+                            </View>
+                            <Text style={styles.mediaButtonText}>Añadir foto o video</Text>
+                        </TouchableOpacity>
+
+                        {localMediaList.length > 0 && (
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                                {localMediaList.map((mediaItem, index) => (
+                                    <View key={index} style={styles.mediaPreviewContainer}>
+                                        {mediaItem.type === 'video' ? (
+                                            <View style={styles.mediaPreview}>
+                                                <Image source={{ uri: mediaItem.uri }} style={styles.mediaPreview} />
+                                                <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.1)' }]}>
+                                                    <Ionicons name="play-circle" size={30} color="#FFF" />
+                                                </View>
+                                            </View>
+                                        ) : (
+                                            <Image source={{ uri: mediaItem.uri }} style={styles.mediaPreview} resizeMode="cover" />
+                                        )}
+
+                                        {mediaItem.isValid && (!mediaItem.uploadStatus || mediaItem.uploadStatus === 'idle') && (
+                                            <View style={styles.readyBadge}>
+                                                <Ionicons name="checkmark-done-circle" size={20} color="#007AFF" />
+                                            </View>
+                                        )}
+
+                                        {(!mediaItem.uploadStatus || mediaItem.uploadStatus === 'idle') && (
+                                            <TouchableOpacity
+                                                style={styles.removeMediaButton}
+                                                onPress={() => setLocalMediaList(prev => prev.filter((_, i) => i !== index))}
+                                            >
+                                                <Ionicons name="close-circle" size={24} color="rgba(0,0,0,0.8)" />
+                                            </TouchableOpacity>
+                                        )}
+
+                                        {!mediaItem.isValid && (
+                                            <View style={styles.invalidOverlay}>
+                                                <Ionicons name="close-outline" size={24} color="#FFF" />
+                                                <Text style={styles.invalidText}>{mediaItem.errorMessage}</Text>
+                                            </View>
+                                        )}
+
+                                        {mediaItem.uploadStatus && mediaItem.uploadStatus !== 'idle' && (
+                                            <View style={[styles.uploadOverlay, mediaItem.uploadStatus === 'done' && styles.uploadDoneOverlay]}>
+                                                {mediaItem.uploadStatus === 'done' ? (
+                                                    <View style={styles.doneBadge}>
+                                                        <Ionicons name="checkmark-circle" size={24} color="#4ADE80" />
+                                                    </View>
+                                                ) : (
+                                                    <View style={styles.uploadingStatusContainer}>
+                                                        <ActivityIndicator size="small" color="#FFF" />
+                                                        <View style={{ marginLeft: 4 }}>
+                                                            <Text style={styles.uploadingLabel}>{mediaItem.uploadStatus === 'compressing' ? 'Optimizando...' : 'Subiendo...'}</Text>
+                                                            <Text style={styles.progressText}>{mediaItem.progress}%</Text>
+                                                        </View>
+                                                    </View>
+                                                )}
+                                            </View>
+                                        )}
+                                    </View>
+                                ))}
+                            </ScrollView>
+                        )}
                     </View>
                 ) : (
                     <View style={styles.form}>
@@ -338,5 +528,113 @@ const styles = StyleSheet.create({
         fontStyle: 'italic',
         marginTop: 8,
         lineHeight: 18,
+    },
+    mediaButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'transparent',
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#ddd',
+        borderStyle: 'dashed',
+        justifyContent: 'center',
+    },
+    mediaButtonIconGradientWrapper: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: 'rgba(255, 101, 36, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 8,
+    },
+    mediaButtonText: {
+        color: '#FF6524',
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
+    mediaPreviewContainer: {
+        width: 100,
+        height: 140,
+        marginRight: 10,
+        position: 'relative',
+        borderRadius: 12,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: '#eee',
+    },
+    mediaPreview: {
+        width: '100%',
+        height: '100%',
+    },
+    removeMediaButton: {
+        position: 'absolute',
+        top: 4,
+        right: 4,
+        zIndex: 20,
+        borderRadius: 12,
+        padding: 2,
+    },
+    readyBadge: {
+        position: 'absolute',
+        top: 4,
+        left: 4,
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        borderRadius: 10,
+        padding: 2,
+        zIndex: 14,
+    },
+    invalidOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(255, 0, 0, 0.65)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 4,
+    },
+    invalidText: {
+        color: '#FFF',
+        fontSize: 10,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        lineHeight: 12,
+    },
+    uploadOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 15,
+    },
+    uploadDoneOverlay: {
+        backgroundColor: 'rgba(0,0,0,0.2)',
+    },
+    uploadingStatusContainer: {
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        paddingHorizontal: 8,
+        paddingVertical: 6,
+        borderRadius: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        maxWidth: '90%',
+    },
+    uploadingLabel: {
+        color: '#FFF',
+        fontWeight: '600',
+        fontSize: 9,
+    },
+    doneBadge: {
+        position: 'absolute',
+        top: 4,
+        right: 4,
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        borderRadius: 12,
+    },
+    progressText: {
+        color: '#FFF',
+        fontSize: 8,
+        fontWeight: 'bold',
+        marginTop: 0,
     }
 });

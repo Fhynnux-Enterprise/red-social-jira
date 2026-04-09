@@ -11,6 +11,7 @@ import { useTheme } from '../../../theme/ThemeContext';
 import { GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS, GET_MY_APPLICATIONS, GET_MY_PROFESSIONAL_PROFILE } from '../graphql/jobs.operations';
 import JobOfferCard from '../components/JobOfferCard';
 import ProfessionalCard from '../components/ProfessionalCard';
+import { LinearGradient } from 'expo-linear-gradient';
 
 type TabKey = 'offers' | 'services' | 'results';
 type ResultsTabKey = 'my_applications' | 'my_offers' | 'my_services';
@@ -356,13 +357,21 @@ export default function JobsScreen() {
                 />
             )}
 
-            {/* ── FAB ── */}
+            {/* ── FAB (Botón Flotante) ── */}
             <TouchableOpacity
-                style={[styles.fab, { backgroundColor: colors.primary, bottom: insets.bottom + 20 }]}
+                /* 👇 MODIFICA EL VALOR + 10 AQUÍ para subirlo o bajarlo respecto al piso de la pantalla 👇 */
+                style={[styles.fab, { bottom: insets.bottom + -35 }]}
                 onPress={() => router.push('/jobs/create')}
                 activeOpacity={0.8}
             >
-                <Ionicons name="add" size={30} color="#FFF" />
+                <LinearGradient
+                    colors={[colors.primary, colors.secondary]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.fabGradient}
+                >
+                    <Ionicons name="add" size={30} color="#FFF" />
+                </LinearGradient>
             </TouchableOpacity>
         </View>
     );
@@ -597,20 +606,26 @@ const styles = StyleSheet.create({
         color: '#FFF',
     },
 
-    // ── FAB ──
+    // ── FAB (Floating Action Button) ──
     fab: {
         position: 'absolute',
-        right: 20,
+        /* 👇 MODIFICA EL VALOR RIGHT AQUÍ para despegarlo de la orilla derecha 👇 */
+        right:26, 
         width: 56,
         height: 56,
         borderRadius: 28,
-        justifyContent: 'center',
-        alignItems: 'center',
         elevation: 6,
         shadowColor: '#FF6524',
         shadowOffset: { width: 0, height: 3 },
         shadowOpacity: 0.35,
         shadowRadius: 6,
         zIndex: 10,
+    },
+    fabGradient: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 28,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 });

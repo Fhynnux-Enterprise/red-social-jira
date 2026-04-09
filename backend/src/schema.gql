@@ -134,6 +134,15 @@ type Story {
   expiresAt: DateTime!
 }
 
+type JobOfferMedia {
+  id_job_offer_media: ID!
+  url: String!
+  type: String!
+  order: Int!
+  createdAt: DateTime!
+  deletedAt: DateTime
+}
+
 type JobOffer {
   id_job_offer: ID!
   title: String!
@@ -143,6 +152,7 @@ type JobOffer {
   contactPhone: String!
   createdAt: DateTime!
   author: User!
+  media: [JobOfferMedia!]
 }
 
 type ProfessionalProfile {
@@ -291,6 +301,13 @@ input CreateJobOfferInput {
   location: String!
   salary: String
   contactPhone: String!
+  media: [JobOfferMediaInput!]
+}
+
+input JobOfferMediaInput {
+  url: String!
+  type: String!
+  order: Int!
 }
 
 input UpsertProfessionalProfileInput {

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     Modal, View, Text, TextInput, TouchableOpacity,
     StyleSheet, ActivityIndicator, KeyboardAvoidingView,
-    Platform, ScrollView, Alert,
+    Platform, ScrollView, Alert, Dimensions, Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { useMutation } from '@apollo/client/react';
 import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '../../../theme/ThemeContext';
 import { APPLY_TO_JOB, GET_MY_APPLICATIONS } from '../graphql/jobs.operations';
+import ImageCarousel from '../../feed/components/ImageCarousel';
 
 interface ApplyJobModalProps {
     visible: boolean;
@@ -18,8 +19,10 @@ interface ApplyJobModalProps {
         id_job_offer: string;
         title: string;
         author?: { firstName: string; lastName: string };
+        media?: { url: string; type: string; order: number }[];
     } | null;
 }
+
 
 type UploadStep = 'idle' | 'submitting' | 'uploading_cv' | 'done' | 'error';
 
@@ -31,6 +34,8 @@ export default function ApplyJobModal({ visible, onClose, jobOffer }: ApplyJobMo
     const [cvFile, setCvFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
     const [step, setStep] = useState<UploadStep>('idle');
     const [stepLabel, setStepLabel] = useState('');
+    
+    const [modalWidth, setModalWidth] = useState(Dimensions.get('window').width);
 
     // Limpiar estado al abrir el modal
     useEffect(() => {
@@ -173,7 +178,20 @@ export default function ApplyJobModal({ visible, onClose, jobOffer }: ApplyJobMo
                     contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
+                    onLayout={(e) => setModalWidth(e.nativeEvent.layout.width - 40)} // parent has padding 20
                 >
+                    {/* ── Carrusel Multimedia ── */}
+                    {jobOffer?.media && jobOffer.media.length > 0 && (
+                        <View style={[styles.carouselContainer, { width: modalWidth }]}>
+                            <ImageCarousel
+                                media={jobOffer.media}
+                                containerWidth={modalWidth}
+                                customAspectRatio={modalWidth / 180}
+                                disableFullscreen={true}
+                            />
+                        </View>
+                    )}
+
                     {/* ── Info de la oferta ── */}
                     {jobOffer && (
                         <View style={[styles.offerBanner, { backgroundColor: isDark ? 'rgba(255,101,36,0.1)' : 'rgba(255,101,36,0.07)', borderColor: 'rgba(255,101,36,0.25)' }]}>
@@ -332,6 +350,14 @@ const styles = StyleSheet.create({
     },
     content: {
         padding: 20,
+    },
+    carouselContainer: {
+        height: 180,
+        backgroundColor: '#000',
+        borderRadius: 14,
+        overflow: 'hidden',
+        marginBottom: 16,
+        position: 'relative',
     },
     offerBanner: {
         flexDirection: 'row',
