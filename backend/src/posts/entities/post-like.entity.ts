@@ -8,28 +8,28 @@ import { Post } from './post.entity';
 @Unique(['userId', 'postId'])
 export class PostLike {
     @Field(() => ID)
-    @PrimaryGeneratedColumn('uuid', { name: 'id_post_like' })
-    id_post_like: string;
+    @PrimaryGeneratedColumn('uuid')
+    id: string;
 
     @Field(() => User)
     @ManyToOne(() => User, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'id_user' })
+    @JoinColumn({ name: 'user_id' })
     user: User;
 
     @Field()
-    @Column({ name: 'id_user' })
+    @Column({ name: 'user_id' })
     userId: string;
 
     @Field(() => Post)
     @ManyToOne(() => Post, post => post.likes, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'id_post' })
+    @JoinColumn({ name: 'post_id' })
     post: Post;
 
     @Field()
-    @Column({ name: 'id_post' })
+    @Column({ name: 'post_id' })
     postId: string;
 
     @Field()
-    @CreateDateColumn({ type: 'timestamptz' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 }

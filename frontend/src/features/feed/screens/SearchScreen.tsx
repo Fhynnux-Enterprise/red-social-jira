@@ -45,7 +45,7 @@ const SEARCH_POSTS = gql`
         order
       }
       likes {
-        id_post_like
+        id
         user {
           id
           firstName

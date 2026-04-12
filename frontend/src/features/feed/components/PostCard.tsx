@@ -87,7 +87,7 @@ export default function PostCard({
         } else {
             optimisticLikes.push({
                 __typename: 'PostLike',
-                id_post_like: `temp-${Date.now()}`,
+                id: `temp-${Date.now()}`,
                 user: {
                     __typename: 'User',
                     id: userId,
@@ -134,7 +134,9 @@ export default function PostCard({
             return;
         }
         const profileUserId = item.author.id === userId ? undefined : item.author.id;
-        router.push({ pathname: '/profile', params: { userId: profileUserId } });
+        // Cambiamos router.push por navigation.navigate para mantenernos dentro del AppNavigator
+        // y que el ProfileScreen pueda encontrar la ruta 'ChatRoom'
+        (navigation as any).navigate('Profile', { userId: profileUserId });
     };
 
     const content = item.content || '';

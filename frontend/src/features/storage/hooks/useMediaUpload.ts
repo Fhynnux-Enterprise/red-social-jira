@@ -71,8 +71,26 @@ export const useMediaUpload = () => {
 
   const uploadMedia = async (localUri: string, mimeType: string, folder: string) => {
     try {
-      // 1. Preparar el nombre del archivo
-      const fileName = localUri.split('/').pop() || 'upload.jpg';
+      // 1. Derivar la extensión a partir del mimeType para garantizar consistencia.
+      // Cuando el video se comprime pasa de .MOV a .mp4, pero el URI aún puede
+      // llevar el nombre del compresor con otra extensión.
+      const extensionFromMime: Record<string, string> = {
+        'video/mp4': 'mp4',
+        'video/quicktime': 'mov',
+        'video/mpeg': 'mpeg',
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+        'image/webp': 'webp',
+        'image/gif': 'gif',
+      };
+      const derivedExt = extensionFromMime[mimeType];
+      const rawFileName = localUri.split('/').pop() || 'upload';
+      const baseName = rawFileName.includes('.')
+        ? rawFileName.substring(0, rawFileName.lastIndexOf('.'))
+        : rawFileName;
+      const fileName = derivedExt
+        ? `${baseName}.${derivedExt}`
+        : rawFileName;
 
       // 2. Obtener URLs del backend (Signed y Public)
       const { data } = await generateUploadUrl({
@@ -89,31 +107,41 @@ export const useMediaUpload = () => {
 
       const { signedUrl, publicUrl } = data.generateUploadUrl;
 
-      // 3. EL TRUCO DE REACT NATIVE: Convertir URI a Blob
-      const response = await fetch(localUri);
-      const blob = await response.blob();
+      // 3. Subir directamente con XMLHttpRequest.
+      // IMPORTANTE: fetch() en React Native añade Transfer-Encoding: chunked cuando
+      // el body es un Blob, lo que hace que R2/S3 presigned URLs rechacen o guarden
+      // el objeto con 0 bytes. XHR evita ese problema enviando el binario con el
+      // Content-Length correcto.
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', signedUrl, true);
+        xhr.setRequestHeader('Content-Type', mimeType);
 
-      // 4. Subir el archivo mediante PUT a la URL firmada
-      const uploadResponse = await fetch(signedUrl, {
-        method: 'PUT',
-        body: blob,
-        headers: {
-          'Content-Type': mimeType,
-        },
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`Error al subir a Cloudflare R2: HTTP ${xhr.status} - ${xhr.responseText}`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Error de red al subir el archivo'));
+        xhr.ontimeout = () => reject(new Error('Tiempo de espera agotado al subir el archivo'));
+
+        // Abrir el archivo local como Blob y enviarlo
+        fetch(localUri)
+          .then(res => res.blob())
+          .then(blob => xhr.send(blob))
+          .catch(reject);
       });
 
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        throw new Error(`Error al subir a Cloudflare R2: ${errorText}`);
-
-      }
-
-      // 5. Retornar la URL pública para guardarla en la base de datos
+      // 4. Retornar la URL pública para guardarla en la base de datos
       return publicUrl;
     } catch (error) {
       console.error('Error in uploadMedia:', error);
       throw error;
     }
+
   };
 
   return {

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProfessionalProfile } from './entities/professional-profile.entity';
+import { ProfessionalProfileMedia } from './entities/professional-profile-media.entity';
 import { UpsertProfessionalProfileInput } from './dto/upsert-professional-profile.input';
 
 @Injectable()
@@ -9,21 +10,39 @@ export class ProfessionalsService {
   constructor(
     @InjectRepository(ProfessionalProfile)
     private readonly profileRepository: Repository<ProfessionalProfile>,
+    @InjectRepository(ProfessionalProfileMedia)
+    private readonly mediaRepository: Repository<ProfessionalProfileMedia>,
   ) {}
 
   async upsertProfessionalProfile(data: UpsertProfessionalProfileInput, userId: string): Promise<ProfessionalProfile> {
-    let profile = await this.profileRepository.findOne({ where: { id_user: userId } });
+    const { media, ...profileData } = data;
 
-    if (profile) {
-      Object.assign(profile, data);
-    } else {
-      profile = this.profileRepository.create({
-        ...data,
-        id_user: userId,
-      });
+    // Siempre crear un nuevo perfil (es una publicación, no un upsert por usuario)
+    const profile = this.profileRepository.create({
+      ...profileData,
+      userId,
+    });
+
+    // Guardar perfil primero para obtener su ID
+    const savedProfile = await this.profileRepository.save(profile);
+
+    // Si hay media, crearla explícitamente con el FK asignado
+    if (media && media.length > 0) {
+      const mediaEntities = media.map((m) =>
+        this.mediaRepository.create({
+          ...m,
+          professionalProfileId: savedProfile.id,
+        }),
+      );
+      await this.mediaRepository.save(mediaEntities);
+      // Recargar el perfil con su media para devolver la entidad completa
+      return (await this.profileRepository.findOne({
+        where: { id: savedProfile.id },
+        relations: ['media', 'user'],
+      })) ?? savedProfile;
     }
 
-    return this.profileRepository.save(profile);
+    return savedProfile;
   }
 
   async findAllProfessionals(limit: number = 20, offset: number = 0): Promise<ProfessionalProfile[]> {
@@ -35,6 +54,6 @@ export class ProfessionalsService {
   }
   
   async findOneByUserId(userId: string): Promise<ProfessionalProfile | null> {
-    return this.profileRepository.findOne({ where: { id_user: userId } });
+    return this.profileRepository.findOne({ where: { userId } });
   }
 }

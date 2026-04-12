@@ -3,7 +3,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { JobOffer } from './entities/job-offer.entity';
 import { ProfessionalProfile } from './entities/professional-profile.entity';
 import { JobOfferMedia } from './entities/job-offer-media.entity';
+import { ProfessionalProfileMedia } from './entities/professional-profile-media.entity';
 import { JobApplication } from './entities/job-application.entity';
+// ...
 import { JobsService } from './jobs.service';
 import { ProfessionalsService } from './professionals.service';
 import { ApplicationsService } from './applications.service';
@@ -15,7 +17,7 @@ import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([JobOffer, ProfessionalProfile, JobApplication, JobOfferMedia]),
+    TypeOrmModule.forFeature([JobOffer, ProfessionalProfile, JobApplication, JobOfferMedia, ProfessionalProfileMedia]),
     AuthModule,
     StorageModule,
   ],

@@ -6,7 +6,7 @@ import { User } from '../../auth/entities/user.entity';
 @Entity('user_badges')
 export class UserBadge {
     @Field(() => ID)
-    @PrimaryGeneratedColumn('uuid', { name: 'id_badge' })
+    @PrimaryGeneratedColumn('uuid')
     id: string;
 
     @Field()
@@ -18,6 +18,6 @@ export class UserBadge {
     theme: string;
 
     @OneToOne(() => User, user => user.badge, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'id_user' })
+    @JoinColumn({ name: 'user_id' })
     user: User;
 }

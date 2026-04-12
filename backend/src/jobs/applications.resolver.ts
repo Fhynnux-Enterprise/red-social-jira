@@ -31,10 +31,10 @@ export class ApplicationsResolver {
    */
   @Query(() => [JobApplication], { name: 'jobApplications' })
   getJobApplications(
-    @Args('id_job_offer', { type: () => ID }) id_job_offer: string,
+    @Args('jobOfferId', { type: () => ID }) jobOfferId: string,
     @CurrentUser() user: User,
   ) {
-    return this.applicationsService.getJobApplications(id_job_offer, user.id);
+    return this.applicationsService.getJobApplications(jobOfferId, user.id);
   }
 
   /**

@@ -4,11 +4,11 @@ import { User } from '../../auth/entities/user.entity';
 import { JobOfferMedia } from './job-offer-media.entity';
 
 @ObjectType()
-@Entity()
+@Entity('job_offers')
 export class JobOffer {
   @Field(() => ID)
-  @PrimaryGeneratedColumn('uuid', { name: 'id_job_offer' })
-  id_job_offer: string;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
   @Field()
   @Column()
@@ -27,20 +27,20 @@ export class JobOffer {
   salary?: string;
 
   @Field()
-  @Column()
+  @Column({ name: 'contact_phone' })
   contactPhone: string;
 
   @Field()
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
   @Field(() => User)
   @ManyToOne(() => User, { eager: true })
-  @JoinColumn({ name: 'id_user' })
+  @JoinColumn({ name: 'user_id' })
   author: User;
 
-  @Column({ name: 'id_user' })
-  id_user: string;
+  @Column({ name: 'user_id' })
+  authorId: string;
 
   @Field(() => [JobOfferMedia], { nullable: true })
   @OneToMany(() => JobOfferMedia, media => media.jobOffer, { cascade: true, eager: true })

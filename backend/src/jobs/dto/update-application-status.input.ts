@@ -7,7 +7,7 @@ export class UpdateApplicationStatusInput {
   @Field(() => ID)
   @IsUUID()
   @IsNotEmpty()
-  id_job_application: string;
+  applicationId: string;
 
   @Field(() => ApplicationStatus)
   @IsEnum(ApplicationStatus)

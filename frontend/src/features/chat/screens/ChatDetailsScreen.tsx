@@ -31,7 +31,7 @@ export default function ChatDetailsScreen() {
     const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
     const route = useRoute<any>();
     const insets = useSafeAreaInsets();
-    const { id_conversation } = route.params || {};
+    const { conversationId } = route.params || {};
     const { user: currentUser } = useAuth() as any;
     const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
     
@@ -45,13 +45,13 @@ export default function ChatDetailsScreen() {
     });
 
     const { data, loading } = useQuery<any>(GET_CONVERSATION, {
-        variables: { id_conversation },
-        skip: !id_conversation,
+        variables: { conversationId },
+        skip: !conversationId,
     });
 
     const { data: mediaData, loading: loadingMedia } = useQuery<any>(GET_CHAT_MEDIA, {
-        variables: { id_conversation },
-        skip: !id_conversation,
+        variables: { conversationId },
+        skip: !conversationId,
     });
 
     const otherUser = useMemo(() => {
@@ -70,10 +70,10 @@ export default function ChatDetailsScreen() {
         setIsConfirmModalVisible(false);
         try {
             await deleteConversationForMeMutation({ 
-                variables: { id_conversation },
+                variables: { conversationId },
                 refetchQueries: [{ query: GET_USER_CONVERSATIONS }]
             });
-            client.cache.evict({ id: `Conversation:${id_conversation}` });
+            client.cache.evict({ id: `Conversation:${conversationId}` });
             client.cache.gc();
             navigation.navigate('MainTabs', { screen: 'Messages' });
         } catch (err) {
@@ -143,7 +143,7 @@ export default function ChatDetailsScreen() {
 
                     <TouchableOpacity 
                         style={[styles.actionBtn, { backgroundColor: colors.surface }]}
-                        onPress={() => navigation.navigate('ChatRoom', { id_conversation, activateSearch: true })}
+                        onPress={() => navigation.navigate('ChatRoom', { conversationId, activateSearch: true })}
                     >
                         <Ionicons name="search" size={24} color={colors.primary} />
                         <Text style={[styles.actionLabel, { color: colors.text }]}>Buscar</Text>
@@ -166,7 +166,7 @@ export default function ChatDetailsScreen() {
                             horizontal 
                             showsHorizontalScrollIndicator={false}
                             contentContainerStyle={styles.mediaScroll}
-                            keyExtractor={(item) => item.id_message}
+                            keyExtractor={(item) => item.id}
                             renderItem={({ item: msg, index }) => (
                                 <TouchableOpacity 
                                     style={styles.mediaItem}
@@ -271,7 +271,7 @@ export default function ChatDetailsScreen() {
                             index,
                         })}
                         showsHorizontalScrollIndicator={false}
-                        keyExtractor={(item) => item.id_message}
+                        keyExtractor={(item) => item.id}
                         onMomentumScrollEnd={(event) => {
                             const xOffset = event.nativeEvent.contentOffset.x;
                             const index = Math.round(xOffset / SCREEN_WIDTH);

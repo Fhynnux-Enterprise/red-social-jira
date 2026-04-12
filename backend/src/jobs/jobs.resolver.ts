@@ -1,8 +1,9 @@
-import { Resolver, Query, Mutation, Args, Int } from '@nestjs/graphql';
+import { Resolver, Query, Mutation, Args, Int, ID } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { JobsService } from './jobs.service';
 import { JobOffer } from './entities/job-offer.entity';
 import { CreateJobOfferInput } from './dto/create-job-offer.input';
+import { UpdateJobOfferInput } from './dto/update-job-offer.input';
 import { GqlAuthGuard } from '../auth/guards/gql-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User } from '../auth/entities/user.entity';
@@ -19,6 +20,12 @@ export class JobsResolver {
     return this.jobsService.findAllJobOffers(limit, offset);
   }
 
+  @Query(() => [JobOffer], { name: 'myJobOffers' })
+  @UseGuards(GqlAuthGuard)
+  myJobOffers(@CurrentUser() user: User) {
+    return this.jobsService.findMyJobOffers(user.id);
+  }
+
   @Mutation(() => JobOffer)
   @UseGuards(GqlAuthGuard)
   createJobOffer(
@@ -28,9 +35,21 @@ export class JobsResolver {
     return this.jobsService.createJobOffer(createJobOfferInput, user.id);
   }
 
-  @Query(() => [JobOffer], { name: 'myJobOffers' })
+  @Mutation(() => JobOffer)
   @UseGuards(GqlAuthGuard)
-  myJobOffers(@CurrentUser() user: User) {
-    return this.jobsService.findMyJobOffers(user.id);
+  updateJobOffer(
+    @Args('input') input: UpdateJobOfferInput,
+    @CurrentUser() user: User,
+  ) {
+    return this.jobsService.updateJobOffer(input, user.id);
+  }
+
+  @Mutation(() => Boolean)
+  @UseGuards(GqlAuthGuard)
+  deleteJobOffer(
+    @Args('id', { type: () => ID }) id: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.jobsService.deleteJobOffer(id, user.id);
   }
 }

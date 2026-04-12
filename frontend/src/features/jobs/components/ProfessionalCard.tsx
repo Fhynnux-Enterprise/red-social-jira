@@ -1,123 +1,182 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, useWindowDimensions } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { useAuth } from '../../auth/context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../theme/ThemeContext';
+import ImageCarousel from '../../feed/components/ImageCarousel';
 
 interface ProfessionalCardProps {
     item: any;
     onPress: () => void;
+    hideAuthorRow?: boolean;
 }
 
-export default function ProfessionalCard({ item, onPress }: ProfessionalCardProps) {
+export default function ProfessionalCard({ item, onPress, hideAuthorRow }: ProfessionalCardProps) {
     const { colors, isDark } = useTheme();
+    const navigation = useNavigation();
+    const authContext = useAuth() as any;
+    const { width: cardWidth } = useWindowDimensions();
+
+    const goToProfile = () => {
+        const profileUserId = item.user?.id === authContext?.user?.id ? undefined : item.user?.id;
+        (navigation as any).navigate('Profile', { userId: profileUserId });
+    };
 
     return (
-        <TouchableOpacity 
-            style={[styles.card, { backgroundColor: colors.surface, borderBottomColor: colors.border }]} 
+        <TouchableOpacity
+            style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={onPress}
             activeOpacity={0.7}
         >
-            <View style={styles.topRow}>
-                <View style={styles.avatarWrap}>
-                    {item.user?.photoUrl ? (
-                        <Image source={{ uri: item.user.photoUrl }} style={styles.avatarImg} />
-                    ) : (
-                        <Text style={styles.avatarInitials}>
-                            {item.user?.firstName?.[0] || ''}{item.user?.lastName?.[0] || ''}
-                        </Text>
-                    )}
-                </View>
-                <View style={styles.userInfo}>
-                    <Text style={[styles.profession, { color: colors.text }]} numberOfLines={1}>
-                        {item.profession}
-                    </Text>
-                    <Text style={[styles.username, { color: colors.textSecondary }]} numberOfLines={1}>
-                        @{item.user?.username}
-                    </Text>
-                </View>
-                {item.experienceYears && (
-                    <View style={[styles.experienceBadge, { backgroundColor: colors.primary }]}>
-                        <Text style={styles.experienceText}>{item.experienceYears} años exp.</Text>
+            {!hideAuthorRow && (
+                <TouchableOpacity 
+                    style={[styles.postHeader, { borderBottomColor: colors.border }]}
+                    onPress={goToProfile}
+                    activeOpacity={0.7}
+                >
+                    <View style={styles.postAvatarWrap}>
+                        {item.user?.photoUrl ? (
+                            <Image source={{ uri: item.user.photoUrl }} style={styles.postAvatarImg} />
+                        ) : (
+                            <Text style={styles.postAvatarInitials}>
+                                {item.user?.firstName?.charAt(0) || ''}{item.user?.lastName?.charAt(0) || ''}
+                            </Text>
+                        )}
                     </View>
-                )}
+                    <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                            <Text style={[styles.postAuthorName, { color: colors.text }]} numberOfLines={1}>
+                                {`${item.user?.firstName ?? ''} ${item.user?.lastName ?? ''}`.trim() || 'Usuario'}
+                            </Text>
+                            <View style={styles.typeBadge}>
+                                <Ionicons name="person-circle-outline" size={10} color="#FF6524" style={{ marginRight: 6 }} />
+                                <Text style={styles.typeBadgeText}>Servicio Profesional</Text>
+                            </View>
+                        </View>
+                        <Text style={[styles.postDate, { color: colors.textSecondary }]}>
+                            {item.user?.username ? `@${item.user.username}` : ''}
+                        </Text>
+                    </View>
+                    {!!item.experienceYears && (
+                        <View style={[styles.experienceBadge, { backgroundColor: colors.primary }]}>
+                            <Text style={styles.experienceText}>{item.experienceYears} años exp.</Text>
+                        </View>
+                    )}
+                </TouchableOpacity>
+            )}
+
+            <View style={styles.body}>
+                <Text style={[styles.profession, { color: colors.text }]} numberOfLines={hideAuthorRow ? 2 : 1}>
+                    {item.profession || ''}
+                </Text>
+
+                <Text style={[styles.description, { color: colors.textSecondary }]} numberOfLines={3}>
+                    {item.description || ''}
+                </Text>
             </View>
 
-            <Text style={[styles.description, { color: colors.textSecondary }]} numberOfLines={3}>
-                {item.description}
-            </Text>
+            {!!(item.media && item.media.length > 0) && (
+                <View style={{ width: '100%', backgroundColor: colors.surface }}>
+                    <ImageCarousel
+                        media={item.media}
+                        containerWidth={cardWidth}
+                        customAspectRatio={1}
+                        disableFullscreen={true}
+                        onPress={onPress}
+                    />
+                </View>
+            )}
 
-            <TouchableOpacity style={[styles.contactBtn, { backgroundColor: colors.primary }]}>
-                <Text style={styles.contactBtnText}>Contactar</Text>
-                <Ionicons name="chatbubble-ellipses-outline" size={16} color="#FFF" style={{ marginLeft: 6 }} />
-            </TouchableOpacity>
+            <View style={{ padding: 16, paddingTop: 0 }}>
+                <TouchableOpacity style={[styles.contactBtn, { backgroundColor: colors.primary }]}>
+                    <Text style={styles.contactBtnText}>Contactar</Text>
+                    <Ionicons name="chatbubble-ellipses-outline" size={16} color="#FFF" style={{ marginLeft: 6 }} />
+                </TouchableOpacity>
+            </View>
         </TouchableOpacity>
     );
 }
 
 const styles = StyleSheet.create({
     card: {
-        padding: 16,
-        marginHorizontal: 16,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        overflow: 'hidden',
+        backgroundColor: 'transparent',
         marginVertical: 8,
-        borderRadius: 20,
-        borderWidth: StyleSheet.hairlineWidth,
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.1,
-                shadowRadius: 6,
-            },
-            android: {
-                elevation: 4,
-            },
-        }),
+        borderRadius: 16,
+        marginHorizontal: 4,
     },
-    topRow: {
+    // ── Header post-style ──
+    postHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 14,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderBottomWidth: StyleSheet.hairlineWidth,
     },
-    avatarWrap: {
-        width: 52,
-        height: 52,
-        borderRadius: 26,
-        backgroundColor: 'rgba(255, 101, 36, 0.12)',
+    postAvatarWrap: {
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        backgroundColor: 'rgba(255,101,36,0.12)',
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 12,
+        marginRight: 10,
         overflow: 'hidden',
         borderWidth: 1.5,
-        borderColor: 'rgba(255, 101, 36, 0.3)',
+        borderColor: 'rgba(255,101,36,0.25)',
     },
-    avatarImg: { width: '100%', height: '100%' },
-    avatarInitials: {
+    postAvatarImg: { width: '100%', height: '100%' },
+    postAvatarInitials: {
         color: '#FF6524',
-        fontSize: 18,
+        fontSize: 14,
         fontWeight: '700',
     },
-    userInfo: {
-        flex: 1,
-        justifyContent: 'center',
+    postAuthorName: {
+        fontSize: 14,
+        fontWeight: '700',
     },
-    profession: {
-        fontSize: 17,
-        fontWeight: '800',
-        marginBottom: 2,
+    postDate: {
+        fontSize: 12,
+        marginTop: 1,
     },
-    username: {
-        fontSize: 13,
-        fontWeight: '500',
+    typeBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,101,36,0.10)',
+        borderRadius: 6,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderWidth: 1,
+        borderColor: 'rgba(255,101,36,0.30)',
+    },
+    typeBadgeText: {
+        color: '#FF6524',
+        fontSize: 10,
+        fontWeight: '700',
     },
     experienceBadge: {
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 8,
+        marginLeft: 8,
     },
     experienceText: {
         color: '#FFF',
         fontSize: 11,
         fontWeight: '700',
+    },
+    // ── Body ──
+    body: {
+        paddingTop: 6,
+        paddingBottom: 12,
+        paddingHorizontal: 16,
+    },
+    profession: {
+        fontSize: 16,
+        fontWeight: '800',
+        marginBottom: 6,
     },
     description: {
         fontSize: 14,
@@ -129,7 +188,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 10,
+        paddingVertical: 14,
+        marginHorizontal: -10,
         borderRadius: 12,
     },
     contactBtnText: {

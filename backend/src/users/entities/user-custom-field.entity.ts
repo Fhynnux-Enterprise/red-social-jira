@@ -12,7 +12,7 @@ import { User } from '../../auth/entities/user.entity';
 @Entity('user_custom_fields')
 export class UserCustomField {
   @Field(() => ID)
-  @PrimaryGeneratedColumn('uuid', { name: 'id_custom' })
+  @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Field()
@@ -24,13 +24,13 @@ export class UserCustomField {
   value: string;
 
   @Field()
-  @Column({ default: true })
+  @Column({ name: 'is_visible', default: true })
   isVisible: boolean;
 
-  @Column({ name: 'id_user' })
+  @Column({ name: 'user_id' })
   authorId: string;
 
   @ManyToOne(() => User, (user) => user.customFields, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'id_user' })
+  @JoinColumn({ name: 'user_id' })
   author: User;
 }

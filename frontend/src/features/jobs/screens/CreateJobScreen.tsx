@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     TextInput, ScrollView, Platform, KeyboardAvoidingView,
-    ActivityIndicator, Alert, Image
+    ActivityIndicator, Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -14,12 +14,17 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { Video as Compressor } from 'react-native-compressor';
 import Toast from 'react-native-toast-message';
-import { CREATE_JOB_OFFER, UPSERT_PROFESSIONAL_PROFILE, GET_JOB_OFFERS, GET_PROFESSIONALS } from '../graphql/jobs.operations';
+import { CREATE_JOB_OFFER, UPDATE_JOB_OFFER, UPSERT_PROFESSIONAL_PROFILE, GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS } from '../graphql/jobs.operations';
+import { useLocalSearchParams } from 'expo-router';
 
 export default function CreateJobScreen() {
     const { colors, isDark } = useTheme();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const params = useLocalSearchParams<{ editId?: string; editData?: string }>();
+    const isEditing = !!params.editId;
+    const editData = params.editData ? JSON.parse(params.editData as string) : null;
+
     const [activeTab, setActiveTab] = useState<'offer' | 'profile'>('offer');
     const [loading, setLoading] = useState(false);
 
@@ -35,11 +40,11 @@ export default function CreateJobScreen() {
     const [isUploadingMedia, setIsUploadingMedia] = useState(false);
     const { pickMultipleMedia, uploadMedia } = useMediaUpload();
     // Form states - Offer
-    const [offerTitle, setOfferTitle] = useState('');
-    const [offerDescription, setOfferDescription] = useState('');
-    const [offerLocation, setOfferLocation] = useState('');
-    const [offerSalary, setOfferSalary] = useState('');
-    const [offerPhone, setOfferPhone] = useState('');
+    const [offerTitle, setOfferTitle] = useState(editData?.title || '');
+    const [offerDescription, setOfferDescription] = useState(editData?.description || '');
+    const [offerLocation, setOfferLocation] = useState(editData?.location || '');
+    const [offerSalary, setOfferSalary] = useState(editData?.salary || '');
+    const [offerPhone, setOfferPhone] = useState(editData?.contactPhone || '');
 
     // Form states - Profile
     const [profProfession, setProfProfession] = useState('');
@@ -49,14 +54,17 @@ export default function CreateJobScreen() {
 
     const [createJobOffer] = useMutation(CREATE_JOB_OFFER, {
         refetchQueries: [{ query: GET_JOB_OFFERS, variables: { limit: 20, offset: 0 } }],
-        onCompleted: () => {
-            setLoading(false);
-            router.back();
-        },
-        onError: (error) => {
-            setLoading(false);
-            Alert.alert('Error', error.message || 'No se pudo crear la oferta.');
-        }
+        onCompleted: () => { setLoading(false); router.back(); },
+        onError: (error) => { setLoading(false); Toast.show({ type: 'error', text1: 'Error al publicar', text2: error.message || 'No se pudo crear la oferta.' }); }
+    });
+
+    const [updateJobOffer] = useMutation(UPDATE_JOB_OFFER, {
+        refetchQueries: [
+            { query: GET_JOB_OFFERS, variables: { limit: 20, offset: 0 } },
+            { query: GET_MY_JOB_OFFERS },
+        ],
+        onCompleted: () => { setLoading(false); router.back(); },
+        onError: (error) => { setLoading(false); Toast.show({ type: 'error', text1: 'Error al guardar', text2: error.message || 'No se pudo actualizar la oferta.' }); }
     });
 
     const [upsertProfessionalProfile] = useMutation(UPSERT_PROFESSIONAL_PROFILE, {
@@ -67,7 +75,7 @@ export default function CreateJobScreen() {
         },
         onError: (error) => {
             setLoading(false);
-            Alert.alert('Error', error.message || 'No se pudo guardar el perfil.');
+            Toast.show({ type: 'error', text1: 'Error al guardar', text2: error.message || 'No se pudo guardar el perfil.' });
         }
     });
 
@@ -118,90 +126,118 @@ export default function CreateJobScreen() {
     const handleSave = async () => {
         if (loading || isUploadingMedia) return;
 
+        // Validación inicial según el tipo de publicación
         if (activeTab === 'offer') {
             if (!offerTitle || !offerDescription || !offerLocation || !offerPhone) {
-                Alert.alert('Campos obligatorios', 'Por favor completa los campos marcados con *');
+                Toast.show({
+                    type: 'error',
+                    text1: 'Campos obligatorios',
+                    text2: 'Por favor completa título, descripción, ubicación y teléfono.',
+                });
                 return;
             }
-
-            const mediaToUpload = localMediaList.filter(m => m.isValid);
-            let mediaInput: { url: string, type: string, order: number }[] = [];
-
-            if (mediaToUpload.length > 0) {
-                setIsUploadingMedia(true);
-                try {
-                    const uploadPromises = mediaToUpload.map(async (media, index) => {
-                        let finalUri = media.uri;
-
-                        const startProgress = (status: any) => {
-                            let currentProgress = 0;
-                            const interval = setInterval(() => {
-                                currentProgress += Math.random() * 15;
-                                if (currentProgress >= 90) {
-                                    clearInterval(interval);
-                                    currentProgress = 90;
-                                }
-                                setLocalMediaList(prev => prev.map(m => m.uri === media.uri ? { ...m, uploadStatus: status, progress: Math.floor(currentProgress) } : m));
-                            }, 200);
-                            return interval;
-                        };
-
-                        if (media.type === 'video') {
-                            const compInterval = startProgress('compressing');
-                            try {
-                                finalUri = await Compressor.compress(media.uri, {
-                                    compressionMethod: 'manual',
-                                    bitrate: 3000000,
-                                    maxSize: 720
-                                });
-                            } finally {
-                                clearInterval(compInterval);
-                            }
-                        }
-
-                        const uploadInterval = startProgress('uploading');
-                        try {
-                            const uploadedUrl = await uploadMedia(finalUri, media.mimeType, 'job-offers');
-                            clearInterval(uploadInterval);
-                            setLocalMediaList(prev => prev.map(m => m.uri === media.uri ? { ...m, uploadStatus: 'done' as const, progress: 100 } : m));
-                            return {
-                                url: uploadedUrl,
-                                type: media.type === 'video' ? 'VIDEO' : 'IMAGE',
-                                order: index
-                            };
-                        } catch (e) {
-                            clearInterval(uploadInterval);
-                            throw e;
-                        }
-                    });
-                    
-                    mediaInput = await Promise.all(uploadPromises);
-                } catch (error: any) {
-                    setIsUploadingMedia(false);
-                    Toast.show({ type: 'error', text1: 'Error en la subida', text2: error.message });
-                    return;
-                }
-            }
-
-            setLoading(true);
-            createJobOffer({
-                variables: {
-                    input: {
-                        title: offerTitle,
-                        description: offerDescription,
-                        location: offerLocation,
-                        salary: offerSalary || undefined,
-                        contactPhone: offerPhone,
-                        media: mediaInput.length > 0 ? mediaInput : undefined,
-                    }
-                }
-            });
         } else {
             if (!profProfession || !profDescription || !profPhone) {
-                Alert.alert('Campos obligatorios', 'Por favor completa los campos marcados con *');
+                Toast.show({
+                    type: 'error',
+                    text1: 'Campos obligatorios',
+                    text2: 'Por favor completa profesión, descripción y teléfono.',
+                });
                 return;
             }
-            setLoading(true);
+        }
+
+        const mediaToUpload = localMediaList.filter(m => m.isValid);
+        let mediaInput: { url: string, type: string, order: number }[] = [];
+
+        if (mediaToUpload.length > 0) {
+            setIsUploadingMedia(true);
+            try {
+                const uploadPromises = mediaToUpload.map(async (media, index) => {
+                    let finalUri = media.uri;
+
+                    const startProgress = (status: any) => {
+                        let currentProgress = 0;
+                        const interval = setInterval(() => {
+                            currentProgress += Math.random() * 15;
+                            if (currentProgress >= 90) {
+                                clearInterval(interval);
+                                currentProgress = 90;
+                            }
+                            setLocalMediaList(prev => prev.map(m => m.uri === media.uri ? { ...m, uploadStatus: status, progress: Math.floor(currentProgress) } : m));
+                        }, 200);
+                        return interval;
+                    };
+
+                    if (media.type === 'video') {
+                        const compInterval = startProgress('compressing');
+                        try {
+                            finalUri = await Compressor.compress(media.uri, {
+                                compressionMethod: 'manual',
+                                bitrate: 3000000,
+                                maxSize: 720
+                            });
+                        } finally {
+                            clearInterval(compInterval);
+                        }
+                    }
+
+                    const uploadInterval = startProgress('uploading');
+                    try {
+                        let uploadFolder = activeTab === 'offer' ? 'job-offers' : 'professional-profiles';
+                        const uploadedUrl = await uploadMedia(finalUri, media.mimeType, uploadFolder);
+                        clearInterval(uploadInterval);
+                        setLocalMediaList(prev => prev.map(m => m.uri === media.uri ? { ...m, uploadStatus: 'done' as const, progress: 100 } : m));
+                        return {
+                            url: uploadedUrl,
+                            type: media.type === 'video' ? 'VIDEO' : 'IMAGE',
+                            order: index
+                        };
+                    } catch (e) {
+                        clearInterval(uploadInterval);
+                        throw e;
+                    }
+                });
+                
+                mediaInput = await Promise.all(uploadPromises);
+            } catch (error: any) {
+                setIsUploadingMedia(false);
+                Toast.show({ type: 'error', text1: 'Error en la subida', text2: error.message });
+                return;
+            }
+        }
+
+        setLoading(true);
+
+        if (activeTab === 'offer') {
+            if (isEditing) {
+                updateJobOffer({
+                    variables: {
+                        input: {
+                            id: params.editId,
+                            title: offerTitle,
+                            description: offerDescription,
+                            location: offerLocation,
+                            salary: offerSalary || undefined,
+                            contactPhone: offerPhone,
+                        }
+                    }
+                });
+            } else {
+                createJobOffer({
+                    variables: {
+                        input: {
+                            title: offerTitle,
+                            description: offerDescription,
+                            location: offerLocation,
+                            salary: offerSalary || undefined,
+                            contactPhone: offerPhone,
+                            media: mediaInput.length > 0 ? mediaInput : undefined,
+                        }
+                    }
+                });
+            }
+        } else {
             upsertProfessionalProfile({
                 variables: {
                     input: {
@@ -209,6 +245,7 @@ export default function CreateJobScreen() {
                         description: profDescription,
                         experienceYears: profExperience ? parseInt(profExperience, 10) : undefined,
                         contactPhone: profPhone,
+                        media: mediaInput.length > 0 ? mediaInput : undefined,
                     }
                 }
             });
@@ -226,7 +263,9 @@ export default function CreateJobScreen() {
                 <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
                     <Ionicons name="close" size={24} color={colors.text} />
                 </TouchableOpacity>
-                <Text style={[styles.headerTitle, { color: colors.text }]}>Nueva Publicación</Text>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>
+                    {isEditing ? 'Editar Oferta' : 'Nueva Publicación'}
+                </Text>
                 <TouchableOpacity 
                     onPress={handleSave} 
                     disabled={loading || isUploadingMedia}
@@ -235,7 +274,7 @@ export default function CreateJobScreen() {
                     {loading || isUploadingMedia ? (
                         <ActivityIndicator size="small" color="#FFF" />
                     ) : (
-                        <Text style={styles.saveBtnText}>Publicar</Text>
+                        <Text style={styles.saveBtnText}>{isEditing ? 'Guardar' : 'Publicar'}</Text>
                     )}
                 </TouchableOpacity>
             </View>
@@ -440,7 +479,77 @@ export default function CreateJobScreen() {
                                 />
                             </View>
                         </View>
-                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                        
+                        <Text style={[styles.label, { color: colors.textSecondary }]}>Multimedia (Opcional)</Text>
+                        <TouchableOpacity style={styles.mediaButton} activeOpacity={0.7} onPress={handlePickMedia}>
+                            <View style={styles.mediaButtonIconGradientWrapper}>
+                                <MaskedView style={{ width: 20, height: 20 }} maskElement={<Ionicons name="image" size={20} color="black" />}>
+                                    <LinearGradient colors={[colors.primary, colors.secondary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }} />
+                                </MaskedView>
+                            </View>
+                            <Text style={styles.mediaButtonText}>Añadir foto o video</Text>
+                        </TouchableOpacity>
+
+                        {localMediaList.length > 0 && (
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                                {localMediaList.map((mediaItem, index) => (
+                                    <View key={index} style={styles.mediaPreviewContainer}>
+                                        {mediaItem.type === 'video' ? (
+                                            <View style={styles.mediaPreview}>
+                                                <Image source={{ uri: mediaItem.uri }} style={styles.mediaPreview} />
+                                                <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.1)' }]}>
+                                                    <Ionicons name="play-circle" size={30} color="#FFF" />
+                                                </View>
+                                            </View>
+                                        ) : (
+                                            <Image source={{ uri: mediaItem.uri }} style={styles.mediaPreview} resizeMode="cover" />
+                                        )}
+
+                                        {mediaItem.isValid && (!mediaItem.uploadStatus || mediaItem.uploadStatus === 'idle') && (
+                                            <View style={styles.readyBadge}>
+                                                <Ionicons name="checkmark-done-circle" size={20} color="#007AFF" />
+                                            </View>
+                                        )}
+
+                                        {(!mediaItem.uploadStatus || mediaItem.uploadStatus === 'idle') && (
+                                            <TouchableOpacity
+                                                style={styles.removeMediaButton}
+                                                onPress={() => setLocalMediaList(prev => prev.filter((_, i) => i !== index))}
+                                            >
+                                                <Ionicons name="close-circle" size={24} color="rgba(0,0,0,0.8)" />
+                                            </TouchableOpacity>
+                                        )}
+
+                                        {!mediaItem.isValid && (
+                                            <View style={styles.invalidOverlay}>
+                                                <Ionicons name="close-outline" size={24} color="#FFF" />
+                                                <Text style={styles.invalidText}>{mediaItem.errorMessage}</Text>
+                                            </View>
+                                        )}
+
+                                        {mediaItem.uploadStatus && mediaItem.uploadStatus !== 'idle' && (
+                                            <View style={[styles.uploadOverlay, mediaItem.uploadStatus === 'done' && styles.uploadDoneOverlay]}>
+                                                {mediaItem.uploadStatus === 'done' ? (
+                                                    <View style={styles.doneBadge}>
+                                                        <Ionicons name="checkmark-circle" size={24} color="#4ADE80" />
+                                                    </View>
+                                                ) : (
+                                                    <View style={styles.uploadingStatusContainer}>
+                                                        <ActivityIndicator size="small" color="#FFF" />
+                                                        <View style={{ marginLeft: 4 }}>
+                                                            <Text style={styles.uploadingLabel}>{mediaItem.uploadStatus === 'compressing' ? 'Optimizando...' : 'Subiendo...'}</Text>
+                                                            <Text style={styles.progressText}>{mediaItem.progress}%</Text>
+                                                        </View>
+                                                    </View>
+                                                )}
+                                            </View>
+                                        )}
+                                    </View>
+                                ))}
+                            </ScrollView>
+                        )}
+
+                        <Text style={[styles.infoText, { color: colors.textSecondary, marginTop: 16 }]}>
                             * Nota: Solo puedes tener un perfil profesional activo. Si ya tienes uno, se actualizará automáticamente.
                         </Text>
                     </View>

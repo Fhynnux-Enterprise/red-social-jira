@@ -89,7 +89,7 @@ export const GET_USER_PROFILE = gql`
         createdAt
         updatedAt
         likes {
-          id_post_like
+          id
           user {
             id
             firstName

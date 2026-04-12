@@ -6,7 +6,7 @@ import { Post } from './post.entity';
 @Entity('post_media')
 export class PostMedia {
     @Field(() => ID)
-    @PrimaryGeneratedColumn('uuid', { name: 'id_post_media' })
+    @PrimaryGeneratedColumn('uuid')
     id: string;
 
     @Field()
@@ -23,14 +23,14 @@ export class PostMedia {
 
     @Field(() => Post)
     @ManyToOne(() => Post, post => post.media, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'id_post' })
+    @JoinColumn({ name: 'post_id' })
     post: Post;
 
-    @Column({ name: 'id_post' })
+    @Column({ name: 'post_id' })
     postId: string;
 
     @Field()
-    @CreateDateColumn({ type: 'timestamptz' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 
     @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })

@@ -1,5 +1,21 @@
 import { InputType, Field, Int } from '@nestjs/graphql';
-import { IsInt, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, IsString, IsArray, IsEnum, IsNumber, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+@InputType()
+export class ProfessionalProfileMediaInput {
+  @Field()
+  @IsString()
+  url: string;
+
+  @Field()
+  @IsEnum(['IMAGE', 'VIDEO'])
+  type: string;
+
+  @Field(() => Int)
+  @IsNumber()
+  order: number;
+}
 
 @InputType()
 export class UpsertProfessionalProfileInput {
@@ -22,4 +38,11 @@ export class UpsertProfessionalProfileInput {
   @IsString()
   @IsNotEmpty()
   contactPhone: string;
+
+  @Field(() => [ProfessionalProfileMediaInput], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProfessionalProfileMediaInput)
+  media?: ProfessionalProfileMediaInput[];
 }

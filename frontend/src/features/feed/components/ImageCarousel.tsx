@@ -284,7 +284,7 @@ export default function ImageCarousel({
                             extraData={activeIndex}
                             bounces={false}
                             overScrollMode="never"
-                            scrollEnabled={activeIndex < media.length - 1}
+                            scrollEnabled={activeIndex < sortedMedia.length - 1}
                             getItemLayout={(_, index) => ({
                                 length: ITEM_WIDTH,
                                 offset: ITEM_WIDTH * index,
@@ -439,7 +439,7 @@ const styles = StyleSheet.create({
     counter: {
         position: 'absolute',
         top: 10,
-        left: 12,
+        left: 24,
         backgroundColor: 'rgba(0,0,0,0.55)',
         borderRadius: 12,
         paddingHorizontal: 10,

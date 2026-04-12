@@ -17,7 +17,7 @@ import { JobApplication } from '../../jobs/entities/job-application.entity';
 @Entity('users')
 export class User {
     @Field(() => ID)
-    @PrimaryColumn('uuid', { name: 'id_user' })
+    @PrimaryColumn('uuid')
     id: string;
 
     @Field()
@@ -29,11 +29,11 @@ export class User {
     username: string;
 
     @Field()
-    @Column()
+    @Column({ name: 'first_name' })
     firstName: string;
 
     @Field()
-    @Column()
+    @Column({ name: 'last_name' })
     lastName: string;
 
     @Field({ nullable: true })
@@ -45,7 +45,7 @@ export class User {
     bio: string;
 
     @Field({ nullable: true })
-    @Column({ nullable: true })
+    @Column({ name: 'photo_url', nullable: true })
     photoUrl: string;
 
     @Field({ nullable: true })
@@ -55,20 +55,20 @@ export class User {
     @Column({ default: 'USER' })
     role: string;
 
-    @Column({ default: true })
+    @Column({ name: 'is_active', default: true })
     isActive: boolean;
 
-    @CreateDateColumn({ type: 'timestamptz' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 
-    @UpdateDateColumn({ type: 'timestamptz' })
+    @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
     updatedAt: Date;
 
-    @DeleteDateColumn({ type: 'timestamptz' })
+    @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz' })
     deletedAt: Date;
 
     @Field(() => Date, { nullable: true })
-    @Column({ type: 'timestamptz', nullable: true })
+    @Column({ name: 'last_active_at', type: 'timestamptz', nullable: true })
     lastActiveAt?: Date;
 
     @Field(() => [Post], { nullable: true })

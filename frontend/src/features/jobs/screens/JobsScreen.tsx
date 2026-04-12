@@ -258,18 +258,13 @@ export default function JobsScreen() {
             }
             if (resultsTab === 'my_offers') {
                 return (
-                    <View style={styles.cardContainer}>
-                        <JobOfferCard 
-                            item={item} 
-                            onPress={() => router.push(`/jobs/${item.id_job_offer}/applicants`)} 
-                        />
-                        <View style={styles.applicantsBadge}>
-                            <Text style={styles.applicantsBadgeText}>Ver Postulantes</Text>
-                            <Ionicons name="chevron-forward" size={14} color="#FFF" />
-                        </View>
-                    </View>
+                    <JobOfferCard
+                        item={item}
+                        onPress={() => router.push(`/jobs/${item.id}/applicants`)}
+                    />
                 );
             }
+
             if (resultsTab === 'my_services') {
                 return <ProfessionalCard item={item} onPress={() => {}} />;
             }
@@ -343,7 +338,7 @@ export default function JobsScreen() {
             ) : (
                 <FlatList
                     data={getListData()}
-                    keyExtractor={(item) => item.id_job_offer || item.id_professional_profile || item.id_job_application || item.id}
+                    keyExtractor={(item) => item.id}
                     renderItem={renderItem}
                     ListHeaderComponent={renderListHeader}
                     contentContainerStyle={[

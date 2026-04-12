@@ -84,10 +84,10 @@ export class PostsService {
             const postIds = posts.map(p => p.id);
             const rows: { postId: string; count: string }[] = await this.postsRepository.manager
                 .query(
-                    `SELECT id_post as "postId", COUNT(id_comment) as "count"
+                    `SELECT post_id as "postId", COUNT(id) as "count"
                      FROM comments
-                     WHERE id_post = ANY($1) AND "deletedAt" IS NULL
-                     GROUP BY id_post`,
+                     WHERE post_id = ANY($1) AND deleted_at IS NULL
+                     GROUP BY post_id`,
                     [postIds],
                 );
             const countMap = new Map(rows.map(r => [r.postId, parseInt(r.count, 10)]));
@@ -123,10 +123,10 @@ export class PostsService {
             const postIds = posts.map(p => p.id);
             const rows: { postId: string; count: string }[] = await this.postsRepository.manager
                 .query(
-                    `SELECT id_post as "postId", COUNT(id_comment) as "count"
+                    `SELECT post_id as "postId", COUNT(id) as "count"
                      FROM comments
-                     WHERE id_post = ANY($1) AND "deletedAt" IS NULL
-                     GROUP BY id_post`,
+                     WHERE post_id = ANY($1) AND deleted_at IS NULL
+                     GROUP BY post_id`,
                     [postIds],
                 );
             const countMap = new Map(rows.map(r => [r.postId, parseInt(r.count, 10)]));
@@ -161,10 +161,10 @@ export class PostsService {
             const postIds = posts.map(p => p.id);
             const rows: { postId: string; count: string }[] = await this.postsRepository.manager
                 .query(
-                    `SELECT id_post as "postId", COUNT(id_comment) as "count"
+                    `SELECT post_id as "postId", COUNT(id) as "count"
                      FROM comments
-                     WHERE id_post = ANY($1) AND "deletedAt" IS NULL
-                     GROUP BY id_post`,
+                     WHERE post_id = ANY($1) AND deleted_at IS NULL
+                     GROUP BY post_id`,
                     [postIds],
                 );
             const countMap = new Map(rows.map(r => [r.postId, parseInt(r.count, 10)]));

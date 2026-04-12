@@ -7,30 +7,30 @@ import { Conversation } from './conversation.entity';
 @Entity('participants')
 export class Participant {
     @Field(() => ID)
-    @PrimaryGeneratedColumn('uuid', { name: 'id_participant' })
-    id_participant: string;
+    @PrimaryGeneratedColumn('uuid')
+    id: string;
 
-    @Column({ name: 'id_user' })
-    id_user: string;
+    @Column({ name: 'user_id' })
+    userId: string;
 
-    @Column({ name: 'id_conversation' })
-    id_conversation: string;
+    @Column({ name: 'conversation_id' })
+    conversationId: string;
 
     @Field(() => ID, { nullable: true })
-    @Column({ type: 'uuid', name: 'id_last_read_message', nullable: true })
-    id_last_read_message: string;
+    @Column({ name: 'last_read_message_id', type: 'uuid', nullable: true })
+    lastReadMessageId: string;
 
     @Field()
-    @CreateDateColumn({ type: 'timestamptz' })
+    @CreateDateColumn({ name: 'joined_at', type: 'timestamptz' })
     joinedAt: Date;
 
     @Field(() => User)
     @ManyToOne(() => User, (user) => user.participations)
-    @JoinColumn({ name: 'id_user' })
+    @JoinColumn({ name: 'user_id' })
     user: User;
 
     @Field(() => Conversation)
     @ManyToOne(() => Conversation, (conversation) => conversation.participants)
-    @JoinColumn({ name: 'id_conversation' })
+    @JoinColumn({ name: 'conversation_id' })
     conversation: Conversation;
 }

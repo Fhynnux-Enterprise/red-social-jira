@@ -54,18 +54,12 @@ export default function MyJobsScreen() {
             ) : (
                 <FlatList
                     data={data?.myJobOffers ?? []}
-                    keyExtractor={(item) => item.id_job_offer || item.id}
+                    keyExtractor={(item) => item.id}
                     renderItem={({ item }) => (
-                        <View style={styles.cardContainer}>
-                            <JobOfferCard 
-                                item={item} 
-                                onPress={() => router.push(`/jobs/${item.id_job_offer}/applicants`)} 
-                            />
-                            <View style={styles.applicantsBadge}>
-                                <Text style={styles.applicantsBadgeText}>Ver Postulantes</Text>
-                                <Ionicons name="chevron-forward" size={14} color="#FFF" />
-                            </View>
-                        </View>
+                        <JobOfferCard
+                            item={item}
+                            onPress={() => router.push(`/jobs/${item.id}/applicants`)}
+                        />
                     )}
                     contentContainerStyle={[
                         styles.listContent,
@@ -117,27 +111,26 @@ const styles = StyleSheet.create({
         position: 'relative',
         marginBottom: 8, // Ensure enough space given JobOfferCard has margins
     },
-    applicantsBadge: {
-        position: 'absolute',
-        top: 24,
-        right: 24,
-        backgroundColor: '#4CAF50',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 12,
+    applicantsBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 4,
-        elevation: 4,
+        justifyContent: 'center',
+        gap: 8,
+        marginHorizontal: 16,
+        marginTop: -4,
+        marginBottom: 8,
+        paddingVertical: 12,
+        borderRadius: 14,
+        backgroundColor: '#4CAF50',
+        elevation: 3,
         shadowColor: '#4CAF50',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.4,
+        shadowOpacity: 0.35,
         shadowRadius: 4,
-        zIndex: 10,
     },
-    applicantsBadgeText: {
+    applicantsBtnText: {
         color: '#FFF',
-        fontSize: 12,
+        fontSize: 14,
         fontWeight: '700',
     },
     emptyContainer: {

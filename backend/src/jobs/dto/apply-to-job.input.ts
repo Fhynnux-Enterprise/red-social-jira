@@ -6,7 +6,7 @@ export class ApplyToJobInput {
   @Field(() => ID)
   @IsUUID()
   @IsNotEmpty()
-  id_job_offer: string;
+  jobOfferId: string;
 
   @Field({ nullable: true })
   @IsString()

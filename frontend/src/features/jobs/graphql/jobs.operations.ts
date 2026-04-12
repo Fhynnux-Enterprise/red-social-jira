@@ -3,7 +3,7 @@ import { gql } from '@apollo/client';
 export const GET_JOB_OFFERS = gql`
   query GetJobOffers($limit: Int, $offset: Int) {
     jobOffers(limit: $limit, offset: $offset) {
-      id_job_offer
+      id
       title
       description
       location
@@ -28,7 +28,7 @@ export const GET_JOB_OFFERS = gql`
 export const GET_PROFESSIONALS = gql`
   query GetProfessionalProfiles($limit: Int, $offset: Int) {
     professionalProfiles(limit: $limit, offset: $offset) {
-      id_professional_profile
+      id
       profession
       description
       experienceYears
@@ -39,6 +39,11 @@ export const GET_PROFESSIONALS = gql`
         lastName
         photoUrl
       }
+      media {
+        url
+        type
+        order
+      }
     }
   }
 `;
@@ -46,7 +51,7 @@ export const GET_PROFESSIONALS = gql`
 export const CREATE_JOB_OFFER = gql`
   mutation CreateJobOffer($input: CreateJobOfferInput!) {
     createJobOffer(createJobOfferInput: $input) {
-      id_job_offer
+      id
       title
       description
       location
@@ -69,7 +74,7 @@ export const CREATE_JOB_OFFER = gql`
 export const UPSERT_PROFESSIONAL_PROFILE = gql`
   mutation UpsertProfessionalProfile($input: UpsertProfessionalProfileInput!) {
     upsertProfessionalProfile(upsertProfessionalProfileInput: $input) {
-      id_professional_profile
+      id
       profession
       description
       experienceYears
@@ -77,6 +82,11 @@ export const UPSERT_PROFESSIONAL_PROFILE = gql`
         id
         username
         photoUrl
+      }
+      media {
+        url
+        type
+        order
       }
     }
   }
@@ -86,13 +96,13 @@ export const APPLY_TO_JOB = gql`
   mutation ApplyToJob($input: ApplyToJobInput!) {
     applyToJob(input: $input) {
       application {
-        id_job_application
+        id
         status
         message
         cvUrl
         createdAt
         jobOffer {
-          id_job_offer
+          id
           title
         }
       }
@@ -105,14 +115,14 @@ export const APPLY_TO_JOB = gql`
 export const GET_MY_APPLICATIONS = gql`
   query GetMyApplications {
     myApplications {
-      id_job_application
+      id
       status
       message
       cvUrl
       createdAt
       updatedAt
       jobOffer {
-        id_job_offer
+        id
         title
         location
         author {
@@ -127,9 +137,9 @@ export const GET_MY_APPLICATIONS = gql`
 `;
 
 export const GET_JOB_APPLICATIONS = gql`
-  query GetJobApplications($id_job_offer: ID!) {
-    jobApplications(id_job_offer: $id_job_offer) {
-      id_job_application
+  query GetJobApplications($jobOfferId: ID!) {
+    jobApplications(jobOfferId: $jobOfferId) {
+      id
       status
       message
       cvUrl
@@ -148,7 +158,7 @@ export const GET_JOB_APPLICATIONS = gql`
 export const UPDATE_APPLICATION_STATUS = gql`
   mutation UpdateApplicationStatus($input: UpdateApplicationStatusInput!) {
     updateApplicationStatus(input: $input) {
-      id_job_application
+      id
       status
       updatedAt
       applicant {
@@ -163,11 +173,12 @@ export const UPDATE_APPLICATION_STATUS = gql`
 export const GET_MY_JOB_OFFERS = gql`
   query GetMyJobOffers {
     myJobOffers {
-      id_job_offer
+      id
       title
       description
       location
       salary
+      contactPhone
       createdAt
       author {
         id
@@ -188,7 +199,7 @@ export const GET_MY_JOB_OFFERS = gql`
 export const GET_MY_PROFESSIONAL_PROFILE = gql`
   query GetMyProfessionalProfile {
     myProfessionalProfile {
-      id_professional_profile
+      id
       profession
       description
       experienceYears
@@ -199,6 +210,43 @@ export const GET_MY_PROFESSIONAL_PROFILE = gql`
         lastName
         photoUrl
       }
+      media {
+        url
+        type
+        order
+      }
     }
+  }
+`;
+
+export const UPDATE_JOB_OFFER = gql`
+  mutation UpdateJobOffer($input: UpdateJobOfferInput!) {
+    updateJobOffer(input: $input) {
+      id
+      title
+      description
+      location
+      salary
+      contactPhone
+      createdAt
+      author {
+        id
+        username
+        firstName
+        lastName
+        photoUrl
+      }
+      media {
+        url
+        type
+        order
+      }
+    }
+  }
+`;
+
+export const DELETE_JOB_OFFER = gql`
+  mutation DeleteJobOffer($id: ID!) {
+    deleteJobOffer(id: $id)
   }
 `;

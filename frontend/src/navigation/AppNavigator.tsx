@@ -23,8 +23,8 @@ import { useAuth } from '../features/auth/context/AuthContext';
 export type AppStackParamList = {
     MainTabs: { screen?: string; params?: any } | undefined;
     EditProfile: undefined;
-    ChatRoom: { id_conversation: string; activateSearch?: boolean };
-    ChatDetails: { id_conversation: string };
+    ChatRoom: { conversationId: string; activateSearch?: boolean };
+    ChatDetails: { conversationId: string };
     NewChat: undefined;
     Profile: { userId?: string } | undefined;
     StoryViewer: { userId: string; initialStoryId?: string };

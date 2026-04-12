@@ -3,7 +3,9 @@ import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { useFocusEffect, useNavigation, useIsFocused } from '@react-navigation/native';
-import { GET_POSTS, DELETE_POST } from '../graphql/posts.operations';
+import { GET_POSTS, DELETE_POST, GET_FEED } from '../graphql/posts.operations';
+import JobOfferCard from '../../jobs/components/JobOfferCard';
+import ProfessionalCard from '../../jobs/components/ProfessionalCard';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../auth/context/AuthContext';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,6 +19,7 @@ import PostCard from '../components/PostCard';
 import PostOptionsModal from '../components/PostOptionsModal';
 import CommentsModal from '../../comments/components/CommentsModal';
 import { StoriesBar } from '../../stories/components/StoriesBar';
+import FeedItemDetailModal from '../components/FeedItemDetailModal';
 
 export interface PostAuthor {
     id: string;
@@ -34,7 +37,7 @@ export interface PostMedia {
 }
 
 export interface PostLike {
-    id_post_like: string;
+    id: string;
     user: PostAuthor;
 }
 
@@ -77,6 +80,7 @@ export default function FeedScreen() {
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<Post | null>(null);
     const [selectedPostForComments, setSelectedPostForComments] = useState<SelectedPostForComments | null>(null);
+    const [selectedFeedItem, setSelectedFeedItem] = useState<any | null>(null);
 
     const isFocused = useIsFocused();
     // Estado para trackear qué post está visible en pantalla (para autoplay)
@@ -85,8 +89,8 @@ export default function FeedScreen() {
     const [scrollOffset, setScrollOffset] = useState(0);
     const flatListRef = useRef<FlatList>(null);
 
-    const { data, loading, error, refetch, fetchMore, networkStatus } = useQuery<GetPostsData>(GET_POSTS, {
-        variables: { limit: 5, offset: 0 },
+    const { data, loading, error, refetch, fetchMore, networkStatus } = useQuery<{ getFeed: any[] }>(GET_FEED, {
+        variables: { limit: 10, offset: 0 },
         fetchPolicy: 'cache-and-network',
         notifyOnNetworkStatusChange: true,
     });
@@ -103,27 +107,25 @@ export default function FeedScreen() {
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
 
     const [deletePost] = useMutation(DELETE_POST, {
-        refetchQueries: [{ query: GET_POSTS, variables: { limit: 5, offset: 0 } }],
+        refetchQueries: [{ query: GET_FEED, variables: { limit: 10, offset: 0 } }],
     });
 
     const isFetchingMore = networkStatus === 3;
 
     const loadMorePosts = useCallback(() => {
-        if (loading || isFetchingMore || !hasMore || !data?.getPosts.length) return;
+        if (loading || isFetchingMore || !hasMore || !data?.getFeed?.length) return;
 
         fetchMore({
             variables: {
-                offset: data.getPosts.length,
-                limit: 5
+                offset: data.getFeed.length,
+                limit: 10,
             },
         }).then((fetchMoreResult) => {
-            // BUG FIX: El resultado de fetchMore contiene los datos en .data
-            // Si no hay datos o la longitud es menor al límite, cerramos la paginación
-            if (!fetchMoreResult.data || fetchMoreResult.data.getPosts.length < 5) {
+            if (!fetchMoreResult.data || fetchMoreResult.data.getFeed.length < 10) {
                 setHasMore(false);
             }
         });
-    }, [data?.getPosts.length, fetchMore, loading, isFetchingMore, hasMore]);
+    }, [data?.getFeed?.length, fetchMore, loading, isFetchingMore, hasMore]);
 
     const handleRefresh = useCallback(async () => {
         setHasMore(true);
@@ -208,19 +210,47 @@ export default function FeedScreen() {
         itemVisiblePercentThreshold: 55, // 55% visible para activar autoplay
     }).current;
 
-    const renderPost = useCallback(({ item }: { item: Post }) => (
-        <PostCard
-            item={item}
-            currentUserId={currentUser?.id}
-            onOptionsPress={handleOptionsPress}
-            onOpenComments={(_: any, initialTab?: 'comments' | 'likes', minimize?: boolean, initialExpanded?: boolean) => 
-                setSelectedPostForComments({ post: item, minimize: !!minimize, initialTab, initialExpanded })
-            }
-            isViewable={item.id === visiblePostId}
-            isFocused={isFocused}
-            isOverlayActive={!!selectedPostForComments || isModalVisible}
-        />
-    ), [currentUser?.id, handleOptionsPress, visiblePostId, isFocused, selectedPostForComments]);
+    const renderFeedItem = useCallback(({ item }: { item: any }) => {
+        // Para Posts: abre expandido con comentarios. Para Ofertas/Servicios: solo muestra la tarjeta (minimizado = sin burbuja de comentarios)
+        const openInModal = (isPost = false) =>
+            setSelectedPostForComments({ post: item, minimize: !isPost, initialTab: 'comments', initialExpanded: false });
+
+        if (item.__typename === 'JobOffer') {
+            const mappedItem = { 
+                ...item, 
+                title: item.jobTitle ?? item.title, 
+                media: item.jobMedia ?? [] 
+            };
+            return <JobOfferCard item={mappedItem} onPress={() => openInModal(false)} />;
+        }
+        if (item.__typename === 'ProfessionalProfile') {
+            const mappedItem = { 
+                ...item, 
+                media: item.profMedia ?? [] 
+            };
+            return <ProfessionalCard item={mappedItem} onPress={() => openInModal(false)} />;
+        }
+        
+        // Default: Post
+        const mappedPost = {
+            ...item,
+            media: item.postMedia ?? []
+        };
+        
+        return (
+            <PostCard
+                item={mappedPost}
+                currentUserId={currentUser?.id}
+                onOptionsPress={handleOptionsPress}
+                onOpenComments={(_: any, initialTab?: 'comments' | 'likes', minimize?: boolean, initialExpanded?: boolean) =>
+                    setSelectedPostForComments({ post: mappedPost, minimize: !!minimize, initialTab, initialExpanded })
+                }
+                isViewable={item.id === visiblePostId}
+                isFocused={isFocused}
+                isOverlayActive={!!selectedPostForComments || isModalVisible}
+            />
+        );
+    }, [currentUser?.id, handleOptionsPress, visiblePostId, isFocused, selectedPostForComments, isModalVisible]);
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -262,7 +292,21 @@ export default function FeedScreen() {
                 {(loading && networkStatus === 1) || (!data && loading && networkStatus !== 3) ? (
                     <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
                 ) : error && !data ? (
-                    <Text style={styles.errorText}>No se pudieron cargar los posts.</Text>
+                    <View style={styles.emptyContainer}>
+                        <Ionicons name="cloud-offline-outline" size={48} color={colors.textSecondary} style={{ opacity: 0.4, marginBottom: 12 }} />
+                        <Text style={styles.errorText}>No se pudieron cargar las publicaciones</Text>
+                        <Text style={{ color: colors.textSecondary, fontSize: 12, textAlign: 'center', marginTop: 6, paddingHorizontal: 20 }}>
+                            {error.message}
+                        </Text>
+                        <TouchableOpacity onPress={handleRefresh} style={[styles.emptyButton, { marginTop: 16 }]}>
+                            <LinearGradient colors={[colors.primary, colors.secondary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.emptyButtonGradient}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                    <Ionicons name="refresh-outline" size={20} color="white" />
+                                    <Text style={styles.emptyButtonText}>Reintentar</Text>
+                                </View>
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    </View>
                 ) : (
                     <FlatList
                         ref={flatListRef}
@@ -299,10 +343,10 @@ export default function FeedScreen() {
                                 </View>
                             </>
                         }
-                        data={data?.getPosts || []}
+                        data={data?.getFeed || []}
                         extraData={data}
-                        keyExtractor={(item) => item.id.toString()}
-                        renderItem={renderPost}
+                        keyExtractor={(item) => `${item.__typename}-${item.id}`}
+                        renderItem={renderFeedItem}
                         contentContainerStyle={styles.listContainer}
                         showsVerticalScrollIndicator={false}
                         refreshing={loading && networkStatus !== 3}
@@ -354,60 +398,61 @@ export default function FeedScreen() {
                 }}
             />
 
-            {/* Modal de Comentarios */}
-            <CommentsModal 
-                visible={!!selectedPostForComments} 
+            {/* Modal de Comentarios — maneja Posts, Ofertas y Perfiles con swipe TikTok */}
+            <CommentsModal
+                visible={!!selectedPostForComments}
                 post={
                     selectedPostForComments
-                        ? (data?.getPosts?.find((p: any) => p.id === selectedPostForComments.post?.id) ?? selectedPostForComments.post)
+                        ? (data?.getFeed?.find((p: any) => p.id === selectedPostForComments.post?.id) ?? selectedPostForComments.post)
                         : null
                 }
                 nextPost={(() => {
-                    const posts = data?.getPosts || [];
-                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
-                    return (currentIndex !== -1 && currentIndex < posts.length - 1) ? posts[currentIndex + 1] : null;
+                    const feed = data?.getFeed || [];
+                    const currentIndex = feed.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
+                    return (currentIndex !== -1 && currentIndex < feed.length - 1) ? feed[currentIndex + 1] : null;
                 })()}
                 prevPost={(() => {
-                    const posts = data?.getPosts || [];
-                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
-                    return (currentIndex > 0) ? posts[currentIndex - 1] : null;
+                    const feed = data?.getFeed || [];
+                    const currentIndex = feed.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
+                    return (currentIndex > 0) ? feed[currentIndex - 1] : null;
                 })()}
-                onClose={() => setSelectedPostForComments(null)} 
+                onClose={() => setSelectedPostForComments(null)}
                 initialMinimized={selectedPostForComments?.minimize}
                 initialTab={selectedPostForComments?.initialTab}
                 initialExpanded={selectedPostForComments?.initialExpanded}
                 onNextPost={() => {
-                    const posts = data?.getPosts || [];
-                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
-                    
+                    const feed = data?.getFeed || [];
+                    const currentIndex = feed.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
+
                     if (currentIndex !== -1) {
-                        // PREFETCH: Cargamos más datos desde el servidor ANTES de que el usuario llegue al final
-                        if (currentIndex >= posts.length - 3 && hasMore && !isFetchingMore) {
+                        if (currentIndex >= feed.length - 3 && hasMore && !isFetchingMore) {
                             loadMorePosts();
                         }
-
-                        if (currentIndex < posts.length - 1) {
-                            setSelectedPostForComments({ 
-                                post: posts[currentIndex + 1], 
-                                minimize: !!selectedPostForComments?.minimize, 
-                                initialTab: selectedPostForComments?.initialTab, 
-                                initialExpanded: false 
+                        if (currentIndex < feed.length - 1) {
+                            setSelectedPostForComments({
+                                post: feed[currentIndex + 1],
+                                minimize: !!selectedPostForComments?.minimize,
+                                initialTab: selectedPostForComments?.initialTab,
+                                initialExpanded: false,
                             });
                         } else if (hasMore) {
-                            // Si deslizó pero no se ha cargado todavía
                             Toast.show({ type: 'info', text1: 'Cargando más...', text2: 'Por favor, intenta deslizar de nuevo en un segundo.' });
                             if (!isFetchingMore) loadMorePosts();
                         } else {
-                            // Se acabó la base de datos
                             Toast.show({ type: 'info', text1: 'Has visto todo', text2: 'Llegaste al final de las publicaciones.' });
                         }
                     }
                 }}
                 onPrevPost={() => {
-                    const posts = data?.getPosts || [];
-                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
+                    const feed = data?.getFeed || [];
+                    const currentIndex = feed.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     if (currentIndex > 0) {
-                        setSelectedPostForComments({ post: posts[currentIndex - 1], minimize: !!selectedPostForComments?.minimize, initialTab: selectedPostForComments?.initialTab, initialExpanded: false });
+                        setSelectedPostForComments({
+                            post: feed[currentIndex - 1],
+                            minimize: !!selectedPostForComments?.minimize,
+                            initialTab: selectedPostForComments?.initialTab,
+                            initialExpanded: false,
+                        });
                     }
                 }}
                 onOptionsPress={(post) => {

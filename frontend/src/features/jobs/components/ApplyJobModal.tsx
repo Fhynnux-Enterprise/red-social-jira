@@ -16,7 +16,7 @@ interface ApplyJobModalProps {
     visible: boolean;
     onClose: () => void;
     jobOffer: {
-        id_job_offer: string;
+        id: string;
         title: string;
         author?: { firstName: string; lastName: string };
         media?: { url: string; type: string; order: number }[];
@@ -49,7 +49,7 @@ export default function ApplyJobModal({ visible, onClose, jobOffer }: ApplyJobMo
 
     const [applyToJob] = useMutation<{
         applyToJob: {
-            application: { id_job_application: string; status: string };
+            application: { id: string; status: string };
             cvUploadUrl: string;
             cvPublicUrl: string;
         };
@@ -85,7 +85,7 @@ export default function ApplyJobModal({ visible, onClose, jobOffer }: ApplyJobMo
             const { data } = await applyToJob({
                 variables: {
                     input: {
-                        id_job_offer: jobOffer.id_job_offer,
+                        jobOfferId: jobOffer.id,
                         message: message.trim() || undefined,
                     },
                 },

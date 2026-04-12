@@ -14,7 +14,7 @@ export class SendMessageArgs {
     @Field()
     @IsString()
     @IsNotEmpty()
-    id_conversation: string;
+    conversationId: string;
 
     @Field({ nullable: true, defaultValue: '' })
     @IsString()

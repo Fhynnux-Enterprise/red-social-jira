@@ -16,7 +16,7 @@ export const GET_POSTS = gql`
             updatedAt
             commentsCount
             likes {
-                id_post_like
+                id
                 user {
                     id
                     firstName
@@ -102,11 +102,93 @@ export const TOGGLE_LIKE = gql`
             id
             commentsCount
             likes {
-                id_post_like
+                id
                 user {
                     id
                     firstName
                     lastName
+                    photoUrl
+                }
+            }
+        }
+    }
+`;
+
+export const GET_FEED = gql`
+    query GetFeed($limit: Int, $offset: Int) {
+        getFeed(limit: $limit, offset: $offset) {
+            __typename
+            ... on Post {
+                id
+                content
+                title
+                createdAt
+                updatedAt
+                commentsCount
+                postMedia: media {
+                    id
+                    url
+                    type
+                    order
+                }
+                likes {
+                    id
+                    user {
+                        id
+                        firstName
+                        lastName
+                        username
+                        photoUrl
+                    }
+                }
+                author {
+                    id
+                    firstName
+                    lastName
+                    username
+                    photoUrl
+                }
+            }
+            ... on JobOffer {
+                id
+                jobTitle: title
+                description
+                location
+                salary
+                contactPhone
+                createdAt
+                jobMedia: media {
+                    id
+                    url
+                    type
+                    order
+                }
+                author {
+                    id
+                    firstName
+                    lastName
+                    username
+                    photoUrl
+                }
+            }
+            ... on ProfessionalProfile {
+                id
+                profession
+                description
+                experienceYears
+                contactPhone
+                createdAt
+                profMedia: media {
+                    id
+                    url
+                    type
+                    order
+                }
+                user {
+                    id
+                    firstName
+                    lastName
+                    username
                     photoUrl
                 }
             }

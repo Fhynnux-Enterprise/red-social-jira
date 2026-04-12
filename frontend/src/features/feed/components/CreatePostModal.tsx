@@ -197,6 +197,8 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                 setIsUploadingMedia(true);
                 const uploadPromises = mediaToUpload.map(async (media, index) => {
                     let finalUri = media.uri;
+                    // El mimeType puede mutar si comprimimos (el compresor siempre produce MP4)
+                    let finalMimeType = media.mimeType;
 
                     const startProgress = (status: any) => {
                         let currentProgress = 0;
@@ -219,6 +221,10 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                                 bitrate: 3000000, // 3.0 Mbps para nitidez y optimización de datos
                                 maxSize: 720      // Resolución óptima
                             });
+                            // El compresor siempre produce un MP4 — forzamos el tipo
+                            // para que el PUT a R2 use el Content-Type correcto y el
+                            // objeto sea reproducible en todos los dispositivos.
+                            finalMimeType = 'video/mp4';
                         } finally {
                             clearInterval(compInterval);
                         }
@@ -226,7 +232,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
 
                     const uploadInterval = startProgress('uploading');
                     try {
-                        const uploadedUrl = await uploadMedia(finalUri, media.mimeType, 'posts');
+                        const uploadedUrl = await uploadMedia(finalUri, finalMimeType, 'posts');
                         clearInterval(uploadInterval);
                         setLocalMediaList(prev => prev.map(m => m.uri === media.uri ? { ...m, uploadStatus: 'done' as const, progress: 100 } : m));
 

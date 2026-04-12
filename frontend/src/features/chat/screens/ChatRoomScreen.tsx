@@ -65,7 +65,7 @@ export default function ChatRoomScreen() {
     const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
     const route = useRoute<any>();
     const insets = useSafeAreaInsets();
-    const { id_conversation } = route.params || {};
+    const { conversationId } = route.params || {};
     const { user: currentUser } = useAuth() as any;
     const [messageText, setMessageText] = useState('');
     const [selectedMessage, setSelectedMessage] = useState<any>(null);
@@ -108,16 +108,16 @@ export default function ChatRoomScreen() {
     const [localMessages, setLocalMessages] = useState<any[]>([]);
 
     const { loading, data: queryData, fetchMore } = useQuery(GET_CHAT_MESSAGES, {
-        variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
-        skip: !id_conversation,
+        variables: { conversationId, limit: MESSAGES_LIMIT, offset: 0 },
+        skip: !conversationId,
         fetchPolicy: 'cache-and-network', 
         nextFetchPolicy: 'cache-first',   
         notifyOnNetworkStatusChange: false,
     });
 
     const { data: mediaData } = useQuery<any>(GET_CHAT_MEDIA, {
-        variables: { id_conversation },
-        skip: !id_conversation,
+        variables: { conversationId },
+        skip: !conversationId,
     });
 
     // Fuente única para la galería: si ya cargó mediaData, la usamos.
@@ -147,9 +147,9 @@ export default function ChatRoomScreen() {
             // Construimos un Map preservando todos los mensajes locales Y los nuevos del servidor
             const msgMap = new Map<string, any>();
             // Primero los mensajes locales (incluyen los enviados y recibidos por WS)
-            prev.forEach((m: any) => msgMap.set(m.id_message, m));
+            prev.forEach((m: any) => msgMap.set(m.id, m));
             // Luego los del servidor (sobrescriben si hay actualizaciones de contenido, ej: mensajes editados)
-            serverMsgs.forEach((m: any) => msgMap.set(m.id_message, m));
+            serverMsgs.forEach((m: any) => msgMap.set(m.id, m));
 
             // Ordenamos DESC por fecha (el más nuevo primero, como necesita el FlatList invertido)
             const merged = Array.from(msgMap.values()).sort(
@@ -164,13 +164,13 @@ export default function ChatRoomScreen() {
     const [markMessagesAsReadMutation] = useMutation(MARK_MESSAGES_AS_READ);
 
     const markAsRead = useCallback(async () => {
-        if (!id_conversation) return;
+        if (!conversationId) return;
         try {
-            await markMessagesAsReadMutation({ variables: { id_conversation } });
+            await markMessagesAsReadMutation({ variables: { conversationId } });
         } catch (e) {
             console.log('[Chat] Error marking as read:', e);
         }
-    }, [id_conversation, markMessagesAsReadMutation]);
+    }, [conversationId, markMessagesAsReadMutation]);
 
     // Marcar como leído al entrar o enfocar el chat
     useFocusEffect(
@@ -181,14 +181,14 @@ export default function ChatRoomScreen() {
 
     // Subscription WebSocket — mensajes nuevos
     useSubscription(MESSAGE_ADDED_SUBSCRIPTION, {
-        variables: { id_conversation },
-        skip: !id_conversation,
+        variables: { conversationId },
+        skip: !conversationId,
         onData: ({ data: subResult }: any) => {
             const newMsg = subResult?.data?.messageAdded;
             if (!newMsg) return;
             
             setLocalMessages(prev => {
-                if (prev.some((m: any) => m.id_message === newMsg.id_message)) return prev;
+                if (prev.some((m: any) => m.id === newMsg.id)) return prev;
                 return [newMsg, ...prev];
             });
 
@@ -204,8 +204,8 @@ export default function ChatRoomScreen() {
 
     // Subscription WebSocket — confirmación de lectura (Visto azul)
     useSubscription(MESSAGES_READ_SUBSCRIPTION, {
-        variables: { id_conversation },
-        skip: !id_conversation,
+        variables: { conversationId },
+        skip: !conversationId,
         onData: ({ data: subResult }: any) => {
             const payload = subResult?.data?.messagesRead;
             if (!payload) return;
@@ -226,7 +226,7 @@ export default function ChatRoomScreen() {
         try {
             const { data: moreData } = await fetchMore({
                 variables: {
-                    id_conversation,
+                    conversationId,
                     limit: MESSAGES_LIMIT,
                     offset: localMessages.length,
                 },
@@ -238,8 +238,8 @@ export default function ChatRoomScreen() {
             }
             if (newMsgs.length > 0) {
                 setLocalMessages(prev => {
-                    const existingIds = new Set(prev.map((m: any) => m.id_message));
-                    const unique = newMsgs.filter((m: any) => !existingIds.has(m.id_message));
+                    const existingIds = new Set(prev.map((m: any) => m.id));
+                    const unique = newMsgs.filter((m: any) => !existingIds.has(m.id));
                     return [...prev, ...unique];
                 });
             }
@@ -255,12 +255,12 @@ export default function ChatRoomScreen() {
     useEffect(() => {
         setLocalMessages([]);
         setHasMore(true);
-    }, [id_conversation]);
+    }, [conversationId]);
 
     // Query para obtener info de la conversación (para el header)
     const { data: convData } = useQuery(GET_CONVERSATION, {
-        variables: { id_conversation },
-        skip: !id_conversation,
+        variables: { conversationId },
+        skip: !conversationId,
     });
 
     const otherUser = useMemo(() => {
@@ -279,7 +279,7 @@ export default function ChatRoomScreen() {
             // 1. Actualizar el estado local para que la UI refleje el cambio al instante
             setLocalMessages(prev =>
                 prev.map((m: any) =>
-                    m.id_message === editMessage.id_message
+                    m.id === editMessage.id
                         ? { ...m, content: editMessage.content, editedAt: editMessage.editedAt }
                         : m
                 )
@@ -288,15 +288,15 @@ export default function ChatRoomScreen() {
             try {
                 const existing: any = client.readQuery({
                     query: GET_CHAT_MESSAGES,
-                    variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
+                    variables: { conversationId, limit: MESSAGES_LIMIT, offset: 0 },
                 });
                 if (existing?.getChatMessages) {
                     client.writeQuery({
                         query: GET_CHAT_MESSAGES,
-                        variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
+                        variables: { conversationId, limit: MESSAGES_LIMIT, offset: 0 },
                         data: {
                             getChatMessages: existing.getChatMessages.map((m: any) =>
-                                m.id_message === editMessage.id_message
+                                m.id === editMessage.id
                                     ? { ...m, content: editMessage.content, editedAt: editMessage.editedAt }
                                     : m
                             ),
@@ -320,14 +320,14 @@ export default function ChatRoomScreen() {
             try {
                 const existing: any = cache.readQuery({
                     query: GET_CHAT_MESSAGES,
-                    variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
+                    variables: { conversationId, limit: MESSAGES_LIMIT, offset: 0 },
                 });
                 if (existing?.getChatMessages) {
                     const msgs: any[] = existing.getChatMessages;
-                    if (!msgs.some((m: any) => m.id_message === sentMsg.id_message)) {
+                    if (!msgs.some((m: any) => m.id === sentMsg.id)) {
                         cache.writeQuery({
                             query: GET_CHAT_MESSAGES,
-                            variables: { id_conversation, limit: MESSAGES_LIMIT, offset: 0 },
+                            variables: { conversationId, limit: MESSAGES_LIMIT, offset: 0 },
                             data: { getChatMessages: [sentMsg, ...msgs] },
                         });
                     }
@@ -339,7 +339,7 @@ export default function ChatRoomScreen() {
         onCompleted: ({ sendMessage }: any) => {
             if (!sendMessage) return;
             setLocalMessages(prev => {
-                if (prev.some((m: any) => m.id_message === sendMessage.id_message)) return prev;
+                if (prev.some((m: any) => m.id === sendMessage.id)) return prev;
                 return [sendMessage, ...prev];
             });
         },
@@ -353,7 +353,7 @@ export default function ChatRoomScreen() {
         const usedDateKeys = new Set<string>();
 
         localMessages.forEach((msg: any, index: number) => {
-            grouped.push({ ...msg, type: 'MESSAGE', id: msg.id_message });
+            grouped.push({ ...msg, type: 'MESSAGE', id: msg.id });
             const currentDate = new Date(msg.createdAt).toDateString();
             const nextMsg = localMessages[index + 1];
             const nextDate = nextMsg ? new Date(nextMsg.createdAt).toDateString() : null;
@@ -373,7 +373,7 @@ export default function ChatRoomScreen() {
     const handleSend = async () => {
         const hasText = messageText.trim().length > 0;
         const hasMedia = !!imagePreview || !!videoPreview;
-        if ((!hasText && !hasMedia) || !id_conversation) return;
+        if ((!hasText && !hasMedia) || !conversationId) return;
 
         const content = messageText.trim();
         const pendingImage = imagePreview;
@@ -387,7 +387,7 @@ export default function ChatRoomScreen() {
 
             if (editingMessage) {
                 await editMessageMutation({
-                    variables: { id_message: editingMessage.id_message, newContent: content },
+                    variables: { messageId: editingMessage.id, newContent: content },
                 });
                 setEditingMessage(null);
                 return;
@@ -438,7 +438,7 @@ export default function ChatRoomScreen() {
 
             await sendMessageMutation({
                 variables: {
-                    id_conversation,
+                    conversationId,
                     content: content || '',
                     imageUrl: uploadedImageUrl || undefined,
                     videoUrl: uploadedVideoUrl || undefined,
@@ -484,7 +484,7 @@ export default function ChatRoomScreen() {
 
     // Lógica de Búsqueda
     const { refetch: searchMessagesQuery, loading: searchLoading } = useQuery(SEARCH_MESSAGES_IN_CHAT, {
-        variables: { id_conversation, searchTerm: '' },
+        variables: { conversationId, searchTerm: '' },
         skip: true,
     });
 
@@ -500,8 +500,8 @@ export default function ChatRoomScreen() {
     useEffect(() => {
         const performSearch = async () => {
             if (searchTerm.trim().length > 1) {
-                const { data: searchData } = await searchMessagesQuery({ id_conversation, searchTerm });
-                const ids = (searchData as any)?.searchMessagesInChat?.map((m: any) => m.id_message) || [];
+                const { data: searchData } = await searchMessagesQuery({ conversationId, searchTerm });
+                const ids = (searchData as any)?.searchMessagesInChat?.map((m: any) => m.id) || [];
                 setSearchResults(ids);
                 setCurrentSearchIndex(0);
                 if (ids.length > 0) jumpToMatch(0, ids);
@@ -558,12 +558,12 @@ export default function ChatRoomScreen() {
     };
 
     const handleHideMessageFromUI = (msgId: string) => {
-        setLocalMessages(prev => prev.filter((m: any) => m.id_message !== msgId));
+        setLocalMessages(prev => prev.filter((m: any) => m.id !== msgId));
     };
 
     const handleTombstoneMessageFromUI = (msgId: string) => {
         setLocalMessages(prev => prev.map((m: any) =>
-            m.id_message === msgId ? { ...m, isDeletedForAll: true, content: '' } : m
+            m.id === msgId ? { ...m, isDeletedForAll: true, content: '' } : m
         ));
     };
 
@@ -583,12 +583,12 @@ export default function ChatRoomScreen() {
             message: "Este mensaje solo se eliminará para ti. Las otras personas en el chat aún podrán verlo.",
             confirmText: "Eliminar",
             onConfirm: async () => {
-                const msgId = selectedMessage.id_message;
+                const msgId = selectedMessage.id;
                 handleHideMessageFromUI(msgId);
                 setIsConfirmModalVisible(false);
                 
                 try {
-                    await deleteMessageForMeMutation({ variables: { id_message: msgId } });
+                    await deleteMessageForMeMutation({ variables: { messageId: msgId } });
                 } catch (err) {
                     console.error("Error al borrar mensaje para mí", err);
                     revertHideMessageUI();
@@ -608,12 +608,12 @@ export default function ChatRoomScreen() {
             message: "El mensaje se eliminará para todos los participantes del chat.",
             confirmText: "Eliminar",
             onConfirm: async () => {
-                const msgId = selectedMessage.id_message;
+                const msgId = selectedMessage.id;
                 handleTombstoneMessageFromUI(msgId); // Mostramos el mensaje gris (Lápida)
                 setIsConfirmModalVisible(false);
 
                 try {
-                    await deleteMessageForAllMutation({ variables: { id_message: msgId } });
+                    await deleteMessageForAllMutation({ variables: { messageId: msgId } });
                 } catch (err) {
                     console.error("Error al borrar mensaje", err);
                     revertHideMessageUI();
@@ -843,7 +843,7 @@ export default function ChatRoomScreen() {
                         <TouchableOpacity
                             activeOpacity={0.9}
                             onPress={() => {
-                                const mIdx = chatMediaList.findIndex(m => m.id_message === item.id_message);
+                                const mIdx = chatMediaList.findIndex(m => m.id === item.id);
                                 if (mIdx !== -1) {
                                     setViewerActiveIndex(mIdx);
                                     setViewerVisible(true);
@@ -870,7 +870,7 @@ export default function ChatRoomScreen() {
                                 height={screenWidth * 0.55 * 0.75}
                                 onPressFullScreen={() => {
                                     setIsMuted(false);
-                                    const mIdx = chatMediaList.findIndex(m => m.id_message === item.id_message);
+                                    const mIdx = chatMediaList.findIndex(m => m.id === item.id);
                                     if (mIdx !== -1) {
                                         setViewerActiveIndex(mIdx);
                                         setViewerVisible(true);
@@ -963,7 +963,7 @@ export default function ChatRoomScreen() {
                     
                     <TouchableOpacity 
                         style={styles.headerInfoContainer} 
-                        onPress={() => navigation.navigate('ChatDetails', { id_conversation })}
+                        onPress={() => navigation.navigate('ChatDetails', { conversationId })}
                         activeOpacity={0.7}
                     >
                         {otherUser?.photoUrl ? (
@@ -1151,7 +1151,7 @@ export default function ChatRoomScreen() {
                             index,
                         })}
                         showsHorizontalScrollIndicator={false}
-                        keyExtractor={(item) => item.id_message}
+                        keyExtractor={(item) => item.id}
                         onMomentumScrollEnd={(event) => {
                             const xOffset = event.nativeEvent.contentOffset.x;
                             const index = Math.round(xOffset / screenWidth);

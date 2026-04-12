@@ -8,7 +8,7 @@ import { CommentLike } from './comment-like.entity';
 @Entity('comments')
 export class Comment {
     @Field(() => ID)
-    @PrimaryGeneratedColumn('uuid', { name: 'id_comment' })
+    @PrimaryGeneratedColumn('uuid')
     id: string;
 
     @Field()
@@ -17,7 +17,7 @@ export class Comment {
 
     @Field(() => User, { nullable: true })
     @ManyToOne(() => User, user => user.comments, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'id_user' })
+    @JoinColumn({ name: 'user_id' })
     user: User;
 
     @Field(() => [CommentLike], { nullable: true })
@@ -25,25 +25,25 @@ export class Comment {
     likes: CommentLike[];
 
     @Field()
-    @Column({ name: 'id_user' })
+    @Column({ name: 'user_id' })
     userId: string;
 
     @Field(() => Post, { nullable: true })
     @ManyToOne(() => Post, post => post.comments, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'id_post' })
+    @JoinColumn({ name: 'post_id' })
     post: Post;
 
     @Field()
-    @Column({ name: 'id_post' })
+    @Column({ name: 'post_id' })
     postId: string;
 
     @Field({ nullable: true })
-    @Column({ name: 'id_parent', nullable: true })
+    @Column({ name: 'parent_id', nullable: true })
     parentId?: string;
 
     @Field(() => Comment, { nullable: true })
     @ManyToOne(() => Comment, comment => comment.replies, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'id_parent' })
+    @JoinColumn({ name: 'parent_id' })
     parent?: Comment;
 
     @Field(() => [Comment], { nullable: true })
@@ -51,15 +51,15 @@ export class Comment {
     replies?: Comment[];
 
     @Field()
-    @CreateDateColumn({ type: 'timestamptz' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 
     @Field()
-    @UpdateDateColumn({ type: 'timestamptz' })
+    @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
     updatedAt: Date;
 
     @Field({ nullable: true })
-    @DeleteDateColumn({ type: 'timestamptz', nullable: true })
+    @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
     deletedAt?: Date;
 
     @Field(() => Number, { defaultValue: 0 })
