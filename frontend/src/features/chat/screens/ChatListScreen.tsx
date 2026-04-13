@@ -72,7 +72,7 @@ export default function ChatListScreen() {
             if (!newMsg) return;
 
             setConversations(prev => {
-                const existingIndex = prev.findIndex(c => c.id_conversation === newMsg.id_conversation);
+                const existingIndex = prev.findIndex(c => c.id === newMsg.conversationId);
                 
                 if (existingIndex > -1) {
                     // Actualizar conversación existente
@@ -85,7 +85,7 @@ export default function ChatListScreen() {
                         updatedConv.unreadCount = (updatedConv.unreadCount || 0) + 1;
                     }
 
-                    const others = prev.filter(c => c.id_conversation !== newMsg.id_conversation);
+                    const others = prev.filter(c => c.id !== newMsg.conversationId);
                     return [updatedConv, ...others]; // Mover al tope
                 } else {
                     // Chat nuevo que no estaba en la lista: Refrescamos para obtener toda la info del participante
@@ -123,10 +123,10 @@ export default function ChatListScreen() {
 
         try {
             await deleteConversationForMeMutation({ 
-                variables: { id_conversation: selectedConversation.id_conversation },
+                variables: { conversationId: selectedConversation.id },
                 refetchQueries: [{ query: GET_USER_CONVERSATIONS }]
             });
-            client.cache.evict({ id: `Conversation:${selectedConversation.id_conversation}` });
+            client.cache.evict({ id: `Conversation:${selectedConversation.id}` });
             client.cache.gc();
             Toast.show({ type: 'success', text1: 'Éxito', text2: 'Conversación eliminada.' });
         } catch (err) {
@@ -182,8 +182,8 @@ export default function ChatListScreen() {
             const result = await createChatMutation({
                 variables: { targetUserId: currentUser.id }
             });
-            const id_conversation = (result.data as any).getOrCreateOneOnOneChat.id_conversation;
-            (navigation as any).navigate('ChatRoom', { id_conversation });
+            const conversationId = (result.data as any).getOrCreateOneOnOneChat.id;
+            (navigation as any).navigate('ChatRoom', { conversationId });
         } catch (err) {
             console.error("Error al abrir chat propio:", err);
             Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo crear el chat personal' });
@@ -192,15 +192,15 @@ export default function ChatListScreen() {
 
     const handleOpenDirectChat = async (userId: string, existingConversationId?: string) => {
         if (existingConversationId) {
-            (navigation as any).navigate('ChatRoom', { id_conversation: existingConversationId });
+            (navigation as any).navigate('ChatRoom', { conversationId: existingConversationId });
             return;
         }
         try {
             const result = await createChatMutation({
                 variables: { targetUserId: userId }
             });
-            const id_conversation = (result.data as any).getOrCreateOneOnOneChat.id_conversation;
-            (navigation as any).navigate('ChatRoom', { id_conversation });
+            const conversationId = (result.data as any).getOrCreateOneOnOneChat.id;
+            (navigation as any).navigate('ChatRoom', { conversationId });
         } catch (err) {
             console.error("Error al abrir chat:", err);
             Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir el chat' });
@@ -283,7 +283,7 @@ export default function ChatListScreen() {
         return (
             <TouchableOpacity
                 style={[styles.chatRow, { borderBottomColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }]}
-                onPress={() => (navigation as any).navigate('ChatRoom', { id_conversation: item.id_conversation })}
+                onPress={() => (navigation as any).navigate('ChatRoom', { conversationId: item.id })}
                 onLongPress={() => {
                     setSelectedConversation(item);
                     setIsMenuVisible(true);
@@ -389,7 +389,7 @@ export default function ChatListScreen() {
                 <FlatList
                     data={filteredConversations}
                     renderItem={renderChatItem}
-                    keyExtractor={(item) => item.id_conversation}
+                    keyExtractor={(item) => item.id}
                     contentContainerStyle={styles.listContainer}
                     ListHeaderComponent={renderActiveUsers}
                     refreshControl={

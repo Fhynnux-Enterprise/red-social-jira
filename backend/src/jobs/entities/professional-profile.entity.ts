@@ -1,13 +1,14 @@
 import { ObjectType, Field, Int, ID } from '@nestjs/graphql';
-import { Entity, PrimaryGeneratedColumn, Column, OneToOne, JoinColumn, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, OneToMany } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
+import { ProfessionalProfileMedia } from './professional-profile-media.entity';
 
 @ObjectType()
-@Entity()
+@Entity('professional_profiles')
 export class ProfessionalProfile {
   @Field(() => ID)
-  @PrimaryGeneratedColumn('uuid', { name: 'id_professional_profile' })
-  id_professional_profile: string;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
   @Field()
   @Column()
@@ -18,22 +19,26 @@ export class ProfessionalProfile {
   description: string;
 
   @Field(() => Int, { nullable: true })
-  @Column({ nullable: true })
+  @Column({ name: 'experience_years', nullable: true })
   experienceYears?: number;
 
   @Field()
-  @Column()
+  @Column({ name: 'contact_phone' })
   contactPhone: string;
 
   @Field()
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
   @Field(() => User)
-  @OneToOne(() => User, (user) => user.professionalProfile, { eager: true })
-  @JoinColumn({ name: 'id_user' })
+  @ManyToOne(() => User, { eager: true })
+  @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @Column({ name: 'id_user' })
-  id_user: string;
+  @Column({ name: 'user_id' })
+  userId: string;
+
+  @Field(() => [ProfessionalProfileMedia], { nullable: true })
+  @OneToMany(() => ProfessionalProfileMedia, media => media.professionalProfile, { cascade: true, eager: true, orphanedRowAction: 'delete' })
+  media?: ProfessionalProfileMedia[];
 }

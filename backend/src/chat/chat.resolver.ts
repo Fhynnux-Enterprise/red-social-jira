@@ -16,7 +16,7 @@ import { CreateChatArgs, SendMessageArgs } from './dto/chat.args';
 @ObjectType()
 export class ReadMessagesPayload {
     @Field()
-    id_conversation: string;
+    conversationId: string;
 
     @Field()
     readerId: string;
@@ -40,81 +40,81 @@ export class ChatResolver {
     @UseGuards(GqlAuthGuard)
     async getChatMessages(
         @CurrentUser() user: User,
-        @Args('id_conversation') id_conversation: string,
+        @Args('conversationId') conversationId: string,
         @Args('limit', { type: () => Number, nullable: true }) limit?: number,
         @Args('offset', { type: () => Number, nullable: true }) offset?: number,
     ) {
         // Validación de seguridad: Comprobar que el usuario es participante
-        const isParticipant = await this.chatService.isUserParticipant(id_conversation, user.id);
+        const isParticipant = await this.chatService.isUserParticipant(conversationId, user.id);
 
         if (!isParticipant) {
             throw new Error('No tienes permiso para ver los mensajes de esta conversación');
         }
 
-        return this.chatService.getMessagesByConversation(id_conversation, user.id, limit, offset);
+        return this.chatService.getMessagesByConversation(conversationId, user.id, limit, offset);
     }
 
     @Query(() => [Message], { name: 'searchMessagesInChat' })
     @UseGuards(GqlAuthGuard)
     async searchMessagesInChat(
         @CurrentUser() user: User,
-        @Args('id_conversation') id_conversation: string,
+        @Args('conversationId') conversationId: string,
         @Args('searchTerm') searchTerm: string,
     ) {
-        return this.chatService.searchMessagesInConversation(id_conversation, user.id, searchTerm);
+        return this.chatService.searchMessagesInConversation(conversationId, user.id, searchTerm);
     }
 
     @Mutation(() => Boolean)
     @UseGuards(GqlAuthGuard)
     async deleteMessageForMe(
         @CurrentUser() user: User,
-        @Args('id_message') id_message: string,
+        @Args('messageId') messageId: string,
     ) {
-        return this.chatService.deleteMessageForMe(id_message, user.id);
+        return this.chatService.deleteMessageForMe(messageId, user.id);
     }
 
     @Mutation(() => Boolean)
     @UseGuards(GqlAuthGuard)
     async deleteMessageForAll(
         @CurrentUser() user: User,
-        @Args('id_message') id_message: string,
+        @Args('messageId') messageId: string,
     ) {
-        return this.chatService.deleteMessageForAll(id_message, user.id);
+        return this.chatService.deleteMessageForAll(messageId, user.id);
     }
 
     @Mutation(() => Boolean)
     @UseGuards(GqlAuthGuard)
     async deleteConversationForMe(
         @CurrentUser() user: User,
-        @Args('id_conversation') id_conversation: string,
+        @Args('conversationId') conversationId: string,
     ) {
-        return this.chatService.deleteConversationForMe(id_conversation, user.id);
+        return this.chatService.deleteConversationForMe(conversationId, user.id);
     }
 
     @Mutation(() => Message)
     @UseGuards(GqlAuthGuard)
     async editMessage(
         @CurrentUser() user: User,
-        @Args('id_message') id_message: string,
+        @Args('messageId') messageId: string,
         @Args('newContent') newContent: string,
     ) {
-        return this.chatService.editMessage(id_message, user.id, newContent);
+        return this.chatService.editMessage(messageId, user.id, newContent);
     }
 
     @Query(() => Conversation, { name: 'getConversation', nullable: true })
     @UseGuards(GqlAuthGuard)
     async getConversation(
         @CurrentUser() user: User,
-        @Args('id_conversation') id_conversation: string,
+        @Args('conversationId') conversationId: string,
     ) {
         // Validación de seguridad
-        const isParticipant = await this.chatService.isUserParticipant(id_conversation, user.id);
+        const isParticipant = await this.chatService.isUserParticipant(conversationId, user.id);
 
         if (!isParticipant) {
             throw new Error('No tienes permiso para ver esta conversación');
         }
 
-        return this.chatService.getConversationById(id_conversation);
+        return this.chatService.getConversationById(conversationId);
     }
 
     @Mutation(() => Conversation, { name: 'getOrCreateOneOnOneChat' })
@@ -132,7 +132,7 @@ export class ChatResolver {
         @CurrentUser() user: User,
         @Args() args: SendMessageArgs,
     ) {
-        const newMessage = await this.chatService.sendMessage(user.id, args.id_conversation, args.content, args.imageUrl, args.videoUrl, args.storyId);
+        const newMessage = await this.chatService.sendMessage(user.id, args.conversationId, args.content, args.imageUrl, args.videoUrl, args.storyId);
         pubSub.publish('MESSAGE_ADDED_EVENT', { 
             messageAdded: newMessage, 
             inboxUpdate: newMessage 
@@ -142,10 +142,10 @@ export class ChatResolver {
 
     @Subscription(() => Message, {
         filter: (payload, variables) => {
-            return payload.messageAdded.id_conversation === variables.id_conversation;
+            return payload.messageAdded.conversationId === variables.conversationId;
         },
     })
-    messageAdded(@Args('id_conversation') id_conversation: string) {
+    messageAdded(@Args('conversationId') conversationId: string) {
         return pubSub.asyncIterableIterator('MESSAGE_ADDED_EVENT');
     }
 
@@ -156,7 +156,7 @@ export class ChatResolver {
         @CurrentUser() user: User,
     ) {
         return this.messageRepository.createQueryBuilder('message')
-            .where('message.id_conversation = :id_conversation', { id_conversation: conversation.id_conversation })
+            .where('message.conversationId = :conversationId', { conversationId: conversation.id })
             .andWhere('(message.deletedFor IS NULL OR NOT (:userId = ANY (message.deletedFor)))', { userId: user.id })
             .orderBy('message.createdAt', 'DESC')
             .getOne();
@@ -170,8 +170,8 @@ export class ChatResolver {
     ) {
         return this.messageRepository.count({
             where: {
-                id_conversation: conversation.id_conversation,
-                id_user: Not(user.id),
+                conversationId: conversation.id,
+                userId: Not(user.id),
                 isRead: false
             }
         });
@@ -181,19 +181,19 @@ export class ChatResolver {
     @UseGuards(GqlAuthGuard)
     async markMessagesAsRead(
         @CurrentUser() user: User,
-        @Args('id_conversation') id_conversation: string,
+        @Args('conversationId') conversationId: string,
     ) {
-        await this.chatService.markMessagesAsRead(id_conversation, user.id);
-        pubSub.publish('MESSAGES_READ_EVENT', { messagesRead: { id_conversation, readerId: user.id } });
+        await this.chatService.markMessagesAsRead(conversationId, user.id);
+        pubSub.publish('MESSAGES_READ_EVENT', { messagesRead: { conversationId, readerId: user.id } });
         return true;
     }
 
     @Subscription(() => ReadMessagesPayload, {
         filter: (payload, variables) => {
-            return payload.messagesRead.id_conversation === variables.id_conversation;
+            return payload.messagesRead.conversationId === variables.conversationId;
         },
     })
-    messagesRead(@Args('id_conversation') id_conversation: string) {
+    messagesRead(@Args('conversationId') conversationId: string) {
         return pubSub.asyncIterableIterator('MESSAGES_READ_EVENT');
     }
 
@@ -212,14 +212,14 @@ export class ChatResolver {
     @UseGuards(GqlAuthGuard)
     async getChatMedia(
         @CurrentUser() user: User,
-        @Args('id_conversation') id_conversation: string,
+        @Args('conversationId') conversationId: string,
     ) {
         // Validación de seguridad
-        const isParticipant = await this.chatService.isUserParticipant(id_conversation, user.id);
+        const isParticipant = await this.chatService.isUserParticipant(conversationId, user.id);
         if (!isParticipant) {
             throw new Error('No tienes permiso para ver los archivos de esta conversación');
         }
 
-        return this.chatService.getChatMedia(id_conversation, user.id);
+        return this.chatService.getChatMedia(conversationId, user.id);
     }
 }

@@ -12,35 +12,35 @@ export class FollowsResolver {
     @Mutation(() => Boolean, { name: 'toggleFollow' })
     @UseGuards(JwtGqlGuard)
     async toggleFollow(
-        @Args('id_following') id_following: string,
+        @Args('followingId') followingId: string,
         @CurrentUser() user: any,
     ): Promise<boolean> {
-        return this.followsService.toggleFollow(user.id, id_following);
+        return this.followsService.toggleFollow(user.id, followingId);
     }
 
     @Query(() => Boolean, { name: 'isFollowing' })
     @UseGuards(JwtGqlGuard)
     async isFollowing(
-        @Args('id_following') id_following: string,
+        @Args('followingId') followingId: string,
         @CurrentUser() user: any,
     ): Promise<boolean> {
-        return this.followsService.isFollowing(user.id, id_following);
+        return this.followsService.isFollowing(user.id, followingId);
     }
 
     @Query(() => [User], { name: 'getFollowers' })
     @UseGuards(JwtGqlGuard)
     async getFollowers(
-        @Args('id_user') id_user: string,
+        @Args('userId') userId: string,
     ): Promise<User[]> {
-        return this.followsService.getFollowers(id_user);
+        return this.followsService.getFollowers(userId);
     }
 
     @Query(() => [User], { name: 'getFollowing' })
     @UseGuards(JwtGqlGuard)
     async getFollowing(
-        @Args('id_user') id_user: string,
+        @Args('userId') userId: string,
     ): Promise<User[]> {
-        return this.followsService.getFollowing(id_user);
+        return this.followsService.getFollowing(userId);
     }
 
     @Query(() => [User], { name: 'getOnlineFollowing' })

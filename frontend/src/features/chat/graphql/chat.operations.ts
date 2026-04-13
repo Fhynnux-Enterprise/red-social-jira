@@ -1,9 +1,9 @@
 import { gql } from '@apollo/client';
 
 export const GET_CONVERSATION = gql`
-  query GetConversation($id_conversation: String!) {
-    getConversation(id_conversation: $id_conversation) {
-      id_conversation
+  query GetConversation($conversationId: String!) {
+    getConversation(conversationId: $conversationId) {
+      id
       participants {
         user {
           id
@@ -24,7 +24,7 @@ export const GET_CONVERSATION = gql`
 export const GET_USER_CONVERSATIONS = gql`
   query GetUserConversations {
     getUserConversations {
-      id_conversation
+      id
       updatedAt
       participants {
         user {
@@ -47,9 +47,9 @@ export const GET_USER_CONVERSATIONS = gql`
 `;
 
 export const GET_CHAT_MESSAGES = gql`
-  query GetChatMessages($id_conversation: String!, $limit: Float, $offset: Float) {
-    getChatMessages(id_conversation: $id_conversation, limit: $limit, offset: $offset) {
-      id_message
+  query GetChatMessages($conversationId: String!, $limit: Float, $offset: Float) {
+    getChatMessages(conversationId: $conversationId, limit: $limit, offset: $offset) {
+      id
       content
       imageUrl
       videoUrl
@@ -66,9 +66,9 @@ export const GET_CHAT_MESSAGES = gql`
 `;
 
 export const MESSAGE_ADDED_SUBSCRIPTION = gql`
-  subscription OnMessageAdded($id_conversation: String!) {
-    messageAdded(id_conversation: $id_conversation) {
-      id_message
+  subscription OnMessageAdded($conversationId: String!) {
+    messageAdded(conversationId: $conversationId) {
+      id
       content
       imageUrl
       videoUrl
@@ -87,33 +87,33 @@ export const MESSAGE_ADDED_SUBSCRIPTION = gql`
 export const GET_OR_CREATE_CHAT = gql`
   mutation GetOrCreateOneOnOneChat($targetUserId: String!) {
     getOrCreateOneOnOneChat(targetUserId: $targetUserId) {
-      id_conversation
+      id
     }
   }
 `;
 
 export const DELETE_MESSAGE_FOR_ME = gql`
-  mutation DeleteMessageForMe($id_message: String!) {
-    deleteMessageForMe(id_message: $id_message)
+  mutation DeleteMessageForMe($messageId: String!) {
+    deleteMessageForMe(messageId: $messageId)
   }
 `;
 
 export const DELETE_CONVERSATION_FOR_ME = gql`
-  mutation DeleteConversationForMe($id_conversation: String!) {
-    deleteConversationForMe(id_conversation: $id_conversation)
+  mutation DeleteConversationForMe($conversationId: String!) {
+    deleteConversationForMe(conversationId: $conversationId)
   }
 `;
 
 export const DELETE_MESSAGE_FOR_ALL = gql`
-  mutation DeleteMessageForAll($id_message: String!) {
-    deleteMessageForAll(id_message: $id_message)
+  mutation DeleteMessageForAll($messageId: String!) {
+    deleteMessageForAll(messageId: $messageId)
   }
 `;
 
 export const EDIT_MESSAGE = gql`
-  mutation EditMessage($id_message: String!, $newContent: String!) {
-    editMessage(id_message: $id_message, newContent: $newContent) {
-      id_message
+  mutation EditMessage($messageId: String!, $newContent: String!) {
+    editMessage(messageId: $messageId, newContent: $newContent) {
+      id
       content
       editedAt
     }
@@ -121,9 +121,9 @@ export const EDIT_MESSAGE = gql`
 `;
 
 export const SEND_MESSAGE = gql`
-  mutation SendMessage($id_conversation: String!, $content: String, $imageUrl: String, $videoUrl: String, $storyId: String) {
-    sendMessage(id_conversation: $id_conversation, content: $content, imageUrl: $imageUrl, videoUrl: $videoUrl, storyId: $storyId) {
-      id_message
+  mutation SendMessage($conversationId: String!, $content: String, $imageUrl: String, $videoUrl: String, $storyId: String) {
+    sendMessage(conversationId: $conversationId, content: $content, imageUrl: $imageUrl, videoUrl: $videoUrl, storyId: $storyId) {
+      id
       content
       imageUrl
       videoUrl
@@ -155,35 +155,37 @@ export const SEARCH_USERS = gql`
 `;
 
 export const SEARCH_MESSAGES_IN_CHAT = gql`
-  query SearchMessagesInChat($id_conversation: String!, $searchTerm: String!) {
-    searchMessagesInChat(id_conversation: $id_conversation, searchTerm: $searchTerm) {
-      id_message
+  query SearchMessagesInChat($conversationId: String!, $searchTerm: String!) {
+    searchMessagesInChat(conversationId: $conversationId, searchTerm: $searchTerm) {
+      id
     }
   }
 `;
 
 export const MARK_MESSAGES_AS_READ = gql`
-  mutation MarkMessagesAsRead($id_conversation: String!) {
-    markMessagesAsRead(id_conversation: $id_conversation)
+  mutation MarkMessagesAsRead($conversationId: String!) {
+    markMessagesAsRead(conversationId: $conversationId)
   }
 `;
 
 export const MESSAGES_READ_SUBSCRIPTION = gql`
-  subscription OnMessagesRead($id_conversation: String!) {
-    messagesRead(id_conversation: $id_conversation) {
-      id_conversation
+  subscription OnMessagesRead($conversationId: String!) {
+    messagesRead(conversationId: $conversationId) {
+      conversationId
       readerId
     }
   }
-`;export const INBOX_UPDATE_SUBSCRIPTION = gql`
+`;
+
+export const INBOX_UPDATE_SUBSCRIPTION = gql`
   subscription OnInboxUpdate {
     inboxUpdate {
-      id_message
+      id
       content
       imageUrl
       videoUrl
       createdAt
-      id_conversation
+      conversationId
       storyId
       sender {
         id
@@ -193,9 +195,9 @@ export const MESSAGES_READ_SUBSCRIPTION = gql`
 `;
 
 export const GET_CHAT_MEDIA = gql`
-  query GetChatMedia($id_conversation: String!) {
-    getChatMedia(id_conversation: $id_conversation) {
-      id_message
+  query GetChatMedia($conversationId: String!) {
+    getChatMedia(conversationId: $conversationId) {
+      id
       imageUrl
       videoUrl
     }

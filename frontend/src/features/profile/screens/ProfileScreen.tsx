@@ -73,7 +73,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     }, [profileUserId]);
 
     const { data: followData } = useQuery<any>(IS_FOLLOWING, {
-        variables: { id_following: profileUserId },
+        variables: { followingId: profileUserId },
         skip: !profileUserId || isMyProfile,
         fetchPolicy: 'cache-and-network',
     });
@@ -81,11 +81,11 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     const isFollowing = followData?.isFollowing || false;
 
     const [toggleFollow] = useMutation<any>(TOGGLE_FOLLOW, {
-        variables: { id_following: profileUserId },
+        variables: { followingId: profileUserId },
         update(cache, { data: { toggleFollow: newValue } }) {
             cache.writeQuery({
                 query: IS_FOLLOWING,
-                variables: { id_following: profileUserId },
+                variables: { followingId: profileUserId },
                 data: { isFollowing: newValue },
             });
 
@@ -211,8 +211,8 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
             const { data } = await getOrCreateChat({
                 variables: { targetUserId: profileUserId }
             });
-            const id_conversation = data.getOrCreateOneOnOneChat.id_conversation;
-            (navigation as any).navigate('ChatRoom', { id_conversation });
+            const conversationId = data.getOrCreateOneOnOneChat.id;
+            (navigation as any).navigate('ChatRoom', { conversationId });
         } catch (error) {
             console.error("Error al crear el chat:", error);
             Toast.show({

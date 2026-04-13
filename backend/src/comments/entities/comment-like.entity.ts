@@ -8,28 +8,28 @@ import { Comment } from './comment.entity';
 @Unique(['userId', 'commentId'])
 export class CommentLike {
     @Field(() => ID)
-    @PrimaryGeneratedColumn('uuid', { name: 'id_comment_like' })
-    id_comment_like: string;
+    @PrimaryGeneratedColumn('uuid')
+    id: string;
 
     @Field(() => User)
     @ManyToOne(() => User, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'id_user' })
+    @JoinColumn({ name: 'user_id' })
     user: User;
 
     @Field()
-    @Column({ name: 'id_user' })
+    @Column({ name: 'user_id' })
     userId: string;
 
     @Field(() => Comment)
     @ManyToOne(() => Comment, comment => comment.likes, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'id_comment' })
+    @JoinColumn({ name: 'comment_id' })
     comment: Comment;
 
     @Field()
-    @Column({ name: 'id_comment' })
+    @Column({ name: 'comment_id' })
     commentId: string;
 
     @Field()
-    @CreateDateColumn({ type: 'timestamptz' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 }

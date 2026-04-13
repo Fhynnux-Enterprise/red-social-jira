@@ -7,15 +7,15 @@ import { Message } from './message.entity';
 @Entity('conversations')
 export class Conversation {
     @Field(() => ID)
-    @PrimaryGeneratedColumn('uuid', { name: 'id_conversation' })
-    id_conversation: string;
+    @PrimaryGeneratedColumn('uuid')
+    id: string;
 
     @Field()
-    @CreateDateColumn({ type: 'timestamptz' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 
     @Field()
-    @UpdateDateColumn({ type: 'timestamptz' })
+    @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
     updatedAt: Date;
 
     @Field(() => [Participant], { nullable: true })

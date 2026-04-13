@@ -28,6 +28,10 @@ export default function RootLayout() {
                     animation: 'slide_from_bottom'
                   }} 
                 />
+                <Stack.Screen
+                  name="jobs/[id]/applicants"
+                  options={{ headerShown: false }}
+                />
               </Stack>
             </MuteProvider>
             <Toast config={customToastConfig} position="top" topOffset={60} />

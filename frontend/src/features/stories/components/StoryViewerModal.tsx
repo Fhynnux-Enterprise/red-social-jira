@@ -155,11 +155,11 @@ const UserStoryPage = ({
         try {
             setIsSending(true); setIsPaused(true);
             const { data } = await getOrCreateChat({ variables: { targetUserId: userId } });
-            const convId = data?.getOrCreateOneOnOneChat?.id_conversation;
+            const convId = data?.getOrCreateOneOnOneChat?.id;
             if (!convId) throw new Error("No chat");
             await sendMessage({
                 variables: {
-                    id_conversation: convId,
+                    conversationId: convId,
                     content: `Respondió a tu historia: "${reply.trim()}"`,
                     imageUrl: currentStory.mediaType === 'image' ? currentStory.mediaUrl : null,
                     videoUrl: currentStory.mediaType === 'video' ? currentStory.mediaUrl : null,

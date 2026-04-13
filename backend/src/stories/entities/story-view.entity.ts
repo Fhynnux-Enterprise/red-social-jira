@@ -12,22 +12,22 @@ export class StoryView {
   id: string;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'userId' })
+  @JoinColumn({ name: 'user_id' })
   user: User;
 
   @Field()
-  @Column()
+  @Column({ name: 'user_id' })
   userId: string;
 
   @ManyToOne(() => Story, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'storyId' })
+  @JoinColumn({ name: 'story_id' })
   story: Story;
 
   @Field()
-  @Column()
+  @Column({ name: 'story_id' })
   storyId: string;
 
   @Field()
-  @CreateDateColumn({ type: 'timestamptz' })
+  @CreateDateColumn({ name: 'viewed_at', type: 'timestamptz' })
   viewedAt: Date;
 }

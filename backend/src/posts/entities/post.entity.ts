@@ -9,7 +9,7 @@ import { PostMedia } from './post-media.entity';
 @Entity('posts')
 export class Post {
     @Field(() => ID)
-    @PrimaryGeneratedColumn('uuid', { name: 'id_post' })
+    @PrimaryGeneratedColumn('uuid')
     id: string;
 
     @Field()
@@ -26,11 +26,11 @@ export class Post {
 
     @Field(() => User)
     @ManyToOne(() => User, (user) => user.posts, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'id_user' })
+    @JoinColumn({ name: 'user_id' })
     author: User;
 
     @Field()
-    @Column({ name: 'id_user' })
+    @Column({ name: 'user_id' })
     authorId: string;
 
     @Field(() => [PostLike], { nullable: true })
@@ -38,15 +38,15 @@ export class Post {
     likes?: PostLike[];
 
     @Field()
-    @CreateDateColumn({ type: 'timestamptz' })
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;
 
     @Field()
-    @UpdateDateColumn({ type: 'timestamptz' })
+    @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
     updatedAt: Date;
 
     @Field({ nullable: true })
-    @DeleteDateColumn({ type: 'timestamptz', nullable: true })
+    @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
     deletedAt?: Date;
 
     @Field(() => [Comment], { nullable: true })

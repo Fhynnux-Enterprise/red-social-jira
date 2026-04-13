@@ -34,4 +34,23 @@ export class ProfessionalsResolver {
   ) {
     return this.professionalsService.upsertProfessionalProfile(input, user.id);
   }
+
+  @Mutation(() => Boolean)
+  @UseGuards(GqlAuthGuard)
+  deleteProfessionalProfile(
+    @Args('id') id: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.professionalsService.deleteProfessionalProfile(id, user.id);
+  }
+
+  @Mutation(() => ProfessionalProfile)
+  @UseGuards(GqlAuthGuard)
+  updateProfessionalProfile(
+    @Args('id') id: string,
+    @Args('input') input: UpsertProfessionalProfileInput,
+    @CurrentUser() user: User,
+  ) {
+    return this.professionalsService.updateProfessionalProfile(id, input, user.id);
+  }
 }

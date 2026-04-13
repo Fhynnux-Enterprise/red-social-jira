@@ -12,6 +12,7 @@ import { StorageService } from '../storage/storage.service';
 import { ApplyToJobInput } from './dto/apply-to-job.input';
 import { ApplyToJobResponse } from './dto/apply-to-job.response';
 import { UpdateApplicationStatusInput } from './dto/update-application-status.input';
+import { UpdateApplicationInput } from './dto/update-application.input';
 
 @Injectable()
 export class ApplicationsService {
@@ -42,7 +43,7 @@ export class ApplicationsService {
   ): Promise<ApplyToJobResponse> {
     // 1. Verificar que la oferta existe
     const jobOffer = await this.jobOfferRepo.findOne({
-      where: { id_job_offer: input.id_job_offer },
+      where: { id: input.jobOfferId },
     });
     if (!jobOffer) {
       throw new NotFoundException('La oferta de trabajo no existe.');
@@ -50,7 +51,7 @@ export class ApplicationsService {
 
     // 2. Evitar duplicados
     const existing = await this.applicationRepo.findOne({
-      where: { id_job_offer: input.id_job_offer, id_user: applicantId },
+      where: { jobOfferId: input.jobOfferId, applicantId },
     });
     if (existing) {
       throw new ConflictException('Ya te has postulado a esta oferta.');
@@ -66,9 +67,10 @@ export class ApplicationsService {
 
     // 4. Guardar la postulación (cvUrl = la URL pública que tendrá el PDF una vez subido)
     const application = this.applicationRepo.create({
-      id_user: applicantId,
-      id_job_offer: input.id_job_offer,
+      applicantId,
+      jobOfferId: input.jobOfferId,
       message: input.message,
+      contactPhone: input.contactPhone,
       cvUrl: cvPublicUrl,
       status: ApplicationStatus.PENDING,
     });
@@ -76,7 +78,7 @@ export class ApplicationsService {
 
     // Recargar con relaciones para satisfacer el schema de GraphQL
     const full = await this.applicationRepo.findOne({
-      where: { id_job_application: saved.id_job_application },
+      where: { id: saved.id },
       relations: ['applicant', 'jobOffer', 'jobOffer.author'],
     });
 
@@ -96,19 +98,19 @@ export class ApplicationsService {
     requesterId: string,
   ): Promise<JobApplication[]> {
     const jobOffer = await this.jobOfferRepo.findOne({
-      where: { id_job_offer: jobOfferId },
+      where: { id: jobOfferId },
     });
     if (!jobOffer) {
       throw new NotFoundException('La oferta de trabajo no existe.');
     }
-    if (jobOffer.id_user !== requesterId) {
+    if (jobOffer.authorId !== requesterId) {
       throw new ForbiddenException(
         'Solo el creador de la oferta puede ver los candidatos.',
       );
     }
 
     return this.applicationRepo.find({
-      where: { id_job_offer: jobOfferId },
+      where: { jobOfferId },
       relations: ['applicant'],
       order: { createdAt: 'DESC' },
     });
@@ -120,7 +122,7 @@ export class ApplicationsService {
    */
   async getMyApplications(applicantId: string): Promise<JobApplication[]> {
     return this.applicationRepo.find({
-      where: { id_user: applicantId },
+      where: { applicantId },
       relations: ['jobOffer', 'jobOffer.author'],
       order: { createdAt: 'DESC' },
     });
@@ -135,13 +137,13 @@ export class ApplicationsService {
     requesterId: string,
   ): Promise<JobApplication> {
     const application = await this.applicationRepo.findOne({
-      where: { id_job_application: input.id_job_application },
+      where: { id: input.applicationId },
       relations: ['jobOffer'],
     });
     if (!application) {
       throw new NotFoundException('Postulación no encontrada.');
     }
-    if (application.jobOffer.id_user !== requesterId) {
+    if (application.jobOffer.authorId !== requesterId) {
       throw new ForbiddenException(
         'Solo el creador de la oferta puede actualizar el estado de una postulación.',
       );
@@ -151,8 +153,63 @@ export class ApplicationsService {
     await this.applicationRepo.save(application);
 
     return this.applicationRepo.findOne({
-      where: { id_job_application: application.id_job_application },
+      where: { id: application.id },
       relations: ['applicant', 'jobOffer', 'jobOffer.author'],
     }) as Promise<JobApplication>;
+  }
+
+  /**
+   * Elimina tu propia postulación (Solo PENDING).
+   */
+  async deleteApplication(applicationId: string, applicantId: string): Promise<boolean> {
+    const application = await this.applicationRepo.findOne({
+      where: { id: applicationId },
+    });
+    if (!application) throw new NotFoundException('Postulación no encontrada.');
+    if (application.applicantId !== applicantId) throw new ForbiddenException('No puedes eliminar postulación ajena.');
+    if (application.status !== ApplicationStatus.PENDING) throw new ForbiddenException('Solo puedes eliminar postulaciones en estado PENDIENTE.');
+
+    await this.applicationRepo.remove(application);
+    return true;
+  }
+
+  /**
+   * Actualiza tu propia postulación y puede devolver un nuevo enlace de CV.
+   */
+  async updateApplication(input: UpdateApplicationInput, applicantId: string): Promise<ApplyToJobResponse> {
+    const application = await this.applicationRepo.findOne({
+      where: { id: input.applicationId },
+      relations: ['applicant', 'jobOffer', 'jobOffer.author'],
+    });
+
+    if (!application) throw new NotFoundException('Postulación no encontrada.');
+    if (application.applicantId !== applicantId) throw new ForbiddenException('Solo puedes editar tu propia postulación.');
+    if (application.status !== ApplicationStatus.PENDING) throw new ForbiddenException('Solo se pueden editar postulaciones PENDIENTES.');
+
+    let cvUploadUrl = '';
+    let cvPublicUrl = application.cvUrl;
+
+    if (input.requestNewCv) {
+      const res = await this.storageService.generatePresignedUploadUrl('cv.pdf', 'cvs', 'application/pdf');
+      cvUploadUrl = res.uploadUrl;
+      cvPublicUrl = res.publicUrl;
+    }
+
+    application.message = input.message !== undefined ? input.message : application.message;
+    application.contactPhone = input.contactPhone !== undefined ? input.contactPhone : application.contactPhone;
+    if (cvPublicUrl) {
+      application.cvUrl = cvPublicUrl;
+    }
+
+    const saved = await this.applicationRepo.save(application);
+
+    return {
+      application: (await this.applicationRepo.findOne({
+        where: { id: saved.id },
+        relations: ['applicant', 'jobOffer', 'jobOffer.author'],
+      }))!,
+      cvUploadUrl,
+      cvPublicUrl: cvPublicUrl || '',
+    };
   }
 }

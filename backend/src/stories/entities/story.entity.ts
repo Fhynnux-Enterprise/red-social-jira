@@ -11,15 +11,15 @@ export class Story {
 
   @Field(() => User)
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'userId' })
+  @JoinColumn({ name: 'user_id' })
   user: User;
 
   @Field()
-  @Column()
+  @Column({ name: 'user_id' })
   userId: string;
 
   @Field()
-  @Column()
+  @Column({ name: 'media_url' })
   mediaUrl: string;
 
   @Field({ nullable: true })
@@ -27,15 +27,15 @@ export class Story {
   content?: string;
 
   @Field()
-  @Column({ type: 'varchar', length: 10 })
+  @Column({ name: 'media_type', type: 'varchar', length: 10 })
   mediaType: string; // 'image' | 'video'
 
   @Field()
-  @CreateDateColumn({ type: 'timestamptz' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
   @Field()
-  @Column({ type: 'timestamptz' })
+  @Column({ name: 'expires_at', type: 'timestamptz' })
   expiresAt: Date;
 
   // Lógica de expiración: 24 horas después de la creación

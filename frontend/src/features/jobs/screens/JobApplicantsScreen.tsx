@@ -17,7 +17,7 @@ export default function JobApplicantsScreen() {
     const [selectedApplication, setSelectedApplication] = useState<any | null>(null);
 
     const { data, loading, refetch } = useQuery(GET_JOB_APPLICATIONS, {
-        variables: { id_job_offer: id },
+        variables: { jobOfferId: id },
         fetchPolicy: 'cache-and-network',
         skip: !id,
     });
@@ -64,7 +64,7 @@ export default function JobApplicantsScreen() {
             ) : (
                 <FlatList
                     data={data?.jobApplications ?? []}
-                    keyExtractor={(item: any) => item.id_job_application || item.id}
+                    keyExtractor={(item: any) => item.id}
                     renderItem={({ item }) => (
                         <TouchableOpacity 
                             style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}

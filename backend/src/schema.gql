@@ -3,7 +3,7 @@
 # ------------------------------------------------------
 
 type PostLike {
-  id_post_like: ID!
+  id: ID!
   user: User!
   userId: String!
   post: Post!
@@ -17,7 +17,7 @@ A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date
 scalar DateTime
 
 type CommentLike {
-  id_comment_like: ID!
+  id: ID!
   user: User!
   userId: String!
   comment: Comment!
@@ -81,12 +81,12 @@ type UserBadge {
 }
 
 type Message {
-  id_message: ID!
+  id: ID!
   content: String!
   imageUrl: String
   videoUrl: String
   storyId: String
-  id_conversation: String!
+  conversationId: String!
   isRead: Boolean!
   createdAt: DateTime!
   updatedAt: DateTime!
@@ -98,7 +98,7 @@ type Message {
 }
 
 type Conversation {
-  id_conversation: ID!
+  id: ID!
   createdAt: DateTime!
   updatedAt: DateTime!
   participants: [Participant!]
@@ -108,17 +108,17 @@ type Conversation {
 }
 
 type Participant {
-  id_participant: ID!
-  id_last_read_message: ID
+  id: ID!
+  lastReadMessageId: ID
   joinedAt: DateTime!
   user: User!
   conversation: Conversation!
 }
 
 type Follow {
-  id_follow: ID!
-  id_follower: String!
-  id_following: String!
+  id: ID!
+  followerId: String!
+  followingId: String!
   follower: User!
   following: User!
 }
@@ -135,7 +135,7 @@ type Story {
 }
 
 type JobOfferMedia {
-  id_job_offer_media: ID!
+  id: ID!
   url: String!
   type: String!
   order: Int!
@@ -144,7 +144,7 @@ type JobOfferMedia {
 }
 
 type JobOffer {
-  id_job_offer: ID!
+  id: ID!
   title: String!
   description: String!
   location: String!
@@ -155,19 +155,30 @@ type JobOffer {
   media: [JobOfferMedia!]
 }
 
+type ProfessionalProfileMedia {
+  id: ID!
+  url: String!
+  type: String!
+  order: Int!
+  createdAt: DateTime!
+  deletedAt: DateTime
+}
+
 type ProfessionalProfile {
-  id_professional_profile: ID!
+  id: ID!
   profession: String!
   description: String!
   experienceYears: Int
   contactPhone: String!
   createdAt: DateTime!
   user: User!
+  media: [ProfessionalProfileMedia!]
 }
 
 type JobApplication {
-  id_job_application: ID!
+  id: ID!
   message: String
+  contactPhone: String
   cvUrl: String
   status: ApplicationStatus!
   createdAt: DateTime!
@@ -216,7 +227,7 @@ type UploadUrlResponse {
 }
 
 type ReadMessagesPayload {
-  id_conversation: String!
+  conversationId: String!
   readerId: String!
 }
 
@@ -234,26 +245,29 @@ type Query {
   getUserProfile(id: String!): User!
   me: User!
   searchUsers(searchTerm: String!, limit: Int = 5, offset: Int = 0): [User!]!
-  isFollowing(id_following: String!): Boolean!
-  getFollowers(id_user: String!): [User!]!
-  getFollowing(id_user: String!): [User!]!
+  isFollowing(followingId: String!): Boolean!
+  getFollowers(userId: String!): [User!]!
+  getFollowing(userId: String!): [User!]!
   getOnlineFollowing: [User!]!
   getOnlineFollowingCount: Int!
   getCommentsByPost(postId: String!, limit: Int = 10, offset: Int = 0): [Comment!]!
   getUserConversations: [Conversation!]!
-  getChatMessages(id_conversation: String!, limit: Float, offset: Float): [Message!]!
-  searchMessagesInChat(id_conversation: String!, searchTerm: String!): [Message!]!
-  getConversation(id_conversation: String!): Conversation
-  getChatMedia(id_conversation: String!): [Message!]!
+  getChatMessages(conversationId: String!, limit: Float, offset: Float): [Message!]!
+  searchMessagesInChat(conversationId: String!, searchTerm: String!): [Message!]!
+  getConversation(conversationId: String!): Conversation
+  getChatMedia(conversationId: String!): [Message!]!
   getActiveStories(limit: Int! = 20, offset: Int! = 0): [Story!]!
   getViewedStoryIds: [String!]!
   jobOffers(limit: Int! = 20, offset: Int! = 0): [JobOffer!]!
   myJobOffers: [JobOffer!]!
   professionalProfiles(limit: Int! = 20, offset: Int! = 0): [ProfessionalProfile!]!
   myProfessionalProfile: [ProfessionalProfile!]!
-  jobApplications(id_job_offer: ID!): [JobApplication!]!
+  jobApplications(jobOfferId: ID!): [JobApplication!]!
   myApplications: [JobApplication!]!
+  getFeed(limit: Int! = 10, offset: Int! = 0): [FeedItem!]!
 }
+
+union FeedItem = Post | JobOffer | ProfessionalProfile
 
 type Mutation {
   createPost(content: String!, title: String, media: [PostMediaInput!]): Post!
@@ -268,25 +282,31 @@ type Mutation {
   updateProfile(firstName: String, lastName: String, bio: String, username: String, phone: String): User!
   updateProfileMedia(photoUrl: String, coverUrl: String): User!
   pingPresence: Boolean!
-  toggleFollow(id_following: String!): Boolean!
+  toggleFollow(followingId: String!): Boolean!
   createComment(postId: String!, content: String!, parentId: String): Comment!
   deleteComment(id: String!): Boolean!
   updateComment(id: String!, content: String!): Comment!
   toggleCommentLike(commentId: String!): Comment!
-  deleteMessageForMe(id_message: String!): Boolean!
-  deleteMessageForAll(id_message: String!): Boolean!
-  deleteConversationForMe(id_conversation: String!): Boolean!
-  editMessage(id_message: String!, newContent: String!): Message!
+  deleteMessageForMe(messageId: String!): Boolean!
+  deleteMessageForAll(messageId: String!): Boolean!
+  deleteConversationForMe(conversationId: String!): Boolean!
+  editMessage(messageId: String!, newContent: String!): Message!
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
-  sendMessage(id_conversation: String!, content: String = "", imageUrl: String, videoUrl: String, storyId: String): Message!
-  markMessagesAsRead(id_conversation: String!): Boolean!
+  sendMessage(conversationId: String!, content: String = "", imageUrl: String, videoUrl: String, storyId: String): Message!
+  markMessagesAsRead(conversationId: String!): Boolean!
   createStory(mediaUrl: String!, mediaType: String!, content: String): Story!
   markStoryAsViewed(storyId: String!): Boolean!
   deleteStory(id: String!): Boolean!
   createJobOffer(createJobOfferInput: CreateJobOfferInput!): JobOffer!
+  updateJobOffer(input: UpdateJobOfferInput!): JobOffer!
+  deleteJobOffer(id: ID!): Boolean!
   upsertProfessionalProfile(upsertProfessionalProfileInput: UpsertProfessionalProfileInput!): ProfessionalProfile!
+  deleteProfessionalProfile(id: String!): Boolean!
+  updateProfessionalProfile(id: String!, input: UpsertProfessionalProfileInput!): ProfessionalProfile!
   applyToJob(input: ApplyToJobInput!): ApplyToJobResponse!
   updateApplicationStatus(input: UpdateApplicationStatusInput!): JobApplication!
+  deleteApplication(applicationId: ID!): Boolean!
+  updateApplication(input: UpdateApplicationInput!): ApplyToJobResponse!
 }
 
 input PostMediaInput {
@@ -310,25 +330,49 @@ input JobOfferMediaInput {
   order: Int!
 }
 
+input UpdateJobOfferInput {
+  id: ID!
+  title: String
+  description: String
+  location: String
+  salary: String
+  contactPhone: String
+}
+
 input UpsertProfessionalProfileInput {
   profession: String!
   description: String!
   experienceYears: Int
   contactPhone: String!
+  media: [ProfessionalProfileMediaInput!]
+}
+
+input ProfessionalProfileMediaInput {
+  url: String!
+  type: String!
+  order: Int!
 }
 
 input ApplyToJobInput {
-  id_job_offer: ID!
+  jobOfferId: ID!
   message: String
+  contactPhone: String
 }
 
 input UpdateApplicationStatusInput {
-  id_job_application: ID!
+  applicationId: ID!
   status: ApplicationStatus!
 }
 
+input UpdateApplicationInput {
+  applicationId: ID!
+  message: String
+  contactPhone: String
+  requestNewCv: Boolean
+}
+
 type Subscription {
-  messageAdded(id_conversation: String!): Message!
-  messagesRead(id_conversation: String!): ReadMessagesPayload!
+  messageAdded(conversationId: String!): Message!
+  messagesRead(conversationId: String!): ReadMessagesPayload!
   inboxUpdate: Message!
 }

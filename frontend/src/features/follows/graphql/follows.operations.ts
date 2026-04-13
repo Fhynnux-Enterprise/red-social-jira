@@ -1,20 +1,20 @@
 import { gql } from '@apollo/client';
 
 export const TOGGLE_FOLLOW = gql`
-  mutation ToggleFollow($id_following: String!) {
-    toggleFollow(id_following: $id_following)
+  mutation ToggleFollow($followingId: String!) {
+    toggleFollow(followingId: $followingId)
   }
 `;
 
 export const IS_FOLLOWING = gql`
-  query IsFollowing($id_following: String!) {
-    isFollowing(id_following: $id_following)
+  query IsFollowing($followingId: String!) {
+    isFollowing(followingId: $followingId)
   }
 `;
 
 export const GET_FOLLOWERS = gql`
-  query GetFollowers($id_user: String!) {
-    getFollowers(id_user: $id_user) {
+  query GetFollowers($userId: String!) {
+    getFollowers(userId: $userId) {
       id
       firstName
       lastName
@@ -25,8 +25,8 @@ export const GET_FOLLOWERS = gql`
 `;
 
 export const GET_FOLLOWING = gql`
-  query GetFollowing($id_user: String!) {
-    getFollowing(id_user: $id_user) {
+  query GetFollowing($userId: String!) {
+    getFollowing(userId: $userId) {
       id
       firstName
       lastName

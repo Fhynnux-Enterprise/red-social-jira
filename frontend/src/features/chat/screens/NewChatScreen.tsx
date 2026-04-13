@@ -30,7 +30,7 @@ export default function NewChatScreen() {
 
     // 1. Obtener seguidos por defecto
     const { data: followingData, loading: followingLoading } = useQuery(GET_FOLLOWING, {
-        variables: { id_user: currentUser?.id },
+        variables: { userId: currentUser?.id },
         skip: !currentUser?.id,
     });
 
@@ -63,10 +63,10 @@ export default function NewChatScreen() {
                 variables: { targetUserId: targetUser.id }
             });
 
-            if (data?.getOrCreateOneOnOneChat?.id_conversation) {
+            if (data?.getOrCreateOneOnOneChat?.id) {
                 // Navegar al chat y resetear el stack para que al volver vaya a la lista
                 navigation.replace('ChatRoom', { 
-                    id_conversation: data.getOrCreateOneOnOneChat.id_conversation 
+                    conversationId: data.getOrCreateOneOnOneChat.id 
                 });
             }
         } catch (error) {

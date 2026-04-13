@@ -16,6 +16,7 @@ import { FollowsModule } from './follows/follows.module';
 import { StorageModule } from './storage/storage.module';
 import { StoriesModule } from './stories/stories.module';
 import { JobsModule } from './jobs/jobs.module';
+import { FeedModule } from './feed/feed.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { JobsModule } from './jobs/jobs.module';
     StorageModule,
     StoriesModule,
     JobsModule,
+    FeedModule,
   ],
   controllers: [],
   providers: [],

@@ -26,14 +26,14 @@ export class ChatService {
         let existingQuery = this.conversationRepository
             .createQueryBuilder('conversation')
             .innerJoin('conversation.participants', 'p1')
-            .where('p1.id_user = :currentUserId', { currentUserId });
+            .where('p1.userId = :currentUserId', { currentUserId });
 
         if (isSelfChat) {
             existingQuery = existingQuery.andWhere((qb) => {
                 const subQuery = qb.subQuery()
                     .select('COUNT(*)')
                     .from(Participant, 'p')
-                    .where('p.id_conversation = conversation.id_conversation')
+                    .where('p.conversationId = conversation.id')
                     .getQuery();
                 // Self chat tiene solo 1 participante
                 return subQuery + ' = 1';
@@ -41,12 +41,12 @@ export class ChatService {
         } else {
             existingQuery = existingQuery
                 .innerJoin('conversation.participants', 'p2')
-                .andWhere('p2.id_user = :targetUserId', { targetUserId })
+                .andWhere('p2.userId = :targetUserId', { targetUserId })
                 .andWhere((qb) => {
                     const subQuery = qb.subQuery()
                         .select('COUNT(*)')
                         .from(Participant, 'p')
-                        .where('p.id_conversation = conversation.id_conversation')
+                        .where('p.conversationId = conversation.id')
                         .getQuery();
                     return subQuery + ' = 2';
                 });
@@ -66,15 +66,15 @@ export class ChatService {
         const participantsToSave: Participant[] = [];
         
         const p1 = this.participantRepository.create({
-            id_user: currentUserId,
-            id_conversation: savedConversation.id_conversation,
+            userId: currentUserId,
+            conversationId: savedConversation.id,
         });
         participantsToSave.push(p1);
 
         if (!isSelfChat) {
             const p2 = this.participantRepository.create({
-                id_user: targetUserId,
-                id_conversation: savedConversation.id_conversation,
+                userId: targetUserId,
+                conversationId: savedConversation.id,
             });
             participantsToSave.push(p2);
         }
@@ -84,9 +84,9 @@ export class ChatService {
         return savedConversation;
     }
 
-    async sendMessage(senderId: string, id_conversation: string, content: string, imageUrl?: string, videoUrl?: string, storyId?: string): Promise<Message> {
+    async sendMessage(senderId: string, conversationId: string, content: string, imageUrl?: string, videoUrl?: string, storyId?: string): Promise<Message> {
         const conversation = await this.conversationRepository.findOne({
-            where: { id_conversation },
+            where: { id: conversationId },
             relations: ['participants']
         });
 
@@ -95,7 +95,7 @@ export class ChatService {
         }
 
         // Verificar que el remitente sea parte de la conversación
-        const isParticipant = conversation.participants.some(p => p.id_user === senderId);
+        const isParticipant = conversation.participants.some(p => p.userId === senderId);
         if (!isParticipant) {
             throw new BadRequestException('No eres parte de esta conversación');
         }
@@ -105,8 +105,8 @@ export class ChatService {
             imageUrl: imageUrl || undefined,
             videoUrl: videoUrl || undefined,
             storyId: storyId || undefined,
-            id_conversation,
-            id_user: senderId,
+            conversationId,
+            userId: senderId,
             isRead: false,
         });
 
@@ -118,18 +118,18 @@ export class ChatService {
 
         // Retornamos el mensaje cargando la relación 'sender' para cumplir con el esquema GraphQL
         return this.messageRepository.findOneOrFail({
-            where: { id_message: savedMessage.id_message },
+            where: { id: savedMessage.id },
             relations: ['sender']
         });
     }
 
     async getUserConversations(userId: string): Promise<Conversation[]> {
         const participations = await this.participantRepository.find({
-            where: { id_user: userId },
-            select: ['id_conversation'],
+            where: { userId },
+            select: ['conversationId'],
         });
 
-        const conversationIds = participations.map(p => p.id_conversation);
+        const conversationIds = participations.map(p => p.conversationId);
 
         if (conversationIds.length === 0) return [];
 
@@ -139,7 +139,7 @@ export class ChatService {
             .leftJoinAndSelect('participant.user', 'user')
             // Join con mensajes para filtrar los que sí tiene visibles
             .innerJoin('conversation.messages', 'message')
-            .where('conversation.id_conversation IN (:...conversationIds)', { conversationIds })
+            .where('conversation.id IN (:...conversationIds)', { conversationIds })
             .andWhere('(message.deletedFor IS NULL OR NOT (:userId = ANY (message.deletedFor)))', { userId })
             .orderBy('conversation.updatedAt', 'DESC')
             .getMany();
@@ -147,10 +147,10 @@ export class ChatService {
         return conversations;
     }
 
-    async getMessagesByConversation(id_conversation: string, currentUserId: string, limit = 20, offset = 0): Promise<Message[]> {
+    async getMessagesByConversation(conversationId: string, currentUserId: string, limit = 20, offset = 0): Promise<Message[]> {
         return this.messageRepository.createQueryBuilder('message')
             .leftJoinAndSelect('message.sender', 'sender')
-            .where('message.id_conversation = :id_conversation', { id_conversation })
+            .where('message.conversationId = :conversationId', { conversationId })
             .andWhere('(message.deletedFor IS NULL OR NOT (:currentUserId = ANY (message.deletedFor)))', { currentUserId })
             .orderBy('message.createdAt', 'DESC')
             .take(limit)
@@ -158,16 +158,16 @@ export class ChatService {
             .getMany();
     }
 
-    async isUserParticipant(id_conversation: string, userId: string): Promise<boolean> {
+    async isUserParticipant(conversationId: string, userId: string): Promise<boolean> {
         const participant = await this.participantRepository.findOne({
-            where: { id_conversation, id_user: userId }
+            where: { conversationId, userId }
         });
         return !!participant;
     }
 
-    async deleteMessageForMe(id_message: string, currentUserId: string): Promise<boolean> {
+    async deleteMessageForMe(messageId: string, currentUserId: string): Promise<boolean> {
         const message = await this.messageRepository.findOne({
-            where: { id_message }
+            where: { id: messageId }
         });
 
         if (!message) {
@@ -184,23 +184,23 @@ export class ChatService {
         return true;
     }
 
-    async deleteConversationForMe(id_conversation: string, currentUserId: string): Promise<boolean> {
+    async deleteConversationForMe(conversationId: string, currentUserId: string): Promise<boolean> {
         await this.messageRepository.createQueryBuilder()
             .update(Message)
             .set({
                 // Usamos array_append de PostgreSQL 
-                deletedFor: () => `array_append(COALESCE("deletedFor", '{}'), '${currentUserId}')`
+                deletedFor: () => `array_append(COALESCE("deleted_for", '{}'), '${currentUserId}')`
             })
-            .where('id_conversation = :id_conversation', { id_conversation })
-            .andWhere('(deletedFor IS NULL OR NOT (:currentUserId = ANY(deletedFor)))', { currentUserId })
+            .where('conversation_id = :conversationId', { conversationId })
+            .andWhere('(deleted_for IS NULL OR NOT (:currentUserId = ANY(deleted_for)))', { currentUserId })
             .execute();
 
         return true;
     }
 
-    async deleteMessageForAll(id_message: string, currentUserId: string): Promise<boolean> {
+    async deleteMessageForAll(messageId: string, currentUserId: string): Promise<boolean> {
         const message = await this.messageRepository.findOne({
-            where: { id_message },
+            where: { id: messageId },
             relations: ['sender']
         });
 
@@ -219,9 +219,9 @@ export class ChatService {
         return true;
     }
 
-    async editMessage(id_message: string, currentUserId: string, newContent: string): Promise<Message> {
+    async editMessage(messageId: string, currentUserId: string, newContent: string): Promise<Message> {
         const message = await this.messageRepository.findOne({
-            where: { id_message },
+            where: { id: messageId },
             relations: ['sender']
         });
 
@@ -242,22 +242,22 @@ export class ChatService {
         return this.messageRepository.save(message);
     }
 
-    async getConversationById(id_conversation: string): Promise<Conversation | null> {
+    async getConversationById(conversationId: string): Promise<Conversation | null> {
         return this.conversationRepository.findOne({
-            where: { id_conversation },
+            where: { id: conversationId },
             relations: ['participants', 'participants.user', 'participants.user.badge'],
         });
     }
 
     async searchMessagesInConversation(
-        id_conversation: string,
+        conversationId: string,
         currentUserId: string,
         searchTerm: string,
     ): Promise<Message[]> {
         if (!searchTerm) return [];
 
         return this.messageRepository.createQueryBuilder('message')
-            .where('message.id_conversation = :id_conversation', { id_conversation })
+            .where('message.conversationId = :conversationId', { conversationId })
             .andWhere('message.content ILIKE :term', { term: `%${searchTerm}%` })
             .andWhere('message.isDeletedForAll = false')
             .andWhere('(message.deletedFor IS NULL OR NOT (:currentUserId = ANY (message.deletedFor)))', { currentUserId })
@@ -265,36 +265,36 @@ export class ChatService {
             .getMany();
     }
 
-    async markMessagesAsRead(id_conversation: string, userId: string): Promise<boolean> {
+    async markMessagesAsRead(conversationId: string, userId: string): Promise<boolean> {
         // Marcamos como leídos todos los mensajes de la conversación que no fueron enviados por el usuario actual
         // y que aún no están marcados como leídos.
         await this.messageRepository.createQueryBuilder()
             .update(Message)
             .set({ isRead: true })
-            .where('id_conversation = :id_conversation', { id_conversation })
-            .andWhere('id_user != :userId', { userId })
-            .andWhere('isRead = false')
+            .where('conversation_id = :conversationId', { conversationId })
+            .andWhere('user_id != :userId', { userId })
+            .andWhere('is_read = false')
             .execute();
 
         // Buscamos el último mensaje para guardarlo como referencia en el participante
         const lastMessage = await this.messageRepository.findOne({
-            where: { id_conversation },
+            where: { conversationId },
             order: { createdAt: 'DESC' }
         });
 
         if (lastMessage) {
             await this.participantRepository.update(
-                { id_conversation, id_user: userId },
-                { id_last_read_message: lastMessage.id_message }
+                { conversationId, userId },
+                { lastReadMessageId: lastMessage.id }
             );
         }
 
         return true;
     }
 
-    async getChatMedia(id_conversation: string, currentUserId: string): Promise<Message[]> {
+    async getChatMedia(conversationId: string, currentUserId: string): Promise<Message[]> {
         return this.messageRepository.createQueryBuilder('message')
-            .where('message.id_conversation = :id_conversation', { id_conversation })
+            .where('message.conversationId = :conversationId', { conversationId })
             .andWhere('(message.imageUrl IS NOT NULL OR message.videoUrl IS NOT NULL)')
             .andWhere('message.isDeletedForAll = false')
             .andWhere('(message.deletedFor IS NULL OR NOT (:currentUserId = ANY (message.deletedFor)))', { currentUserId })

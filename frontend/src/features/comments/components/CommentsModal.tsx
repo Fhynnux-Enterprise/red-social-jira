@@ -20,6 +20,8 @@ import ConfirmationModal from './ConfirmationModal';
 import CommentItem from './CommentItem';
 import CopyTextModal from '../../../components/CopyTextModal';
 import ImageCarousel from '../../feed/components/ImageCarousel';
+import JobOfferCard from '../../jobs/components/JobOfferCard';
+import ProfessionalCard from '../../jobs/components/ProfessionalCard';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -97,6 +99,21 @@ export default function CommentsModal({
     // La captura TikTok en el TOPE solo se activa si antes exploró el contenido hacia abajo.
     const hasScrolledDown = useRef(false);
     const postId = post?.id;
+    // El item puede ser un Post, JobOffer o ProfessionalProfile
+    const isPost = !post?.__typename || post.__typename === 'Post';
+    const effectiveIsMinimized = isMinimized || !isPost;
+    // Para todos los tipos de publicación, remap los aliases de Apollo al campo 'media' estándar
+    const normalizedItem = React.useMemo(() => {
+        if (!post) return post;
+        if (post.__typename === 'JobOffer') {
+            return { ...post, title: post.jobTitle ?? post.title, media: post.jobMedia ?? post.media ?? [] };
+        }
+        if (post.__typename === 'ProfessionalProfile') {
+            return { ...post, media: post.profMedia ?? post.media ?? [] };
+        }
+        // Post: remap postMedia alias
+        return { ...post, media: post.postMedia ?? post.media ?? [] };
+    }, [post]);
 
     // Resetear scroll al cambiar de post
     useEffect(() => {
@@ -152,6 +169,9 @@ export default function CommentsModal({
     }, [onNextPost, onPrevPost, nextPost, prevPost, hasMorePosts]);
 
     const toggleMinimize = () => {
+        // Para no-Posts (Ofertas/Servicios) no hay sección de comentarios,
+        // el toggle causaría que la tarjeta ocupe solo la mitad superior → bloqueamos
+        if (!isPost) return;
         if (!isMinimized) {
             Keyboard.dismiss();
         }
@@ -408,6 +428,16 @@ export default function CommentsModal({
             return () => clearTimeout(timer);
         }
     }, [visible, initialMinimized, initialTab]);
+
+    // ── Cuando se navega entre ítems (swipe), forzar minimizado si el nuevo ítem no es Post ──
+    useEffect(() => {
+        if (!visible || !post?.id) return;
+        const currentIsPost = !post?.__typename || post.__typename === 'Post';
+        if (!currentIsPost) {
+            // Oferta o Servicio: siempre mostrar solo la tarjeta (sin burbuja de comentarios)
+            setIsMinimized(true);
+        }
+    }, [post?.id, visible]);
 
     // ── Manejo del botón físico Back (Android) ────────────────────────────────
     useEffect(() => {
@@ -674,12 +704,13 @@ export default function CommentsModal({
 
 
     // ── Likes ──────────────────────────────────────────────────────────────
-    const displayLiked = post?.likes?.some((l: any) => l.user?.id === currentUser?.id) || false;
+    const displayLiked = (isPost && post?.likes?.some((l: any) => l.user?.id === currentUser?.id)) || false;
     const [localLiked, setLocalLiked] = useState(displayLiked);
-    const [localCount, setLocalCount] = useState<number>(post?.likes?.length || 0);
+    const [localCount, setLocalCount] = useState<number>(isPost ? (post?.likes?.length || 0) : 0);
     const [toggleLikeMutation] = useMutation(TOGGLE_LIKE);
 
     useEffect(() => {
+        if (!isPost) return;
         setLocalLiked(post?.likes?.some((l: any) => l.user?.id === currentUser?.id) || false);
         setLocalCount(post?.likes?.length || 0);
     }, [post?.likes]);
@@ -696,7 +727,7 @@ export default function CommentsModal({
         } else {
             optimisticLikes.push({
                 __typename: 'PostLike',
-                id_post_like: `temp-${Date.now()}`,
+                id: `temp-${Date.now()}`,
                 user: {
                     __typename: 'User',
                     id: currentUser.id,
@@ -727,7 +758,7 @@ export default function CommentsModal({
     const COMMENTS_PAGE_SIZE = 10;
     const { data, loading, error, refetch, fetchMore: fetchMoreComments } = useQuery(GET_COMMENTS, {
         variables: { postId, limit: COMMENTS_PAGE_SIZE, offset: 0 },
-        skip: !postId,
+        skip: !postId || !isPost,
         fetchPolicy: 'cache-and-network',
     });
 
@@ -975,7 +1006,7 @@ export default function CommentsModal({
                 <Animated.View
                     style={[
                         { flex: 1, gap: 8 },
-                        isMinimized ? { justifyContent: 'center', paddingBottom: BOTTOM_SPACING } : {},
+                        effectiveIsMinimized ? { justifyContent: 'center', paddingBottom: BOTTOM_SPACING } : {},
                         { transform: [{ translateY: panY }, { translateY: panYPost }] }
                     ]}
                     pointerEvents="box-none"
@@ -998,23 +1029,54 @@ export default function CommentsModal({
                                 <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
                                 <TouchableOpacity
                                     style={styles.postAuthorRow}
-                                    onPress={() => post.author?.id && navigateToProfile(post.author.id)}
+                                    onPress={() => {
+                                        const profileId = isPost
+                                            ? post.author?.id
+                                            : (post.author?.id ?? post.user?.id);
+                                        if (profileId) navigateToProfile(profileId);
+                                    }}
                                     activeOpacity={0.7}
                                 >
+                                    {/* Avatar — usa author para Post/JobOffer, user para ProfessionalProfile */}
                                     <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
-                                        {post.author?.photoUrl
-                                            ? <Image source={{ uri: post.author.photoUrl }} style={styles.avatarImage} />
-                                            : <Text style={styles.avatarText}>
-                                                {post.author?.firstName?.[0] || ''}{post.author?.lastName?.[0] || ''}
-                                            </Text>
-                                        }
+                                        {(() => {
+                                            const photoUrl = isPost
+                                                ? post.author?.photoUrl
+                                                : (post.author?.photoUrl ?? post.user?.photoUrl);
+                                            const initials = isPost
+                                                ? `${post.author?.firstName?.[0] || ''}${post.author?.lastName?.[0] || ''}`
+                                                : `${(post.author?.firstName ?? post.user?.firstName)?.[0] || ''}${(post.author?.lastName ?? post.user?.lastName)?.[0] || ''}`;
+                                            return photoUrl
+                                                ? <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
+                                                : <Text style={styles.avatarText}>{initials}</Text>;
+                                        })()}
                                     </View>
                                     <View style={{ flex: 1 }}>
-                                        <Text style={[styles.postAuthorName, { color: colors.text }]}>
-                                            {post.author?.firstName} {post.author?.lastName}
-                                        </Text>
+                                        {/* Nombre + badge de tipo */}
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                            <Text style={[styles.postAuthorName, { color: colors.text }]}>
+                                                {isPost
+                                                    ? `${post.author?.firstName ?? ''} ${post.author?.lastName ?? ''}`
+                                                    : `${(post.author?.firstName ?? post.user?.firstName) ?? ''} ${(post.author?.lastName ?? post.user?.lastName) ?? ''}`
+                                                }
+                                            </Text>
+                                            {!isPost && (
+                                                <View style={{
+                                                    backgroundColor: 'rgba(255,101,36,0.12)',
+                                                    borderRadius: 6,
+                                                    paddingHorizontal: 7,
+                                                    paddingVertical: 2,
+                                                    borderWidth: 1,
+                                                    borderColor: 'rgba(255,101,36,0.35)',
+                                                }}>
+                                                    <Text style={{ color: '#FF6524', fontSize: 10, fontWeight: '700' }}>
+                                                        {post.__typename === 'JobOffer' ? 'Oferta de Empleo' : 'Servicio Profesional'}
+                                                    </Text>
+                                                </View>
+                                            )}
+                                        </View>
                                         <Text style={[styles.postDate, { color: colors.textSecondary }]}>
-                                            {formatDate(post.createdAt)}{isEdited ? ' · Editado' : ''}
+                                            {formatDate(post.createdAt)}{isPost && isEdited ? ' · Editado' : ''}
                                         </Text>
                                     </View>
                                 </TouchableOpacity>
@@ -1039,7 +1101,7 @@ export default function CommentsModal({
 
                             <ScrollView
                                 ref={scrollViewRef}
-                                showsVerticalScrollIndicator={true}
+                                showsVerticalScrollIndicator={!isPost}
                                 persistentScrollbar={true}
                                 indicatorStyle={isDark ? 'white' : 'black'}
                                 nestedScrollEnabled={true}
@@ -1059,55 +1121,39 @@ export default function CommentsModal({
                                 onScroll={(e) => {
                                     const y = e.nativeEvent.contentOffset.y;
                                     currentScrollY.current = y;
-                                    // Registrar que el usuario exploró hacia abajo
                                     if (y > 10) hasScrolledDown.current = true;
                                 }}
                                 onScrollBeginDrag={(e) => {
                                     postScrollDragStartY.current = e.nativeEvent.contentOffset.y;
-                                    setScrollEnabled(true); // Siempre re-habilitar al iniciar un drag
+                                    setScrollEnabled(true);
                                 }}
                                 onMomentumScrollEnd={(e) => {
                                     const y = e.nativeEvent.contentOffset.y;
                                     currentScrollY.current = y;
                                     const atTop = y <= 2;
                                     const atBottom = y + postScrollHeight.current >= postScrollContentHeight.current - 2;
-                                    if (atTop || atBottom) {
-                                        setScrollEnabled(false);
-                                    } else {
-                                        setScrollEnabled(true);
-                                    }
+                                    if (atTop || atBottom) setScrollEnabled(false);
+                                    else setScrollEnabled(true);
                                 }}
                                 onScrollEndDrag={(e) => {
                                     const endY = e.nativeEvent.contentOffset.y;
                                     const vy = e.nativeEvent.velocity?.y ?? 0;
                                     const atTop = endY <= 3;
                                     const atBottom = endY + postScrollHeight.current >= postScrollContentHeight.current - 3;
-
-                                    if (atTop && vy >= -0.1) {
-                                        // En el tope quieto → siguiente gesto DOWN = prev post
-                                        setScrollEnabled(false);
-                                    } else if (atBottom && vy <= 0.1) {
-                                        // En el fondo quieto → siguiente gesto UP = next post
-                                        setScrollEnabled(false);
-                                    } else if (!atTop && !atBottom) {
-                                        setScrollEnabled(true);
-                                    }
-
-                                    // Transición automática rápida (velocidad bruta)
-
+                                    if (atTop && vy >= -0.1) setScrollEnabled(false);
+                                    else if (atBottom && vy <= 0.1) setScrollEnabled(false);
+                                    else if (!atTop && !atBottom) setScrollEnabled(true);
                                     if (postScrollDragStartY.current <= 5 && endY <= 5 && vy > 0.5) {
-                                        Animated.timing(panYPost, {
-                                            toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
-                                        }).start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                                        Animated.timing(panYPost, { toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                                            .start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
                                     } else if (
                                         postScrollDragStartY.current + postScrollHeight.current >= postScrollContentHeight.current - 5 &&
                                         endY + postScrollHeight.current >= postScrollContentHeight.current - 5 &&
                                         vy < -0.5
                                     ) {
                                         if (navRef.current.nextPost) {
-                                            Animated.timing(panYPost, {
-                                                toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
-                                            }).start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                                            Animated.timing(panYPost, { toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                                                .start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
                                         } else if (callbacksRef.current.hasMorePosts) {
                                             Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
                                             callbacksRef.current.onNextPost?.();
@@ -1115,7 +1161,24 @@ export default function CommentsModal({
                                     }
                                 }}
                             >
-                                <Animated.View collapsable={false} {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 8, overflow: 'hidden', zIndex: 1 }}>
+                                {/* ── Contenido según tipo ── */}
+                                {!isPost ? (
+                                    // JobOffer o ProfessionalProfile: tarjeta completa con gestos de cierre
+                                    <Animated.View
+                                        collapsable={false}
+                                        {...shortContentPan.panHandlers}
+                                        style={{ flex: 1 }}
+                                    >
+                                        {post.__typename === 'JobOffer' && (
+                                            <JobOfferCard item={normalizedItem} onPress={() => {}} hideAuthorRow />
+                                        )}
+                                        {post.__typename === 'ProfessionalProfile' && (
+                                            <ProfessionalCard item={normalizedItem} onPress={() => {}} hideAuthorRow />
+                                        )}
+                                    </Animated.View>
+                                ) : (
+                                    <>
+                                    <Animated.View collapsable={false} {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 8, overflow: 'hidden', zIndex: 1 }}>
                                     <View style={{ marginBottom: 1 }}>
                                         <TouchableOpacity
                                             activeOpacity={0.8}
@@ -1129,8 +1192,8 @@ export default function CommentsModal({
                                             <Text style={[styles.postContent, { color: colors.text }]}>
                                                 {displayContent}
                                                 {isTextLong && !isExpanded && (
-                                                    <Text 
-                                                        onPress={() => setIsExpanded(true)} 
+                                                    <Text
+                                                        onPress={() => setIsExpanded(true)}
                                                         style={[styles.seeMoreText, { color: colors.primary }]}
                                                     >
                                                         ... más
@@ -1150,30 +1213,32 @@ export default function CommentsModal({
                                             </TouchableOpacity>
                                         )}
                                     </View>
+                                    </Animated.View>
 
                                     {/* ── Media Adjunta (Carrusel) dentro del Modal ── */}
-                                    {post.media && post.media.length > 0 && (
+                                    {normalizedItem?.media && normalizedItem.media.length > 0 && (
                                         <View collapsable={false} style={{ marginTop: 12, marginHorizontal: -16, overflow: 'hidden', borderRadius: 0.1, zIndex: 5, backgroundColor: '#000' }}>
                                             <ImageCarousel
                                                 key={post?.id}
-                                                media={post.media}
+                                                media={normalizedItem.media}
                                                 containerWidth={SCREEN_WIDTH}
                                                 imageResizeMode="cover"
                                                 dynamicAspectRatio={false}
                                                 customAspectRatio={1080 / 1440}
                                                 isInteractive={true}
                                                 onSwipeClose={(carouselPanX) => {
-                                                    // Sincronizamos el panX del modal con el que viene del carrusel
-                                                    // para que el efecto visual ya esté en marcha antes de cerrar
                                                     carouselPanX.addListener(({ value }) => panX.setValue(value));
                                                     closeWithXAnimation();
                                                 }}
                                             />
                                         </View>
                                     )}
-                                </Animated.View>
+                                    </>
+                                )}
                             </ScrollView>
 
+                            {/* Footer con Like/Comentar — solo para Posts */}
+                            {isPost && (
                             <Animated.View {...footerSwipePan.panHandlers} style={[styles.postFooterFixed, { borderTopColor: colors.border }]}>
                                 {(localCount > 0 || commentsCount > 0) && (
                                     <TouchableOpacity activeOpacity={1} style={styles.statsRow}>
@@ -1214,11 +1279,12 @@ export default function CommentsModal({
                                     </TouchableOpacity>
                                 </TouchableOpacity>
                             </Animated.View>
+                            )}
                         </Animated.View>
                     )}
 
-                    {/* ── BUBBLE COMENTARIOS NORMAL (Visible cuando maximizado) ── */}
-                    {!isMinimized && (
+                    {/* ── BUBBLE COMENTARIOS — solo para Posts ── */}
+                    {!effectiveIsMinimized && isPost && (
                         <Animated.View style={[styles.commentsBubble, { flex: 1 }, { opacity: postTransition, transform: [{ translateY: slideY }] }]} {...tabSwipePan.panHandlers}>
 
                             <View style={[styles.commentsHeader, { borderBottomColor: colors.border }]} {...commentsHeaderPan.panHandlers}>
@@ -1394,8 +1460,8 @@ export default function CommentsModal({
 
                 </Animated.View>
 
-                {/* ── NAV BAR INFERIOR NEGRA (Minimizado) – Anclada al fondo ABS ── */}
-                {isMinimized && (
+                {/* ── NAV BAR INFERIOR NEGRA (Minimizado) – solo para Posts ── */}
+                {isMinimized && isPost && (
                     <View style={{
                         position: 'absolute',
                         left: -4,

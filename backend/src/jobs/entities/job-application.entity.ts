@@ -26,15 +26,19 @@ registerEnumType(ApplicationStatus, {
 @Entity('job_applications')
 export class JobApplication {
   @Field(() => ID)
-  @PrimaryGeneratedColumn('uuid', { name: 'id_job_application' })
-  id_job_application: string;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
   @Field({ nullable: true })
   @Column({ type: 'text', nullable: true })
   message?: string;
 
   @Field({ nullable: true })
-  @Column({ nullable: true })
+  @Column({ name: 'contact_phone', nullable: true })
+  contactPhone?: string;
+
+  @Field({ nullable: true })
+  @Column({ name: 'cv_url', nullable: true })
   cvUrl?: string;
 
   @Field(() => ApplicationStatus)
@@ -46,28 +50,28 @@ export class JobApplication {
   status: ApplicationStatus;
 
   @Field()
-  @CreateDateColumn({ type: 'timestamptz' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
   @Field()
-  @UpdateDateColumn({ type: 'timestamptz' })
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 
   // ── Relaciones ──────────────────────────────────────────
 
   @Field(() => User)
   @ManyToOne(() => User, { eager: true })
-  @JoinColumn({ name: 'id_user' })
+  @JoinColumn({ name: 'user_id' })
   applicant: User;
 
-  @Column({ name: 'id_user' })
-  id_user: string;
+  @Column({ name: 'user_id' })
+  applicantId: string;
 
   @Field(() => JobOffer)
   @ManyToOne(() => JobOffer, { eager: true, onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'id_job_offer' })
+  @JoinColumn({ name: 'job_offer_id' })
   jobOffer: JobOffer;
 
-  @Column({ name: 'id_job_offer' })
-  id_job_offer: string;
+  @Column({ name: 'job_offer_id' })
+  jobOfferId: string;
 }

@@ -106,6 +106,10 @@ const splitLink = split(
 export const apolloClient = new ApolloClient({
     link: from([errorLink, splitLink]),
     cache: new InMemoryCache({
+        // Permite al cache entender qué tipos concretos puede devolver el union FeedItem
+        possibleTypes: {
+            FeedItem: ['Post', 'JobOffer', 'ProfessionalProfile'],
+        },
         typePolicies: {
             Query: {
                 fields: {
@@ -113,6 +117,14 @@ export const apolloClient = new ApolloClient({
                         keyArgs: false,
                         merge(existing = [], incoming) {
                             // Deduplicación basada en las referencias internas de Apollo (__ref)
+                            const existingRefs = new Set(existing.map((ref: any) => ref.__ref));
+                            const uniqueIncoming = incoming.filter((ref: any) => !existingRefs.has(ref.__ref));
+                            return [...existing, ...uniqueIncoming];
+                        },
+                    },
+                    getFeed: {
+                        keyArgs: false,
+                        merge(existing = [], incoming) {
                             const existingRefs = new Set(existing.map((ref: any) => ref.__ref));
                             const uniqueIncoming = incoming.filter((ref: any) => !existingRefs.has(ref.__ref));
                             return [...existing, ...uniqueIncoming];
@@ -127,7 +139,7 @@ export const apolloClient = new ApolloClient({
                         },
                     },
                     getChatMessages: {
-                        keyArgs: ['id_conversation'],
+                        keyArgs: ['conversationId'],
                         merge(existing = [], incoming) {
                             const existingRefs = new Set(existing.map((ref: any) => ref.__ref));
                             const uniqueIncoming = incoming.filter((ref: any) => !existingRefs.has(ref.__ref));

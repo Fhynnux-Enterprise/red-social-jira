@@ -1,10 +1,10 @@
 import { ObjectType, Field, ID, Int } from '@nestjs/graphql';
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, DeleteDateColumn, ManyToOne, JoinColumn } from 'typeorm';
-import { JobOffer } from './job-offer.entity';
+import { ProfessionalProfile } from './professional-profile.entity';
 
 @ObjectType()
-@Entity('job_offer_media')
-export class JobOfferMedia {
+@Entity('professional_profile_media')
+export class ProfessionalProfileMedia {
   @Field(() => ID)
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -29,10 +29,10 @@ export class JobOfferMedia {
   @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deletedAt?: Date;
 
-  @ManyToOne(() => JobOffer, jobOffer => jobOffer.media, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'job_offer_id' })
-  jobOffer: JobOffer;
+  @ManyToOne(() => ProfessionalProfile, profile => profile.media, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'professional_profile_id' })
+  professionalProfile: ProfessionalProfile;
 
-  @Column({ name: 'job_offer_id' })
-  jobOfferId: string;
+  @Column({ name: 'professional_profile_id' })
+  professionalProfileId: string;
 }
