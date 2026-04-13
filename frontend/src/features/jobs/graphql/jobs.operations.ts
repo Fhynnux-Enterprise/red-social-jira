@@ -32,6 +32,7 @@ export const GET_PROFESSIONALS = gql`
       profession
       description
       experienceYears
+      createdAt
       user {
         id
         username
@@ -78,6 +79,7 @@ export const UPSERT_PROFESSIONAL_PROFILE = gql`
       profession
       description
       experienceYears
+      createdAt
       user {
         id
         username
@@ -99,6 +101,34 @@ export const APPLY_TO_JOB = gql`
         id
         status
         message
+        contactPhone
+        cvUrl
+        createdAt
+        jobOffer {
+          id
+          title
+        }
+      }
+      cvUploadUrl
+      cvPublicUrl
+    }
+  }
+`;
+
+export const DELETE_APPLICATION = gql`
+  mutation DeleteApplication($applicationId: ID!) {
+    deleteApplication(applicationId: $applicationId)
+  }
+`;
+
+export const UPDATE_APPLICATION = gql`
+  mutation UpdateApplication($input: UpdateApplicationInput!) {
+    updateApplication(input: $input) {
+      application {
+        id
+        status
+        message
+        contactPhone
         cvUrl
         createdAt
         jobOffer {
@@ -118,18 +148,29 @@ export const GET_MY_APPLICATIONS = gql`
       id
       status
       message
+      contactPhone
       cvUrl
       createdAt
       updatedAt
       jobOffer {
         id
         title
+        description
         location
+        salary
+        contactPhone
+        createdAt
         author {
           id
+          username
           firstName
           lastName
           photoUrl
+        }
+        media {
+          url
+          type
+          order
         }
       }
     }
@@ -142,6 +183,7 @@ export const GET_JOB_APPLICATIONS = gql`
       id
       status
       message
+      contactPhone
       cvUrl
       createdAt
       applicant {
@@ -203,6 +245,7 @@ export const GET_MY_PROFESSIONAL_PROFILE = gql`
       profession
       description
       experienceYears
+      createdAt
       user {
         id
         username
@@ -248,5 +291,36 @@ export const UPDATE_JOB_OFFER = gql`
 export const DELETE_JOB_OFFER = gql`
   mutation DeleteJobOffer($id: ID!) {
     deleteJobOffer(id: $id)
+  }
+`;
+
+export const DELETE_PROFESSIONAL_PROFILE = gql`
+  mutation DeleteProfessionalProfile($id: String!) {
+    deleteProfessionalProfile(id: $id)
+  }
+`;
+
+export const UPDATE_PROFESSIONAL_PROFILE = gql`
+  mutation UpdateProfessionalProfile($id: String!, $input: UpsertProfessionalProfileInput!) {
+    updateProfessionalProfile(id: $id, input: $input) {
+      id
+      profession
+      description
+      experienceYears
+      contactPhone
+      createdAt
+      user {
+        id
+        username
+        firstName
+        lastName
+        photoUrl
+      }
+      media {
+        url
+        type
+        order
+      }
+    }
   }
 `;

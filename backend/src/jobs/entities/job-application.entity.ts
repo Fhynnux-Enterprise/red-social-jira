@@ -34,6 +34,10 @@ export class JobApplication {
   message?: string;
 
   @Field({ nullable: true })
+  @Column({ name: 'contact_phone', nullable: true })
+  contactPhone?: string;
+
+  @Field({ nullable: true })
   @Column({ name: 'cv_url', nullable: true })
   cvUrl?: string;
 

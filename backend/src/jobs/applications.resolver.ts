@@ -5,6 +5,7 @@ import { JobApplication } from './entities/job-application.entity';
 import { ApplyToJobInput } from './dto/apply-to-job.input';
 import { ApplyToJobResponse } from './dto/apply-to-job.response';
 import { UpdateApplicationStatusInput } from './dto/update-application-status.input';
+import { UpdateApplicationInput } from './dto/update-application.input';
 import { GqlAuthGuard } from '../auth/guards/gql-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User } from '../auth/entities/user.entity';
@@ -54,5 +55,21 @@ export class ApplicationsResolver {
     @CurrentUser() user: User,
   ) {
     return this.applicationsService.updateApplicationStatus(input, user.id);
+  }
+
+  @Mutation(() => Boolean, { name: 'deleteApplication' })
+  deleteApplication(
+    @Args('applicationId', { type: () => ID }) applicationId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.applicationsService.deleteApplication(applicationId, user.id);
+  }
+
+  @Mutation(() => ApplyToJobResponse, { name: 'updateApplication' })
+  updateApplication(
+    @Args('input') input: UpdateApplicationInput,
+    @CurrentUser() user: User,
+  ) {
+    return this.applicationsService.updateApplication(input, user.id);
   }
 }

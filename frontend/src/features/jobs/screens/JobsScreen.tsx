@@ -1,16 +1,17 @@
 import React, { useState, useRef } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
-    Platform, FlatList, ActivityIndicator, Animated, ScrollView
+    Platform, FlatList, ActivityIndicator, Animated, ScrollView, Pressable, Modal
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery } from '@apollo/client/react';
+import { useQuery, useMutation } from '@apollo/client/react';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../../theme/ThemeContext';
-import { GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS, GET_MY_APPLICATIONS, GET_MY_PROFESSIONAL_PROFILE } from '../graphql/jobs.operations';
+import { GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS, GET_MY_APPLICATIONS, GET_MY_PROFESSIONAL_PROFILE, DELETE_APPLICATION } from '../graphql/jobs.operations';
 import JobOfferCard from '../components/JobOfferCard';
 import ProfessionalCard from '../components/ProfessionalCard';
+import ApplyJobModal from '../components/ApplyJobModal';
 import { LinearGradient } from 'expo-linear-gradient';
 
 type TabKey = 'offers' | 'services' | 'results';
@@ -35,10 +36,14 @@ export default function JobsScreen() {
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<TabKey>('offers');
     const [resultsTab, setResultsTab] = useState<ResultsTabKey>('my_applications');
+    const [fabOpen, setFabOpen] = useState(false);
+    const fabAnim = useRef(new Animated.Value(0)).current;
     const [tabWidths, setTabWidths] = useState<number[]>([]);
     const [tabOffsets, setTabOffsets] = useState<number[]>([]);
     const indicatorAnim = useRef(new Animated.Value(0)).current;
     const indicatorWidth = useRef(new Animated.Value(0)).current;
+
+    const [selectedApplication, setSelectedApplication] = useState<any>(null);
 
     const { data: offersData, loading: loadingOffers, refetch: refetchOffers } = useQuery<{jobOffers: any[]}>(GET_JOB_OFFERS, {
         variables: { limit: 20, offset: 0 },
@@ -60,6 +65,23 @@ export default function JobsScreen() {
 
     const { data: myServicesData, loading: loadingMyServices, refetch: refetchMyServices } = useQuery<{myProfessionalProfile: any[]}>(GET_MY_PROFESSIONAL_PROFILE, {
         fetchPolicy: 'cache-and-network',
+    });
+
+    const [appMenuVisible, setAppMenuVisible] = useState<any>(null);
+    const [editAppVisible, setEditAppVisible] = useState<any>(null);
+    const [deleteAppId, setDeleteAppId] = useState<string | null>(null);
+    
+    const [deleteApplication, { loading: deletingApp }] = useMutation(DELETE_APPLICATION, {
+        refetchQueries: [{ query: GET_MY_APPLICATIONS }],
+        onCompleted: () => {
+            setDeleteAppId(null);
+            setAppMenuVisible(null);
+            import('react-native-toast-message').then(m => m.default.show({ type: 'success', text1: 'Postulación eliminada' }));
+        },
+        onError: (err) => {
+            setDeleteAppId(null);
+            import('react-native-toast-message').then(m => m.default.show({ type: 'error', text1: 'Error', text2: err.message }));
+        }
     });
 
     const handleTabPress = (key: TabKey, index: number) => {
@@ -87,6 +109,32 @@ export default function JobsScreen() {
             indicatorAnim.setValue(x);
             indicatorWidth.setValue(width);
         }
+    };
+
+    const toggleFab = () => {
+        if (fabOpen) {
+            // Cerrar: timing limpio, sin rebote
+            Animated.timing(fabAnim, {
+                toValue: 0,
+                duration: 180,
+                useNativeDriver: true,
+            }).start();
+        } else {
+            // Abrir: spring con rebote
+            Animated.spring(fabAnim, {
+                toValue: 1,
+                useNativeDriver: true,
+                bounciness: 8,
+                speed: 14,
+            }).start();
+        }
+        setFabOpen(!fabOpen);
+    };
+
+    const handleFabOption = (type: 'offer' | 'service') => {
+        setFabOpen(false);
+        Animated.timing(fabAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start();
+        router.push({ pathname: '/jobs/create', params: { initialTab: type } });
     };
 
     const isLoading = loadingOffers || loadingProfs || loadingMyOffers || loadingMyApps || loadingMyServices;
@@ -226,6 +274,7 @@ export default function JobsScreen() {
                     <TouchableOpacity 
                         style={[styles.appCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         activeOpacity={0.7}
+                        onPress={() => item.jobOffer && setSelectedApplication(item)}
                     >
                         <View style={styles.appCardHeader}>
                             <View style={{ flex: 1 }}>
@@ -238,10 +287,24 @@ export default function JobsScreen() {
                                     </Text>
                                 )}
                             </View>
-                            <View style={[styles.appStatusBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
-                                <Text style={[styles.appStatusText, { color: getStatusColor(item.status) }]}>
-                                    {getStatusLabel(item.status)}
-                                </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <View style={[styles.appStatusBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
+                                    <Text style={[styles.appStatusText, { color: getStatusColor(item.status) }]}>
+                                        {getStatusLabel(item.status)}
+                                    </Text>
+                                </View>
+                                {item.status === 'PENDING' && (
+                                    <TouchableOpacity
+                                        style={{ padding: 4, marginLeft: 8 }}
+                                        onPress={(e) => {
+                                            e.stopPropagation();
+                                            setAppMenuVisible(item);
+                                        }}
+                                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                    >
+                                        <Ionicons name="ellipsis-vertical" size={20} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         </View>
                         <View style={[styles.appCardFooter, { borderTopColor: colors.border }]}>
@@ -352,22 +415,280 @@ export default function JobsScreen() {
                 />
             )}
 
-            {/* ── FAB (Botón Flotante) ── */}
-            <TouchableOpacity
-                /* 👇 MODIFICA EL VALOR + 10 AQUÍ para subirlo o bajarlo respecto al piso de la pantalla 👇 */
-                style={[styles.fab, { bottom: insets.bottom + -35 }]}
-                onPress={() => router.push('/jobs/create')}
-                activeOpacity={0.8}
+            {/* ── FAB Overlay (cierra el menú al tocar fuera) ── */}
+            {fabOpen && (
+                <Pressable
+                    style={StyleSheet.absoluteFill}
+                    onPress={toggleFab}
+                />
+            )}
+
+            {/* ── FAB Speed-Dial ── */}
+            <View
+                style={[styles.fabContainer, { bottom: insets.bottom + -35 }]}
+                pointerEvents="box-none"
             >
-                <LinearGradient
-                    colors={[colors.primary, colors.secondary]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.fabGradient}
+                {/* Opciones (apiladas en columna sobre el FAB) */}
+                <Animated.View
+                    style={{
+                        opacity: fabAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, 1],
+                            extrapolate: 'clamp',
+                        }),
+                        transform: [{ translateY: fabAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0], extrapolate: 'clamp' }) }],
+                        alignItems: 'flex-end',
+                        gap: 12,
+                        marginBottom: 14,
+                        marginRight: 6,
+                    }}
+                    pointerEvents={fabOpen ? 'auto' : 'none'}
                 >
-                    <Ionicons name="add" size={30} color="#FFF" />
-                </LinearGradient>
-            </TouchableOpacity>
+                    {/* Opción: Publicar Oferta */}
+                    <TouchableOpacity
+                        style={styles.fabOptionRow}
+                        onPress={() => handleFabOption('offer')}
+                        activeOpacity={0.8}
+                    >
+                        <View style={[
+                            styles.fabOptionLabelWrap,
+                            activeTab === 'offers' && styles.fabOptionLabelActive
+                        ]}>
+                            <Text style={[
+                                styles.fabOptionLabel,
+                                { color: activeTab === 'offers' ? '#FFF' : '#EEE' }
+                            ]}>
+                                Publicar Oferta
+                            </Text>
+                        </View>
+                        <View style={[
+                            styles.fabMini,
+                            activeTab === 'offers' ? styles.fabMiniPrimary : styles.fabMiniSecondary
+                        ]}>
+                            <Ionicons name="briefcase-outline" size={20} color="#FFF" />
+                        </View>
+                    </TouchableOpacity>
+
+                    {/* Opción: Publicar Servicio */}
+                    <TouchableOpacity
+                        style={styles.fabOptionRow}
+                        onPress={() => handleFabOption('service')}
+                        activeOpacity={0.8}
+                    >
+                        <View style={[
+                            styles.fabOptionLabelWrap,
+                            activeTab === 'services' && styles.fabOptionLabelActive
+                        ]}>
+                            <Text style={[
+                                styles.fabOptionLabel,
+                                { color: activeTab === 'services' ? '#FFF' : '#EEE' }
+                            ]}>
+                                Publicar Servicio
+                            </Text>
+                        </View>
+                        <View style={[
+                            styles.fabMini,
+                            activeTab === 'services' ? styles.fabMiniPrimary : styles.fabMiniSecondary
+                        ]}>
+                            <Ionicons name="construct-outline" size={20} color="#FFF" />
+                        </View>
+                    </TouchableOpacity>
+                </Animated.View>
+
+                {/* Botón principal FAB */}
+                <TouchableOpacity
+                    style={styles.fab}
+                    onPress={toggleFab}
+                    activeOpacity={0.8}
+                >
+                    <LinearGradient
+                        colors={[colors.primary, colors.secondary]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.fabGradient}
+                    >
+                        <Animated.View style={{
+                            transform: [{ rotate: fabAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '45deg'] }) }]
+                        }}>
+                            <Ionicons name="add" size={30} color="#FFF" />
+                        </Animated.View>
+                    </LinearGradient>
+                </TouchableOpacity>
+            </View>
+
+            {/* Modal para ver detalles de la oferta de la postulación */}
+            <Modal
+                visible={!!selectedApplication}
+                animationType="slide"
+                presentationStyle="pageSheet"
+                onRequestClose={() => setSelectedApplication(null)}
+            >
+                <View style={{ flex: 1, backgroundColor: colors.background }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 16, paddingTop: Platform.OS === 'ios' ? 16 : insets.top + 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+                        <TouchableOpacity onPress={() => setSelectedApplication(null)}>
+                            <Ionicons name="close" size={28} color={colors.text} />
+                        </TouchableOpacity>
+                        <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
+                            Detalle de Publicación
+                        </Text>
+                        <View style={{ width: 28 }} />
+                    </View>
+                    <ScrollView contentContainerStyle={{ paddingBottom: 40, paddingTop: 8 }}>
+                        {selectedApplication?.jobOffer && (
+                            <JobOfferCard item={selectedApplication.jobOffer} onPress={() => {}} />
+                        )}
+                        
+                        {/* Detalles de la postulación enviada */}
+                        {selectedApplication && (
+                            <View style={{ padding: 20, paddingTop: 10 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                                    <Ionicons name="paper-plane" size={20} color={colors.primary} style={{ marginRight: 8 }} />
+                                    <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>Tu Postulación</Text>
+                                </View>
+
+                                {selectedApplication.message ? (
+                                    <View style={{ backgroundColor: isDark ? 'rgba(255,101,36,0.05)' : 'rgba(255,101,36,0.02)', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: colors.border, marginBottom: 16 }}>
+                                        <Text style={{ color: colors.text }} leading={22}>{selectedApplication.message}</Text>
+                                    </View>
+                                ) : (
+                                    <Text style={{ color: colors.textSecondary, fontStyle: 'italic', marginBottom: 16 }}>No enviaste una carta de presentación.</Text>
+                                )}
+
+                                {selectedApplication.contactPhone && (
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, padding: 14, borderRadius: 14, marginBottom: 16 }}>
+                                        <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(37,211,102,0.12)', justifyContent: 'center', alignItems: 'center' }}>
+                                            <Ionicons name="call" size={22} color="#25D366" />
+                                        </View>
+                                        <View style={{ flex: 1, marginLeft: 12 }}>
+                                            <Text style={{ fontSize: 13, color: colors.textSecondary }}>Teléfono de contacto</Text>
+                                            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>{selectedApplication.contactPhone}</Text>
+                                        </View>
+                                    </View>
+                                )}
+
+                                {selectedApplication.cvUrl && (
+                                    <TouchableOpacity 
+                                        style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, padding: 14, borderRadius: 14 }}
+                                        onPress={async () => {
+                                            const { Linking } = await import('react-native');
+                                            Linking.openURL(selectedApplication.cvUrl);
+                                        }}
+                                    >
+                                        <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,101,36,0.12)', justifyContent: 'center', alignItems: 'center' }}>
+                                            <Ionicons name="document-text" size={22} color="#FF6524" />
+                                        </View>
+                                        <View style={{ flex: 1, marginLeft: 12 }}>
+                                            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>Ver Hoja de Vida</Text>
+                                            <Text style={{ fontSize: 13, color: colors.textSecondary }}>PDF adjuntado</Text>
+                                        </View>
+                                        <Ionicons name="open-outline" size={20} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        )}
+                    </ScrollView>
+                </View>
+            </Modal>
+
+            {/* Menu de opciones postulación */}
+            <Modal
+                visible={!!appMenuVisible && !deleteAppId}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setAppMenuVisible(null)}
+            >
+                <TouchableOpacity
+                    style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}
+                    activeOpacity={1}
+                    onPress={() => setAppMenuVisible(null)}
+                >
+                    <View style={{ backgroundColor: colors.surface, padding: 20, paddingBottom: Math.max(insets.bottom, 16) + 16, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}>
+                        <View style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
+                        
+                        <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textSecondary, marginBottom: 16, textAlign: 'center' }}>
+                            Opciones de la postulación
+                        </Text>
+                        
+                        <TouchableOpacity
+                            style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}
+                            onPress={() => {
+                                setEditAppVisible(appMenuVisible);
+                                setAppMenuVisible(null);
+                            }}
+                        >
+                            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,101,36,0.1)', justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
+                                <Ionicons name="create-outline" size={20} color="#FF6524" />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text }}>Editar postulación</Text>
+                                <Text style={{ fontSize: 13, color: colors.textSecondary }}>Modificar mensaje y CV</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16 }}
+                            onPress={() => {
+                                setDeleteAppId(appMenuVisible.id);
+                            }}
+                        >
+                            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(244,67,54,0.1)', justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
+                                <Ionicons name="trash-outline" size={20} color="#F44336" />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 16, fontWeight: '600', color: '#F44336' }}>Eliminar postulación</Text>
+                                <Text style={{ fontSize: 13, color: colors.textSecondary }}>Esta acción no se puede deshacer</Text>
+                            </View>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+
+            {/* Modal Confirmar Eliminación */}
+            <Modal
+                visible={!!deleteAppId}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setDeleteAppId(null)}
+            >
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+                    <View style={{ width: '100%', backgroundColor: colors.surface, borderRadius: 24, padding: 28, alignItems: 'center' }}>
+                        <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(244,67,54,0.12)', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+                            <Ionicons name="trash" size={32} color="#F44336" />
+                        </View>
+                        <Text style={{ fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: 10 }}>¿Eliminar postulación?</Text>
+                        <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 21, marginBottom: 20 }}>
+                            Si retiras tu postulación ya no aparecerás en la lista del empleador.{'\n'}Podrás volver a postularte mientras la vacante siga abierta.
+                        </Text>
+                        
+                        <View style={{ width: '100%', flexDirection: 'row', gap: 12 }}>
+                            <TouchableOpacity
+                                style={{ flex: 1, paddingVertical: 14, borderRadius: 14, backgroundColor: colors.border, alignItems: 'center' }}
+                                onPress={() => setDeleteAppId(null)}
+                                disabled={deletingApp}
+                            >
+                                <Text style={{ fontWeight: '700', fontSize: 15, color: colors.text }}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={{ flex: 1, paddingVertical: 14, borderRadius: 14, backgroundColor: '#F44336', alignItems: 'center' }}
+                                onPress={() => deleteApplication({ variables: { applicationId: deleteAppId } })}
+                                disabled={deletingApp}
+                            >
+                                {deletingApp ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={{ fontWeight: '700', fontSize: 15, color: '#FFF' }}>Sí, Eliminar</Text>}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Modal para Editar Postulación */}
+            <ApplyJobModal 
+                visible={!!editAppVisible}
+                applicationToEdit={editAppVisible}
+                jobOffer={editAppVisible?.jobOffer || null}
+                onClose={() => setEditAppVisible(null)}
+            />
+
         </View>
     );
 }
@@ -601,11 +922,14 @@ const styles = StyleSheet.create({
         color: '#FFF',
     },
 
-    // ── FAB (Floating Action Button) ──
-    fab: {
+    // ── FAB (Floating Action Button Speed-Dial) ──
+    fabContainer: {
         position: 'absolute',
-        /* 👇 MODIFICA EL VALOR RIGHT AQUÍ para despegarlo de la orilla derecha 👇 */
-        right:26, 
+        right: 26,
+        alignItems: 'flex-end',
+        zIndex: 20,
+    },
+    fab: {
         width: 56,
         height: 56,
         borderRadius: 28,
@@ -614,7 +938,6 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 3 },
         shadowOpacity: 0.35,
         shadowRadius: 6,
-        zIndex: 10,
     },
     fabGradient: {
         width: '100%',
@@ -622,5 +945,42 @@ const styles = StyleSheet.create({
         borderRadius: 28,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    fabMini: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 4,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+    },
+    fabMiniPrimary: {
+        backgroundColor: '#FF6524',
+        shadowColor: '#FF6524',
+    },
+    fabMiniSecondary: {
+        backgroundColor: '#888',
+        shadowColor: '#000',
+    },
+    fabOptionRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    fabOptionLabelWrap: {
+        backgroundColor: 'rgba(30,30,30,0.82)',
+        paddingHorizontal: 12,
+        paddingVertical: 7,
+        borderRadius: 10,
+    },
+    fabOptionLabelActive: {
+        backgroundColor: '#FF6524',
+    },
+    fabOptionLabel: {
+        fontSize: 13,
+        fontWeight: '700',
     },
 });

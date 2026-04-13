@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMutation } from '@apollo/client/react';
+import { useMutation, useQuery } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
 import ApplyJobModal from './ApplyJobModal';
@@ -17,6 +17,7 @@ import {
     DELETE_JOB_OFFER,
     GET_JOB_OFFERS,
     GET_MY_JOB_OFFERS,
+    GET_MY_APPLICATIONS,
 } from '../graphql/jobs.operations';
 
 interface JobOfferCardProps {
@@ -38,6 +39,25 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
 
     const isOwner = authContext?.user?.id === item.author?.id;
 
+    const { data: myAppsData } = useQuery(GET_MY_APPLICATIONS, {
+        fetchPolicy: 'cache-first', // Use cache first so we don't bombard the server, update on background
+        skip: !authContext?.user?.id || isOwner, // Don't query if not logged in or if owner
+    });
+
+    const myApplication = myAppsData?.myApplications?.find((app: any) => app.jobOffer?.id === item.id);
+
+    const getStatusColor = (status: string) => {
+        if (status === 'ACCEPTED') return '#4CAF50';
+        if (status === 'REJECTED') return '#F44336';
+        return '#FF9800'; // PENDING
+    };
+
+    const getStatusLabel = (status: string) => {
+        if (status === 'ACCEPTED') return 'Aceptada';
+        if (status === 'REJECTED') return 'Rechazada';
+        return 'Pendiente';
+    };
+
     const [deleteJobOffer, { loading: deleting }] = useMutation(DELETE_JOB_OFFER, {
         refetchQueries: [
             { query: GET_JOB_OFFERS, variables: { limit: 20, offset: 0 } },
@@ -51,8 +71,17 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
     });
 
     const formatDate = (isoString: string) => {
-        const date = new Date(isoString);
-        return date.toLocaleDateString([], { day: '2-digit', month: 'short' });
+        const utcString = isoString.endsWith('Z') ? isoString : `${isoString}Z`;
+        const date = new Date(utcString);
+        const hoy = new Date();
+        const ayer = new Date(); ayer.setDate(hoy.getDate() - 1);
+        const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (date.toDateString() === hoy.toDateString()) return `Hoy a las ${timeString}`;
+        if (date.toDateString() === ayer.toDateString()) return `Ayer a las ${timeString}`;
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        return `${day}/${month}/${year} a las ${timeString}`;
     };
 
     const goToProfile = () => {
@@ -184,14 +213,24 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
                             <Text style={styles.applyBtnText}>Ver Postulantes</Text>
                         </TouchableOpacity>
                     )}
-                    <TouchableOpacity
-                        style={styles.applyBtn}
-                        onPress={() => setApplyVisible(true)}
-                        activeOpacity={0.8}
-                    >
-                        <Ionicons name="paper-plane-outline" size={18} color="#FFF" style={{ marginRight: 6 }} />
-                        <Text style={styles.applyBtnText}>Postularme</Text>
-                    </TouchableOpacity>
+                    
+                    {!isOwner && myApplication ? (
+                        <View style={[styles.applyBtn, { backgroundColor: getStatusColor(myApplication.status) + '15', elevation: 0 }]}>
+                            <Ionicons name="checkmark-circle" size={18} color={getStatusColor(myApplication.status)} style={{ marginRight: 6 }} />
+                            <Text style={[styles.applyBtnText, { color: getStatusColor(myApplication.status) }]}>
+                                {getStatusLabel(myApplication.status)}
+                            </Text>
+                        </View>
+                    ) : (!isOwner && (
+                        <TouchableOpacity
+                            style={styles.applyBtn}
+                            onPress={() => setApplyVisible(true)}
+                            activeOpacity={0.8}
+                        >
+                            <Ionicons name="paper-plane-outline" size={18} color="#FFF" style={{ marginRight: 6 }} />
+                            <Text style={styles.applyBtnText}>Postularme</Text>
+                        </TouchableOpacity>
+                    ))}
                 </View>
 
             </TouchableOpacity>

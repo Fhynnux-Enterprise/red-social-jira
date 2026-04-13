@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     TextInput, ScrollView, Platform, KeyboardAvoidingView,
-    ActivityIndicator, Image
+    ActivityIndicator, Image, Modal, FlatList
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -17,15 +17,39 @@ import Toast from 'react-native-toast-message';
 import { CREATE_JOB_OFFER, UPDATE_JOB_OFFER, UPSERT_PROFESSIONAL_PROFILE, GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS } from '../graphql/jobs.operations';
 import { useLocalSearchParams } from 'expo-router';
 
+const COUNTRY_CODES = [
+    { code: '+593', flag: '🇪🇨', name: 'Ecuador' },
+    { code: '+57',  flag: '🇨🇴', name: 'Colombia' },
+    { code: '+51',  flag: '🇵🇪', name: 'Perú' },
+    { code: '+52',  flag: '🇲🇽', name: 'México' },
+    { code: '+54',  flag: '🇦🇷', name: 'Argentina' },
+    { code: '+56',  flag: '🇨🇱', name: 'Chile' },
+    { code: '+58',  flag: '🇻🇪', name: 'Venezuela' },
+    { code: '+1',   flag: '🇺🇸', name: 'EE.UU.' },
+    { code: '+34',  flag: '🇪🇸', name: 'España' },
+    { code: '+591', flag: '🇧🇴', name: 'Bolivia' },
+    { code: '+595', flag: '🇵🇾', name: 'Paraguay' },
+    { code: '+598', flag: '🇺🇾', name: 'Uruguay' },
+    { code: '+503', flag: '🇸🇻', name: 'El Salvador' },
+    { code: '+502', flag: '🇬🇹', name: 'Guatemala' },
+    { code: '+504', flag: '🇭🇳', name: 'Honduras' },
+    { code: '+505', flag: '🇳🇮', name: 'Nicaragua' },
+    { code: '+506', flag: '🇨🇷', name: 'Costa Rica' },
+    { code: '+507', flag: '🇵🇦', name: 'Panamá' },
+];
+
+
 export default function CreateJobScreen() {
     const { colors, isDark } = useTheme();
     const router = useRouter();
     const insets = useSafeAreaInsets();
-    const params = useLocalSearchParams<{ editId?: string; editData?: string }>();
+    const params = useLocalSearchParams<{ editId?: string; editData?: string; initialTab?: string }>();
     const isEditing = !!params.editId;
     const editData = params.editData ? JSON.parse(params.editData as string) : null;
 
-    const [activeTab, setActiveTab] = useState<'offer' | 'profile'>('offer');
+    // 'offer' → tab Oferta, 'service' → tab Servicio (internamente 'profile')
+    const defaultTab: 'offer' | 'profile' = params.initialTab === 'service' ? 'profile' : 'offer';
+    const [activeTab, setActiveTab] = useState<'offer' | 'profile'>(defaultTab);
     const [loading, setLoading] = useState(false);
 
     const [localMediaList, setLocalMediaList] = useState<{
@@ -39,18 +63,65 @@ export default function CreateJobScreen() {
     }[]>([]);
     const [isUploadingMedia, setIsUploadingMedia] = useState(false);
     const { pickMultipleMedia, uploadMedia } = useMediaUpload();
+    const extractPhoneParts = (fullPhone?: string) => {
+        if (!fullPhone) return { code: '+593', number: '' };
+        for (const country of COUNTRY_CODES) {
+            if (fullPhone.startsWith(country.code)) {
+                return { code: country.code, number: fullPhone.slice(country.code.length).trim() };
+            }
+        }
+        return { code: '+593', number: fullPhone };
+    };
+
+    const initialPhoneParts = extractPhoneParts(editData?.contactPhone);
+
     // Form states - Offer
     const [offerTitle, setOfferTitle] = useState(editData?.title || '');
     const [offerDescription, setOfferDescription] = useState(editData?.description || '');
     const [offerLocation, setOfferLocation] = useState(editData?.location || '');
     const [offerSalary, setOfferSalary] = useState(editData?.salary || '');
-    const [offerPhone, setOfferPhone] = useState(editData?.contactPhone || '');
+    const [offerCountryCode, setOfferCountryCode] = useState(initialPhoneParts.code);
+    const [offerPhone, setOfferPhone] = useState(initialPhoneParts.number);
+    const [showOfferCountryPicker, setShowOfferCountryPicker] = useState(false);
 
     // Form states - Profile
-    const [profProfession, setProfProfession] = useState('');
-    const [profDescription, setProfDescription] = useState('');
-    const [profExperience, setProfExperience] = useState('');
-    const [profPhone, setProfPhone] = useState('');
+    const [profProfession, setProfProfession] = useState(editData?.profession || '');
+    const [profDescription, setProfDescription] = useState(editData?.description || '');
+    const [profExperience, setProfExperience] = useState(editData?.experienceYears?.toString() || '');
+    const [profCountryCode, setProfCountryCode] = useState(initialPhoneParts.code);
+    const [profPhone, setProfPhone] = useState(initialPhoneParts.number);
+    const [showProfCountryPicker, setShowProfCountryPicker] = useState(false);
+
+    // Helper: renderiza el modal picker de país
+    const renderCountryPicker = (
+        visible: boolean,
+        onClose: () => void,
+        onSelect: (code: string) => void,
+        current: string
+    ) => (
+        <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+            <TouchableOpacity style={pickerStyles.overlay} activeOpacity={1} onPress={onClose}>
+                <View style={[pickerStyles.sheet, { backgroundColor: colors.surface }]}>
+                    <Text style={[pickerStyles.pickerTitle, { color: colors.text }]}>Código de país</Text>
+                    <FlatList
+                        data={COUNTRY_CODES}
+                        keyExtractor={i => i.code}
+                        renderItem={({ item: c }) => (
+                            <TouchableOpacity
+                                style={[pickerStyles.countryRow, c.code === current && { backgroundColor: colors.primary + '22' }]}
+                                onPress={() => { onSelect(c.code); onClose(); }}
+                            >
+                                <Text style={pickerStyles.countryFlag}>{c.flag}</Text>
+                                <Text style={[pickerStyles.countryName, { color: colors.text }]}>{c.name}</Text>
+                                <Text style={[pickerStyles.countryCode, { color: colors.textSecondary }]}>{c.code}</Text>
+                                {c.code === current && <Ionicons name="checkmark" size={16} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                            </TouchableOpacity>
+                        )}
+                    />
+                </View>
+            </TouchableOpacity>
+        </Modal>
+    );
 
     const [createJobOffer] = useMutation(CREATE_JOB_OFFER, {
         refetchQueries: [{ query: GET_JOB_OFFERS, variables: { limit: 20, offset: 0 } }],
@@ -231,7 +302,7 @@ export default function CreateJobScreen() {
                             description: offerDescription,
                             location: offerLocation,
                             salary: offerSalary || undefined,
-                            contactPhone: offerPhone,
+                            contactPhone: offerCountryCode + offerPhone,
                             media: mediaInput.length > 0 ? mediaInput : undefined,
                         }
                     }
@@ -244,7 +315,7 @@ export default function CreateJobScreen() {
                         profession: profProfession,
                         description: profDescription,
                         experienceYears: profExperience ? parseInt(profExperience, 10) : undefined,
-                        contactPhone: profPhone,
+                        contactPhone: profCountryCode + profPhone,
                         media: mediaInput.length > 0 ? mediaInput : undefined,
                     }
                 }
@@ -264,7 +335,9 @@ export default function CreateJobScreen() {
                     <Ionicons name="close" size={24} color={colors.text} />
                 </TouchableOpacity>
                 <Text style={[styles.headerTitle, { color: colors.text }]}>
-                    {isEditing ? 'Editar Oferta' : 'Nueva Publicación'}
+                    {isEditing 
+                        ? (activeTab === 'offer' ? 'Editar Oferta' : 'Editar Servicio') 
+                        : (activeTab === 'offer' ? 'Nueva Oferta' : 'Nuevo Servicio')}
                 </Text>
                 <TouchableOpacity 
                     onPress={handleSave} 
@@ -283,31 +356,33 @@ export default function CreateJobScreen() {
                 contentContainerStyle={[styles.content, { paddingBottom: 40 }]}
                 showsVerticalScrollIndicator={false}
             >
-                {/* Segmented Control */}
-                <View style={[styles.segmentedControl, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <TouchableOpacity
-                        style={[
-                            styles.segmentBtn,
-                            activeTab === 'offer' && { backgroundColor: '#FF6524', shadowColor: '#FF6524', shadowOpacity: 0.4, shadowRadius: 6, elevation: 4 }
-                        ]}
-                        onPress={() => setActiveTab('offer')}
-                    >
-                        <Text style={[styles.segmentText, { color: activeTab === 'offer' ? '#FFF' : colors.textSecondary }]}>
-                            Publicar Oferta
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[
-                            styles.segmentBtn,
-                            activeTab === 'profile' && { backgroundColor: '#FF6524', shadowColor: '#FF6524', shadowOpacity: 0.4, shadowRadius: 6, elevation: 4 }
-                        ]}
-                        onPress={() => setActiveTab('profile')}
-                    >
-                        <Text style={[styles.segmentText, { color: activeTab === 'profile' ? '#FFF' : colors.textSecondary }]}>
-                            Publicar Servicio
-                        </Text>
-                    </TouchableOpacity>
-                </View>
+                {/* Segmented Control solo si no se está editando */}
+                {!isEditing && (
+                    <View style={[styles.segmentedControl, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <TouchableOpacity
+                            style={[
+                                styles.segmentBtn,
+                                activeTab === 'offer' && { backgroundColor: '#FF6524', shadowColor: '#FF6524', shadowOpacity: 0.4, shadowRadius: 6, elevation: 4 }
+                            ]}
+                            onPress={() => setActiveTab('offer')}
+                        >
+                            <Text style={[styles.segmentText, { color: activeTab === 'offer' ? '#FFF' : colors.textSecondary }]}>
+                                Publicar Oferta
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[
+                                styles.segmentBtn,
+                                activeTab === 'profile' && { backgroundColor: '#FF6524', shadowColor: '#FF6524', shadowOpacity: 0.4, shadowRadius: 6, elevation: 4 }
+                            ]}
+                            onPress={() => setActiveTab('profile')}
+                        >
+                            <Text style={[styles.segmentText, { color: activeTab === 'profile' ? '#FFF' : colors.textSecondary }]}>
+                                Publicar Servicio
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
 
                 {activeTab === 'offer' ? (
                     <View style={styles.form}>
@@ -341,28 +416,38 @@ export default function CreateJobScreen() {
                         />
 
                         <View style={styles.row}>
-                            <View style={{ flex: 1, marginRight: 8 }}>
+                            <View style={{ flex: 0.75, marginRight: 8 }}>
                                 <Text style={[styles.label, { color: colors.textSecondary }]}>Salario (Opcional)</Text>
                                 <TextInput
                                     style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-                                    placeholder="Ej. $1500 - $2000"
+                                    placeholder="Ej. $1500"
                                     placeholderTextColor={isDark ? '#555' : '#BBB'}
                                     value={offerSalary}
                                     onChangeText={setOfferSalary}
                                 />
                             </View>
-                            <View style={{ flex: 1, marginLeft: 8 }}>
+                            <View style={{ flex: 1.1, marginLeft: 8 }}>
                                 <Text style={[styles.label, { color: colors.textSecondary }]}>Teléfono de contacto *</Text>
-                                <TextInput
-                                    style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-                                    placeholder="Ej. 0998765432"
-                                    placeholderTextColor={isDark ? '#555' : '#BBB'}
-                                    keyboardType="phone-pad"
-                                    value={offerPhone}
-                                    onChangeText={setOfferPhone}
-                                />
+                                <View style={styles.phoneRow}>
+                                    <TouchableOpacity
+                                        style={[styles.countryCodeBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                                        onPress={() => setShowOfferCountryPicker(true)}
+                                    >
+                                        <Text style={[styles.countryCodeText, { color: colors.text }]}>{offerCountryCode}</Text>
+                                        <Ionicons name="chevron-down" size={12} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                    <TextInput
+                                        style={[styles.input, styles.phoneInput, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+                                        placeholder="0998765432"
+                                        placeholderTextColor={isDark ? '#555' : '#BBB'}
+                                        keyboardType="phone-pad"
+                                        value={offerPhone}
+                                        onChangeText={setOfferPhone}
+                                    />
+                                </View>
                             </View>
                         </View>
+                        {renderCountryPicker(showOfferCountryPicker, () => setShowOfferCountryPicker(false), setOfferCountryCode, offerCountryCode)}
 
                         <Text style={[styles.label, { color: colors.textSecondary }]}>Multimedia (Opcional)</Text>
                         <TouchableOpacity style={styles.mediaButton} activeOpacity={0.7} onPress={handlePickMedia}>
@@ -456,8 +541,8 @@ export default function CreateJobScreen() {
                         />
 
                         <View style={styles.row}>
-                            <View style={{ flex: 1, marginRight: 8 }}>
-                                <Text style={[styles.label, { color: colors.textSecondary }]}>Años de exp. (Opcional)</Text>
+                            <View style={{ flex: 0.75, marginRight: 8 }}>
+                                <Text style={[styles.label, { color: colors.textSecondary }]} numberOfLines={1}>Años de exp. (Opc.)</Text>
                                 <TextInput
                                     style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
                                     placeholder="Ej. 5"
@@ -467,18 +552,28 @@ export default function CreateJobScreen() {
                                     onChangeText={setProfExperience}
                                 />
                             </View>
-                            <View style={{ flex: 1, marginLeft: 8 }}>
+                            <View style={{ flex: 1.1, marginLeft: 8 }}>
                                 <Text style={[styles.label, { color: colors.textSecondary }]}>Teléfono de contacto *</Text>
-                                <TextInput
-                                    style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-                                    placeholder="Ej. 0998765432"
-                                    placeholderTextColor={isDark ? '#555' : '#BBB'}
-                                    keyboardType="phone-pad"
-                                    value={profPhone}
-                                    onChangeText={setProfPhone}
-                                />
+                                <View style={styles.phoneRow}>
+                                    <TouchableOpacity
+                                        style={[styles.countryCodeBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                                        onPress={() => setShowProfCountryPicker(true)}
+                                    >
+                                        <Text style={[styles.countryCodeText, { color: colors.text }]}>{profCountryCode}</Text>
+                                        <Ionicons name="chevron-down" size={12} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                    <TextInput
+                                        style={[styles.input, styles.phoneInput, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+                                        placeholder="0998765432"
+                                        placeholderTextColor={isDark ? '#555' : '#BBB'}
+                                        keyboardType="phone-pad"
+                                        value={profPhone}
+                                        onChangeText={setProfPhone}
+                                    />
+                                </View>
                             </View>
                         </View>
+                        {renderCountryPicker(showProfCountryPicker, () => setShowProfCountryPicker(false), setProfCountryCode, profCountryCode)}
                         
                         <Text style={[styles.label, { color: colors.textSecondary }]}>Multimedia (Opcional)</Text>
                         <TouchableOpacity style={styles.mediaButton} activeOpacity={0.7} onPress={handlePickMedia}>
@@ -745,5 +840,70 @@ const styles = StyleSheet.create({
         fontSize: 8,
         fontWeight: 'bold',
         marginTop: 0,
-    }
+    },
+    // ── Phone with country code ──
+    phoneRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    countryCodeBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+        paddingHorizontal: 10,
+        paddingVertical: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        height: 48,
+    },
+    countryCodeText: {
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    phoneInput: {
+        flex: 1,
+    },
+});
+
+const pickerStyles = StyleSheet.create({
+    overlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    sheet: {
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingTop: 16,
+        maxHeight: '70%',
+    },
+    pickerTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        textAlign: 'center',
+        paddingBottom: 12,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: 'rgba(150,150,150,0.3)',
+        marginBottom: 4,
+    },
+    countryRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        paddingVertical: 14,
+        gap: 12,
+    },
+    countryFlag: {
+        fontSize: 22,
+    },
+    countryName: {
+        fontSize: 15,
+        fontWeight: '600',
+        flex: 1,
+    },
+    countryCode: {
+        fontSize: 14,
+        fontWeight: '500',
+    },
 });

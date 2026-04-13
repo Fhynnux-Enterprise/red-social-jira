@@ -2,15 +2,36 @@ import React, { useState, useEffect } from 'react';
 import {
     Modal, View, Text, TextInput, TouchableOpacity,
     StyleSheet, ActivityIndicator, KeyboardAvoidingView,
-    Platform, ScrollView, Alert, Dimensions, Image
+    Platform, ScrollView, Alert, Dimensions, Image, FlatList
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation } from '@apollo/client/react';
 import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '../../../theme/ThemeContext';
-import { APPLY_TO_JOB, GET_MY_APPLICATIONS } from '../graphql/jobs.operations';
+import { APPLY_TO_JOB, GET_MY_APPLICATIONS, UPDATE_APPLICATION } from '../graphql/jobs.operations';
 import ImageCarousel from '../../feed/components/ImageCarousel';
+
+const COUNTRY_CODES = [
+    { code: '+593', flag: '🇪🇨', name: 'Ecuador' },
+    { code: '+57',  flag: '🇨🇴', name: 'Colombia' },
+    { code: '+51',  flag: '🇵🇪', name: 'Perú' },
+    { code: '+52',  flag: '🇲🇽', name: 'México' },
+    { code: '+54',  flag: '🇦🇷', name: 'Argentina' },
+    { code: '+56',  flag: '🇨🇱', name: 'Chile' },
+    { code: '+58',  flag: '🇻🇪', name: 'Venezuela' },
+    { code: '+1',   flag: '🇺🇸', name: 'EE.UU.' },
+    { code: '+34',  flag: '🇪🇸', name: 'España' },
+    { code: '+591', flag: '🇧🇴', name: 'Bolivia' },
+    { code: '+595', flag: '🇵🇾', name: 'Paraguay' },
+    { code: '+598', flag: '🇺🇾', name: 'Uruguay' },
+    { code: '+503', flag: '🇸🇻', name: 'El Salvador' },
+    { code: '+502', flag: '🇬🇹', name: 'Guatemala' },
+    { code: '+504', flag: '🇭🇳', name: 'Honduras' },
+    { code: '+505', flag: '🇳🇮', name: 'Nicaragua' },
+    { code: '+506', flag: '🇨🇷', name: 'Costa Rica' },
+    { code: '+507', flag: '🇵🇦', name: 'Panamá' },
+];
 
 interface ApplyJobModalProps {
     visible: boolean;
@@ -21,12 +42,12 @@ interface ApplyJobModalProps {
         author?: { firstName: string; lastName: string };
         media?: { url: string; type: string; order: number }[];
     } | null;
+    applicationToEdit?: any;
 }
-
 
 type UploadStep = 'idle' | 'submitting' | 'uploading_cv' | 'done' | 'error';
 
-export default function ApplyJobModal({ visible, onClose, jobOffer }: ApplyJobModalProps) {
+export default function ApplyJobModal({ visible, onClose, jobOffer, applicationToEdit }: ApplyJobModalProps) {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
 
@@ -35,17 +56,41 @@ export default function ApplyJobModal({ visible, onClose, jobOffer }: ApplyJobMo
     const [step, setStep] = useState<UploadStep>('idle');
     const [stepLabel, setStepLabel] = useState('');
     
+    const [countryCode, setCountryCode] = useState('+593');
+    const [phone, setPhone] = useState('');
+    const [showCountryPicker, setShowCountryPicker] = useState(false);
+    
     const [modalWidth, setModalWidth] = useState(Dimensions.get('window').width);
 
-    // Limpiar estado al abrir el modal
+    // Limpiar estado al abrir el modal o si cambia la aplicación a editar
     useEffect(() => {
         if (visible) {
-            setMessage('');
-            setCvFile(null);
+            if (applicationToEdit) {
+                setMessage(applicationToEdit.message || '');
+                if (applicationToEdit.contactPhone) {
+                    const matchedCode = COUNTRY_CODES.find(c => applicationToEdit.contactPhone.startsWith(c.code));
+                    if (matchedCode) {
+                        setCountryCode(matchedCode.code);
+                        setPhone(applicationToEdit.contactPhone.slice(matchedCode.code.length));
+                    } else {
+                        setPhone(applicationToEdit.contactPhone);
+                    }
+                } else {
+                    setCountryCode('+593');
+                    setPhone('');
+                }
+                setCvFile(null);
+            } else {
+                setMessage('');
+                setCvFile(null);
+                setCountryCode('+593');
+                setPhone('');
+            }
             setStep('idle');
             setStepLabel('');
+            setShowCountryPicker(false);
         }
-    }, [visible]);
+    }, [visible, applicationToEdit]);
 
     const [applyToJob] = useMutation<{
         applyToJob: {
@@ -54,6 +99,10 @@ export default function ApplyJobModal({ visible, onClose, jobOffer }: ApplyJobMo
             cvPublicUrl: string;
         };
     }>(APPLY_TO_JOB, {
+        refetchQueries: [{ query: GET_MY_APPLICATIONS }],
+    });
+
+    const [updateApplicationMutation] = useMutation(UPDATE_APPLICATION, {
         refetchQueries: [{ query: GET_MY_APPLICATIONS }],
     });
 
@@ -77,32 +126,53 @@ export default function ApplyJobModal({ visible, onClose, jobOffer }: ApplyJobMo
     const handleSubmit = async () => {
         if (!jobOffer) return;
 
+        if (!applicationToEdit && !cvFile) {
+            Alert.alert('Hoja de vida requerida', 'Por favor adjunta tu hoja de vida en PDF.');
+            return;
+        }
+
         try {
-            // 1. Ejecutar mutación GraphQL → obtener presigned URL
             setStep('submitting');
-            setStepLabel('Registrando postulación...');
+            setStepLabel(applicationToEdit ? 'Actualizando postulación...' : 'Registrando postulación...');
 
-            const { data } = await applyToJob({
-                variables: {
-                    input: {
-                        jobOfferId: jobOffer.id,
-                        message: message.trim() || undefined,
+            let cvUploadUrlToUse = '';
+
+            if (applicationToEdit) {
+                const { data } = await updateApplicationMutation({
+                    variables: {
+                        input: {
+                            applicationId: applicationToEdit.id,
+                            message: message.trim() || undefined,
+                            contactPhone: phone.trim() ? countryCode + phone.trim() : undefined,
+                            requestNewCv: false, // Por requerimiento no mandamos cv en edicion
+                        },
                     },
-                },
-            });
+                });
+                if (!data) throw new Error('No se recibió respuesta del servidor.');
+            } else {
+                const { data } = await applyToJob({
+                    variables: {
+                        input: {
+                            jobOfferId: jobOffer.id,
+                            message: message.trim() || undefined,
+                            contactPhone: phone.trim() ? countryCode + phone.trim() : undefined,
+                        },
+                    },
+                });
 
-            if (!data) throw new Error('No se recibió respuesta del servidor.');
-            const { cvUploadUrl } = data.applyToJob;
+                if (!data) throw new Error('No se recibió respuesta del servidor.');
+                cvUploadUrlToUse = data.applyToJob.cvUploadUrl;
+            }
 
-            // 2. Subir PDF directamente a R2 si hay un archivo seleccionado
-            if (cvFile && cvUploadUrl) {
+            // 2. Subir PDF directamente a R2 si hay un archivo seleccionado y estamos creando
+            if (cvFile && cvUploadUrlToUse && !applicationToEdit) {
                 setStep('uploading_cv');
                 setStepLabel('Subiendo hoja de vida...');
 
                 const response = await fetch(cvFile.uri);
                 const blob = await response.blob();
 
-                const uploadResponse = await fetch(cvUploadUrl, {
+                const uploadResponse = await fetch(cvUploadUrlToUse, {
                     method: 'PUT',
                     body: blob,
                     headers: { 'Content-Type': 'application/pdf' },
@@ -114,7 +184,7 @@ export default function ApplyJobModal({ visible, onClose, jobOffer }: ApplyJobMo
             }
 
             setStep('done');
-            setStepLabel('¡Postulación enviada!');
+            setStepLabel(applicationToEdit ? '¡Postulación guardada!' : '¡Postulación enviada!');
 
             // Pequeña pausa para mostrar el estado de éxito antes de cerrar
             setTimeout(() => {
@@ -155,7 +225,7 @@ export default function ApplyJobModal({ visible, onClose, jobOffer }: ApplyJobMo
                     >
                         <Ionicons name="close" size={24} color={isLoading ? colors.textSecondary : colors.text} />
                     </TouchableOpacity>
-                    <Text style={[styles.headerTitle, { color: colors.text }]}>Postularse</Text>
+                    <Text style={[styles.headerTitle, { color: colors.text }]}>{applicationToEdit ? 'Editar Postulación' : 'Postularse'}</Text>
                     <TouchableOpacity
                         onPress={handleSubmit}
                         disabled={!canSubmit}
@@ -236,12 +306,49 @@ export default function ApplyJobModal({ visible, onClose, jobOffer }: ApplyJobMo
                         {message.length}/600
                     </Text>
 
+                    {/* ── Teléfono de Contacto ── */}
+                    <Text style={[styles.label, { color: colors.textSecondary, marginTop: 10 }]}>Teléfono de contacto <Text style={{ color: colors.textSecondary, fontWeight: '400' }}>(opcional)</Text></Text>
+                    <View style={styles.phoneRow}>
+                        <TouchableOpacity
+                            style={[styles.countryCodeBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                            onPress={() => setShowCountryPicker(true)}
+                        >
+                            <Text style={[styles.countryCodeText, { color: colors.text }]}>{countryCode}</Text>
+                            <Ionicons name="chevron-down" size={12} color={colors.textSecondary} />
+                        </TouchableOpacity>
+                        <TextInput
+                            style={[styles.phoneInput, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+                            placeholder="0998765432"
+                            placeholderTextColor={isDark ? '#555' : '#BBB'}
+                            keyboardType="phone-pad"
+                            value={phone}
+                            onChangeText={setPhone}
+                            editable={!isLoading}
+                        />
+                    </View>
+
                     {/* ── Adjuntar CV ── */}
                     <Text style={[styles.label, { color: colors.textSecondary, marginTop: 20 }]}>
                         Hoja de vida (PDF) <Text style={{ color: colors.textSecondary, fontWeight: '400' }}>(opcional)</Text>
                     </Text>
 
-                    {cvFile ? (
+                    {applicationToEdit ? (
+                        <View style={[styles.cvPreview, { backgroundColor: colors.surface, borderColor: colors.border, padding: 16 }]}>
+                            <View style={styles.cvPreviewLeft}>
+                                <View style={[styles.pdfBadge, { backgroundColor: 'rgba(255,101,36,0.12)' }]}>
+                                    <Ionicons name="document-text" size={22} color="#FF6524" />
+                                </View>
+                                <View style={{ flex: 1, marginLeft: 12 }}>
+                                    <Text style={[styles.cvFileName, { color: colors.text, fontSize: 13 }]} numberOfLines={1}>
+                                        No puedes editar el archivo enviado
+                                    </Text>
+                                    <Text style={[styles.cvFileSize, { color: colors.textSecondary, marginTop: 2 }]} numberOfLines={2}>
+                                        Mantendremos el PDF de tu postulación original.
+                                    </Text>
+                                </View>
+                            </View>
+                        </View>
+                    ) : cvFile ? (
                         /* Vista previa del archivo seleccionado */
                         <View style={[styles.cvPreview, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                             <View style={styles.cvPreviewLeft}>
@@ -300,7 +407,7 @@ export default function ApplyJobModal({ visible, onClose, jobOffer }: ApplyJobMo
                         <View style={[styles.progressBanner, { backgroundColor: 'rgba(74,222,128,0.1)', borderColor: 'rgba(74,222,128,0.3)' }]}>
                             <Ionicons name="checkmark-circle" size={20} color="#4ADE80" />
                             <Text style={[styles.progressLabel, { color: '#4ADE80' }]}>
-                                ¡Postulación enviada con éxito!
+                                {applicationToEdit ? '¡Postulación editada con éxito!' : '¡Postulación enviada con éxito!'}
                             </Text>
                         </View>
                     )}
@@ -311,6 +418,30 @@ export default function ApplyJobModal({ visible, onClose, jobOffer }: ApplyJobMo
                     </Text>
                 </ScrollView>
             </KeyboardAvoidingView>
+
+            {/* Country Picker Modal */}
+            <Modal visible={showCountryPicker} transparent animationType="fade" onRequestClose={() => setShowCountryPicker(false)}>
+                <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setShowCountryPicker(false)}>
+                    <View style={[styles.pickerSheet, { backgroundColor: colors.surface }]}>
+                        <Text style={[styles.pickerTitle, { color: colors.text }]}>Código de país</Text>
+                        <FlatList
+                            data={COUNTRY_CODES}
+                            keyExtractor={i => i.code}
+                            renderItem={({ item: c }) => (
+                                <TouchableOpacity
+                                    style={[styles.countryRow, c.code === countryCode && { backgroundColor: colors.primary + '22' }]}
+                                    onPress={() => { setCountryCode(c.code); setShowCountryPicker(false); }}
+                                >
+                                    <Text style={styles.flag}>{c.flag}</Text>
+                                    <Text style={[styles.countryName, { color: colors.text }]}>{c.name}</Text>
+                                    <Text style={[styles.code, { color: colors.textSecondary }]}>{c.code}</Text>
+                                </TouchableOpacity>
+                            )}
+                        />
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+
         </Modal>
     );
 }
@@ -468,5 +599,66 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginTop: 24,
         paddingHorizontal: 8,
+    },
+    phoneRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    countryCodeBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        height: 48,
+        borderRadius: 12,
+        borderWidth: 1,
+        marginRight: 8,
+    },
+    countryCodeText: {
+        fontSize: 15,
+        marginRight: 4,
+    },
+    phoneInput: {
+        flex: 1,
+        height: 48,
+        borderRadius: 12,
+        borderWidth: 1,
+        paddingHorizontal: 16,
+        fontSize: 15,
+    },
+    pickerOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    pickerSheet: {
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        padding: 20,
+        maxHeight: '70%',
+    },
+    pickerTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        marginBottom: 16,
+        textAlign: 'center',
+    },
+    countryRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 10,
+    },
+    flag: {
+        fontSize: 24,
+        marginRight: 12,
+    },
+    countryName: {
+        flex: 1,
+        fontSize: 16,
+    },
+    code: {
+        fontSize: 16,
+        fontWeight: '600',
     },
 });

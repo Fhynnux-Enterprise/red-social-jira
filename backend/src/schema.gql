@@ -178,6 +178,7 @@ type ProfessionalProfile {
 type JobApplication {
   id: ID!
   message: String
+  contactPhone: String
   cvUrl: String
   status: ApplicationStatus!
   createdAt: DateTime!
@@ -300,8 +301,12 @@ type Mutation {
   updateJobOffer(input: UpdateJobOfferInput!): JobOffer!
   deleteJobOffer(id: ID!): Boolean!
   upsertProfessionalProfile(upsertProfessionalProfileInput: UpsertProfessionalProfileInput!): ProfessionalProfile!
+  deleteProfessionalProfile(id: String!): Boolean!
+  updateProfessionalProfile(id: String!, input: UpsertProfessionalProfileInput!): ProfessionalProfile!
   applyToJob(input: ApplyToJobInput!): ApplyToJobResponse!
   updateApplicationStatus(input: UpdateApplicationStatusInput!): JobApplication!
+  deleteApplication(applicationId: ID!): Boolean!
+  updateApplication(input: UpdateApplicationInput!): ApplyToJobResponse!
 }
 
 input PostMediaInput {
@@ -351,11 +356,19 @@ input ProfessionalProfileMediaInput {
 input ApplyToJobInput {
   jobOfferId: ID!
   message: String
+  contactPhone: String
 }
 
 input UpdateApplicationStatusInput {
   applicationId: ID!
   status: ApplicationStatus!
+}
+
+input UpdateApplicationInput {
+  applicationId: ID!
+  message: String
+  contactPhone: String
+  requestNewCv: Boolean
 }
 
 type Subscription {
