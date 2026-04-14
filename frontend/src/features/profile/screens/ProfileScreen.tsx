@@ -136,6 +136,16 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         }
     }, [refetchProfile, profileUserId]);
 
+    // Sincronizar el post seleccionado con la caché para actualizar likes/comentarios en tiempo real en el CommentsModal
+    useEffect(() => {
+        if (selectedPostForComments && gqlData?.getUserProfile?.posts) {
+            const upToDatePost = gqlData.getUserProfile.posts.find((p: any) => p.id === selectedPostForComments.post.id);
+            if (upToDatePost && JSON.stringify(upToDatePost) !== JSON.stringify(selectedPostForComments.post)) {
+                setSelectedPostForComments(prev => prev ? { ...prev, post: { ...upToDatePost, author: userData } } : null);
+            }
+        }
+    }, [gqlData?.getUserProfile?.posts, selectedPostForComments?.post?.id, userData]);
+
     const loadMorePosts = useCallback(() => {
         const currentPosts = gqlData?.getUserProfile?.posts;
         if (isFetchingMore || !hasMore || !currentPosts) return;
@@ -367,6 +377,24 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                                     <Text style={styles.modalTitle}>Configuración</Text>
                                     <View style={{ width: 28 }} />
                                 </View>
+                                {/* Moderación (solo ADMIN y MODERATOR) */}
+                                {['ADMIN', 'MODERATOR'].includes(authContext.user?.role) && (
+                                    <TouchableOpacity
+                                        style={styles.settingButton}
+                                        onPress={() => {
+                                            setIsMenuVisible(false);
+                                            setTimeout(() => (navigation as any).navigate('Moderation'), 300);
+                                        }}
+                                    >
+                                        <View style={styles.settingLeft}>
+                                            <View style={{ backgroundColor: 'rgba(255,101,36,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
+                                                <Ionicons name="shield-checkmark-outline" size={22} color="#FF6524" />
+                                            </View>
+                                            <Text style={[styles.settingText, { color: '#FF6524' }]}>Moderación</Text>
+                                        </View>
+                                        <Ionicons name="chevron-forward" size={20} color="#FF6524" />
+                                    </TouchableOpacity>
+                                )}
                                 <TouchableOpacity
                                     style={styles.settingButton}
                                     onPress={() => {

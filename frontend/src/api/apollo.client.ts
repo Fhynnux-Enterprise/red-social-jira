@@ -108,7 +108,7 @@ export const apolloClient = new ApolloClient({
     cache: new InMemoryCache({
         // Permite al cache entender qué tipos concretos puede devolver el union FeedItem
         possibleTypes: {
-            FeedItem: ['Post', 'JobOffer', 'ProfessionalProfile'],
+            FeedItem: ['Post', 'JobOffer', 'ProfessionalProfile', 'StoreProduct'],
         },
         typePolicies: {
             Query: {

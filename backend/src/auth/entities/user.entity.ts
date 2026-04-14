@@ -11,6 +11,7 @@ import { Story } from '../../stories/entities/story.entity';
 import { JobOffer } from '../../jobs/entities/job-offer.entity';
 import { ProfessionalProfile } from '../../jobs/entities/professional-profile.entity';
 import { JobApplication } from '../../jobs/entities/job-application.entity';
+import { UserRole } from '../enums/user-role.enum';
 
 
 @ObjectType()
@@ -52,8 +53,13 @@ export class User {
     @Column({ name: 'cover_url', nullable: true })
     coverUrl: string;
 
-    @Column({ default: 'USER' })
-    role: string;
+    @Field(() => UserRole)
+    @Column({
+        type: 'enum',
+        enum: UserRole,
+        default: UserRole.USER,
+    })
+    role: UserRole;
 
     @Column({ name: 'is_active', default: true })
     isActive: boolean;

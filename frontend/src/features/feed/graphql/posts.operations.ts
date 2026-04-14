@@ -192,6 +192,43 @@ export const GET_FEED = gql`
                     photoUrl
                 }
             }
+            ... on StoreProduct {
+                id
+                storeTitle: title
+                description
+                price
+                currency
+                storeLocation: location
+                storeContactPhone: contactPhone
+                condition
+                category
+                isAvailable
+                createdAt
+                commentsCount
+                storeMedia: media {
+                    id
+                    url
+                    type
+                    order
+                }
+                likes {
+                    id
+                    user {
+                        id
+                        firstName
+                        lastName
+                        username
+                        photoUrl
+                    }
+                }
+                seller {
+                    id
+                    firstName
+                    lastName
+                    username
+                    photoUrl
+                }
+            }
         }
     }
 `;

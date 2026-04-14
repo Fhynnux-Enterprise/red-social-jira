@@ -13,11 +13,18 @@ export class JobsResolver {
   constructor(private readonly jobsService: JobsService) {}
 
   @Query(() => [JobOffer], { name: 'jobOffers' })
-  findAll(
+  @UseGuards(GqlAuthGuard)
+  getJobOffers(
     @Args('limit', { type: () => Int, defaultValue: 20 }) limit: number,
     @Args('offset', { type: () => Int, defaultValue: 0 }) offset: number,
   ) {
     return this.jobsService.findAllJobOffers(limit, offset);
+  }
+
+  @Query(() => JobOffer, { name: 'getJobOfferById', nullable: true })
+  @UseGuards(GqlAuthGuard)
+  getJobOfferById(@Args('id', { type: () => ID }) id: string) {
+    return this.jobsService.getJobOfferById(id);
   }
 
   @Query(() => [JobOffer], { name: 'myJobOffers' })

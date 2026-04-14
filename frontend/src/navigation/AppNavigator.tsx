@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, View, StyleSheet, Text } from 'react-native';
+import { Platform, View, StyleSheet, Text, Image } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,6 +14,9 @@ import ChatDetailsScreen from '../features/chat/screens/ChatDetailsScreen';
 import NewChatScreen from '../features/chat/screens/NewChatScreen';
 import StoryViewerScreen from '../features/stories/screens/StoryViewerScreen';
 import JobsScreen from '../features/jobs/screens/JobsScreen';
+import StoreScreen from '../features/store/screens/StoreScreen';
+import NotificationsScreen from '../features/notifications/screens/NotificationsScreen';
+import ModerationScreen from '../features/moderation/screens/ModerationScreen';
 import { useTheme } from '../theme/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery, useSubscription } from '@apollo/client/react';
@@ -28,12 +31,15 @@ export type AppStackParamList = {
     NewChat: undefined;
     Profile: { userId?: string } | undefined;
     StoryViewer: { userId: string; initialStoryId?: string };
+    Moderation: undefined;
 };
 
 export type AppTabParamList = {
     Feed: undefined;
     Jobs: undefined;
+    Store: undefined;
     ChatList: undefined;
+    Notifications: undefined;
     Profile: { userId?: string } | undefined;
 };
 
@@ -71,13 +77,30 @@ function MainTabNavigator() {
                 tabBarIcon: ({ focused, color, size }) => {
                     let iconName: keyof typeof Ionicons.glyphMap = 'home';
 
-                    if (route.name === 'Feed') {
+                     if (route.name === 'Feed') {
                         iconName = focused ? 'home' : 'home-outline';
                     } else if (route.name === 'Jobs') {
                         iconName = focused ? 'briefcase' : 'briefcase-outline';
+                    } else if (route.name === 'Store') {
+                        iconName = focused ? 'storefront' : 'storefront-outline';
                     } else if (route.name === 'ChatList') {
                         iconName = focused ? 'chatbubble-ellipses' : 'chatbubble-outline';
+                    } else if (route.name === 'Notifications') {
+                        iconName = focused ? 'notifications' : 'notifications-outline';
                     } else if (route.name === 'Profile') {
+                        if (user?.photoUrl) {
+                            return (
+                                <View style={[
+                                    styles.profileIconWrap, 
+                                    { borderColor: focused ? '#FF6524' : 'transparent' }
+                                ]}>
+                                    <Image 
+                                        source={{ uri: user.photoUrl }} 
+                                        style={styles.profileTabImage} 
+                                    />
+                                </View>
+                            );
+                        }
                         iconName = focused ? 'person' : 'person-outline';
                     }
 
@@ -144,6 +167,7 @@ function MainTabNavigator() {
         >
             <Tab.Screen name="Feed" component={FeedScreen} options={{ tabBarLabel: 'Inicio' }} />
             <Tab.Screen name="Jobs" component={JobsScreen} options={{ tabBarLabel: 'Empleos' }} />
+            <Tab.Screen name="Store" component={StoreScreen} options={{ tabBarLabel: 'Tienda' }} />
             <Tab.Screen 
                 name="ChatList" 
                 component={ChatListScreen} 
@@ -165,10 +189,13 @@ function MainTabNavigator() {
                     }
                 }} 
             />
+            <Tab.Screen name="Notifications" component={NotificationsScreen} options={{ tabBarLabel: 'Avisos' }} />
             <Tab.Screen
                 name="Profile"
                 component={ProfileScreen}
-                options={{ tabBarLabel: 'Perfil' }}
+                options={{ 
+                    tabBarLabel: () => null,
+                }}
                 listeners={({ navigation }) => ({
                     tabPress: (e) => {
                         e.preventDefault();
@@ -204,6 +231,11 @@ export default function AppNavigator() {
                     animation: 'fade' 
                 }} 
             />
+            <Stack.Screen
+                name="Moderation"
+                component={ModerationScreen}
+                options={{ animation: 'slide_from_right' }}
+            />
         </Stack.Navigator>
     );
 }
@@ -225,5 +257,20 @@ const styles = StyleSheet.create({
         height: 20,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    profileIconWrap: {
+        width: 44,
+        height: 44,
+        borderRadius: 30,
+        borderWidth: 2,
+        overflow: 'hidden',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 18,
+        marginRight: 10,
+    },
+    profileTabImage: {
+        width: '100%',
+        height: '100%',
     }
 });

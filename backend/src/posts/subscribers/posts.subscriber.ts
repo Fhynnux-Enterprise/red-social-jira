@@ -23,14 +23,17 @@ export class PostsSubscriber implements EntitySubscriberInterface<PostMedia> {
             return;
         }
 
+        // Si el borrado viene de moderación, NO eliminar el archivo de R2.
+        // El moderador solo quiere un soft-delete lógico, preservando el archivo
+        // para evidencia futura en caso de apelación.
+        if ((event.entity as any)._moderationDelete === true) {
+            return;
+        }
+
         try {
-            // La URL pública de R2 se pasa directamente — StorageService.deleteFile
-            // sabe cómo extraer el key relativo si recibe la URL completa.
             await this.storageService.deleteFile(event.entity.url);
         } catch (error) {
             console.error(`Failed to delete media file from R2 during soft remove: ${event.entity.url}`, error);
-            // No tiramos el error para no bloquear la eliminación del registro en la BD,
-            // pero lo logamos para monitoreo.
         }
     }
 }

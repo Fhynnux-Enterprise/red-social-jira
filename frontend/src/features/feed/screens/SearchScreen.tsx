@@ -184,6 +184,16 @@ export default function SearchScreen() {
         setHasMorePosts(true);
     }, [debouncedQuery]);
 
+    // Sincronizar el post seleccionado con la caché para actualizar likes/comentarios en tiempo real en el CommentsModal
+    useEffect(() => {
+        if (selectedPostForComments && postsData?.searchPosts) {
+            const upToDatePost = postsData.searchPosts.find((p: any) => p.id === selectedPostForComments.post.id);
+            if (upToDatePost && JSON.stringify(upToDatePost) !== JSON.stringify(selectedPostForComments.post)) {
+                setSelectedPostForComments((prev: any) => prev ? { ...prev, post: upToDatePost } : null);
+            }
+        }
+    }, [postsData?.searchPosts, selectedPostForComments?.post?.id]);
+
     const handleLoadMore = useCallback(async () => {
         if (isFetchingMore || isLoading || !debouncedQuery) return;
 

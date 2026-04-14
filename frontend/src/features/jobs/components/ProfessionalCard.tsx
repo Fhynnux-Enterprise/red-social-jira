@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, Image,
-    useWindowDimensions, Linking, Modal, ActivityIndicator
+    useWindowDimensions, Linking, Modal, ActivityIndicator, KeyboardAvoidingView, TextInput, Alert, Platform
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
@@ -9,7 +9,9 @@ import { useAuth } from '../../auth/context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../theme/ThemeContext';
 import ImageCarousel from '../../feed/components/ImageCarousel';
-import { useMutation } from '@apollo/client/react';
+import { useMutation, useApolloClient } from '@apollo/client/react';
+import ReportModal from '../../reports/components/ReportModal';
+import { DIRECT_MODERATE_CONTENT } from '../../moderation/graphql/moderation.operations';
 import {
     GET_OR_CREATE_CHAT
 } from '../../chat/graphql/chat.operations';
@@ -39,6 +41,37 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit 
 
     const [menuVisible, setMenuVisible] = useState(false);
     const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
+    const [reportVisible, setReportVisible] = useState(false);
+
+    const isModeratorOrAdmin = authContext?.user?.role === 'ADMIN' || authContext?.user?.role === 'MODERATOR';
+    const [directModerateVisible, setDirectModerateVisible] = useState(false);
+    const [directModerateNote, setDirectModerateNote] = useState('');
+    const client = useApolloClient();
+
+    const [directModerateMutation, { loading: filtering }] = useMutation(DIRECT_MODERATE_CONTENT, {
+        onCompleted: () => {
+            client.cache.evict({ id: client.cache.identify({ __typename: 'ProfessionalProfile', id: item.id }) });
+            client.cache.gc();
+            setDirectModerateVisible(false);
+            setDirectModerateNote('');
+            Toast.show({ type: 'success', text1: 'Contenido Moderado', text2: 'El servicio ha sido eliminado y registrado.' });
+        },
+        onError: (err) => {
+            Alert.alert('Error', err.message);
+        }
+    });
+
+    const handleDirectModerate = () => {
+        directModerateMutation({
+            variables: {
+                input: {
+                    reportedItemId: item.id,
+                    reportedItemType: 'SERVICE',
+                    moderatorNote: directModerateNote.trim() || undefined
+                }
+            }
+        });
+    };
 
     const [getOrCreateChat] = useMutation(GET_OR_CREATE_CHAT);
 
@@ -140,47 +173,71 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit 
                 activeOpacity={0.7}
             >
                 {!hideAuthorRow && (
-                    <View style={[styles.postHeader, { borderBottomColor: colors.border }]}>
-                        <TouchableOpacity
-                            style={styles.postAuthorRow}
-                            onPress={goToProfile}
-                            activeOpacity={0.7}
-                        >
-                            <View style={styles.postAvatarWrap}>
-                                {item.user?.photoUrl ? (
-                                    <Image source={{ uri: item.user.photoUrl }} style={styles.postAvatarImg} />
-                                ) : (
-                                    <Text style={styles.postAvatarInitials}>
-                                        {item.user?.firstName?.charAt(0) || ''}{item.user?.lastName?.charAt(0) || ''}
-                                    </Text>
-                                )}
-                            </View>
-                            <View style={{ flex: 1 }}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                    <View style={[styles.postHeader, { borderBottomColor: colors.border, flexDirection: 'column', alignItems: 'flex-start' }]}>
+                        {/* Badge de tipo arriba */}
+                        <View style={[styles.typeBadge, { marginBottom: 10 }]}>
+                            <Ionicons name="person-circle-outline" size={12} color="#FF6524" style={{ marginRight: 6 }} />
+                            <Text style={styles.typeBadgeText}>SERVICIO PROFESIONAL</Text>
+                        </View>
+
+                        <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}>
+                            <TouchableOpacity
+                                style={styles.postAuthorRow}
+                                onPress={goToProfile}
+                                activeOpacity={0.7}
+                            >
+                                <View style={styles.postAvatarWrap}>
+                                    {item.user?.photoUrl ? (
+                                        <Image source={{ uri: item.user.photoUrl }} style={styles.postAvatarImg} />
+                                    ) : (
+                                        <Text style={styles.postAvatarInitials}>
+                                            {item.user?.firstName?.charAt(0) || ''}{item.user?.lastName?.charAt(0) || ''}
+                                        </Text>
+                                    )}
+                                </View>
+                                <View style={{ flex: 1 }}>
                                     <Text style={[styles.postAuthorName, { color: colors.text }]} numberOfLines={1}>
                                         {`${item.user?.firstName ?? ''} ${item.user?.lastName ?? ''}`.trim() || 'Usuario'}
                                     </Text>
-                                    <View style={styles.typeBadge}>
-                                        <Ionicons name="person-circle-outline" size={10} color="#FF6524" style={{ marginRight: 6 }} />
-                                        <Text style={styles.typeBadgeText}>Servicio Profesional</Text>
-                                    </View>
+                                    <Text style={[styles.postDate, { color: colors.textSecondary }]}>
+                                        {formatDate(item.createdAt)}
+                                    </Text>
                                 </View>
-                                <Text style={[styles.postDate, { color: colors.textSecondary }]}>
-                                    {formatDate(item.createdAt)}
-                                </Text>
-                            </View>
-                        </TouchableOpacity>
-
-                        {/* Experiencia badge + ellipsis para dueño */}
-                        {isOwnCard && (
-                            <TouchableOpacity
-                                onPress={() => setMenuVisible(true)}
-                                style={styles.postEllipsis}
-                                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                            >
-                                <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
                             </TouchableOpacity>
-                        )}
+
+                            {/* Experiencia badge + ellipsis para dueño */}
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                {isOwnCard && (
+                                    <TouchableOpacity
+                                        onPress={() => setMenuVisible(true)}
+                                        style={styles.postEllipsis}
+                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                                    >
+                                        <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                )}
+                                {!isOwnCard && (
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        {isModeratorOrAdmin && (
+                                            <TouchableOpacity
+                                                onPress={() => setDirectModerateVisible(true)}
+                                                style={[styles.postEllipsis, { marginRight: 8 }]}
+                                                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                                            >
+                                                <Ionicons name="shield-checkmark-outline" size={18} color="#F44336" />
+                                            </TouchableOpacity>
+                                        )}
+                                        <TouchableOpacity
+                                            onPress={() => setReportVisible(true)}
+                                            style={styles.postEllipsis}
+                                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                                        >
+                                            <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+                            </View>
+                        </View>
                     </View>
                 )}
 
@@ -347,6 +404,53 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit 
                     </View>
                 </View>
             </Modal>
+            <ReportModal
+                visible={reportVisible}
+                onClose={() => setReportVisible(false)}
+                reportedItemId={item.id}
+                reportedItemType="SERVICE"
+            />
+
+            {/* Direct Moderate Modal */}
+            <Modal
+                visible={directModerateVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => { if (!filtering) setDirectModerateVisible(false) }}
+            >
+                <KeyboardAvoidingView
+                    style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 }}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                >
+                    <View style={{ backgroundColor: colors.surface, borderRadius: 16, padding: 20, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3.84 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15 }}>
+                            <Ionicons name="shield-checkmark" size={24} color="#F44336" style={{ marginRight: 10 }} />
+                            <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>Moderación Directa</Text>
+                        </View>
+                        <Text style={{ color: colors.textSecondary, marginBottom: 15, fontSize: 14 }}>
+                            Este servicio será eliminado del sistema y se generará un reporte automático en estado Resuelto.
+                        </Text>
+                        <TextInput
+                            style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#F5F5F5', color: colors.text, borderRadius: 12, padding: 12, minHeight: 80, textAlignVertical: 'top', marginBottom: 20 }}
+                            placeholder="Añadir nota de moderador (opcional)..."
+                            placeholderTextColor={colors.textSecondary}
+                            multiline
+                            maxLength={500}
+                            value={directModerateNote}
+                            onChangeText={setDirectModerateNote}
+                            editable={!filtering}
+                        />
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
+                            <TouchableOpacity onPress={() => setDirectModerateVisible(false)} disabled={filtering} style={{ paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}>
+                                <Text style={{ color: colors.text, fontWeight: '600' }}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={handleDirectModerate} disabled={filtering} style={{ paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#F44336', flexDirection: 'row', alignItems: 'center' }}>
+                                {filtering ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={{ color: '#FFF', fontWeight: '600' }}>Eliminar Servicio</Text>}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </KeyboardAvoidingView>
+            </Modal>
         </>
     );
 }
@@ -401,17 +505,21 @@ const styles = StyleSheet.create({
     typeBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255,101,36,0.10)',
-        borderRadius: 6,
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        borderWidth: 1,
-        borderColor: 'rgba(255,101,36,0.30)',
+        backgroundColor: 'rgba(255,101,36,0.08)',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        marginBottom: 8,
+        alignSelf: 'flex-start',
+        borderLeftWidth: 4,
+        borderLeftColor: '#FF6524',
+        borderTopRightRadius: 8,
+        borderBottomRightRadius: 8,
     },
     typeBadgeText: {
         color: '#FF6524',
         fontSize: 10,
-        fontWeight: '700',
+        fontWeight: '800',
+        letterSpacing: 1,
     },
     experienceBadge: {
         paddingHorizontal: 8,

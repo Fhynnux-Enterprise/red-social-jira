@@ -27,6 +27,12 @@ export class PostsResolver {
         return this.postsService.findAll(limit, offset);
     }
 
+    @Query(() => Post, { name: 'getPostById', nullable: true })
+    @UseGuards(JwtGqlGuard)
+    async getPostById(@Args('id') id: string): Promise<Post> {
+        return this.postsService.findById(id);
+    }
+
     @Mutation(() => Post, { name: 'createPost' })
     @UseGuards(JwtGqlGuard)
     async createPost(

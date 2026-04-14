@@ -204,6 +204,7 @@ type User {
   bio: String
   photoUrl: String
   coverUrl: String
+  role: UserRole!
   lastActiveAt: DateTime
   posts(limit: Int = 5, offset: Int = 0): [Post!]
   customFields: [UserCustomField!]
@@ -219,6 +220,14 @@ type User {
   jobApplications: [JobApplication!]
   followersCount: Int!
   followingCount: Int!
+}
+
+"""Roles disponibles en la plataforma"""
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+  VERIFIED_BUSINESS
 }
 
 type UploadUrlResponse {
@@ -237,10 +246,96 @@ type ApplyToJobResponse {
   cvPublicUrl: String!
 }
 
+type StoreProductMedia {
+  id: ID!
+  url: String!
+  type: String!
+  order: Int!
+  createdAt: DateTime!
+}
+
+type StoreProductLike {
+  id: ID!
+  product: StoreProduct!
+  user: User!
+  createdAt: DateTime!
+}
+
+type StoreProductCommentLike {
+  id: ID!
+  user: User
+  userId: String!
+  commentId: String!
+  createdAt: DateTime!
+}
+
+type StoreProductComment {
+  id: ID!
+  content: String!
+  product: StoreProduct!
+  user: User!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  likes: [StoreProductCommentLike!]
+  likesCount: Int!
+  isLikedByMe: Boolean!
+  parent: StoreProductComment
+  replies: [StoreProductComment!]
+}
+
+type StoreProduct {
+  id: ID!
+  title: String!
+  description: String!
+  price: Float!
+  currency: String
+  location: String
+  contactPhone: String
+  condition: String
+  category: String
+  isAvailable: Boolean!
+  createdAt: DateTime!
+  deletedAt: DateTime
+  seller: User!
+  media: [StoreProductMedia!]
+  likes: [StoreProductLike!]
+  comments: [StoreProductComment!]
+  commentsCount: Float!
+}
+
+type Report {
+  id: ID!
+  reason: String!
+  status: ReportStatus!
+  reportedItemType: ReportedItemType!
+  reportedItemId: ID!
+  moderatorNote: String
+  contentDeleted: Boolean
+  reporter: User!
+  createdAt: DateTime!
+}
+
+"""Estado de una denuncia"""
+enum ReportStatus {
+  PENDING
+  RESOLVED
+  DISMISSED
+}
+
+"""Tipo de contenido denunciado"""
+enum ReportedItemType {
+  POST
+  JOB_OFFER
+  SERVICE
+  PRODUCT
+  COMMENT
+}
+
 type Query {
   """Verifica si el servidor GraphQL está funcionando"""
   ping: String!
   getPosts(limit: Int! = 5, offset: Int! = 0): [Post!]!
+  getPostById(id: String!): Post
   searchPosts(query: String!, limit: Int! = 5, offset: Int! = 0): [Post!]!
   getUserProfile(id: String!): User!
   me: User!
@@ -259,15 +354,22 @@ type Query {
   getActiveStories(limit: Int! = 20, offset: Int! = 0): [Story!]!
   getViewedStoryIds: [String!]!
   jobOffers(limit: Int! = 20, offset: Int! = 0): [JobOffer!]!
+  getJobOfferById(id: ID!): JobOffer
   myJobOffers: [JobOffer!]!
   professionalProfiles(limit: Int! = 20, offset: Int! = 0): [ProfessionalProfile!]!
   myProfessionalProfile: [ProfessionalProfile!]!
   jobApplications(jobOfferId: ID!): [JobApplication!]!
   myApplications: [JobApplication!]!
   getFeed(limit: Int! = 10, offset: Int! = 0): [FeedItem!]!
+  storeProducts(limit: Int! = 20, offset: Int! = 0): [StoreProduct!]!
+  myStoreProducts: [StoreProduct!]!
+  getStoreProductById(id: ID!): StoreProduct
+  getStoreProductComments(productId: ID!, limit: Int! = 20, offset: Int! = 0): [StoreProductComment!]!
+  getPendingReports(limit: Int! = 20, offset: Int! = 0): [Report!]!
+  getAllReports(limit: Int! = 20, offset: Int! = 0): [Report!]!
 }
 
-union FeedItem = Post | JobOffer | ProfessionalProfile
+union FeedItem = Post | JobOffer | ProfessionalProfile | StoreProduct
 
 type Mutation {
   createPost(content: String!, title: String, media: [PostMediaInput!]): Post!
@@ -307,6 +409,17 @@ type Mutation {
   updateApplicationStatus(input: UpdateApplicationStatusInput!): JobApplication!
   deleteApplication(applicationId: ID!): Boolean!
   updateApplication(input: UpdateApplicationInput!): ApplyToJobResponse!
+  createStoreProduct(input: CreateStoreProductInput!): StoreProduct!
+  updateStoreProduct(input: UpdateStoreProductInput!): StoreProduct!
+  deleteStoreProduct(id: ID!): Boolean!
+  toggleStoreProductLike(productId: ID!): StoreProduct!
+  createStoreProductComment(productId: ID!, content: String!, parentId: ID): StoreProductComment!
+  deleteStoreProductComment(commentId: ID!): Boolean!
+  toggleStoreProductCommentLike(commentId: ID!): StoreProductComment!
+  createReport(input: CreateReportInput!): Report!
+  resolveReport(input: ResolveReportInput!): Report!
+  dismissReport(reportId: ID!, moderatorNote: String): Report!
+  directModerateContent(input: DirectModerateInput!): Report!
 }
 
 input PostMediaInput {
@@ -369,6 +482,56 @@ input UpdateApplicationInput {
   message: String
   contactPhone: String
   requestNewCv: Boolean
+}
+
+input CreateStoreProductInput {
+  title: String!
+  description: String!
+  price: Float!
+  currency: String
+  location: String
+  contactPhone: String
+  condition: String
+  category: String
+  media: [StoreProductMediaInput!]
+}
+
+input StoreProductMediaInput {
+  url: String!
+  type: String!
+  order: Int!
+}
+
+input UpdateStoreProductInput {
+  id: ID!
+  title: String
+  description: String
+  price: Float
+  currency: String
+  location: String
+  contactPhone: String
+  condition: String
+  category: String
+  isAvailable: Boolean
+  media: [StoreProductMediaInput!]
+}
+
+input CreateReportInput {
+  reportedItemId: ID!
+  reportedItemType: ReportedItemType!
+  reason: String!
+}
+
+input ResolveReportInput {
+  reportId: ID!
+  deleteContent: Boolean = false
+  moderatorNote: String
+}
+
+input DirectModerateInput {
+  reportedItemId: ID!
+  reportedItemType: ReportedItemType!
+  moderatorNote: String
 }
 
 type Subscription {

@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from '@apollo/client/react';
 import { TOGGLE_LIKE_COMMENT } from '../graphql/comments.operations';
+import { TOGGLE_STORE_PRODUCT_COMMENT_LIKE } from '../../store/graphql/store.operations';
 import { useTheme } from '../../../theme/ThemeContext';
 
 interface CommentItemProps {
@@ -22,6 +23,7 @@ interface CommentItemProps {
     onReply: (commentId: string, userName: string) => void;
     isReply?: boolean;
     isNestedReply?: boolean;
+    isStore?: boolean;
 }
 
 const formatTimeAgo = (date: Date) => {
@@ -44,6 +46,7 @@ export default function CommentItem({
     onReply,
     isReply = false,
     isNestedReply = false,
+    isStore = false,
 }: CommentItemProps) {
     const { colors, isDark } = useTheme();
     const styles = getStyles(colors, isDark);
@@ -52,7 +55,7 @@ export default function CommentItem({
     const [showReplies, setShowReplies] = useState(false);
     const scaleAnim = useRef(new Animated.Value(1)).current;
 
-    const [toggleLike] = useMutation(TOGGLE_LIKE_COMMENT, {
+    const [toggleLikePost] = useMutation(TOGGLE_LIKE_COMMENT, {
         optimisticResponse: {
             toggleCommentLike: {
                 __typename: 'Comment',
@@ -63,13 +66,29 @@ export default function CommentItem({
         },
     });
 
+    const [toggleLikeStore] = useMutation(TOGGLE_STORE_PRODUCT_COMMENT_LIKE, {
+        optimisticResponse: {
+            toggleStoreProductCommentLike: {
+                __typename: 'StoreProductComment',
+                id: item.id,
+                likesCount: item.isLikedByMe ? item.likesCount - 1 : item.likesCount + 1,
+                isLikedByMe: !item.isLikedByMe,
+                likes: item.likes || [],
+            },
+        },
+    });
+
     const handleLike = () => {
         Animated.sequence([
             Animated.timing(scaleAnim, { toValue: 1.3, duration: 100, useNativeDriver: true }),
             Animated.spring(scaleAnim, { toValue: 1, friction: 4, useNativeDriver: true }),
         ]).start();
 
-        toggleLike({ variables: { commentId: item.id } });
+        if (isStore) {
+            toggleLikeStore({ variables: { commentId: item.id } });
+        } else {
+            toggleLikePost({ variables: { commentId: item.id } });
+        }
     };
 
     const isEdited = (() => {
@@ -182,6 +201,7 @@ export default function CommentItem({
                             onNavigateToProfile={onNavigateToProfile}
                             onReply={onReply}
                             isNestedReply={true}
+                            isStore={isStore}
                         />
                     ))}
                 </View>

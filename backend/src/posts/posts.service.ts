@@ -67,6 +67,7 @@ export class PostsService {
             .leftJoinAndSelect('post.likes', 'likes')
             .leftJoinAndSelect('likes.user', 'likeUser')
             .leftJoinAndSelect('post.media', 'media')
+            .where('post.deletedAt IS NULL')
             .orderBy('post.createdAt', 'DESC')
             .addOrderBy('post.id', 'DESC')
             .take(limit)
@@ -97,6 +98,21 @@ export class PostsService {
         }
 
         return posts;
+    }
+
+    async findById(id: string): Promise<Post> {
+        const post = await this.postsRepository.createQueryBuilder('post')
+            .leftJoinAndSelect('post.author', 'author')
+            .leftJoinAndSelect('post.likes', 'likes')
+            .leftJoinAndSelect('likes.user', 'likeUser')
+            .leftJoinAndSelect('post.media', 'media')
+            .where('post.id = :id', { id })
+            .getOne();
+        if (!post) throw new NotFoundException('Publicación no encontrada');
+        if (post.media && post.media.length > 1) {
+            post.media.sort((a, b) => a.order - b.order);
+        }
+        return post;
     }
 
     async searchPosts(query: string, limit: number = 5, offset: number = 0): Promise<Post[]> {
@@ -141,6 +157,7 @@ export class PostsService {
     async findByUser(authorId: string, limit: number = 5, offset: number = 0): Promise<Post[]> {
         const posts = await this.postsRepository.createQueryBuilder('post')
             .where('post.authorId = :authorId', { authorId })
+            .andWhere('post.deletedAt IS NULL')
             .leftJoinAndSelect('post.author', 'author')
             .leftJoinAndSelect('post.likes', 'likes')
             .leftJoinAndSelect('likes.user', 'likeUser')

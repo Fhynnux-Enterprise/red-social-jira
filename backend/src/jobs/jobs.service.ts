@@ -64,4 +64,13 @@ export class JobsService {
       relations: ['author'],
     });
   }
+
+  async getJobOfferById(id: string): Promise<JobOffer> {
+    const offer = await this.jobOfferRepository.findOne({
+      where: { id },
+      relations: ['author'],
+    });
+    if (!offer) throw new NotFoundException('Oferta no encontrada');
+    return offer;
+  }
 }

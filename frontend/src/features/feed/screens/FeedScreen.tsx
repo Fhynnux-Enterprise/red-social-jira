@@ -20,6 +20,7 @@ import PostOptionsModal from '../components/PostOptionsModal';
 import CommentsModal from '../../comments/components/CommentsModal';
 import { StoriesBar } from '../../stories/components/StoriesBar';
 import FeedItemDetailModal from '../components/FeedItemDetailModal';
+import StoreProductCard from '../../store/components/StoreProductCard';
 
 export interface PostAuthor {
     id: string;
@@ -132,6 +133,16 @@ export default function FeedScreen() {
         await refetch();
     }, [refetch]);
 
+    // Sincronizar el post seleccionado con la caché para actualizar likes/comentarios en tiempo real en el CommentsModal
+    useEffect(() => {
+        if (selectedPostForComments && data?.getFeed) {
+            const upToDatePost = data.getFeed.find((p: any) => p.id === selectedPostForComments.post.id);
+            if (upToDatePost && JSON.stringify(upToDatePost) !== JSON.stringify(selectedPostForComments.post)) {
+                setSelectedPostForComments(prev => prev ? { ...prev, post: upToDatePost } : null);
+            }
+        }
+    }, [data?.getFeed, selectedPostForComments?.post?.id]);
+
     // Lógica para el botón de Home (Scroll + Refresh)
     useEffect(() => {
         const unsubscribe = (navigation as any).addListener('tabPress', (e: any) => {
@@ -230,6 +241,16 @@ export default function FeedScreen() {
             };
             return <ProfessionalCard item={mappedItem} onPress={() => openInModal(false)} />;
         }
+        if (item.__typename === 'StoreProduct') {
+            const mappedItem = {
+                ...item,
+                title: item.storeTitle ?? item.title,
+                media: item.storeMedia ?? [],
+                location: item.storeLocation,
+                contactPhone: item.storeContactPhone,
+            };
+            return <StoreProductCard item={mappedItem} onPress={() => openInModal(false)} />;
+        }
         
         // Default: Post
         const mappedPost = {
@@ -258,8 +279,13 @@ export default function FeedScreen() {
             {/* Cabecera Tipo Facebook */}
             <View style={styles.topHeader}>
                 <View style={styles.brandContainer}>
+                    <Image
+                        source={require('../../../../assets/images/icon-transparent.png')}
+                        style={styles.brandLogo}
+                        resizeMode="contain"
+                    />
                     <MaskedView
-                        style={{ flexDirection: 'row' }}
+                        style={{ flex: 1, flexDirection: 'row' }}
                         maskElement={
                             <View style={{ backgroundColor: 'transparent', flex: 1, justifyContent: 'center' }}>
                                 <Text style={styles.brandTitle}>Chunchi City App</Text>
@@ -485,9 +511,10 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         alignItems: 'center',
     },
     brandLogo: {
-        width: 34,
-        height: 34,
-        marginRight: 10,
+        width: 50,
+        height: 50,
+        marginRight: 4,
+        marginTop: 2,
         borderRadius: 8,
     },
     brandTitle: {
@@ -500,6 +527,8 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
+        marginLeft: -35,
+        marginTop: 10,
     },
     iconButton: {
         width: 40,
@@ -510,7 +539,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         alignItems: 'center',
     },
     createPostContainer: {
-        padding: 16,
+        padding: 10,
         borderBottomWidth: 6,
         backgroundColor: colors.background,
         borderBottomColor: colors.surface,

@@ -17,6 +17,8 @@ import { StorageModule } from './storage/storage.module';
 import { StoriesModule } from './stories/stories.module';
 import { JobsModule } from './jobs/jobs.module';
 import { FeedModule } from './feed/feed.module';
+import { StoreModule } from './store/store.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -74,6 +76,8 @@ import { FeedModule } from './feed/feed.module';
     StoriesModule,
     JobsModule,
     FeedModule,
+    StoreModule,
+    ReportsModule,
   ],
   controllers: [],
   providers: [],
