@@ -162,6 +162,24 @@ export class StoreService {
     });
   }
 
+  async getCommentById(commentId: string): Promise<StoreProductComment | null> {
+    const comment = await this.commentRepo.findOne({
+      where: { id: commentId },
+      relations: [
+        'user',
+        'likes',
+        'likes.user',
+        'product',
+        'product.seller',
+        'product.media',
+        'product.likes',
+        'product.likes.user',
+      ],
+    });
+    if (!comment) return null;
+    return comment;
+  }
+
   async getCommentReplies(commentId: string): Promise<StoreProductComment[]> {
     return this.commentRepo.find({
       where: { parentId: commentId },

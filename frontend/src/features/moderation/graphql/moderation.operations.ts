@@ -155,3 +155,113 @@ export const GET_JOB_OFFER_BY_ID = gql`
         }
     }
 `;
+
+export const GET_COMMENT_BY_ID = gql`
+    query GetCommentById($id: String!) {
+        getCommentById(id: $id) {
+            id
+            content
+            createdAt
+            user {
+                id
+                firstName
+                lastName
+                photoUrl
+            }
+            post {
+                id
+                content
+                title
+                createdAt
+                commentsCount
+                author {
+                    id
+                    username
+                    firstName
+                    lastName
+                    photoUrl
+                    badge {
+                        title
+                        theme
+                    }
+                }
+                media {
+                    url
+                    type
+                    order
+                }
+                likes {
+                    user { id }
+                }
+            }
+        }
+    }
+`;
+
+export const GET_STORE_PRODUCT_COMMENT_BY_ID = gql`
+    query GetStoreProductCommentById($id: ID!) {
+        getStoreProductCommentById(id: $id) {
+            id
+            content
+            createdAt
+            user {
+                id
+                firstName
+                lastName
+                photoUrl
+            }
+            product {
+                id
+                title
+                description
+                price
+                currency
+                location
+                contactPhone
+                condition
+                category
+                isAvailable
+                createdAt
+                seller {
+                    id
+                    username
+                    firstName
+                    lastName
+                    photoUrl
+                }
+                media {
+                    url
+                    type
+                    order
+                }
+                likes {
+                    user { id }
+                }
+            }
+        }
+    }
+`;
+
+export const GET_PROFESSIONAL_PROFILE_BY_ID = gql`
+    query GetProfessionalProfileById($id: String!) {
+        getProfessionalProfileById(id: $id) {
+            id
+            profession
+            description
+            experienceYears
+            contactPhone
+            createdAt
+            user {
+                id
+                firstName
+                lastName
+                photoUrl
+            }
+            media {
+                url
+                type
+                order
+            }
+        }
+    }
+`;

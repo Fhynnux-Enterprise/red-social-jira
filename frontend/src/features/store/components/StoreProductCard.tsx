@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Dimensions, Image, Modal, KeyboardAvoidingView, TextInput, ActivityIndicator, Platform, Alert
+  View, Text, TouchableOpacity, StyleSheet, Dimensions, Image, Modal, ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../theme/ThemeContext';
@@ -10,7 +10,6 @@ import ImageCarousel from '../../feed/components/ImageCarousel';
 import Toast from 'react-native-toast-message';
 import { useMutation } from '@apollo/client/react';
 import { DELETE_STORE_PRODUCT, GET_STORE_PRODUCTS, GET_MY_STORE_PRODUCTS, TOGGLE_STORE_PRODUCT_LIKE } from '../graphql/store.operations';
-import { DIRECT_MODERATE_CONTENT } from '../../moderation/graphql/moderation.operations';
 import { GET_OR_CREATE_CHAT } from '../../chat/graphql/chat.operations';
 import { useApolloClient } from '@apollo/client/react';
 import { useNavigation } from '@react-navigation/native';
@@ -85,34 +84,7 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
   const [reportVisible, setReportVisible] = useState(false);
 
   const isModeratorOrAdmin = user?.role === 'ADMIN' || user?.role === 'MODERATOR';
-  const [directModerateVisible, setDirectModerateVisible] = useState(false);
-  const [directModerateNote, setDirectModerateNote] = useState('');
   const client = useApolloClient();
-
-  const [directModerateMutation, { loading: filtering }] = useMutation(DIRECT_MODERATE_CONTENT, {
-      onCompleted: () => {
-          client.cache.evict({ id: client.cache.identify({ __typename: 'StoreProduct', id: item.id }) });
-          client.cache.gc();
-          setDirectModerateVisible(false);
-          setDirectModerateNote('');
-          Toast.show({ type: 'success', text1: 'Contenido Moderado', text2: 'El producto ha sido eliminado y registrado.' });
-      },
-      onError: (err) => {
-          Alert.alert('Error', err.message);
-      }
-  });
-
-  const handleDirectModerate = () => {
-      directModerateMutation({
-          variables: {
-              input: {
-                  reportedItemId: item.id,
-                  reportedItemType: 'PRODUCT',
-                  moderatorNote: directModerateNote.trim() || undefined
-              }
-          }
-      });
-  };
 
   const displayLiked = item.likes?.some(l => l.user?.id === user?.id) || false;
   const [localLiked, setLocalLiked] = useState(displayLiked);
@@ -230,16 +202,9 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
               </TouchableOpacity>
             )}
             {!isOwner && (
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {isModeratorOrAdmin && (
-                  <TouchableOpacity onPress={() => setDirectModerateVisible(true)} style={[styles.ellipsis, { marginRight: 8 }]} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                    <Ionicons name="shield-checkmark-outline" size={18} color="#F44336" />
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity onPress={() => setReportVisible(true)} style={styles.ellipsis} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                  <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity onPress={() => setReportVisible(true)} style={styles.ellipsis} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
             )}
           </View>
         </View>
@@ -424,48 +389,12 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
         onClose={() => setReportVisible(false)}
         reportedItemId={item.id}
         reportedItemType="PRODUCT"
+        onContentDeleted={() => {
+          client.cache.evict({ id: client.cache.identify({ __typename: 'StoreProduct', id: item.id }) });
+          client.cache.gc();
+          setReportVisible(false);
+        }}
       />
-
-      {/* Direct Moderate Modal */}
-      <Modal
-          visible={directModerateVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => { if (!filtering) setDirectModerateVisible(false) }}
-      >
-          <KeyboardAvoidingView
-              style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 }}
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          >
-              <View style={{ backgroundColor: colors.surface, borderRadius: 16, padding: 20, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3.84 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15 }}>
-                      <Ionicons name="shield-checkmark" size={24} color="#F44336" style={{ marginRight: 10 }} />
-                      <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>Moderación Directa</Text>
-                  </View>
-                  <Text style={{ color: colors.textSecondary, marginBottom: 15, fontSize: 14 }}>
-                      Este producto será eliminado del sistema y se generará un reporte automático en estado Resuelto.
-                  </Text>
-                  <TextInput
-                      style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#F5F5F5', color: colors.text, borderRadius: 12, padding: 12, minHeight: 80, textAlignVertical: 'top', marginBottom: 20 }}
-                      placeholder="Añadir nota de moderador (opcional)..."
-                      placeholderTextColor={colors.textSecondary}
-                      multiline
-                      maxLength={500}
-                      value={directModerateNote}
-                      onChangeText={setDirectModerateNote}
-                      editable={!filtering}
-                  />
-                  <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
-                      <TouchableOpacity onPress={() => setDirectModerateVisible(false)} disabled={filtering} style={{ paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}>
-                          <Text style={{ color: colors.text, fontWeight: '600' }}>Cancelar</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={handleDirectModerate} disabled={filtering} style={{ paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#F44336', flexDirection: 'row', alignItems: 'center' }}>
-                          {filtering ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={{ color: '#FFF', fontWeight: '600' }}>Eliminar Producto</Text>}
-                      </TouchableOpacity>
-                  </View>
-              </View>
-          </KeyboardAvoidingView>
-      </Modal>
 
     </>
   );

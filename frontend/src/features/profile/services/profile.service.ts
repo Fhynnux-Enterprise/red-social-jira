@@ -25,7 +25,8 @@ export interface UserProfile {
     coverUrl?: string | null;
     customFields?: UserCustomField[];
     badge?: UserBadge;
-    posts?: any[]; // Temporal array of posts
+    posts?: any[];
+    role?: 'USER' | 'MODERATOR' | 'ADMIN';
 }
 
 export class ProfileService {

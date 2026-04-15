@@ -5,7 +5,7 @@ import { getMainDefinition } from '@apollo/client/utilities';
 import { onError } from '@apollo/client/link/error';
 import { setContext } from '@apollo/client/link/context';
 import * as SecureStore from 'expo-secure-store';
-import { DeviceEventEmitter } from 'react-native';
+import { notifySessionExpired } from './session.manager';
 import Toast from 'react-native-toast-message';
 
 // Define the GraphQL endpoint connecting securely to the local NestJS server
@@ -67,7 +67,8 @@ const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
         // Limpiamos la caché de Apollo inmediatamente para mayor seguridad
         apolloClient.clearStore().catch(e => console.error('Error clearing store:', e));
 
-        DeviceEventEmitter.emit('session_expired');
+        // Notificamos via el session manager (sin riesgo de race condition)
+        notifySessionExpired();
         Toast.show({
             type: 'error',
             text1: 'Sesión expirada',

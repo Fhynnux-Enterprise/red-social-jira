@@ -19,6 +19,11 @@ export class ProfessionalsResolver {
     return this.professionalsService.findAllProfessionals(limit, offset);
   }
 
+  @Query(() => ProfessionalProfile, { name: 'getProfessionalProfileById', nullable: true })
+  findById(@Args('id') id: string) {
+    return this.professionalsService.findOneById(id);
+  }
+
   @Query(() => [ProfessionalProfile], { name: 'myProfessionalProfile' })
   @UseGuards(GqlAuthGuard)
   async getMyProfile(@CurrentUser() user: User) {

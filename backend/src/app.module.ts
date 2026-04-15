@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { GraphQLError } from 'graphql';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
 import { join } from 'path';
@@ -61,6 +62,17 @@ import { ReportsModule } from './reports/reports.module';
             }
           },
         },
+      },
+      // Expone el mensaje real de las HTTP exceptions (ConflictException, etc.) al cliente
+      formatError: (error: GraphQLError) => {
+        const originalError = error.extensions?.originalError as any;
+        return {
+          message: originalError?.message ?? error.message,
+          extensions: {
+            code: error.extensions?.code,
+            statusCode: originalError?.statusCode,
+          },
+        };
       },
     }),
 

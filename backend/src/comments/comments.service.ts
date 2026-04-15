@@ -39,6 +39,15 @@ export class CommentsService {
         return comments.map(comment => this.mapComment(comment, userId));
     }
 
+    async getCommentById(id: string, userId?: string): Promise<Comment | null> {
+        const comment = await this.commentRepository.findOne({
+            where: { id },
+            relations: ['user', 'likes', 'post', 'post.author', 'post.author.badge', 'post.media', 'post.likes'],
+        });
+        if (!comment) return null;
+        return this.mapComment(comment, userId);
+    }
+
     async getReplies(commentId: string, userId?: string): Promise<Comment[]> {
         const replies = await this.commentRepository.find({
             where: { parentId: commentId },

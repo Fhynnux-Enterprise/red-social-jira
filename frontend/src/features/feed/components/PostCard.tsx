@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet, Platform, Modal, TextInput, KeyboardAvoidingView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, Image, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
@@ -7,7 +7,6 @@ import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
 import { useMutation, useApolloClient } from '@apollo/client/react';
 import { TOGGLE_LIKE } from '../graphql/posts.operations';
-import { DIRECT_MODERATE_CONTENT } from '../../moderation/graphql/moderation.operations';
 import CopyTextModal from '../../../components/CopyTextModal';
 import ImageCarousel from './ImageCarousel';
 import { Dimensions } from 'react-native';
@@ -65,36 +64,6 @@ export default function PostCard({
     const [isExpanded, setIsExpanded] = useState(false);
     const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
     const [reportVisible, setReportVisible] = useState(false);
-
-    const isModeratorOrAdmin = authContext.user?.role === 'ADMIN' || authContext.user?.role === 'MODERATOR';
-    const [directModerateVisible, setDirectModerateVisible] = useState(false);
-    const [directModerateNote, setDirectModerateNote] = useState('');
-    const client = useApolloClient();
-
-    const [directModerateMutation, { loading: filtering }] = useMutation(DIRECT_MODERATE_CONTENT, {
-        onCompleted: () => {
-            client.cache.evict({ id: client.cache.identify({ __typename: 'Post', id: item.id }) });
-            client.cache.gc();
-            setDirectModerateVisible(false);
-            setDirectModerateNote('');
-            Toast.show({ type: 'success', text1: 'Contenido Moderado', text2: 'La publicación ha sido eliminada y registrada.' });
-        },
-        onError: (err) => {
-            Alert.alert('Error', err.message);
-        }
-    });
-
-    const handleDirectModerate = () => {
-        directModerateMutation({
-            variables: {
-                input: {
-                    reportedItemId: item.id,
-                    reportedItemType: 'POST',
-                    moderatorNote: directModerateNote.trim() || undefined
-                }
-            }
-        });
-    };
 
     const isTruncatable = !isModalView && (item.content?.length ?? 0) > MAX_CHARS;
     const displayContent = isTruncatable && !isExpanded
@@ -215,24 +184,13 @@ export default function PostCard({
                 )}
                 {/* Botones para no-dueños */}
                 {item.author.id !== userId && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        {isModeratorOrAdmin && (
-                            <TouchableOpacity
-                                onPress={() => setDirectModerateVisible(true)}
-                                style={[styles.moreBtn, { marginRight: 8 }]}
-                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            >
-                                <Ionicons name="shield-checkmark-outline" size={18} color="#F44336" />
-                            </TouchableOpacity>
-                        )}
-                        <TouchableOpacity
-                            onPress={() => setReportVisible(true)}
-                            style={styles.moreBtn}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                            <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
-                        </TouchableOpacity>
-                    </View>
+                    <TouchableOpacity
+                        onPress={() => setReportVisible(true)}
+                        style={styles.moreBtn}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                        <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
+                    </TouchableOpacity>
                 )}
             </View>
 
@@ -329,47 +287,13 @@ export default function PostCard({
                 onClose={() => setReportVisible(false)}
                 reportedItemId={item.id}
                 reportedItemType="POST"
+                onContentDeleted={() => {
+                    // Evictar el post del caché de Apollo para que desaparezca del feed al instante
+                    client.cache.evict({ id: client.cache.identify({ __typename: 'Post', id: item.id }) });
+                    client.cache.gc();
+                    setReportVisible(false);
+                }}
             />
-            {/* Direct Moderate Modal */}
-            <Modal
-                visible={directModerateVisible}
-                transparent
-                animationType="fade"
-                onRequestClose={() => { if (!filtering) setDirectModerateVisible(false) }}
-            >
-                <KeyboardAvoidingView
-                    style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 }}
-                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                >
-                    <View style={{ backgroundColor: colors.surface, borderRadius: 16, padding: 20, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3.84 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15 }}>
-                            <Ionicons name="shield-checkmark" size={24} color="#F44336" style={{ marginRight: 10 }} />
-                            <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>Moderación Directa</Text>
-                        </View>
-                        <Text style={{ color: colors.textSecondary, marginBottom: 15, fontSize: 14 }}>
-                            Esta publicación será eliminada del sistema y se generará un reporte automático en estado Resuelto.
-                        </Text>
-                        <TextInput
-                            style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#F5F5F5', color: colors.text, borderRadius: 12, padding: 12, minHeight: 80, textAlignVertical: 'top', marginBottom: 20 }}
-                            placeholder="Añadir nota de moderador (opcional)..."
-                            placeholderTextColor={colors.textSecondary}
-                            multiline
-                            maxLength={500}
-                            value={directModerateNote}
-                            onChangeText={setDirectModerateNote}
-                            editable={!filtering}
-                        />
-                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
-                            <TouchableOpacity onPress={() => setDirectModerateVisible(false)} disabled={filtering} style={{ paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}>
-                                <Text style={{ color: colors.text, fontWeight: '600' }}>Cancelar</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={handleDirectModerate} disabled={filtering} style={{ paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#F44336', flexDirection: 'row', alignItems: 'center' }}>
-                                {filtering ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={{ color: '#FFF', fontWeight: '600' }}>Eliminar Post</Text>}
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </KeyboardAvoidingView>
-            </Modal>
         </View>
     );
 }

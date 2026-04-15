@@ -5,6 +5,7 @@ import {
     CreateDateColumn,
     ManyToOne,
     JoinColumn,
+    Unique,
 } from 'typeorm';
 import { ObjectType, Field, ID } from '@nestjs/graphql';
 import { User } from '../../auth/entities/user.entity';
@@ -12,6 +13,7 @@ import { ReportStatus, ReportedItemType } from '../enums/report.enums';
 
 @ObjectType()
 @Entity('reports')
+@Unique(['reporter', 'reportedItemId'])
 export class Report {
     @Field(() => ID)
     @PrimaryGeneratedColumn('uuid')

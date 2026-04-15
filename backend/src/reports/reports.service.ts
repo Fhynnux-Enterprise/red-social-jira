@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Report } from './entities/report.entity';
@@ -9,6 +9,10 @@ import { Post } from '../posts/entities/post.entity';
 import { PostMedia } from '../posts/entities/post-media.entity';
 import { StoreProduct } from '../store/entities/store-product.entity';
 import { StoreProductMedia } from '../store/entities/store-product-media.entity';
+import { Comment } from '../comments/entities/comment.entity';
+import { StoreProductComment } from '../store/entities/store-product-comment.entity';
+import { JobOffer } from '../jobs/entities/job-offer.entity';
+import { ProfessionalProfile } from '../jobs/entities/professional-profile.entity';
 
 @Injectable()
 export class ReportsService {
@@ -23,6 +27,14 @@ export class ReportsService {
         private readonly storeProductRepository: Repository<StoreProduct>,
         @InjectRepository(StoreProductMedia)
         private readonly storeProductMediaRepository: Repository<StoreProductMedia>,
+        @InjectRepository(Comment)
+        private readonly commentRepository: Repository<Comment>,
+        @InjectRepository(StoreProductComment)
+        private readonly storeProductCommentRepository: Repository<StoreProductComment>,
+        @InjectRepository(JobOffer)
+        private readonly jobOfferRepository: Repository<JobOffer>,
+        @InjectRepository(ProfessionalProfile)
+        private readonly professionalProfileRepository: Repository<ProfessionalProfile>,
     ) {}
 
     /**
@@ -38,7 +50,7 @@ export class ReportsService {
         });
 
         if (existing) {
-            throw new ForbiddenException('Ya has denunciado este contenido anteriormente.');
+            throw new ConflictException('ALREADY_REPORTED');
         }
 
         const report = this.reportRepository.create({
@@ -130,23 +142,40 @@ export class ReportsService {
      * Moderación directa: Elimina el contenido inmediatamente y crea una denuncia "RESUELTA" para el registro.
      */
     async directModerateContent(input: any, moderator: User): Promise<Report> {
-        // 1. Ejecutar el soft delete
+        // 1. Ejecutar el soft delete / hard delete según el tipo
         await this.softDeleteContent(input.reportedItemType, input.reportedItemId);
 
-        // 2. Crear una denuncia ya resuelta a nombre del moderador para dejar registro
-        const report = this.reportRepository.create({
-            reason: 'Moderación directa desde el feed',
-            status: ReportStatus.RESOLVED,
-            reportedItemId: input.reportedItemId,
-            reportedItemType: input.reportedItemType,
-            reporter: moderator,
-            moderatorNote: input.moderatorNote || 'Acción rápida de moderador.',
-            contentDeleted: true,
+        // 2. Upsert del reporte de auditoría:
+        //    Si el moderador ya tenía un reporte previo del mismo ítem, lo actualizamos.
+        //    De lo contrario, creamos uno nuevo. Esto evita violar el constraint UNIQUE.
+        let auditReport = await this.reportRepository.findOne({
+            where: {
+                reportedItemId: input.reportedItemId,
+                reporter: { id: moderator.id },
+            },
         });
 
-        const savedReport = await this.reportRepository.save(report);
+        if (auditReport) {
+            // Actualizar el reporte existente como resuelto
+            auditReport.status = ReportStatus.RESOLVED;
+            auditReport.moderatorNote = input.moderatorNote || 'Eliminado por moderador.';
+            auditReport.contentDeleted = true;
+        } else {
+            // Crear un nuevo reporte de auditoría
+            auditReport = this.reportRepository.create({
+                reason: 'Moderación directa',
+                status: ReportStatus.RESOLVED,
+                reportedItemId: input.reportedItemId,
+                reportedItemType: input.reportedItemType,
+                reporter: moderator,
+                moderatorNote: input.moderatorNote || 'Eliminado por moderador.',
+                contentDeleted: true,
+            });
+        }
 
-        // 3. Obtener y marcar posibles denuncias previas pendientes
+        const savedReport = await this.reportRepository.save(auditReport);
+
+        // 3. Marcar todas las demás denuncias PENDIENTES del mismo ítem como resueltas
         const relatedReports = await this.reportRepository.find({
             where: { reportedItemId: input.reportedItemId, status: ReportStatus.PENDING },
         });
@@ -211,8 +240,33 @@ export class ReportsService {
                 .execute();
 
             console.log(`[Moderation] PRODUCT ${itemId} soft-deleted (R2 intacto).`);
+        } else if (type === ReportedItemType.COMMENT) {
+            // 1. Identificar si es comentario de post o de producto
+            const postComment = await this.commentRepository.findOne({ where: { id: itemId } });
+            if (postComment) {
+                // Eliminar respuestas (hijos) primero, luego el comentario raíz
+                await this.commentRepository.delete({ parentId: itemId });
+                await this.commentRepository.delete({ id: itemId });
+                console.log(`[Moderation] Post Comment ${itemId} + replies hard-deleted.`);
+            } else {
+                // Buscar en comentarios de tienda
+                const storeComment = await this.storeProductCommentRepository.findOne({ where: { id: itemId } });
+                if (storeComment) {
+                    await this.storeProductCommentRepository.delete({ parentId: itemId });
+                    await this.storeProductCommentRepository.delete({ id: itemId });
+                    console.log(`[Moderation] StoreProduct Comment ${itemId} + replies hard-deleted.`);
+                }
+            }
+        } else if (type === ReportedItemType.JOB_OFFER) {
+            // Hard-delete: JobOffer no tiene soft-delete column
+            await this.jobOfferRepository.delete({ id: itemId });
+            console.log(`[Moderation] JOB_OFFER ${itemId} hard-deleted.`);
+
+        } else if (type === ReportedItemType.SERVICE) {
+            // Hard-delete: ProfessionalProfile no tiene soft-delete column
+            await this.professionalProfileRepository.delete({ id: itemId });
+            console.log(`[Moderation] SERVICE (ProfessionalProfile) ${itemId} hard-deleted.`);
         }
-        // JOB_OFFER, SERVICE, COMMENT: se puede extender aquí en el futuro.
     }
 
     /**

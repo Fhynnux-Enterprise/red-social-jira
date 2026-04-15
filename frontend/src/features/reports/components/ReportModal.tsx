@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import {
     View,
     Text,
+    TextInput,
     StyleSheet,
     TouchableOpacity,
     Modal,
@@ -13,9 +14,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation } from '@apollo/client/react';
-import Toast from 'react-native-toast-message';
+import Toast, { BaseToast, ErrorToast } from 'react-native-toast-message';
 import { useTheme } from '../../../theme/ThemeContext';
-import { CREATE_REPORT } from '../graphql/reports.operations';
+import { useAuth } from '../../auth/context/AuthContext';
+import { CREATE_REPORT, DIRECT_MODERATE_CONTENT } from '../graphql/reports.operations';
 
 // ── Tipos de contenido soportados ──────────────────────────────────────────
 export type ReportedItemType = 'POST' | 'JOB_OFFER' | 'SERVICE' | 'PRODUCT' | 'COMMENT';
@@ -42,6 +44,9 @@ interface ReportModalProps {
     onClose: () => void;
     reportedItemId: string;
     reportedItemType: ReportedItemType;
+    /** Callback para cuando un moderador elimina el contenido.
+     *  Permite al padre refrescar la lista y cerrar otros modales al instante. */
+    onContentDeleted?: () => void;
 }
 
 export default function ReportModal({
@@ -49,16 +54,26 @@ export default function ReportModal({
     onClose,
     reportedItemId,
     reportedItemType,
+    onContentDeleted,
 }: ReportModalProps) {
     const { colors, isDark } = useTheme();
+    const { user } = useAuth();
     const insets = useSafeAreaInsets();
     const [selectedReason, setSelectedReason] = useState<string | null>(null);
+    const [moderatorNote, setModeratorNote] = useState('');
+    const [confirmDelete, setConfirmDelete] = useState(false);
     const slideAnim = useRef(new Animated.Value(400)).current;
+
+    const isModerator = user?.role === 'MODERATOR' || user?.role === 'ADMIN';
+    // Todos los tipos denunciables soportan borrado directo de moderador
+    const canDirectDelete = isModerator;
 
     // ── Animación de entrada / salida ──────────────────────────────────────
     React.useEffect(() => {
         if (visible) {
             setSelectedReason(null);
+            setModeratorNote('');
+            setConfirmDelete(false);
             Animated.spring(slideAnim, {
                 toValue: 0,
                 useNativeDriver: true,
@@ -77,18 +92,37 @@ export default function ReportModal({
     // ── Mutación ───────────────────────────────────────────────────────────
     const [createReport, { loading }] = useMutation(CREATE_REPORT, {
         onCompleted: () => {
-            onClose();
-            // Pequeño delay para que el modal cierre antes de mostrar el toast
-            setTimeout(() => {
-                Toast.show({
-                    type: 'success',
-                    text1: '¡Gracias por tu ayuda! 🙌',
-                    text2: 'Gracias por ayudar a mantener Chunchi City seguro.',
-                    visibilityTime: 4000,
-                });
-            }, 350);
+            // Mostramos el toast DENTRO del modal (misma capa), luego cerramos
+            Toast.show({
+                type: 'success',
+                text1: '¡Gracias por tu ayuda!',
+                text2: 'Gracias por ayudar a mantener Chunchi City seguro.',
+                visibilityTime: 3000,
+            });
+            setTimeout(onClose, 1800);
         },
         onError: (err) => {
+            // Detección doble: por mensaje "ALREADY_REPORTED" o por código HTTP 409
+            const isAlreadyReported =
+                err.message?.includes('ALREADY_REPORTED') ||
+                err.graphQLErrors?.some(
+                    (e) =>
+                        e.message?.includes('ALREADY_REPORTED') ||
+                        (e.extensions?.statusCode as number) === 409,
+                );
+
+            if (isAlreadyReported) {
+                // Mostramos el toast y luego cerramos con un leve delay para que sea visible
+                Toast.show({
+                    type: 'info',
+                    text1: 'Ya lo reportaste',
+                    text2: 'Ya reportaste esta publicación. Nuestro equipo lo está revisando.',
+                    visibilityTime: 3500,
+                });
+                setTimeout(onClose, 1800);
+                return;
+            }
+
             Toast.show({
                 type: 'error',
                 text1: 'No se pudo enviar la denuncia',
@@ -106,6 +140,49 @@ export default function ReportModal({
                     reportedItemId,
                     reportedItemType,
                     reason,
+                },
+            },
+        });
+    };
+
+    // ── Mutación de moderación directa ─────────────────────────────────
+    const [directModerate, { loading: deleting }] = useMutation(DIRECT_MODERATE_CONTENT, {
+        // Usar el nombre de operación para refetch — funciona sin importar las variables activas
+        refetchQueries: ['GetAllReports'],
+        awaitRefetchQueries: false, // No bloqueamos la UI esperando el refetch
+        onCompleted: () => {
+            // 1. Notificar al padre para que refresque la lista inmediatamente
+            onContentDeleted?.();
+            // 2. Mostrar toast dentro del modal
+            Toast.show({
+                type: 'success',
+                text1: 'Contenido eliminado',
+                text2: 'El contenido ha sido eliminado correctamente.',
+                visibilityTime: 2500,
+            });
+            // 3. Cerrar el modal después de que el usuario vea el toast
+            setTimeout(onClose, 1500);
+        },
+        onError: (err) => {
+            Toast.show({
+                type: 'error',
+                text1: 'Error al eliminar',
+                text2: err.message || 'Inténtalo de nuevo.',
+            });
+        },
+    });
+
+    const handleDirectDelete = () => {
+        if (!confirmDelete) {
+            setConfirmDelete(true);
+            return;
+        }
+        directModerate({
+            variables: {
+                input: {
+                    reportedItemId,
+                    reportedItemType,
+                    moderatorNote: moderatorNote.trim() || 'Eliminado por moderador.',
                 },
             },
         });
@@ -224,7 +301,202 @@ export default function ReportModal({
                         </>
                     )}
                 </TouchableOpacity>
+
+                {/* ── Sección exclusiva de MODERADOR ─────────────────────── */}
+                {canDirectDelete && (
+                    <>
+                        {/* Divisor */}
+                        <View style={[styles.moderatorDivider, { borderColor: colors.border }]}>
+                            <View style={[styles.moderatorDividerLine, { backgroundColor: colors.border }]} />
+                            <View style={[
+                                styles.moderatorBadge,
+                                { backgroundColor: isDark ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.08)' },
+                            ]}>
+                                <Ionicons name="shield" size={12} color="#EF4444" />
+                                <Text style={styles.moderatorBadgeText}>Acciones de Moderador</Text>
+                            </View>
+                            <View style={[styles.moderatorDividerLine, { backgroundColor: colors.border }]} />
+                        </View>
+
+                        {/* Nota del moderador */}
+                        {confirmDelete && (
+                            <View style={[styles.noteContainer, { borderColor: isDark ? 'rgba(239,68,68,0.4)' : 'rgba(239,68,68,0.3)' }]}>
+                                <View style={styles.noteLabelRow}>
+                                    <Ionicons name="create-outline" size={13} color="#EF4444" />
+                                    <Text style={[styles.noteLabel, { color: '#EF4444' }]}>Nota interna (opcional)</Text>
+                                </View>
+                                <TextInput
+                                    value={moderatorNote}
+                                    onChangeText={setModeratorNote}
+                                    placeholder="Describe el motivo de la eliminación..."
+                                    placeholderTextColor={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.3)'}
+                                    multiline
+                                    numberOfLines={3}
+                                    textAlignVertical="top"
+                                    style={[
+                                        styles.noteInput,
+                                        {
+                                            color: colors.text,
+                                            backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(239,68,68,0.03)',
+                                        },
+                                    ]}
+                                />
+                            </View>
+                        )}
+
+                        {/* Botón eliminar / confirmar */}
+                        <TouchableOpacity
+                            style={[
+                                styles.deleteBtn,
+                                {
+                                    backgroundColor: confirmDelete
+                                        ? '#EF4444'
+                                        : isDark ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.08)',
+                                    borderColor: '#EF4444',
+                                },
+                            ]}
+                            onPress={handleDirectDelete}
+                            disabled={deleting}
+                            activeOpacity={0.8}
+                        >
+                            {deleting ? (
+                                <ActivityIndicator color="#EF4444" size="small" />
+                            ) : (
+                                <>
+                                    <Ionicons
+                                        name={confirmDelete ? 'trash' : 'trash-outline'}
+                                        size={18}
+                                        color={confirmDelete ? '#FFF' : '#EF4444'}
+                                        style={{ marginRight: 8 }}
+                                    />
+                                    <Text style={[
+                                        styles.deleteBtnText,
+                                        { color: confirmDelete ? '#FFF' : '#EF4444' },
+                                    ]}>
+                                        {confirmDelete ? 'Confirmar eliminación' : 'Eliminar contenido'}
+                                    </Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+
+                        {/* Cancelar confirmación */}
+                        {confirmDelete && (
+                            <TouchableOpacity
+                                onPress={() => setConfirmDelete(false)}
+                                style={styles.cancelDeleteBtn}
+                            >
+                                <Text style={[styles.cancelDeleteText, { color: colors.textSecondary }]}>
+                                    Cancelar
+                                </Text>
+                            </TouchableOpacity>
+                        )}
+                    </>
+                )}
             </Animated.View>
+
+            {/* Toast propio del modal: vive en la misma capa nativa, aparece sobre CommentsModal */}
+            <Toast
+                config={{
+                    info: (props) => (
+                        <BaseToast
+                            {...props}
+                            style={{
+                                borderLeftColor: '#F59E0B',
+                                borderLeftWidth: 5,
+                                backgroundColor: colors.surface,
+                                height: 'auto' as any,
+                                minHeight: 60,
+                                paddingVertical: 12,
+                                width: '90%',
+                                borderRadius: 12,
+                                shadowColor: '#000',
+                                shadowOpacity: 0.18,
+                                shadowRadius: 8,
+                                elevation: 6,
+                            }}
+                            contentContainerStyle={{ paddingHorizontal: 14 }}
+                            text1Style={{
+                                fontSize: 14,
+                                fontWeight: '700',
+                                color: colors.text,
+                                flexWrap: 'wrap',
+                            }}
+                            text2Style={{
+                                fontSize: 13,
+                                color: colors.textSecondary,
+                                flexWrap: 'wrap',
+                            }}
+                            text2NumberOfLines={5}
+                        />
+                    ),
+                    success: (props) => (
+                        <BaseToast
+                            {...props}
+                            style={{
+                                borderLeftColor: '#22C55E',
+                                borderLeftWidth: 5,
+                                backgroundColor: colors.surface,
+                                height: 'auto' as any,
+                                minHeight: 60,
+                                paddingVertical: 12,
+                                width: '90%',
+                                borderRadius: 12,
+                                shadowColor: '#000',
+                                shadowOpacity: 0.18,
+                                shadowRadius: 8,
+                                elevation: 6,
+                            }}
+                            contentContainerStyle={{ paddingHorizontal: 14 }}
+                            text1Style={{
+                                fontSize: 14,
+                                fontWeight: '700',
+                                color: colors.text,
+                                flexWrap: 'wrap',
+                            }}
+                            text2Style={{
+                                fontSize: 13,
+                                color: colors.textSecondary,
+                                flexWrap: 'wrap',
+                            }}
+                            text2NumberOfLines={5}
+                        />
+                    ),
+                    error: (props) => (
+                        <ErrorToast
+                            {...props}
+                            style={{
+                                borderLeftColor: '#EF4444',
+                                borderLeftWidth: 5,
+                                backgroundColor: colors.surface,
+                                height: 'auto' as any,
+                                minHeight: 60,
+                                paddingVertical: 12,
+                                width: '90%',
+                                borderRadius: 12,
+                                shadowColor: '#000',
+                                shadowOpacity: 0.18,
+                                shadowRadius: 8,
+                                elevation: 6,
+                            }}
+                            contentContainerStyle={{ paddingHorizontal: 14 }}
+                            text1Style={{
+                                fontSize: 14,
+                                fontWeight: '700',
+                                color: colors.text,
+                                flexWrap: 'wrap',
+                            }}
+                            text2Style={{
+                                fontSize: 13,
+                                color: colors.textSecondary,
+                                flexWrap: 'wrap',
+                            }}
+                            text2NumberOfLines={5}
+                        />
+                    ),
+                }}
+                position="top"
+                topOffset={60}
+            />
         </Modal>
     );
 }
@@ -319,5 +591,80 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontSize: 16,
         fontWeight: '700',
+    },
+    // ── Moderador ───────────────────────────────────────────
+    moderatorDivider: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 16,
+        marginBottom: 12,
+        gap: 8,
+    },
+    moderatorDividerLine: {
+        flex: 1,
+        height: 1,
+    },
+    moderatorBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 20,
+    },
+    moderatorBadgeText: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#EF4444',
+        letterSpacing: 0.3,
+    },
+    noteContainer: {
+        borderWidth: 1.5,
+        borderRadius: 14,
+        padding: 12,
+        marginBottom: 10,
+        overflow: 'hidden',
+    },
+    noteLabelRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        marginBottom: 8,
+    },
+    noteLabel: {
+        fontSize: 11,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.8,
+    },
+    noteInput: {
+        fontSize: 14,
+        minHeight: 72,
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        lineHeight: 20,
+    },
+    deleteBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 14,
+        paddingVertical: 13,
+        borderWidth: 1.5,
+        marginTop: 2,
+    },
+    deleteBtnText: {
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    cancelDeleteBtn: {
+        alignItems: 'center',
+        paddingVertical: 10,
+        marginTop: 4,
+    },
+    cancelDeleteText: {
+        fontSize: 14,
+        fontWeight: '500',
     },
 });

@@ -11,10 +11,12 @@ import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
 import { useApolloClient } from '@apollo/client/react';
 import Toast from 'react-native-toast-message';
 import { useTheme } from '../../../theme/ThemeContext';
-import { GET_ALL_REPORTS, RESOLVE_REPORT, DISMISS_REPORT, GET_POST_BY_ID, GET_STORE_PRODUCT_BY_ID, GET_JOB_OFFER_BY_ID } from '../graphql/moderation.operations';
+import { GET_ALL_REPORTS, RESOLVE_REPORT, DISMISS_REPORT, GET_POST_BY_ID, GET_STORE_PRODUCT_BY_ID, GET_JOB_OFFER_BY_ID, GET_COMMENT_BY_ID, GET_STORE_PRODUCT_COMMENT_BY_ID, GET_PROFESSIONAL_PROFILE_BY_ID } from '../graphql/moderation.operations';
 import PostCard from '../../feed/components/PostCard';
 import StoreProductCard from '../../store/components/StoreProductCard';
 import JobOfferCard from '../../jobs/components/JobOfferCard';
+import ProfessionalCard from '../../jobs/components/ProfessionalCard';
+import CommentsModal from '../../comments/components/CommentsModal';
 
 const STATUS_LABEL: Record<string, string> = {
     PENDING: 'Pendiente',
@@ -47,6 +49,8 @@ export default function ModerationScreen() {
     const [selectedReport, setSelectedReport] = useState<any>(null);
     const [previewVisible, setPreviewVisible] = useState(false);
     const [fetchedItem, setFetchedItem] = useState<any>(null);
+    const [fullPostVisible, setFullPostVisible] = useState(false);
+    const [fullProductVisible, setFullProductVisible] = useState(false);
     const [pendingAction, setPendingAction] = useState<null | { type: 'resolve' | 'resolve_delete' | 'dismiss' }>(null);
     const [confirmNote, setConfirmNote] = useState('');
 
@@ -62,9 +66,14 @@ export default function ModerationScreen() {
                 const typename = selectedReport.reportedItemType === 'POST' ? 'Post'
                     : selectedReport.reportedItemType === 'PRODUCT' ? 'StoreProduct'
                     : selectedReport.reportedItemType === 'JOB_OFFER' ? 'JobOffer'
+                    : selectedReport.reportedItemType === 'COMMENT' ? 'Comment'
                     : null;
                 if (typename) {
                     client.cache.evict({ id: client.cache.identify({ __typename: typename, id: selectedReport.reportedItemId }) });
+                    // Adicionalmente limpiamos el homólogo para los de la tienda
+                    if (typename === 'Comment') {
+                        client.cache.evict({ id: client.cache.identify({ __typename: 'StoreProductComment', id: selectedReport.reportedItemId }) });
+                    }
                     client.cache.gc();
                 }
             }
@@ -107,6 +116,9 @@ export default function ModerationScreen() {
     const [getPost] = useLazyQuery(GET_POST_BY_ID);
     const [getProduct] = useLazyQuery(GET_STORE_PRODUCT_BY_ID);
     const [getJob] = useLazyQuery(GET_JOB_OFFER_BY_ID);
+    const [getService] = useLazyQuery(GET_PROFESSIONAL_PROFILE_BY_ID);
+    const [getComment] = useLazyQuery(GET_COMMENT_BY_ID);
+    const [getStoreComment] = useLazyQuery(GET_STORE_PRODUCT_COMMENT_BY_ID);
     const [fetchingItem, setFetchingItem] = useState(false);
 
     const handleReportPress = async (item: any) => {
@@ -115,19 +127,48 @@ export default function ModerationScreen() {
         setFetchingItem(true);
         setPreviewVisible(true);
 
+        console.log('[Moderation] handleReportPress:', item.reportedItemType, item.reportedItemId);
+
         try {
             let res;
             if (item.reportedItemType === 'POST') {
                 res = await getPost({ variables: { id: item.reportedItemId } });
+                console.log('[Moderation] POST result:', res.data?.getPostById);
                 setFetchedItem(res.data?.getPostById);
             } else if (item.reportedItemType === 'PRODUCT') {
                 res = await getProduct({ variables: { id: item.reportedItemId } });
+                console.log('[Moderation] PRODUCT result:', res.data?.getStoreProductById);
                 setFetchedItem(res.data?.getStoreProductById);
             } else if (item.reportedItemType === 'JOB_OFFER') {
                 res = await getJob({ variables: { id: item.reportedItemId } });
+                console.log('[Moderation] JOB result:', res.data?.getJobOfferById);
                 setFetchedItem(res.data?.getJobOfferById);
+            } else if (item.reportedItemType === 'SERVICE') {
+                res = await getService({ variables: { id: item.reportedItemId } });
+                console.log('[Moderation] SERVICE result:', res.data?.getProfessionalProfileById);
+                setFetchedItem(res.data?.getProfessionalProfileById);
+            } else if (item.reportedItemType === 'COMMENT') {
+                // Consultamos ambos sistemas en paralelo y usamos el que devuelve datos
+                const [postCommentResult, storeCommentResult] = await Promise.allSettled([
+                    getComment({ variables: { id: item.reportedItemId } }),
+                    getStoreComment({ variables: { id: item.reportedItemId } }),
+                ]);
+
+                console.log('[Moderation] postCommentResult:', postCommentResult);
+                console.log('[Moderation] storeCommentResult:', storeCommentResult);
+
+                const postComment = postCommentResult.status === 'fulfilled'
+                    ? postCommentResult.value.data?.getCommentById
+                    : null;
+                const storeComment = storeCommentResult.status === 'fulfilled'
+                    ? storeCommentResult.value.data?.getStoreProductCommentById
+                    : null;
+
+                console.log('[Moderation] postComment:', postComment, '| storeComment:', storeComment);
+                setFetchedItem(postComment || storeComment || null);
             } else {
-                // Si no hay endpoint para este tipo (ej: SERVICE, COMMENT)
+                // Si no hay endpoint para este tipo (ej: SERVICE)
+                console.log('[Moderation] Unhandled type:', item.reportedItemType);
                 setFetchedItem(null);
             }
         } catch (e) {
@@ -190,15 +231,15 @@ export default function ModerationScreen() {
                         <Text style={[styles.date, { color: colors.textSecondary }]}>{formatDate(item.createdAt)}</Text>
                     </View>
                     {item.status === 'PENDING' && (
-                        <View style={[styles.pendingBadge, { backgroundColor: 'transparent' }]}>
-                            <Text style={styles.pendingText}>PENDIENTE</Text>
+                        <View style={[styles.pendingBadge, { backgroundColor: 'rgba(245,158,11,0.12)', borderWidth: 1, borderColor: '#F59E0B', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 }]}>
+                            <Text style={[styles.pendingText, { color: '#D97706', fontSize: 9, fontWeight: '800' }]}>PENDIENTE</Text>
                         </View>
                     )}
                     {item.status === 'RESOLVED' && (
                         <View style={[styles.pendingBadge, { backgroundColor: 'transparent' }]}>
                             <Text style={[
                                 styles.pendingText,
-                                item.contentDeleted ? { color: '#F44336', borderColor: '#F44336' } : { color: '#388E3C', borderColor: '#388E3C' }
+                                item.contentDeleted ? { color: '#EF4444', borderColor: '#EF4444' } : { color: '#22C55E', borderColor: '#22C55E' }
                             ]}>
                                 {item.contentDeleted ? 'ELIMINADA' : 'RESUELTA'}
                             </Text>
@@ -297,15 +338,132 @@ export default function ModerationScreen() {
                             </Text>
                         </View>
                     ) : (
-                        <ScrollView style={{ flex: 1, padding: 12 }}>
+                        <ScrollView style={{ flex: 1, padding: 12 }} contentContainerStyle={{ paddingBottom: 280 }}>
                             {selectedReport?.reportedItemType === 'POST' && (
-                                <PostCard item={fetchedItem} isModalView />
+                                <>
+                                    <PostCard item={fetchedItem} isModalView />
+                                    {/* Botón Ver publicación y comentarios completos */}
+                                    <TouchableOpacity
+                                        onPress={() => setFullPostVisible(true)}
+                                        style={{
+                                            flexDirection: 'row',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            marginTop: 12,
+                                            marginBottom: 4,
+                                            paddingVertical: 12,
+                                            borderRadius: 10,
+                                            borderWidth: 1,
+                                            borderColor: colors.primary,
+                                            backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
+                                        }}
+                                    >
+                                        <Ionicons name="chatbubbles-outline" size={16} color={colors.primary} />
+                                        <Text style={{ color: colors.primary, marginLeft: 8, fontWeight: '600', fontSize: 14 }}>Ver publicación y comentarios completos</Text>
+                                        <Ionicons name="chevron-forward" size={14} color={colors.primary} style={{ marginLeft: 4 }} />
+                                    </TouchableOpacity>
+                                </>
                             )}
                             {selectedReport?.reportedItemType === 'PRODUCT' && (
-                                <StoreProductCard item={fetchedItem} isModalView />
+                                <>
+                                    <StoreProductCard item={fetchedItem} isModalView />
+                                    <TouchableOpacity
+                                        onPress={() => setFullProductVisible(true)}
+                                        style={{
+                                            flexDirection: 'row',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            marginTop: 12,
+                                            marginBottom: 4,
+                                            paddingVertical: 12,
+                                            borderRadius: 10,
+                                            borderWidth: 1,
+                                            borderColor: colors.primary,
+                                            backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
+                                        }}
+                                    >
+                                        <Ionicons name="chatbubbles-outline" size={16} color={colors.primary} />
+                                        <Text style={{ color: colors.primary, marginLeft: 8, fontWeight: '600', fontSize: 14 }}>Ver producto y comentarios completos</Text>
+                                        <Ionicons name="chevron-forward" size={14} color={colors.primary} style={{ marginLeft: 4 }} />
+                                    </TouchableOpacity>
+                                </>
                             )}
                             {selectedReport?.reportedItemType === 'JOB_OFFER' && (
                                 <JobOfferCard item={fetchedItem} isModalView />
+                            )}
+                            {selectedReport?.reportedItemType === 'SERVICE' && (
+                                <ProfessionalCard item={fetchedItem} isModalView />
+                            )}
+                            {selectedReport?.reportedItemType === 'COMMENT' && (
+                                <View style={{ padding: 10 }}>
+                                    {/* Bloque resaltado del comentario denunciado */}
+                                    <View style={{ backgroundColor: isDark ? 'rgba(255,101,36,0.1)' : 'rgba(255,101,36,0.05)', padding: 15, borderRadius: 12, borderWidth: 1.5, borderColor: '#FF6524', marginBottom: 20 }}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                                            <Ionicons name="chatbubble-ellipses" size={15} color="#FF6524" />
+                                            <Text style={{ color: '#FF6524', fontWeight: 'bold', marginLeft: 6, fontSize: 12, letterSpacing: 0.5 }}>COMENTARIO DENUNCIADO</Text>
+                                        </View>
+                                        <Text style={{ color: colors.text, fontSize: 15, lineHeight: 22 }}>{fetchedItem.content}</Text>
+                                        <Text style={{ color: colors.textSecondary, marginTop: 10, fontSize: 12 }}>
+                                            Por: <Text style={{ fontWeight: '600' }}>{fetchedItem.user?.firstName} {fetchedItem.user?.lastName}</Text>
+                                        </Text>
+                                    </View>
+
+                                    {/* Publicación original resumida */}
+                                    {(fetchedItem.post || fetchedItem.product) && (
+                                        <>
+                                            <Text style={{ color: colors.textSecondary, marginBottom: 8, fontSize: 11, fontWeight: 'bold', letterSpacing: 0.5, marginLeft: 2 }}>PUBLICACIÓN ORIGINAL</Text>
+                                            {fetchedItem.post ? (
+                                                <PostCard item={fetchedItem.post} isModalView />
+                                            ) : (
+                                                <StoreProductCard item={fetchedItem.product} isModalView />
+                                            )}
+
+                                            {/* Botón Ver publicación/producto completo */}
+                                            {fetchedItem.post && (
+                                                <TouchableOpacity
+                                                    onPress={() => setFullPostVisible(true)}
+                                                    style={{
+                                                        flexDirection: 'row',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        marginTop: 12,
+                                                        marginBottom: 4,
+                                                        paddingVertical: 12,
+                                                        borderRadius: 10,
+                                                        borderWidth: 1,
+                                                        borderColor: colors.primary,
+                                                        backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
+                                                    }}
+                                                >
+                                                    <Ionicons name="chatbubbles-outline" size={16} color={colors.primary} />
+                                                    <Text style={{ color: colors.primary, marginLeft: 8, fontWeight: '600', fontSize: 14 }}>Ver publicación y comentarios completos</Text>
+                                                    <Ionicons name="chevron-forward" size={14} color={colors.primary} style={{ marginLeft: 4 }} />
+                                                </TouchableOpacity>
+                                            )}
+                                            {fetchedItem.product && (
+                                                <TouchableOpacity
+                                                    onPress={() => setFullProductVisible(true)}
+                                                    style={{
+                                                        flexDirection: 'row',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        marginTop: 12,
+                                                        marginBottom: 4,
+                                                        paddingVertical: 12,
+                                                        borderRadius: 10,
+                                                        borderWidth: 1,
+                                                        borderColor: colors.primary,
+                                                        backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
+                                                    }}
+                                                >
+                                                    <Ionicons name="chatbubbles-outline" size={16} color={colors.primary} />
+                                                    <Text style={{ color: colors.primary, marginLeft: 8, fontWeight: '600', fontSize: 14 }}>Ver producto y comentarios completos</Text>
+                                                    <Ionicons name="chevron-forward" size={14} color={colors.primary} style={{ marginLeft: 4 }} />
+                                                </TouchableOpacity>
+                                            )}
+                                        </>
+                                    )}
+                                </View>
                             )}
                         </ScrollView>
                     )}
@@ -456,6 +614,38 @@ export default function ModerationScreen() {
                     </View>
                 </KeyboardAvoidingView>
             </Modal>
+
+            {/* Modal de publicación completa con comentarios */}
+            {fullPostVisible && (() => {
+                // Para tipo POST: fetchedItem es el post directamente
+                // Para tipo COMMENT: fetchedItem.post es el post padre
+                const postForModal = selectedReport?.reportedItemType === 'POST'
+                    ? fetchedItem
+                    : fetchedItem?.post;
+                return postForModal ? (
+                    <CommentsModal
+                        visible={fullPostVisible}
+                        onClose={() => setFullPostVisible(false)}
+                        post={postForModal}
+                        initialTab="comments"
+                    />
+                ) : null;
+            })()}
+            {fullProductVisible && (() => {
+                // Para tipo PRODUCT: fetchedItem es el producto directamente
+                // Para tipo COMMENT: fetchedItem.product es el producto padre
+                const productForModal = selectedReport?.reportedItemType === 'PRODUCT'
+                    ? fetchedItem
+                    : fetchedItem?.product;
+                return productForModal ? (
+                    <CommentsModal
+                        visible={fullProductVisible}
+                        onClose={() => setFullProductVisible(false)}
+                        post={productForModal}
+                        initialTab="comments"
+                    />
+                ) : null;
+            })()}
         </SafeAreaView>
     );
 }

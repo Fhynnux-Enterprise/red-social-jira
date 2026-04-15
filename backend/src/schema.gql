@@ -346,6 +346,7 @@ type Query {
   getOnlineFollowing: [User!]!
   getOnlineFollowingCount: Int!
   getCommentsByPost(postId: String!, limit: Int = 10, offset: Int = 0): [Comment!]!
+  getCommentById(id: String!): Comment
   getUserConversations: [Conversation!]!
   getChatMessages(conversationId: String!, limit: Float, offset: Float): [Message!]!
   searchMessagesInChat(conversationId: String!, searchTerm: String!): [Message!]!
@@ -357,6 +358,7 @@ type Query {
   getJobOfferById(id: ID!): JobOffer
   myJobOffers: [JobOffer!]!
   professionalProfiles(limit: Int! = 20, offset: Int! = 0): [ProfessionalProfile!]!
+  getProfessionalProfileById(id: String!): ProfessionalProfile
   myProfessionalProfile: [ProfessionalProfile!]!
   jobApplications(jobOfferId: ID!): [JobApplication!]!
   myApplications: [JobApplication!]!
@@ -365,6 +367,7 @@ type Query {
   myStoreProducts: [StoreProduct!]!
   getStoreProductById(id: ID!): StoreProduct
   getStoreProductComments(productId: ID!, limit: Int! = 20, offset: Int! = 0): [StoreProductComment!]!
+  getStoreProductCommentById(id: ID!): StoreProductComment
   getPendingReports(limit: Int! = 20, offset: Int! = 0): [Report!]!
   getAllReports(limit: Int! = 20, offset: Int! = 0): [Report!]!
 }

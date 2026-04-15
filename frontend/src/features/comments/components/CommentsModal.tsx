@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 
 import { useNavigation } from '@react-navigation/native';
-import { useQuery, useMutation } from '@apollo/client/react';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { Ionicons } from '@expo/vector-icons';
 import { GET_COMMENTS, CREATE_COMMENT, DELETE_COMMENT, UPDATE_COMMENT } from '../graphql/comments.operations';
 import { TOGGLE_LIKE } from '../../feed/graphql/posts.operations';
@@ -25,6 +25,7 @@ import CommentOptionsModal from './CommentOptionsModal';
 import ConfirmationModal from './ConfirmationModal';
 import CommentItem from './CommentItem';
 import CopyTextModal from '../../../components/CopyTextModal';
+import ReportModal from '../../reports/components/ReportModal';
 import ImageCarousel from '../../feed/components/ImageCarousel';
 import JobOfferCard from '../../jobs/components/JobOfferCard';
 import ProfessionalCard from '../../jobs/components/ProfessionalCard';
@@ -83,6 +84,7 @@ export default function CommentsModal({
     const insets = useSafeAreaInsets();
     const { user: currentUser } = useAuth();
     const navigation = useNavigation();
+    const apolloClient = useApolloClient();
     const [content, setContent] = useState('');
     const [selectedCommentData, setSelectedCommentData] = useState<{ id: string, isMine: boolean, isReply: boolean } | null>(null);
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
@@ -93,6 +95,7 @@ export default function CommentsModal({
     const [activeTab, setActiveTab] = useState<'comments' | 'likes'>(initialTab);
     const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
+    const [reportVisible, setReportVisible] = useState(false);
     const inputRef = useRef<TextInput>(null);
     const scrollViewRef = useRef<ScrollView>(null);
     // postScrollEnabled: state para re-renderizar el ScrollView, ref para el PanResponder (closure-safe)
@@ -897,7 +900,7 @@ export default function CommentsModal({
     };
 
     const handleReport = (id: string) => {
-        Alert.alert('Reportar', 'Gracias por tu reporte. Lo revisaremos pronto.');
+        setReportVisible(true);
     };
 
     const [updateComment, { loading: updating }] = useMutation(UPDATE_COMMENT);
@@ -1610,6 +1613,29 @@ export default function CommentsModal({
                 textToCopy={post?.content || ''}
                 onClose={() => setIsCopyModalVisible(false)}
             />
+
+            {reportVisible && selectedCommentData && (
+                <ReportModal
+                    visible={reportVisible}
+                    onClose={() => setReportVisible(false)}
+                    reportedItemId={selectedCommentData.id}
+                    reportedItemType="COMMENT"
+                    onContentDeleted={() => {
+                        // 1. Evictar el comentario del caché Apollo → desaparece al instante
+                        apolloClient.cache.evict({
+                            id: apolloClient.cache.identify({
+                                __typename: 'Comment',
+                                id: selectedCommentData.id,
+                            }),
+                        });
+                        apolloClient.cache.gc();
+                        // 2. Cerrar el modal de denuncia
+                        setReportVisible(false);
+                        // 3. Refetch para sincronizar con el servidor
+                        refetch();
+                    }}
+                />
+            )}
         </Modal>
     );
 }

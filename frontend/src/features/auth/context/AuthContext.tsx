@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext, useRef, useCallback } from 'react';
-import { DeviceEventEmitter } from 'react-native';
+import { registerSessionExpiredHandler, unregisterSessionExpiredHandler } from '../../../api/session.manager';
 import * as SecureStore from 'expo-secure-store';
 import { AuthService } from '../services/auth.service';
 import { ProfileService, UserProfile } from '../../profile/services/profile.service';
@@ -79,8 +79,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         checkToken();
 
-        // ── Listener de sesión expirada (emitido por Apollo errorLink) ──────
-        const subscription = DeviceEventEmitter.addListener('session_expired', async () => {
+        // ── Handler de sesión expirada (registrado en el session manager) ──────
+        registerSessionExpiredHandler(async () => {
             // Guard: evitar múltiples ejecuciones simultáneas
             if (isHandlingExpiry.current) return;
             isHandlingExpiry.current = true;
@@ -89,7 +89,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             await signOutRef.current();
         });
 
-        return () => subscription.remove();
+        return () => unregisterSessionExpiredHandler();
     }, []);
 
     // ── signIn ───────────────────────────────────────────────────────────────

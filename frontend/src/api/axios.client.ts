@@ -1,6 +1,6 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
-import { DeviceEventEmitter } from 'react-native';
+import { notifySessionExpired } from './session.manager';
 import Toast from 'react-native-toast-message';
 
 // Apuntamos usando la IP de tu PC para que un celular físico conectado al mismo Wi-Fi pueda acceder
@@ -52,7 +52,7 @@ apiClient.interceptors.response.use(
         } 
         // ERROR 401: SESIÓN EXPIRADA
         else if (error.response?.status === 401) {
-            DeviceEventEmitter.emit('session_expired');
+            notifySessionExpired();
             Toast.show({
                 type: 'error',
                 text1: 'Sesión expirada',

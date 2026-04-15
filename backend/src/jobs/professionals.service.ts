@@ -57,6 +57,10 @@ export class ProfessionalsService {
     return this.profileRepository.findOne({ where: { userId } });
   }
 
+  async findOneById(id: string): Promise<ProfessionalProfile | null> {
+    return this.profileRepository.findOne({ where: { id }, relations: ['media', 'user'] });
+  }
+
   async deleteProfessionalProfile(id: string, userId: string): Promise<boolean> {
     const profile = await this.profileRepository.findOne({ where: { id } });
     if (!profile) throw new NotFoundException('Perfil profesional no encontrado.');

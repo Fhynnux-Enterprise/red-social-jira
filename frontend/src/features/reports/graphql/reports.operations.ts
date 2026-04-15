@@ -12,3 +12,14 @@ export const CREATE_REPORT = gql`
         }
     }
 `;
+
+export const DIRECT_MODERATE_CONTENT = gql`
+    mutation DirectModerateContent($input: DirectModerateInput!) {
+        directModerateContent(input: $input) {
+            id
+            status
+            contentDeleted
+            moderatorNote
+        }
+    }
+`;

@@ -32,6 +32,16 @@ export class CommentsResolver {
         return this.commentsService.getCommentsByPost(postId, userId, limit ?? 10, offset ?? 0);
     }
 
+    @Query(() => Comment, { name: 'getCommentById', nullable: true })
+    @UseGuards(JwtGqlGuard)
+    async getCommentById(
+        @Args('id') id: string,
+        @Context() context: any,
+    ): Promise<Comment | null> {
+        const userId = context.req?.user?.id;
+        return this.commentsService.getCommentById(id, userId);
+    }
+
     @Mutation(() => Boolean, { name: 'deleteComment' })
     @UseGuards(JwtGqlGuard)
     async deleteComment(

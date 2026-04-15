@@ -95,6 +95,14 @@ export class StoreResolver {
     return this.storeService.getComments(productId, limit, offset);
   }
 
+  @Query(() => StoreProductComment, { name: 'getStoreProductCommentById', nullable: true })
+  @UseGuards(GqlAuthGuard)
+  getStoreProductCommentById(
+    @Args('id', { type: () => ID }) id: string,
+  ) {
+    return this.storeService.getCommentById(id);
+  }
+
   @Mutation(() => Boolean)
   @UseGuards(GqlAuthGuard)
   deleteStoreProductComment(
