@@ -203,7 +203,11 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
                     </View>
                 )}
 
-                <View style={styles.body}>
+                <TouchableOpacity 
+                    style={styles.body}
+                    activeOpacity={0.9}
+                    onPress={onPress}
+                >
                     <Text style={[styles.profession, { color: colors.text }]} numberOfLines={hideAuthorRow ? 2 : 1}>
                         {item.profession || ''}
                     </Text>
@@ -221,7 +225,7 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
                     <Text style={[styles.description, { color: colors.textSecondary }]} numberOfLines={3}>
                         {item.description || ''}
                     </Text>
-                </View>
+                </TouchableOpacity>
 
                 {!!(item.media && item.media.length > 0) && (
                     <View style={{ width: '100%', backgroundColor: colors.surface }}>
@@ -229,37 +233,35 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
                             media={item.media}
                             containerWidth={cardWidth}
                             customAspectRatio={1}
-                            disableFullscreen={true}
+                            disableFullscreen={!!onPress && !isModalView}
                             onPress={onPress}
                         />
                     </View>
                 )}
 
-                {/* ── Botones de contacto (solo para otros usuarios) ── */}
-                {!isOwnCard && (
-                    <View style={styles.contactRow}>
-                        {/* WhatsApp — solo si hay teléfono */}
-                        {!!item.contactPhone && (
-                            <TouchableOpacity
-                                style={[styles.contactBtn, styles.whatsappBtn]}
-                                onPress={handleWhatsApp}
-                                activeOpacity={0.8}
-                            >
-                                <Ionicons name="logo-whatsapp" size={15} color="#FFF" />
-                                <Text style={styles.contactBtnText}>WhatsApp</Text>
-                            </TouchableOpacity>
-                        )}
-                        {/* Mensaje Privado */}
+                {/* ── Botones de contacto ── */}
+                <View style={styles.contactRow}>
+                    {/* WhatsApp — solo si hay teléfono */}
+                    {!!item.contactPhone && (
                         <TouchableOpacity
-                            style={[styles.contactBtn, { backgroundColor: colors.primary }]}
-                            onPress={handlePrivateMessage}
+                            style={[styles.contactBtn, styles.whatsappBtn]}
+                            onPress={handleWhatsApp}
                             activeOpacity={0.8}
                         >
-                            <Ionicons name="chatbubble-ellipses-outline" size={15} color="#FFF" />
-                            <Text style={styles.contactBtnText}>Mensaje Privado</Text>
+                            <Ionicons name="logo-whatsapp" size={15} color="#FFF" />
+                            <Text style={styles.contactBtnText}>WhatsApp</Text>
                         </TouchableOpacity>
-                    </View>
-                )}
+                    )}
+                    {/* Mensaje Privado */}
+                    <TouchableOpacity
+                        style={[styles.contactBtn, { backgroundColor: colors.primary }]}
+                        onPress={handlePrivateMessage}
+                        activeOpacity={0.8}
+                    >
+                        <Ionicons name="chatbubble-ellipses-outline" size={15} color="#FFF" />
+                        <Text style={styles.contactBtnText}>Mensaje Privado</Text>
+                    </TouchableOpacity>
+                </View>
             </TouchableOpacity>
 
             {/* ── Menú de opciones (owner) ── */}

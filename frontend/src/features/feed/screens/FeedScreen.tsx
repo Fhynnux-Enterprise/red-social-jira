@@ -21,6 +21,7 @@ import CommentsModal from '../../comments/components/CommentsModal';
 import { StoriesBar } from '../../stories/components/StoriesBar';
 import FeedItemDetailModal from '../components/FeedItemDetailModal';
 import StoreProductCard from '../../store/components/StoreProductCard';
+import ListFooter from '../../../components/ListFooter';
 
 export interface PostAuthor {
     id: string;
@@ -133,15 +134,8 @@ export default function FeedScreen() {
         await refetch();
     }, [refetch]);
 
-    // Sincronizar el post seleccionado con la caché para actualizar likes/comentarios en tiempo real en el CommentsModal
-    useEffect(() => {
-        if (selectedPostForComments && data?.getFeed) {
-            const upToDatePost = data.getFeed.find((p: any) => p.id === selectedPostForComments.post.id);
-            if (upToDatePost && JSON.stringify(upToDatePost) !== JSON.stringify(selectedPostForComments.post)) {
-                setSelectedPostForComments(prev => prev ? { ...prev, post: upToDatePost } : null);
-            }
-        }
-    }, [data?.getFeed, selectedPostForComments?.post?.id]);
+    // Sincronización de post eliminada: 
+    // CommentsModal ya busca la versión más reciente del post en data?.getFeed en la prop "post".
 
     // Lógica para el botón de Home (Scroll + Refresh)
     useEffect(() => {
@@ -161,14 +155,20 @@ export default function FeedScreen() {
     }, [navigation, isFocused, scrollOffset, handleRefresh]);
 
     const renderFooter = useCallback(() => {
-        if (!hasMore) return null;
-        if (!isFetchingMore) return null;
-        return (
-            <View style={{ paddingVertical: 20 }}>
-                <ActivityIndicator size="small" color={colors.primary} />
-            </View>
-        );
-    }, [isFetchingMore, colors.primary, hasMore]);
+        if (isFetchingMore) {
+            return (
+                <View style={{ paddingVertical: 20 }}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+            );
+        }
+        
+        if (!hasMore && data?.getFeed?.length > 0) {
+            return <ListFooter />;
+        }
+        
+        return null;
+    }, [isFetchingMore, colors.primary, hasMore, data?.getFeed?.length]);
 
     const handleOptionsPress = useCallback((item: Post) => {
         setSelectedPost(item);
@@ -249,7 +249,11 @@ export default function FeedScreen() {
                 location: item.storeLocation,
                 contactPhone: item.storeContactPhone,
             };
-            return <StoreProductCard item={mappedItem} onPress={() => openInModal(false)} />;
+            return <StoreProductCard 
+                item={mappedItem} 
+                onPress={() => openInModal(false)}
+                onCommentPress={() => openInModal(true)} 
+            />;
         }
         
         // Default: Post

@@ -35,14 +35,13 @@ export class ProfessionalsService {
         }),
       );
       await this.mediaRepository.save(mediaEntities);
-      // Recargar el perfil con su media para devolver la entidad completa
-      return (await this.profileRepository.findOne({
-        where: { id: savedProfile.id },
-        relations: ['media', 'user'],
-      })) ?? savedProfile;
     }
 
-    return savedProfile;
+    // Siempre recargar el perfil con sus relaciones para devolver la entidad completa requerida por GraphQL
+    return (await this.profileRepository.findOne({
+      where: { id: savedProfile.id },
+      relations: ['media', 'user'],
+    })) ?? savedProfile;
   }
 
   async findAllProfessionals(limit: number = 20, offset: number = 0): Promise<ProfessionalProfile[]> {
@@ -55,6 +54,14 @@ export class ProfessionalsService {
   
   async findOneByUserId(userId: string): Promise<ProfessionalProfile | null> {
     return this.profileRepository.findOne({ where: { userId } });
+  }
+
+  async findAllByUserId(userId: string): Promise<ProfessionalProfile[]> {
+    return this.profileRepository.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+      relations: ['media', 'user'],
+    });
   }
 
   async findOneById(id: string): Promise<ProfessionalProfile | null> {

@@ -28,6 +28,11 @@ export class StoreResolver {
     return this.storeService.findMine(user.id);
   }
 
+  @Query(() => [StoreProduct], { name: 'storeProductsByUser' })
+  storeProductsByUser(@Args('userId', { type: () => ID }) userId: string) {
+    return this.storeService.findByUser(userId);
+  }
+
   @Query(() => StoreProduct, { name: 'getStoreProductById', nullable: true })
   getStoreProductById(@Args('id', { type: () => ID }) id: string) {
     return this.storeService.findById(id);

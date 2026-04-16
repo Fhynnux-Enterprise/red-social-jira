@@ -33,6 +33,12 @@ export class JobsResolver {
     return this.jobsService.findMyJobOffers(user.id);
   }
 
+  @Query(() => [JobOffer], { name: 'jobOffersByUser' })
+  @UseGuards(GqlAuthGuard)
+  jobOffersByUser(@Args('userId', { type: () => ID }) userId: string) {
+    return this.jobsService.findJobOffersByUser(userId);
+  }
+
   @Mutation(() => JobOffer)
   @UseGuards(GqlAuthGuard)
   createJobOffer(

@@ -65,6 +65,14 @@ export class JobsService {
     });
   }
 
+  async findJobOffersByUser(userId: string): Promise<JobOffer[]> {
+    return this.jobOfferRepository.find({
+      where: { authorId: userId },
+      order: { createdAt: 'DESC' },
+      relations: ['author', 'media'],
+    });
+  }
+
   async getJobOfferById(id: string): Promise<JobOffer> {
     const offer = await this.jobOfferRepository.findOne({
       where: { id },

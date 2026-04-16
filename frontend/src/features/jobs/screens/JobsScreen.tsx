@@ -13,6 +13,8 @@ import JobOfferCard from '../components/JobOfferCard';
 import ProfessionalCard from '../components/ProfessionalCard';
 import ApplyJobModal from '../components/ApplyJobModal';
 import { LinearGradient } from 'expo-linear-gradient';
+import CommentsModal from '../../comments/components/CommentsModal';
+import ListFooter from '../../../components/ListFooter';
 
 type TabKey = 'offers' | 'services' | 'results';
 type ResultsTabKey = 'my_applications' | 'my_offers' | 'my_services';
@@ -44,6 +46,7 @@ export default function JobsScreen() {
     const indicatorWidth = useRef(new Animated.Value(0)).current;
 
     const [selectedApplication, setSelectedApplication] = useState<any>(null);
+    const [selectedPostForComments, setSelectedPostForComments] = useState<any>(null);
 
     const { data: offersData, loading: loadingOffers, refetch: refetchOffers } = useQuery<{jobOffers: any[]}>(GET_JOB_OFFERS, {
         variables: { limit: 20, offset: 0 },
@@ -196,6 +199,35 @@ export default function JobsScreen() {
         return [];
     };
 
+    const commentsModalData = React.useMemo(() => {
+        if (!selectedPostForComments) return { post: null, nextPost: null, prevPost: null };
+        
+        const currentData = getListData();
+        const currentIndex = currentData.findIndex((p: any) => p.id === selectedPostForComments.post?.id);
+        const livePost = currentIndex !== -1 ? currentData[currentIndex] : selectedPostForComments.post;
+
+        let nextPost = null;
+        if (currentIndex !== -1 && currentIndex < currentData.length - 1) {
+            nextPost = { ...currentData[currentIndex + 1] };
+        }
+
+        let prevPost = null;
+        if (currentIndex > 0) {
+            prevPost = { ...currentData[currentIndex - 1] };
+        }
+
+        let defaultTypeName = 'JobOffer';
+        if (activeTab === 'services' || (activeTab === 'results' && resultsTab === 'my_services')) {
+            defaultTypeName = 'ProfessionalProfile';
+        }
+
+        return {
+            post: { ...livePost, __typename: livePost.__typename || defaultTypeName },
+            nextPost,
+            prevPost,
+        };
+    }, [selectedPostForComments, activeTab, resultsTab, offersData, profsData, myOffersData, myAppsData, myServicesData]);
+
     const handleRefresh = () => {
         if (activeTab === 'offers') refetchOffers();
         else if (activeTab === 'services') refetchProfs();
@@ -256,8 +288,10 @@ export default function JobsScreen() {
     };
 
     const renderItem = ({ item }: { item: any }) => {
-        if (activeTab === 'offers') return <JobOfferCard item={item} onPress={() => {}} />;
-        if (activeTab === 'services') return <ProfessionalCard item={item} onPress={() => {}} />;
+        const openInModal = () => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' });
+
+        if (activeTab === 'offers') return <JobOfferCard item={item} onPress={openInModal} />;
+        if (activeTab === 'services') return <ProfessionalCard item={item} onPress={openInModal} />;
         if (activeTab === 'results') {
             if (resultsTab === 'my_applications') {
                 const getStatusColor = (status: string) => {
@@ -323,13 +357,14 @@ export default function JobsScreen() {
                 return (
                     <JobOfferCard
                         item={item}
-                        onPress={() => router.push(`/jobs/${item.id}/applicants`)}
+                        onPress={openInModal}
+                        onEdit={(item) => router.push(`/jobs/${item.id}/applicants`)}
                     />
                 );
             }
 
             if (resultsTab === 'my_services') {
-                return <ProfessionalCard item={item} onPress={() => {}} />;
+                return <ProfessionalCard item={item} onPress={openInModal} />;
             }
         }
         return null;
@@ -408,6 +443,7 @@ export default function JobsScreen() {
                         styles.listContent,
                         getListData().length === 0 ? { flex: 1 } : null,
                     ]}
+                    ListFooterComponent={getListData().length > 0 ? <ListFooter /> : null}
                     ListEmptyComponent={renderEmpty}
                     refreshing={isRefreshing}
                     onRefresh={handleRefresh}
@@ -687,6 +723,27 @@ export default function JobsScreen() {
                 applicationToEdit={editAppVisible}
                 jobOffer={editAppVisible?.jobOffer || null}
                 onClose={() => setEditAppVisible(null)}
+            />
+
+            {/* ── Comments Modal ── */}
+            <CommentsModal
+                visible={!!selectedPostForComments}
+                post={commentsModalData.post}
+                onClose={() => setSelectedPostForComments(null)}
+                initialMinimized={selectedPostForComments?.minimize ?? false}
+                initialTab={selectedPostForComments?.initialTab ?? 'comments'}
+                onNextPost={() => {
+                    if (commentsModalData.nextPost) {
+                        setSelectedPostForComments((prev: any) => ({ ...prev, post: commentsModalData.nextPost }));
+                    }
+                }}
+                onPrevPost={() => {
+                    if (commentsModalData.prevPost) {
+                        setSelectedPostForComments((prev: any) => ({ ...prev, post: commentsModalData.prevPost }));
+                    }
+                }}
+                nextPost={commentsModalData.nextPost}
+                prevPost={commentsModalData.prevPost}
             />
 
         </View>

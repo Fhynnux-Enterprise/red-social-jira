@@ -11,6 +11,8 @@ import { useTheme } from '../../../theme/ThemeContext';
 import { GET_STORE_PRODUCTS, GET_MY_STORE_PRODUCTS } from '../graphql/store.operations';
 import StoreProductCard from '../components/StoreProductCard';
 import CreateProductModal from '../components/CreateProductModal';
+import CommentsModal from '../../comments/components/CommentsModal';
+import ListFooter from '../../../components/ListFooter';
 
 interface TabConfig {
   key: TabKey;
@@ -37,6 +39,9 @@ export default function StoreScreen() {
   const [editItem, setEditItem] = useState<any>(null);
   const [fabOpen, setFabOpen] = useState(false);
   const fabAnim = useRef(new Animated.Value(0)).current;
+
+  // ── Comments Modal State ──
+  const [selectedPostForComments, setSelectedPostForComments] = useState<any>(null);
 
   // ── Tab indicator animado ──
   const [tabWidths, setTabWidths] = useState<number[]>([]);
@@ -82,6 +87,29 @@ export default function StoreScreen() {
 
   const products = activeTab === 'all' ? (allData?.storeProducts ?? []) : (mineData?.myStoreProducts ?? []);
   const loading = activeTab === 'all' ? loadingAll : loadingMine;
+
+  const commentsModalData = React.useMemo(() => {
+      if (!selectedPostForComments) return { post: null, nextPost: null, prevPost: null };
+      
+      const currentIndex = products.findIndex((p: any) => p.id === selectedPostForComments.post?.id);
+      const livePost = currentIndex !== -1 ? products[currentIndex] : selectedPostForComments.post;
+
+      let nextPost = null;
+      if (currentIndex !== -1 && currentIndex < products.length - 1) {
+          nextPost = { ...products[currentIndex + 1] };
+      }
+
+      let prevPost = null;
+      if (currentIndex > 0) {
+          prevPost = { ...products[currentIndex - 1] };
+      }
+
+      return {
+          post: { ...livePost, __typename: livePost.__typename || 'StoreProduct' },
+          nextPost,
+          prevPost,
+      };
+  }, [selectedPostForComments, products]);
 
   const toggleFab = () => {
     if (fabOpen) {
@@ -199,11 +227,14 @@ export default function StoreScreen() {
               item={item}
               cardWidth={undefined}
               onEdit={handleEdit}
+              onPress={() => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' })}
+              onCommentPress={() => setSelectedPostForComments({ post: item, minimize: false, initialTab: 'comments' })}
             />
           )}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={renderEmpty}
+          ListFooterComponent={products.length > 0 ? <ListFooter /> : null}
           onRefresh={() => { refetchAll(); refetchMine(); }}
           refreshing={loading}
         />
@@ -281,6 +312,27 @@ export default function StoreScreen() {
         visible={createVisible}
         onClose={handleCloseModal}
         editItem={editItem}
+      />
+
+      {/* ── Comments Modal ── */}
+      <CommentsModal
+        visible={!!selectedPostForComments}
+        post={commentsModalData.post}
+        onClose={() => setSelectedPostForComments(null)}
+        initialMinimized={selectedPostForComments?.minimize ?? false}
+        initialTab={selectedPostForComments?.initialTab ?? 'comments'}
+        onNextPost={() => {
+            if (commentsModalData.nextPost) {
+                setSelectedPostForComments((prev: any) => ({ ...prev, post: commentsModalData.nextPost }));
+            }
+        }}
+        onPrevPost={() => {
+            if (commentsModalData.prevPost) {
+                setSelectedPostForComments((prev: any) => ({ ...prev, post: commentsModalData.prevPost }));
+            }
+        }}
+        nextPost={commentsModalData.nextPost}
+        prevPost={commentsModalData.prevPost}
       />
     </View>
   );

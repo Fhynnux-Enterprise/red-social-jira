@@ -184,15 +184,7 @@ export default function SearchScreen() {
         setHasMorePosts(true);
     }, [debouncedQuery]);
 
-    // Sincronizar el post seleccionado con la caché para actualizar likes/comentarios en tiempo real en el CommentsModal
-    useEffect(() => {
-        if (selectedPostForComments && postsData?.searchPosts) {
-            const upToDatePost = postsData.searchPosts.find((p: any) => p.id === selectedPostForComments.post.id);
-            if (upToDatePost && JSON.stringify(upToDatePost) !== JSON.stringify(selectedPostForComments.post)) {
-                setSelectedPostForComments((prev: any) => prev ? { ...prev, post: upToDatePost } : null);
-            }
-        }
-    }, [postsData?.searchPosts, selectedPostForComments?.post?.id]);
+    // Sincronización eliminada: SearchScreen pasa el post más reciente directamente al modal.
 
     const handleLoadMore = useCallback(async () => {
         if (isFetchingMore || isLoading || !debouncedQuery) return;
@@ -366,7 +358,11 @@ export default function SearchScreen() {
             {/* Modal de Comentarios */}
             <CommentsModal 
                 visible={!!selectedPostForComments} 
-                post={selectedPostForComments?.post}
+                post={
+                    selectedPostForComments
+                        ? (postsData?.searchPosts?.find((p: any) => p.id === selectedPostForComments.post?.id) ?? selectedPostForComments.post)
+                        : null
+                }
                 nextPost={(() => {
                     const idx = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     return (idx !== -1 && idx < posts.length - 1) ? posts[idx + 1] : null;

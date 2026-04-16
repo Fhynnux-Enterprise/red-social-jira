@@ -39,6 +39,7 @@ interface Props {
   hideSellerRow?: boolean;
   onEdit?: (item: StoreProduct) => void;
   onPress?: () => void;
+  onCommentPress?: () => void;
   isModalView?: boolean;
 }
 
@@ -69,7 +70,7 @@ function conditionColor(c?: string) {
   return '#FF9800';
 }
 
-export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdit, onPress, isModalView }: Props) {
+export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdit, onPress, onCommentPress, isModalView }: Props) {
   const { colors, isDark } = useTheme();
   const { user } = useAuth() as any;
   const router = useRouter();
@@ -82,6 +83,7 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
   const [menuVisible, setMenuVisible] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
+  const [isDescExpanded, setIsDescExpanded] = useState(false);
 
   const isModeratorOrAdmin = user?.role === 'ADMIN' || user?.role === 'MODERATOR';
   const client = useApolloClient();
@@ -211,7 +213,14 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
       )}
 
       {/* ── Info del producto ── */}
-      <View style={styles.body}>
+      <TouchableOpacity 
+        style={styles.body} 
+        activeOpacity={0.9} 
+        onPress={() => {
+          setIsDescExpanded(!isDescExpanded);
+          if (onPress) onPress();
+        }}
+      >
         {/* Título */}
         <View style={styles.titleRow}>
           <Text style={[styles.title, { color: colors.text, flex: 1 }]}>
@@ -231,9 +240,9 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
               </>
             )}
           </View>
-          <View style={[styles.priceBadge, { backgroundColor: isDark ? 'rgba(255,101,36,0.15)' : 'rgba(255,101,36,0.1)' }]}>
-            <Text style={[styles.price, { color: '#FF6524' }]}>
-              {item.currency ?? '$'}{parseFloat(String(item.price)).toFixed(2)}
+          <View style={[styles.priceBadge, { backgroundColor: isDark ? 'rgba(76,175,80,0.15)' : 'rgba(76,175,80,0.1)' }]}>
+            <Text style={[styles.price, { color: '#4CAF50' }]}>
+              Precio: ${parseFloat(String(item.price)).toFixed(2)}
             </Text>
           </View>
         </View>
@@ -249,58 +258,56 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
         )}
 
         {/* Descripción */}
-        <Text style={[styles.description, { color: colors.textSecondary }]} numberOfLines={3}>
+        <Text style={[styles.description, { color: colors.textSecondary }]} numberOfLines={isDescExpanded ? undefined : 3}>
           {item.description}
         </Text>
-      </View>
+      </TouchableOpacity>
 
       {/* ── Carrusel de imágenes (Al final) ── */}
       {item.media && item.media.length > 0 && (
         <View style={{ width: '100%', backgroundColor: colors.surface }}>
-          <ImageCarousel media={item.media} containerWidth={cardWidth ?? innerCardWidth} customAspectRatio={1.1} onPress={onPress} disableFullscreen={!!onPress} />
+          <ImageCarousel media={item.media} containerWidth={cardWidth ?? innerCardWidth} customAspectRatio={1.1} onPress={onPress} disableFullscreen={!!onPress && !isModalView} />
         </View>
       )}
 
       {/* Botones de contacto (debajo de la imagen) */}
-      {!isOwner && (
-        <View style={styles.contactRow}>
-          {item.contactPhone && (
-            <TouchableOpacity
-              style={[styles.contactBtn, { backgroundColor: '#25D366' }]}
-              onPress={async () => {
-                const rawPhone = item.contactPhone!.replace(/\s+/g, '').replace(/[^+\d]/g, '');
-                const phone = rawPhone.startsWith('+') ? rawPhone.slice(1) : rawPhone;
-                const { Linking } = await import('react-native');
-                Linking.openURL(`https://wa.me/${phone}?text=Hola, vi tu publicación "${item.title}" y me interesa.`);
-              }}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="logo-whatsapp" size={16} color="#FFF" />
-              <Text style={styles.contactBtnText}>WhatsApp</Text>
-            </TouchableOpacity>
-          )}
-
+      <View style={styles.contactRow}>
+        {item.contactPhone && (
           <TouchableOpacity
-            style={[styles.contactBtn, { backgroundColor: colors.primary, opacity: creatingChat ? 0.7 : 1 }]}
-            activeOpacity={0.8}
-            disabled={creatingChat}
+            style={[styles.contactBtn, { backgroundColor: '#25D366' }]}
             onPress={async () => {
-              if (!item.seller?.id) return;
-              try {
-                const { data } = await getOrCreateChat({ variables: { targetUserId: item.seller.id } });
-                if (data?.getOrCreateOneOnOneChat?.id) {
-                  (navigation as any).navigate('ChatRoom', { conversationId: data.getOrCreateOneOnOneChat.id });
-                }
-              } catch (err) {
-                Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir el chat con el vendedor.' });
-              }
+              const rawPhone = item.contactPhone!.replace(/\s+/g, '').replace(/[^+\d]/g, '');
+              const phone = rawPhone.startsWith('+') ? rawPhone.slice(1) : rawPhone;
+              const { Linking } = await import('react-native');
+              Linking.openURL(`https://wa.me/${phone}?text=Hola, vi tu publicación "${item.title}" y me interesa.`);
             }}
+            activeOpacity={0.8}
           >
-            <Ionicons name="chatbubbles-outline" size={16} color="#FFF" />
-            <Text style={styles.contactBtnText}>Mensaje Privado</Text>
+            <Ionicons name="logo-whatsapp" size={16} color="#FFF" />
+            <Text style={styles.contactBtnText}>WhatsApp</Text>
           </TouchableOpacity>
-        </View>
-      )}
+        )}
+
+        <TouchableOpacity
+          style={[styles.contactBtn, { backgroundColor: colors.primary, opacity: creatingChat ? 0.7 : 1 }]}
+          activeOpacity={0.8}
+          disabled={creatingChat}
+          onPress={async () => {
+            if (!item.seller?.id) return;
+            try {
+              const { data } = await getOrCreateChat({ variables: { targetUserId: item.seller.id } });
+              if (data?.getOrCreateOneOnOneChat?.id) {
+                (navigation as any).navigate('ChatRoom', { conversationId: data.getOrCreateOneOnOneChat.id });
+              }
+            } catch (err) {
+              Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir el chat con el vendedor.' });
+            }
+          }}
+        >
+          <Ionicons name="chatbubbles-outline" size={16} color="#FFF" />
+          <Text style={styles.contactBtnText}>Mensaje Privado</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* ── Divider ── */}
       <View style={[styles.divider, { backgroundColor: colors.border }]} />
@@ -320,7 +327,7 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
             </Text>
           )}
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} onPress={onPress} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.actionBtn} onPress={onCommentPress ?? onPress} activeOpacity={0.7}>
           <Ionicons name="chatbubble-outline" size={19} color={colors.textSecondary} />
           {(item.commentsCount ?? 0) > 0 && (
             <Text style={styles.actionCount}>{item.commentsCount}</Text>

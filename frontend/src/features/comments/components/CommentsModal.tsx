@@ -96,6 +96,7 @@ export default function CommentsModal({
     const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
     const [reportVisible, setReportVisible] = useState(false);
+    const [postReportVisible, setPostReportVisible] = useState(false);
     const inputRef = useRef<TextInput>(null);
     const scrollViewRef = useRef<ScrollView>(null);
     // postScrollEnabled: state para re-renderizar el ScrollView, ref para el PanResponder (closure-safe)
@@ -1172,15 +1173,35 @@ export default function CommentsModal({
                                 </TouchableOpacity>
 
                                 <View style={{ flexDirection: 'row', alignItems: 'center', position: 'absolute', right: 14, top: 14, zIndex: 10 }}>
-                                    {post.author?.id === currentUser?.id && (
-                                        <TouchableOpacity
-                                            onPress={() => onOptionsPress?.(post)}
-                                            style={{ marginRight: 16 }}
-                                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                                        >
-                                            <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-                                        </TouchableOpacity>
-                                    )}
+                                    {(() => {
+                                        const profileId = isPost
+                                            ? post.author?.id
+                                            : (post.author?.id ?? post.user?.id ?? post.seller?.id);
+                                        const isOwner = profileId === currentUser?.id;
+                                        
+                                        return (
+                                            <>
+                                                {isOwner && (
+                                                    <TouchableOpacity
+                                                        onPress={() => onOptionsPress?.(post)}
+                                                        style={{ marginRight: 16 }}
+                                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                                                    >
+                                                        <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                                                    </TouchableOpacity>
+                                                )}
+                                                {!isOwner && (
+                                                    <TouchableOpacity
+                                                        onPress={() => setPostReportVisible(true)}
+                                                        style={{ marginRight: 16 }}
+                                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                                                    >
+                                                        <Ionicons name="flag-outline" size={20} color={colors.textSecondary} />
+                                                    </TouchableOpacity>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
 
                                     <TouchableOpacity onPress={closeWithAnimation}
                                         hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
@@ -1260,13 +1281,13 @@ export default function CommentsModal({
                                         style={{ flex: 1 }}
                                     >
                                         {post.__typename === 'JobOffer' && (
-                                            <JobOfferCard item={normalizedItem} onPress={() => {}} hideAuthorRow />
+                                            <JobOfferCard item={normalizedItem} onPress={undefined} hideAuthorRow isModalView={true} />
                                         )}
                                         {post.__typename === 'ProfessionalProfile' && (
-                                            <ProfessionalCard item={normalizedItem} onPress={() => {}} hideAuthorRow />
+                                            <ProfessionalCard item={normalizedItem} onPress={undefined} hideAuthorRow isModalView={true} />
                                         )}
                                         {post.__typename === 'StoreProduct' && (
-                                            <StoreProductCard item={normalizedItem} onPress={() => {}} hideSellerRow isModalView={true} />
+                                            <StoreProductCard item={normalizedItem} onPress={undefined} hideSellerRow isModalView={true} />
                                         )}
                                     </Animated.View>
                                 ) : (
@@ -1361,7 +1382,7 @@ export default function CommentsModal({
                                         <Ionicons name={localLiked ? 'heart' : 'heart-outline'} size={20}
                                             color={localLiked ? '#FF3B30' : colors.textSecondary} />
                                         <Text style={[styles.actionText, { color: localLiked ? '#FF3B30' : colors.textSecondary },
-                                        localLiked && { fontWeight: 'bold' }]}>Me gusta</Text>
+                                        localLiked && { fontWeight: 'bold' }]}>Like</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity style={styles.actionBtn} onPress={() => {
                                         setActiveTab('comments');
@@ -1633,6 +1654,31 @@ export default function CommentsModal({
                         setReportVisible(false);
                         // 3. Refetch para sincronizar con el servidor
                         refetch();
+                    }}
+                />
+            )}
+
+            {postReportVisible && post && (
+                <ReportModal
+                    visible={postReportVisible}
+                    onClose={() => setPostReportVisible(false)}
+                    reportedItemId={post.id}
+                    reportedItemType={{
+                        'StoreProduct': 'STORE_PRODUCT',
+                        'JobOffer': 'JOB_OFFER',
+                        'ProfessionalProfile': 'SERVICE',
+                        'Post': 'POST',
+                    }[post?.__typename || 'Post'] || 'POST'}
+                    onContentDeleted={() => {
+                        apolloClient.cache.evict({
+                            id: apolloClient.cache.identify({
+                                __typename: post.__typename || 'Post',
+                                id: post.id,
+                            }),
+                        });
+                        apolloClient.cache.gc();
+                        setPostReportVisible(false);
+                        closeWithAnimation();
                     }}
                 />
             )}

@@ -142,6 +142,7 @@ export default function CreateJobScreen() {
         refetchQueries: [{ query: GET_PROFESSIONALS, variables: { limit: 20, offset: 0 } }],
         onCompleted: () => {
             setLoading(false);
+            Toast.show({ type: 'success', text1: '¡Listo!', text2: 'Tu servicio ha sido guardado.' });
             router.back();
         },
         onError: (error) => {

@@ -24,11 +24,15 @@ export class ProfessionalsResolver {
     return this.professionalsService.findOneById(id);
   }
 
+  @Query(() => [ProfessionalProfile], { name: 'professionalProfilesByUser' })
+  findAllByUser(@Args('userId') userId: string) {
+    return this.professionalsService.findAllByUserId(userId);
+  }
+
   @Query(() => [ProfessionalProfile], { name: 'myProfessionalProfile' })
   @UseGuards(GqlAuthGuard)
   async getMyProfile(@CurrentUser() user: User) {
-    const profile = await this.professionalsService.findOneByUserId(user.id);
-    return profile ? [profile] : [];
+    return this.professionalsService.findAllByUserId(user.id);
   }
 
   @Mutation(() => ProfessionalProfile)

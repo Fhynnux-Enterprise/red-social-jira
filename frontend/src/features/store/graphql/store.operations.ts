@@ -183,6 +183,43 @@ export const UPDATE_STORE_PRODUCT = gql`
   }
 `;
 
+export const GET_STORE_PRODUCTS_BY_USER = gql`
+  query GetStoreProductsByUser($userId: ID!) {
+    storeProductsByUser(userId: $userId) {
+      id
+      title
+      description
+      price
+      currency
+      location
+      contactPhone
+      condition
+      category
+      isAvailable
+      createdAt
+      seller {
+        id
+        username
+        firstName
+        lastName
+        photoUrl
+      }
+      media {
+        url
+        type
+        order
+      }
+      commentsCount
+      likes {
+        id
+        user {
+          id
+        }
+      }
+    }
+  }
+`;
+
 export const DELETE_STORE_PRODUCT = gql`
   mutation DeleteStoreProduct($id: ID!) {
     deleteStoreProduct(id: $id)

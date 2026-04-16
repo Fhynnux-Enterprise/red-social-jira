@@ -25,12 +25,13 @@ import Toast from 'react-native-toast-message';
 
 interface JobOfferCardProps {
     item: any;
-    onPress: () => void;
+    onPress?: () => void;
     /** Llama a este callback para pasar el item al padre cuando el usuario quiere editar */
     onEdit?: (item: any) => void;
+    isModalView?: boolean;
 }
 
-export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: JobOfferCardProps & { hideAuthorRow?: boolean }) {
+export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isModalView }: JobOfferCardProps & { hideAuthorRow?: boolean }) {
     const { colors, isDark } = useTheme();
     const router = useRouter();
     const navigation = useNavigation();
@@ -177,7 +178,11 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
                 </View>
                 )}
 
-                <View style={[styles.contentPadding, { paddingBottom: 4, paddingTop: 1 }]}>
+                <TouchableOpacity 
+                    style={[styles.contentPadding, { paddingBottom: 4, paddingTop: 1 }]}
+                    activeOpacity={0.9}
+                    onPress={onPress}
+                >
                     {/* Título */}
                     <Text style={[styles.title, { color: colors.text }]} numberOfLines={hideAuthorRow ? 2 : 1}>
                         {item.title}
@@ -205,7 +210,7 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
                             </Text>
                         </View>
                     )}
-                </View>
+                </TouchableOpacity>
 
                 {/* Carrusel multimedia */}
                 {item.media && item.media.length > 0 && (
@@ -214,7 +219,7 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
                             media={item.media}
                             containerWidth={cardWidth}
                             customAspectRatio={1}
-                            disableFullscreen={true}
+                            disableFullscreen={!!onPress && !isModalView}
                             onPress={onPress}
                         />
                     </View>

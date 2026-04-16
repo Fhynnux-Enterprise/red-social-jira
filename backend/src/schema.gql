@@ -357,14 +357,17 @@ type Query {
   jobOffers(limit: Int! = 20, offset: Int! = 0): [JobOffer!]!
   getJobOfferById(id: ID!): JobOffer
   myJobOffers: [JobOffer!]!
+  jobOffersByUser(userId: ID!): [JobOffer!]!
   professionalProfiles(limit: Int! = 20, offset: Int! = 0): [ProfessionalProfile!]!
   getProfessionalProfileById(id: String!): ProfessionalProfile
+  professionalProfilesByUser(userId: String!): [ProfessionalProfile!]!
   myProfessionalProfile: [ProfessionalProfile!]!
   jobApplications(jobOfferId: ID!): [JobApplication!]!
   myApplications: [JobApplication!]!
   getFeed(limit: Int! = 10, offset: Int! = 0): [FeedItem!]!
   storeProducts(limit: Int! = 20, offset: Int! = 0): [StoreProduct!]!
   myStoreProducts: [StoreProduct!]!
+  storeProductsByUser(userId: ID!): [StoreProduct!]!
   getStoreProductById(id: ID!): StoreProduct
   getStoreProductComments(productId: ID!, limit: Int! = 20, offset: Int! = 0): [StoreProductComment!]!
   getStoreProductCommentById(id: ID!): StoreProductComment

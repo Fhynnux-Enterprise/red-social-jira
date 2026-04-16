@@ -69,6 +69,14 @@ export class StoreService {
     });
   }
 
+  async findByUser(userId: string): Promise<StoreProduct[]> {
+    return this.productRepo.find({
+      where: { sellerId: userId },
+      order: { createdAt: 'DESC' },
+      relations: ['seller', 'media', 'likes', 'likes.user'],
+    });
+  }
+
   async findById(id: string): Promise<StoreProduct> {
     const product = await this.productRepo.findOne({
       where: { id },

@@ -212,6 +212,55 @@ export const UPDATE_APPLICATION_STATUS = gql`
   }
 `;
 
+export const GET_JOB_OFFERS_BY_USER = gql`
+  query GetJobOffersByUser($userId: ID!) {
+    jobOffersByUser(userId: $userId) {
+      id
+      title
+      description
+      location
+      salary
+      createdAt
+      author {
+        id
+        username
+        firstName
+        lastName
+        photoUrl
+      }
+      media {
+        url
+        type
+        order
+      }
+    }
+  }
+`;
+
+export const GET_PROFESSIONAL_PROFILES_BY_USER = gql`
+  query GetProfessionalProfilesByUser($userId: String!) {
+    professionalProfilesByUser(userId: $userId) {
+      id
+      profession
+      description
+      experienceYears
+      createdAt
+      user {
+        id
+        username
+        firstName
+        lastName
+        photoUrl
+      }
+      media {
+        url
+        type
+        order
+      }
+    }
+  }
+`;
+
 export const GET_MY_JOB_OFFERS = gql`
   query GetMyJobOffers {
     myJobOffers {
