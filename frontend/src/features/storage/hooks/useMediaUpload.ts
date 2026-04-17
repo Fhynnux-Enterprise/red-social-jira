@@ -128,11 +128,14 @@ export const useMediaUpload = () => {
         xhr.onerror = () => reject(new Error('Error de red al subir el archivo'));
         xhr.ontimeout = () => reject(new Error('Tiempo de espera agotado al subir el archivo'));
 
-        // Abrir el archivo local como Blob y enviarlo
-        fetch(localUri)
-          .then(res => res.blob())
-          .then(blob => xhr.send(blob))
-          .catch(reject);
+        // IMPORTANTE: NO usar fetch(localUri).then(res.blob()) para videos.
+        // En Android, los videos resultan en Blobs vacíos (0 bytes) porque React Native
+        // no puede leer archivos de video grandes a memoria como Blob.
+        // La forma correcta es pasar el objeto { uri, name, type } directamente:
+        // el motor nativo de React Native sabe hacer streaming desde el filesystem.
+        const nativeFileName = localUri.split('/').pop() || 'upload';
+        const nativeFile = { uri: localUri, name: nativeFileName, type: mimeType } as unknown as Blob;
+        xhr.send(nativeFile);
       });
 
       // 4. Retornar la URL pública para guardarla en la base de datos

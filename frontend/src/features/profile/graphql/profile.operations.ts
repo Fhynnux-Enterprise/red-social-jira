@@ -63,6 +63,9 @@ export const GET_USER_PROFILE = gql`
       phone
       photoUrl
       coverUrl
+      role
+      bannedUntil
+      banReason
       customFields {
         id
         title
@@ -123,6 +126,27 @@ export const GET_ME = gql`
       email
       photoUrl
       coverUrl
+    }
+  }
+`;
+
+export const CREATE_REPORT = gql`
+  mutation CreateReport($reportedItemId: ID!, $reportedItemType: ReportedItemType!, $reason: String!) {
+    createReport(input: { reportedItemId: $reportedItemId, reportedItemType: $reportedItemType, reason: $reason }) {
+      id
+      reason
+      status
+    }
+  }
+`;
+
+export const GET_MY_REPORT_STATUS = gql`
+  query GetMyReportStatus($reportedItemId: ID!) {
+    getMyReportStatus(reportedItemId: $reportedItemId) {
+      id
+      status
+      reason
+      createdAt
     }
   }
 `;

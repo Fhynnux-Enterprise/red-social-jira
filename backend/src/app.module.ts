@@ -20,6 +20,7 @@ import { JobsModule } from './jobs/jobs.module';
 import { FeedModule } from './feed/feed.module';
 import { StoreModule } from './store/store.module';
 import { ReportsModule } from './reports/reports.module';
+import { GqlAuthGuard } from './auth/guards/gql-auth.guard';
 
 @Module({
   imports: [
@@ -92,6 +93,6 @@ import { ReportsModule } from './reports/reports.module';
     ReportsModule,
   ],
   controllers: [],
-  providers: [],
+  providers: [GqlAuthGuard],
 })
 export class AppModule { }

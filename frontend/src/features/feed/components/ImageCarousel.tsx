@@ -6,6 +6,10 @@ import {
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
+import Reanimated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+
+const AnimatedVideoView = Reanimated.createAnimatedComponent(VideoView);
 import Slider from '@react-native-community/slider';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -397,9 +401,12 @@ export default function ImageCarousel({
                                             insets={insets}
                                         />
                                     ) : (
-                                        <ZoomableImageViewer url={item.url}
+                                        <ZoomableImageViewer 
+                                            url={item.url}
+                                            mediaType="image"
                                             onClose={() => setViewerVisible(false)}
-                                            onZoomChange={setIsZoomed} />
+                                            onZoomChange={setIsZoomed} 
+                                        />
                                     )}
                                 </View>
                             )}
@@ -634,11 +641,42 @@ const ActualVideoPlayer = ({
 
     const bottomOffset = insets?.bottom ?? 0;
 
+    const scale = useSharedValue(1);
+    const savedScale = useSharedValue(1);
+    const focalX = useSharedValue(width / 2);
+    const focalY = useSharedValue(height / 2);
+
+    const pinch = Gesture.Pinch()
+        .onStart((e) => {
+            focalX.value = e.focalX;
+            focalY.value = e.focalY;
+        })
+        .onUpdate((e) => {
+            scale.value = Math.min(Math.max(savedScale.value * e.scale, 1), 3.5);
+        })
+        .onEnd(() => {
+            scale.value = withTiming(1, { duration: 250 });
+            savedScale.value = 1;
+            focalX.value = width / 2;
+            focalY.value = height / 2;
+        });
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        transform: [
+            { translateX: focalX.value - width / 2 },
+            { translateY: focalY.value - height / 2 },
+            { scale: scale.value },
+            { translateX: -focalX.value + width / 2 },
+            { translateY: -focalY.value + height / 2 }
+        ]
+    }));
+
     return (
-        <View style={{ width, height, backgroundColor: '#000', overflow: 'hidden' }}>
-            {player && (
-                <VideoView key={source} player={player} style={StyleSheet.absoluteFill} contentFit={contentFit} nativeControls={false} surfaceType="textureView" />
-            )}
+        <GestureDetector gesture={pinch}>
+            <View style={{ width, height, backgroundColor: '#000', overflow: 'hidden' }}>
+                {player && (
+                    <AnimatedVideoView key={source} player={player} style={[StyleSheet.absoluteFill, animatedStyle]} contentFit={contentFit} nativeControls={false} surfaceType="textureView" />
+                )}
             <TouchableOpacity activeOpacity={1} onPress={handlePress} style={StyleSheet.absoluteFill} />
             
             {isInteractive && (showControls || !isPlaying) && (
@@ -675,6 +713,7 @@ const ActualVideoPlayer = ({
                 </>
             )}
         </View>
+        </GestureDetector>
     );
 };
 

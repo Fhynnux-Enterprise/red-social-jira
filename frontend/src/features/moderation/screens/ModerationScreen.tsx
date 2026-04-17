@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
     View, Text, StyleSheet, FlatList, TouchableOpacity,
     ActivityIndicator, RefreshControl, Modal, ScrollView,
-    TextInput, KeyboardAvoidingView, Platform, Alert
+    TextInput, KeyboardAvoidingView, Platform, Alert, Image
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,12 +11,13 @@ import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
 import { useApolloClient } from '@apollo/client/react';
 import Toast from 'react-native-toast-message';
 import { useTheme } from '../../../theme/ThemeContext';
-import { GET_ALL_REPORTS, RESOLVE_REPORT, DISMISS_REPORT, GET_POST_BY_ID, GET_STORE_PRODUCT_BY_ID, GET_JOB_OFFER_BY_ID, GET_COMMENT_BY_ID, GET_STORE_PRODUCT_COMMENT_BY_ID, GET_PROFESSIONAL_PROFILE_BY_ID } from '../graphql/moderation.operations';
+import { GET_ALL_REPORTS, RESOLVE_REPORT, DISMISS_REPORT, GET_POST_BY_ID, GET_STORE_PRODUCT_BY_ID, GET_JOB_OFFER_BY_ID, GET_COMMENT_BY_ID, GET_STORE_PRODUCT_COMMENT_BY_ID, GET_PROFESSIONAL_PROFILE_BY_ID, UNBAN_USER, GET_BANNED_USERS, GET_USER_MINIMAL_PROFILE } from '../graphql/moderation.operations';
 import PostCard from '../../feed/components/PostCard';
 import StoreProductCard from '../../store/components/StoreProductCard';
 import JobOfferCard from '../../jobs/components/JobOfferCard';
 import ProfessionalCard from '../../jobs/components/ProfessionalCard';
 import CommentsModal from '../../comments/components/CommentsModal';
+import BanUserModal from '../components/BanUserModal';
 
 const STATUS_LABEL: Record<string, string> = {
     PENDING: 'Pendiente',
@@ -30,6 +31,7 @@ const TYPE_LABEL: Record<string, string> = {
     SERVICE: 'Servicio Profesional',
     PRODUCT: 'Producto de Tienda',
     COMMENT: 'Comentario',
+    USER: 'Reporte a usuario',
 };
 
 const TYPE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -38,6 +40,7 @@ const TYPE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
     SERVICE: 'construct-outline',
     PRODUCT: 'storefront-outline',
     COMMENT: 'chatbubble-outline',
+    USER: 'person-outline',
 };
 
 export default function ModerationScreen() {
@@ -46,6 +49,7 @@ export default function ModerationScreen() {
     const navigation = useNavigation();
     const insets = useSafeAreaInsets();
 
+    const [activeTab, setActiveTab] = useState<'reports' | 'banned'>('reports');
     const [selectedReport, setSelectedReport] = useState<any>(null);
     const [previewVisible, setPreviewVisible] = useState(false);
     const [fetchedItem, setFetchedItem] = useState<any>(null);
@@ -53,11 +57,48 @@ export default function ModerationScreen() {
     const [fullProductVisible, setFullProductVisible] = useState(false);
     const [pendingAction, setPendingAction] = useState<null | { type: 'resolve' | 'resolve_delete' | 'dismiss' }>(null);
     const [confirmNote, setConfirmNote] = useState('');
+    const [unbanTarget, setUnbanTarget] = useState<{ id: string; firstName: string; lastName: string; username: string } | null>(null);
+    const [banModalVisible, setBanModalVisible] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [hasMore, setHasMore] = useState(true);
 
-    const { data, loading, refetch } = useQuery(GET_ALL_REPORTS, {
-        variables: { limit: 50, offset: 0 },
+    const { data, loading, refetch, fetchMore } = useQuery(GET_ALL_REPORTS, {
+        variables: { limit: 15, offset: 0 },
         fetchPolicy: 'cache-and-network',
+        onCompleted: (res) => {
+            if (res?.getAllReports?.length < 15) {
+                setHasMore(false);
+            } else {
+                setHasMore(true);
+            }
+        }
     });
+
+    const handleLoadMore = () => {
+        if (loadingMore || !hasMore || loading) return;
+        setLoadingMore(true);
+        fetchMore({
+            variables: {
+                offset: data?.getAllReports?.length || 0,
+            },
+            updateQuery: (prev, { fetchMoreResult }) => {
+                if (!fetchMoreResult || fetchMoreResult.getAllReports.length === 0) {
+                    setHasMore(false);
+                    return prev;
+                }
+                if (fetchMoreResult.getAllReports.length < 15) {
+                    setHasMore(false);
+                }
+                // Avoid duplicates
+                const newItems = fetchMoreResult.getAllReports.filter(
+                    (newItem: any) => !prev.getAllReports.some((prevItem: any) => prevItem.id === newItem.id)
+                );
+                return {
+                    getAllReports: [...prev.getAllReports, ...newItems],
+                };
+            },
+        }).then(() => setLoadingMore(false)).catch(() => setLoadingMore(false));
+    };
 
     const [resolveReport, { loading: resolving }] = useMutation(RESOLVE_REPORT, {
         onCompleted: () => {
@@ -81,6 +122,7 @@ export default function ModerationScreen() {
             setPendingAction(null);
             setConfirmNote('');
             setSelectedReport(null);
+            setHasMore(true);
             refetch();
             Toast.show({ type: 'success', text1: 'Denuncia resuelta', text2: 'El contenido ha sido moderado correctamente.' });
         },
@@ -102,16 +144,78 @@ export default function ModerationScreen() {
             setPendingAction(null);
             setConfirmNote('');
             setSelectedReport(null);
+            setHasMore(true);
             refetch();
             Toast.show({ type: 'info', text1: 'Denuncia descartada', text2: 'No se tomó acción sobre este contenido.' });
         },
         onError: (err) => {
-            console.error('[Moderation] dismissReport error:', err.message);
             Alert.alert('Error', err.message || 'No se pudo descartar la denuncia.');
         },
     });
 
-    const reports: any[] = data?.getAllReports || [];
+    const reports: any[] = (data?.getAllReports || []).slice().sort((a: any, b: any) => {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+    // ── Query dedicada para usuarios baneados ──────────────────────────────────
+    const [loadingBannedMore, setLoadingBannedMore] = useState(false);
+    const [hasBannedMore, setHasBannedMore] = useState(true);
+
+    const {
+        data: bannedData,
+        loading: bannedUsersLoading,
+        refetch: refetchBanned,
+        fetchMore: fetchMoreBanned,
+    } = useQuery(GET_BANNED_USERS, {
+        variables: { limit: 15, offset: 0 },
+        skip: activeTab !== 'banned',
+        fetchPolicy: 'network-only',
+        onCompleted: (res) => {
+            if (res?.getBannedUsers?.length < 15) {
+                setHasBannedMore(false);
+            } else {
+                setHasBannedMore(true);
+            }
+        }
+    });
+
+    const bannedUsers: any[] = bannedData?.getBannedUsers || [];
+
+    const handleLoadMoreBanned = () => {
+        if (loadingBannedMore || !hasBannedMore || bannedUsersLoading) return;
+        setLoadingBannedMore(true);
+        fetchMoreBanned({
+            variables: {
+                offset: bannedUsers.length,
+            },
+            updateQuery: (prev, { fetchMoreResult }) => {
+                if (!fetchMoreResult || fetchMoreResult.getBannedUsers.length === 0) {
+                    setHasBannedMore(false);
+                    return prev;
+                }
+                if (fetchMoreResult.getBannedUsers.length < 15) {
+                    setHasBannedMore(false);
+                }
+                // Evitar duplicados
+                const newItems = fetchMoreResult.getBannedUsers.filter(
+                    (newItem: any) => !prev.getBannedUsers.some((prevItem: any) => prevItem.id === newItem.id)
+                );
+                return {
+                    getBannedUsers: [...prev.getBannedUsers, ...newItems],
+                };
+            },
+        }).then(() => setLoadingBannedMore(false)).catch(() => setLoadingBannedMore(false));
+    };
+
+    const [unbanUser, { loading: unbanning }] = useMutation(UNBAN_USER, {
+        onCompleted: (res) => {
+            Toast.show({ type: 'success', text1: 'Suspensión levantada', text2: `${res.unbanUser.firstName} puede acceder nuevamente.` });
+            refetchBanned();
+        },
+        onError: (err) => {
+            Alert.alert('Error', err.message || 'No se pudo levantar la suspensión.');
+        },
+    });
 
     const [getPost] = useLazyQuery(GET_POST_BY_ID);
     const [getProduct] = useLazyQuery(GET_STORE_PRODUCT_BY_ID);
@@ -119,6 +223,7 @@ export default function ModerationScreen() {
     const [getService] = useLazyQuery(GET_PROFESSIONAL_PROFILE_BY_ID);
     const [getComment] = useLazyQuery(GET_COMMENT_BY_ID);
     const [getStoreComment] = useLazyQuery(GET_STORE_PRODUCT_COMMENT_BY_ID);
+    const [getUser] = useLazyQuery(GET_USER_MINIMAL_PROFILE);
     const [fetchingItem, setFetchingItem] = useState(false);
 
     const handleReportPress = async (item: any) => {
@@ -126,26 +231,21 @@ export default function ModerationScreen() {
         setFetchedItem(null);
         setFetchingItem(true);
         setPreviewVisible(true);
-
-        console.log('[Moderation] handleReportPress:', item.reportedItemType, item.reportedItemId);
+        setPreviewVisible(true);
 
         try {
             let res;
             if (item.reportedItemType === 'POST') {
                 res = await getPost({ variables: { id: item.reportedItemId } });
-                console.log('[Moderation] POST result:', res.data?.getPostById);
                 setFetchedItem(res.data?.getPostById);
             } else if (item.reportedItemType === 'PRODUCT') {
                 res = await getProduct({ variables: { id: item.reportedItemId } });
-                console.log('[Moderation] PRODUCT result:', res.data?.getStoreProductById);
                 setFetchedItem(res.data?.getStoreProductById);
             } else if (item.reportedItemType === 'JOB_OFFER') {
                 res = await getJob({ variables: { id: item.reportedItemId } });
-                console.log('[Moderation] JOB result:', res.data?.getJobOfferById);
                 setFetchedItem(res.data?.getJobOfferById);
             } else if (item.reportedItemType === 'SERVICE') {
                 res = await getService({ variables: { id: item.reportedItemId } });
-                console.log('[Moderation] SERVICE result:', res.data?.getProfessionalProfileById);
                 setFetchedItem(res.data?.getProfessionalProfileById);
             } else if (item.reportedItemType === 'COMMENT') {
                 // Consultamos ambos sistemas en paralelo y usamos el que devuelve datos
@@ -154,9 +254,6 @@ export default function ModerationScreen() {
                     getStoreComment({ variables: { id: item.reportedItemId } }),
                 ]);
 
-                console.log('[Moderation] postCommentResult:', postCommentResult);
-                console.log('[Moderation] storeCommentResult:', storeCommentResult);
-
                 const postComment = postCommentResult.status === 'fulfilled'
                     ? postCommentResult.value.data?.getCommentById
                     : null;
@@ -164,8 +261,10 @@ export default function ModerationScreen() {
                     ? storeCommentResult.value.data?.getStoreProductCommentById
                     : null;
 
-                console.log('[Moderation] postComment:', postComment, '| storeComment:', storeComment);
                 setFetchedItem(postComment || storeComment || null);
+            } else if (item.reportedItemType === 'USER') {
+                res = await getUser({ variables: { id: item.reportedItemId } });
+                setFetchedItem(res.data?.getUserProfile);
             } else {
                 // Si no hay endpoint para este tipo (ej: SERVICE)
                 console.log('[Moderation] Unhandled type:', item.reportedItemType);
@@ -187,7 +286,6 @@ export default function ModerationScreen() {
         const reportId = selectedReport.id;
         const reportedItemId = selectedReport.reportedItemId;
         const reportedItemType = selectedReport.reportedItemType;
-        console.log(`[Moderation] Executing action: ${pendingAction.type} on report ${reportId} (item: ${reportedItemType} ${reportedItemId})`);
 
         if (pendingAction.type === 'resolve') {
             resolveReport({ variables: { input: { reportId, deleteContent: false, moderatorNote: note } } });
@@ -290,15 +388,47 @@ export default function ModerationScreen() {
                 </View>
             </View>
 
+            {/* Tabs */}
+            <View style={[styles.tabBar, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+                <TouchableOpacity
+                    style={[styles.tabItem, activeTab === 'reports' && styles.tabItemActive, activeTab === 'reports' && { borderBottomColor: '#FF6524' }]}
+                    onPress={() => setActiveTab('reports')}
+                >
+                    <Ionicons name="flag-outline" size={16} color={activeTab === 'reports' ? '#FF6524' : colors.textSecondary} />
+                    <Text style={[styles.tabLabel, { color: activeTab === 'reports' ? '#FF6524' : colors.textSecondary }]}>Denuncias</Text>
+                    {reports.filter((r: any) => r.status === 'PENDING').length > 0 && (
+                        <View style={styles.tabBadge}>
+                            <Text style={styles.tabBadgeText}>{reports.filter((r: any) => r.status === 'PENDING').length}</Text>
+                        </View>
+                    )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={[styles.tabItem, activeTab === 'banned' && styles.tabItemActive, activeTab === 'banned' && { borderBottomColor: '#EF4444' }]}
+                    onPress={() => setActiveTab('banned')}
+                >
+                    <Ionicons name="ban-outline" size={16} color={activeTab === 'banned' ? '#EF4444' : colors.textSecondary} />
+                    <Text style={[styles.tabLabel, { color: activeTab === 'banned' ? '#EF4444' : colors.textSecondary }]}>Baneados</Text>
+                </TouchableOpacity>
+            </View>
+
             {loading && reports.length === 0 ? (
                 <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 60 }} />
-            ) : (
+            ) : activeTab === 'reports' ? (
                 <FlatList
                     data={reports}
                     keyExtractor={(item) => item.id}
                     renderItem={renderReport}
                     contentContainerStyle={{ padding: 12, paddingBottom: insets.bottom + 20 }}
-                    refreshControl={<RefreshControl refreshing={loading} onRefresh={refetch} colors={[colors.primary]} tintColor={colors.primary} />}
+                    refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { setHasMore(true); refetch(); }} colors={[colors.primary]} tintColor={colors.primary} />}
+                    onEndReached={handleLoadMore}
+                    onEndReachedThreshold={0.5}
+                    ListFooterComponent={
+                        loadingMore ? (
+                            <View style={{ paddingVertical: 20 }}>
+                                <ActivityIndicator size="small" color={colors.primary} />
+                            </View>
+                        ) : null
+                    }
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>
                             <Ionicons name="checkmark-circle-outline" size={80} color={colors.textSecondary} style={{ opacity: 0.2, marginBottom: 16 }} />
@@ -309,6 +439,88 @@ export default function ModerationScreen() {
                         </View>
                     }
                 />
+            ) : (
+                // ── Tab de usuarios baneados ──────────────────────────────────────────────
+                bannedUsersLoading ? (
+                    <ActivityIndicator size="large" color="#EF4444" style={{ marginTop: 60 }} />
+                ) : bannedUsers.length === 0 ? (
+                    <View style={styles.emptyContainer}>
+                        <Ionicons name="shield-checkmark-outline" size={80} color={colors.textSecondary} style={{ opacity: 0.2, marginBottom: 16 }} />
+                        <Text style={[styles.emptyTitle, { color: colors.text }]}>Sin usuarios baneados</Text>
+                        <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+                            No hay usuarios con sanciones activas.
+                        </Text>
+                    </View>
+                ) : (
+                    <FlatList
+                        data={bannedUsers}
+                        keyExtractor={(item) => item.id}
+                        contentContainerStyle={{ padding: 12, paddingBottom: insets.bottom + 20 }}
+                        refreshControl={<RefreshControl refreshing={bannedUsersLoading} onRefresh={() => { setHasBannedMore(true); refetchBanned(); }} colors={['#EF4444']} tintColor="#EF4444" />}
+                        onEndReached={handleLoadMoreBanned}
+                        onEndReachedThreshold={0.5}
+                        ListFooterComponent={
+                            loadingBannedMore ? (
+                                <View style={{ paddingVertical: 20 }}>
+                                    <ActivityIndicator size="small" color="#EF4444" />
+                                </View>
+                            ) : null
+                        }
+                        renderItem={({ item }) => {
+                            const isPermanent = (() => {
+                                const until = new Date(item.bannedUntil);
+                                const now = new Date();
+                                return (until.getTime() - now.getTime()) / 86400000 > 300;
+                            })();
+                            return (
+                                <View style={[styles.bannedCard, { backgroundColor: colors.surface, borderColor: 'rgba(239,68,68,0.25)' }]}>
+                                    <View style={styles.bannedCardTop}>
+                                        <View style={[styles.bannedAvatar, { backgroundColor: 'rgba(239,68,68,0.1)' }]}>
+                                            {item.photoUrl
+                                                ? <Image source={{ uri: item.photoUrl }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                                                : <Text style={styles.bannedAvatarText}>{item.firstName?.[0]}{item.lastName?.[0]}</Text>
+                                            }
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={[styles.bannedName, { color: colors.text }]}>{item.firstName} {item.lastName}</Text>
+                                            <Text style={[styles.bannedUsername, { color: colors.textSecondary }]}>@{item.username}</Text>
+                                        </View>
+                                        <View style={[styles.bannedTypeBadge, { backgroundColor: isPermanent ? 'rgba(239,68,68,0.12)' : 'rgba(245,158,11,0.12)' }]}>
+                                            <Ionicons name={isPermanent ? 'ban' : 'time-outline'} size={12} color={isPermanent ? '#EF4444' : '#F59E0B'} />
+                                            <Text style={[styles.bannedTypeBadgeText, { color: isPermanent ? '#EF4444' : '#F59E0B' }]}>
+                                                {isPermanent ? 'PERMANENTE' : 'TEMPORAL'}
+                                            </Text>
+                                        </View>
+                                    </View>
+
+                                    <View style={[styles.bannedInfo, { backgroundColor: isDark ? 'rgba(239,68,68,0.06)' : 'rgba(239,68,68,0.04)', borderColor: 'rgba(239,68,68,0.15)' }]}>
+                                        <View style={styles.bannedInfoRow}>
+                                            <Ionicons name="calendar-outline" size={13} color="#EF4444" />
+                                            <Text style={styles.bannedInfoLabel}>Hasta:</Text>
+                                            <Text style={styles.bannedInfoValue}>
+                                                {isPermanent ? 'Indefinido' : new Date(item.bannedUntil).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                            </Text>
+                                        </View>
+                                        <View style={styles.bannedInfoRow}>
+                                            <Ionicons name="document-text-outline" size={13} color="#EF4444" />
+                                            <Text style={styles.bannedInfoLabel}>Motivo:</Text>
+                                            <Text style={styles.bannedInfoValue} numberOfLines={2}>{item.banReason}</Text>
+                                        </View>
+                                    </View>
+
+                                    <TouchableOpacity
+                                        style={[styles.unbanBtn, unbanning && { opacity: 0.5 }]}
+                                        onPress={() => setUnbanTarget({ id: item.id, firstName: item.firstName, lastName: item.lastName, username: item.username })}
+                                        disabled={unbanning}
+                                    >
+                                        <Ionicons name="shield-checkmark-outline" size={16} color="#22C55E" style={{ marginRight: 6 }} />
+                                        <Text style={styles.unbanBtnText}>Levantar suspensión</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            );
+                        }}
+                    />
+                )
             )}
 
             {/* Preview Modal */}
@@ -465,6 +677,51 @@ export default function ModerationScreen() {
                                     )}
                                 </View>
                             )}
+                            {selectedReport?.reportedItemType === 'USER' && fetchedItem && (
+                                <View style={{ padding: 20, alignItems: 'center' }}>
+                                    <View style={{ width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(255,101,36,0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 16, overflow: 'hidden', borderWidth: 3, borderColor: '#FF6524' }}>
+                                        {fetchedItem.photoUrl ? (
+                                            <Image source={{ uri: fetchedItem.photoUrl }} style={{ width: '100%', height: '100%' }} />
+                                        ) : (
+                                            <Ionicons name="person" size={50} color="#FF6524" />
+                                        )}
+                                    </View>
+                                    <Text style={{ fontSize: 22, fontWeight: 'bold', color: colors.text }}>{fetchedItem.firstName} {fetchedItem.lastName}</Text>
+                                    <Text style={{ fontSize: 16, color: colors.textSecondary, marginBottom: 12 }}>@{fetchedItem.username}</Text>
+                                    
+                                    {fetchedItem.bio && (
+                                        <View style={{ width: '100%', backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', padding: 15, borderRadius: 12 }}>
+                                            <Text style={{ color: colors.text, textAlign: 'center', fontStyle: 'italic' }}>"{fetchedItem.bio}"</Text>
+                                        </View>
+                                    )}
+
+                                    <View style={{ flexDirection: 'row', marginTop: 20, backgroundColor: 'rgba(255,101,36,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginBottom: 10 }}>
+                                        <Ionicons name="shield-outline" size={14} color="#FF6524" style={{ marginRight: 6 }} />
+                                        <Text style={{ color: '#FF6524', fontWeight: 'bold', fontSize: 12 }}>PERFIL DE USUARIO</Text>
+                                    </View>
+
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            setPreviewVisible(false);
+                                            (navigation as any).navigate('Profile', { userId: fetchedItem.id });
+                                        }}
+                                        style={{
+                                            flexDirection: 'row',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            width: '100%',
+                                            marginTop: 15,
+                                            paddingVertical: 14,
+                                            borderRadius: 12,
+                                            backgroundColor: colors.primary,
+                                        }}
+                                    >
+                                        <Ionicons name="person-circle-outline" size={20} color="#FFF" />
+                                        <Text style={{ color: '#FFF', marginLeft: 8, fontWeight: 'bold', fontSize: 16 }}>Ir al perfil completo</Text>
+                                        <Ionicons name="chevron-forward" size={16} color="#FFF" style={{ marginLeft: 6 }} />
+                                    </TouchableOpacity>
+                                </View>
+                            )}
                         </ScrollView>
                     )}
 
@@ -473,29 +730,45 @@ export default function ModerationScreen() {
                         <View style={[styles.previewActionFooter, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
                             <Text style={[styles.sheetTitle, { color: colors.text, marginBottom: 10 }]}>Tomar Acción</Text>
                             
-                            <TouchableOpacity
-                                style={[styles.actionBtn, { borderColor: '#388E3C', backgroundColor: isDark ? 'rgba(56,142,60,0.1)' : 'rgba(56,142,60,0.06)' }]}
-                                onPress={() => { setPendingAction({ type: 'resolve' }); setConfirmNote(''); }}
-                                disabled={fetchingItem}
-                            >
-                                <Ionicons name="checkmark-circle-outline" size={20} color="#388E3C" style={{ marginRight: 10 }} />
-                                <View>
-                                    <Text style={[styles.actionBtnText, { color: '#388E3C' }]}>Resolver</Text>
-                                    <Text style={{ color: '#388E3C', fontSize: 11, opacity: 0.8 }}>Mantener contenido intacto</Text>
-                                </View>
-                            </TouchableOpacity>
+                            {selectedReport?.reportedItemType === 'USER' ? (
+                                <TouchableOpacity
+                                    style={[styles.actionBtn, { borderColor: '#EF4444', backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.06)' }]}
+                                    onPress={() => setBanModalVisible(true)}
+                                    disabled={fetchingItem}
+                                >
+                                    <Ionicons name="ban" size={20} color="#EF4444" style={{ marginRight: 10 }} />
+                                    <View>
+                                        <Text style={[styles.actionBtnText, { color: '#EF4444' }]}>Suspender Usuario</Text>
+                                        <Text style={{ color: '#EF4444', fontSize: 11, opacity: 0.8 }}>Aplicar baneo temporal o permanente</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            ) : (
+                                <>
+                                    <TouchableOpacity
+                                        style={[styles.actionBtn, { borderColor: '#388E3C', backgroundColor: isDark ? 'rgba(56,142,60,0.1)' : 'rgba(56,142,60,0.06)' }]}
+                                        onPress={() => { setPendingAction({ type: 'resolve' }); setConfirmNote(''); }}
+                                        disabled={fetchingItem}
+                                    >
+                                        <Ionicons name="checkmark-circle-outline" size={20} color="#388E3C" style={{ marginRight: 10 }} />
+                                        <View>
+                                            <Text style={[styles.actionBtnText, { color: '#388E3C' }]}>Resolver</Text>
+                                            <Text style={{ color: '#388E3C', fontSize: 11, opacity: 0.8 }}>Mantener contenido intacto</Text>
+                                        </View>
+                                    </TouchableOpacity>
 
-                            <TouchableOpacity
-                                style={[styles.actionBtn, { borderColor: '#F44336', backgroundColor: isDark ? 'rgba(244,67,54,0.1)' : 'rgba(244,67,54,0.06)' }]}
-                                onPress={() => { setPendingAction({ type: 'resolve_delete' }); setConfirmNote(''); }}
-                                disabled={fetchingItem}
-                            >
-                                <Ionicons name="trash-outline" size={20} color="#F44336" style={{ marginRight: 10 }} />
-                                <View>
-                                    <Text style={[styles.actionBtnText, { color: '#F44336' }]}>Eliminar y Resolver</Text>
-                                    <Text style={{ color: '#F44336', fontSize: 11, opacity: 0.8 }}>Soft-delete (el archivo se conserva en R2)</Text>
-                                </View>
-                            </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.actionBtn, { borderColor: '#F44336', backgroundColor: isDark ? 'rgba(244,67,54,0.1)' : 'rgba(244,67,54,0.06)' }]}
+                                        onPress={() => { setPendingAction({ type: 'resolve_delete' }); setConfirmNote(''); }}
+                                        disabled={fetchingItem}
+                                    >
+                                        <Ionicons name="trash-outline" size={20} color="#F44336" style={{ marginRight: 10 }} />
+                                        <View>
+                                            <Text style={[styles.actionBtnText, { color: '#F44336' }]}>Eliminar y Resolver</Text>
+                                            <Text style={{ color: '#F44336', fontSize: 11, opacity: 0.8 }}>Soft-delete (el archivo se conserva en R2)</Text>
+                                        </View>
+                                    </TouchableOpacity>
+                                </>
+                            )}
 
                             <TouchableOpacity
                                 style={[styles.actionBtn, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', marginBottom: 0 }]}
@@ -646,6 +919,82 @@ export default function ModerationScreen() {
                     />
                 ) : null;
             })()}
+
+            {/* ── Modal de confirmación de unban ─────────────────────────── */}
+            <Modal
+                visible={unbanTarget !== null}
+                transparent
+                animationType="fade"
+                onRequestClose={() => { if (!unbanning) setUnbanTarget(null); }}
+            >
+                <View style={styles.confirmBackdrop}>
+                    <View style={[styles.unbanDialog, { backgroundColor: colors.surface }]}>
+                        {/* Icono */}
+                        <View style={styles.unbanIconRow}>
+                            <View style={styles.unbanIconBg}>
+                                <Ionicons name="shield-checkmark" size={34} color="#22C55E" />
+                            </View>
+                        </View>
+
+                        {/* Textos */}
+                        <Text style={[styles.unbanDialogTitle, { color: colors.text }]}>
+                            Levantar suspensión
+                        </Text>
+                        <Text style={[styles.unbanDialogSub, { color: colors.textSecondary }]}>
+                            ¿Confirmas que deseas levantar la sanción de{' '}
+                            <Text style={{ fontWeight: '800', color: colors.text }}>
+                                {unbanTarget?.firstName} {unbanTarget?.lastName}
+                            </Text>
+                            {' '}(@{unbanTarget?.username})?
+                        </Text>
+                        <Text style={[styles.unbanDialogNote, { color: colors.textSecondary, backgroundColor: isDark ? 'rgba(34,197,94,0.07)' : 'rgba(34,197,94,0.05)', borderColor: 'rgba(34,197,94,0.2)' }]}>
+                            El usuario recuperará acceso inmediato a la plataforma.
+                        </Text>
+
+                        {/* Botones */}
+                        <View style={styles.unbanActions}>
+                            <TouchableOpacity
+                                style={[styles.unbanCancelBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)' }]}
+                                onPress={() => setUnbanTarget(null)}
+                                disabled={unbanning}
+                            >
+                                <Text style={[styles.unbanCancelText, { color: colors.textSecondary }]}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.unbanConfirmBtn, unbanning && { opacity: 0.6 }]}
+                                onPress={() => {
+                                    if (unbanTarget) {
+                                        unbanUser({ variables: { userId: unbanTarget.id } });
+                                        setUnbanTarget(null);
+                                    }
+                                }}
+                                disabled={unbanning}
+                            >
+                                {unbanning
+                                    ? <ActivityIndicator color="#FFF" size="small" />
+                                    : <>
+                                        <Ionicons name="shield-checkmark-outline" size={16} color="#FFF" style={{ marginRight: 6 }} />
+                                        <Text style={styles.unbanConfirmText}>Levantar sanción</Text>
+                                    </>
+                                }
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+            {/* Ban Modal for Moderation Panel */}
+            <BanUserModal
+                visible={banModalVisible}
+                onClose={() => setBanModalVisible(false)}
+                targetUser={fetchedItem && selectedReport?.reportedItemType === 'USER' ? fetchedItem : null}
+                onSuccess={() => {
+                    setBanModalVisible(false);
+                    setPreviewVisible(false);
+                    setSelectedReport(null);
+                    refetch();
+                }}
+            />
+            
         </SafeAreaView>
     );
 }
@@ -767,4 +1116,200 @@ const styles = StyleSheet.create({
     confirmBtns: { flexDirection: 'row', gap: 10 },
     confirmBtn: { flex: 1, borderRadius: 12, paddingVertical: 13, alignItems: 'center', justifyContent: 'center' },
     confirmBtnText: { fontSize: 15, fontWeight: '700' },
+    // ─── Tab bar ─────────────────────────────────────────────────────────────
+    tabBar: {
+        flexDirection: 'row',
+        borderBottomWidth: 1,
+    },
+    tabItem: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        paddingVertical: 12,
+        borderBottomWidth: 2,
+        borderBottomColor: 'transparent',
+    },
+    tabItemActive: {
+        borderBottomWidth: 2,
+    },
+    tabLabel: {
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    tabBadge: {
+        backgroundColor: '#EF4444',
+        minWidth: 18,
+        height: 18,
+        borderRadius: 9,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 4,
+    },
+    tabBadgeText: {
+        color: '#FFF',
+        fontSize: 10,
+        fontWeight: '800',
+    },
+    // ─── Tarjeta de usuario baneado ───────────────────────────────────────────
+    bannedCard: {
+        borderRadius: 14,
+        borderWidth: 1,
+        marginBottom: 12,
+        padding: 14,
+        gap: 12,
+    },
+    bannedCardTop: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    bannedAvatar: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+    },
+    bannedAvatarText: {
+        color: '#EF4444',
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    bannedName: {
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    bannedUsername: {
+        fontSize: 12,
+        marginTop: 2,
+    },
+    bannedTypeBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 10,
+    },
+    bannedTypeBadgeText: {
+        fontSize: 9,
+        fontWeight: '800',
+        letterSpacing: 0.5,
+    },
+    bannedInfo: {
+        borderRadius: 10,
+        borderWidth: 1,
+        padding: 10,
+        gap: 6,
+    },
+    bannedInfoRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 6,
+    },
+    bannedInfoLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#EF4444',
+        minWidth: 50,
+    },
+    bannedInfoValue: {
+        fontSize: 12,
+        color: '#9CA3AF',
+        flex: 1,
+    },
+    unbanBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 10,
+        borderRadius: 10,
+        borderWidth: 1.5,
+        borderColor: '#22C55E',
+        backgroundColor: 'rgba(34,197,94,0.06)',
+    },
+    unbanBtnText: {
+        color: '#22C55E',
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    // ── Unban confirmation dialog ─────────────────────────────────────────────
+    unbanDialog: {
+        width: '100%',
+        borderRadius: 22,
+        padding: 24,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.22,
+        shadowRadius: 20,
+        elevation: 18,
+    },
+    unbanIconRow: {
+        alignItems: 'center',
+        marginBottom: 18,
+    },
+    unbanIconBg: {
+        width: 70,
+        height: 70,
+        borderRadius: 35,
+        backgroundColor: 'rgba(34,197,94,0.12)',
+        borderWidth: 1.5,
+        borderColor: 'rgba(34,197,94,0.25)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    unbanDialogTitle: {
+        fontSize: 20,
+        fontWeight: '900',
+        textAlign: 'center',
+        marginBottom: 10,
+        letterSpacing: -0.3,
+    },
+    unbanDialogSub: {
+        fontSize: 14,
+        textAlign: 'center',
+        lineHeight: 21,
+        marginBottom: 14,
+    },
+    unbanDialogNote: {
+        fontSize: 12.5,
+        textAlign: 'center',
+        lineHeight: 18,
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        borderRadius: 12,
+        borderWidth: 1,
+        marginBottom: 22,
+    },
+    unbanActions: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    unbanCancelBtn: {
+        flex: 1,
+        paddingVertical: 14,
+        borderRadius: 14,
+        alignItems: 'center',
+    },
+    unbanCancelText: {
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    unbanConfirmBtn: {
+        flex: 2,
+        flexDirection: 'row',
+        paddingVertical: 14,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#16A34A',
+    },
+    unbanConfirmText: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#FFF',
+    },
 });

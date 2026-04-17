@@ -8,6 +8,16 @@ import * as SecureStore from 'expo-secure-store';
 import { notifySessionExpired } from './session.manager';
 import Toast from 'react-native-toast-message';
 
+// ─── Ban event emitter (singleton) ───────────────────────────────────────────
+type BanHandler = (info: { bannedUntil: string; banReason: string }) => void;
+let _banHandler: BanHandler | null = null;
+
+export const registerBanHandler = (handler: BanHandler) => { _banHandler = handler; };
+export const unregisterBanHandler = () => { _banHandler = null; };
+const notifyBanned = (info: { bannedUntil: string; banReason: string }) => {
+    _banHandler?.(info);
+};
+
 // Define the GraphQL endpoint connecting securely to the local NestJS server
 const httpLink = createHttpLink({
     uri: `${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'}/graphql`,
@@ -34,16 +44,28 @@ const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
     if (graphQLErrors) {
         graphQLErrors.forEach(({ extensions, message, path }) => {
             // Ignoramos errores 401 que vengan de suscripciones WebSocket (messageAdded).
-            // Esos son esperados y no indican sesión expirada del usuario.
             const isFromSubscription = path && path.includes('messageAdded');
             if (isFromSubscription) return;
 
+            // ── Detectar USER_BANNED ──────────────────────────────────────────
             if (
                 extensions?.code === 'UNAUTHENTICATED' ||
                 extensions?.code === '401' ||
                 message.includes('Unauthorized') ||
                 message.includes('not authenticated')
             ) {
+                // Intentar parsear si es un ban estructurado
+                try {
+                    const parsed = JSON.parse(message);
+                    if (parsed?.code === 'USER_BANNED' && parsed?.bannedUntil) {
+                        notifyBanned({
+                            bannedUntil: parsed.bannedUntil,
+                            banReason: parsed.banReason || 'Violación de las normas de la comunidad',
+                        });
+                        return; // No tratar como session expired
+                    }
+                } catch (_) { /* no era JSON de ban */ }
+
                 isUnauthorized = true;
             }
         });

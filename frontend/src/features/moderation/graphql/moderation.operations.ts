@@ -265,3 +265,60 @@ export const GET_PROFESSIONAL_PROFILE_BY_ID = gql`
         }
     }
 `;
+
+export const BAN_USER = gql`
+    mutation BanUser($userId: String!, $durationInDays: Int!, $reason: String!, $wipeContent: Boolean) {
+        banUser(userId: $userId, durationInDays: $durationInDays, reason: $reason, wipeContent: $wipeContent) {
+            id
+            firstName
+            lastName
+            username
+            bannedUntil
+            banReason
+        }
+    }
+`;
+
+export const UNBAN_USER = gql`
+    mutation UnbanUser($userId: String!) {
+        unbanUser(userId: $userId) {
+            id
+            firstName
+            lastName
+            username
+            bannedUntil
+            banReason
+        }
+    }
+`;
+
+export const GET_BANNED_USERS = gql`
+    query GetBannedUsers($limit: Int, $offset: Int) {
+        getBannedUsers(limit: $limit, offset: $offset) {
+            id
+            firstName
+            lastName
+            username
+            email
+            photoUrl
+            bannedUntil
+            banReason
+            role
+        }
+    }
+`;
+export const GET_USER_MINIMAL_PROFILE = gql`
+    query GetUserMinimalProfile($id: String!) {
+        getUserProfile(id: $id) {
+            id
+            firstName
+            lastName
+            username
+            photoUrl
+            bio
+            role
+            bannedUntil
+            banReason
+        }
+    }
+`;

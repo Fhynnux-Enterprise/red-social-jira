@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Raw } from 'typeorm';
 import { Report } from './entities/report.entity';
 import { User } from '../auth/entities/user.entity';
 import { CreateReportInput, ResolveReportInput } from './dto/report.input';
@@ -15,7 +15,30 @@ import { JobOffer } from '../jobs/entities/job-offer.entity';
 import { ProfessionalProfile } from '../jobs/entities/professional-profile.entity';
 
 @Injectable()
-export class ReportsService {
+export class ReportsService implements OnModuleInit {
+    async onModuleInit() {
+        try {
+            const users = await this.reportRepository.query(`SELECT id FROM users`);
+            const userIds = users.map((u: any) => u.id);
+            
+            let updated = 0;
+            const reports = await this.reportRepository.find();
+            for (const r of reports) {
+                if (r.reportedItemType === 'POST' && userIds.includes(r.reportedItemId)) {
+                    r.reportedItemType = ReportedItemType.USER;
+                    r.reason = r.reason.replace(/\[REPORTE DE USUARIO\]/g, '').trim();
+                    await this.reportRepository.save(r);
+                    updated++;
+                }
+            }
+            if (updated > 0) {
+                console.log(`[Migration] Updated ${updated} old user reports manually.`);
+            }
+        } catch (e) {
+            console.error('[Migration] Error executing robust migration:', e);
+        }
+    }
+
     constructor(
         @InjectRepository(Report)
         private readonly reportRepository: Repository<Report>,
@@ -39,9 +62,13 @@ export class ReportsService {
 
     /**
      * Cualquier usuario autenticado puede crear una denuncia.
-     * Se valida que no haya duplicados (mismo usuario, mismo ítem).
+     * - Si ya existe un reporte PENDIENTE del mismo usuario+ítem → lanza ALREADY_REPORTED.
+     * - Si el reporte previo fue RESOLVED o DISMISSED → lo reutiliza (UPSERT) actualizando
+     *   reason y status a PENDING. Esto respeta el UNIQUE constraint (reporter_id, reported_item_id).
+     * - Si no existe ningún reporte previo → crea uno nuevo.
      */
     async createReport(input: CreateReportInput, reporter: User): Promise<Report> {
+        // Buscar cualquier reporte previo del mismo usuario sobre el mismo ítem
         const existing = await this.reportRepository.findOne({
             where: {
                 reportedItemId: input.reportedItemId,
@@ -50,9 +77,21 @@ export class ReportsService {
         });
 
         if (existing) {
-            throw new ConflictException('ALREADY_REPORTED');
+            if (existing.status === ReportStatus.PENDING) {
+                // Ya hay uno pendiente → no permitir duplicado
+                throw new ConflictException('ALREADY_REPORTED');
+            }
+
+            // RESOLVED o DISMISSED → reutilizar el registro (UPSERT)
+            existing.reason = input.reason;
+            existing.status = ReportStatus.PENDING;
+            existing.moderatorNote = null as any;
+            existing.contentDeleted = false;
+            existing.createdAt = new Date(); // Actualizamos la fecha para que flote al tope
+            return this.reportRepository.save(existing);
         }
 
+        // No existe previo → insertar uno nuevo
         const report = this.reportRepository.create({
             reason: input.reason,
             reportedItemId: input.reportedItemId,
@@ -67,25 +106,27 @@ export class ReportsService {
      * Devuelve todas las denuncias con estado PENDING.
      */
     async getPendingReports(limit = 20, offset = 0): Promise<Report[]> {
-        return this.reportRepository.find({
-            where: { status: ReportStatus.PENDING },
-            order: { createdAt: 'DESC' },
-            take: limit,
-            skip: offset,
-            relations: ['reporter'],
-        });
+        const reports = await this.reportRepository.createQueryBuilder('report')
+            .leftJoinAndSelect('report.reporter', 'reporter')
+            .where('report.status = :status', { status: ReportStatus.PENDING })
+            .orderBy('report.createdAt', 'DESC', 'NULLS LAST')
+            .take(limit)
+            .skip(offset)
+            .getMany();
+        return reports;
     }
 
     /**
      * Devuelve todos los reportes. Solo para ADMIN.
      */
     async getAllReports(limit = 20, offset = 0): Promise<Report[]> {
-        return this.reportRepository.find({
-            order: { createdAt: 'DESC' },
-            take: limit,
-            skip: offset,
-            relations: ['reporter'],
-        });
+        const reports = await this.reportRepository.createQueryBuilder('report')
+            .leftJoinAndSelect('report.reporter', 'reporter')
+            .orderBy('report.createdAt', 'DESC', 'NULLS LAST')
+            .take(limit)
+            .skip(offset)
+            .getMany();
+        return reports;
     }
 
     /**
@@ -287,4 +328,21 @@ export class ReportsService {
 
         return this.reportRepository.save(report);
     }
+
+    /**
+     * Devuelve el reporte PENDIENTE del usuario actual para un ítem dado.
+     * Retorna null si no hay ningún reporte pendiente (nunca reportó, o fue resuelto/descartado).
+     * Con null el frontend permitirá denunciar de nuevo.
+     */
+    async getMyReportForItem(reportedItemId: string, reporter: User): Promise<Report | null> {
+        return this.reportRepository.findOne({
+            where: {
+                reportedItemId,
+                reporter: { id: reporter.id },
+                status: ReportStatus.PENDING,
+            },
+            order: { createdAt: 'DESC' },
+        });
+    }
 }
+

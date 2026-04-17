@@ -1,11 +1,15 @@
 import { Resolver, Mutation, Query, Args, ResolveField, Parent, Int } from '@nestjs/graphql';
-import { UseGuards } from '@nestjs/common';
+import { UseGuards, BadRequestException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UserCustomField } from './entities/user-custom-field.entity';
 import { UserBadge } from './entities/user-badge.entity';
 import { User } from '../auth/entities/user.entity';
 import { JwtGqlGuard } from '../auth/guards/jwt-gql.guard';
+import { GqlAuthGuard } from '../auth/guards/gql-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../auth/enums/user-role.enum';
 import { FollowsService } from '../follows/follows.service';
 import { PostsService } from '../posts/posts.service';
 import { Post } from '../posts/entities/post.entity';
@@ -81,8 +85,19 @@ export class UsersResolver {
   @UseGuards(JwtGqlGuard)
   async getUserProfile(
     @Args('id') id: string,
+    @CurrentUser() currentUser: any,
   ): Promise<User> {
-    return this.usersService.findById(id);
+    const user = await this.usersService.findById(id);
+    
+    // Si el usuario está baneado, ocultarlo (simular que no existe)
+    // a menos que sea un ADMIN o MODERATOR quien lo consulta.
+    if (user.bannedUntil && new Date(user.bannedUntil) > new Date()) {
+      if (currentUser.role !== UserRole.ADMIN && currentUser.role !== UserRole.MODERATOR) {
+        throw new BadRequestException('Usuario no encontrado');
+      }
+    }
+    
+    return user;
   }
 
   @Query(() => User, { name: 'me' })
@@ -129,5 +144,38 @@ export class UsersResolver {
   @UseGuards(JwtGqlGuard)
   async pingPresence(@CurrentUser() user: any): Promise<boolean> {
     return this.usersService.pingPresence(user.id);
+  }
+
+  // ─── Moderación: suspensión / baneo ────────────────────────────────────────
+
+  @Mutation(() => User, { description: 'Suspende o banea a un usuario por X días. Si durationInDays=999 se considera permanente. wipeContent permite borrar todo su contenido.' })
+  @UseGuards(GqlAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR)
+  async banUser(
+    @Args('userId') userId: string,
+    @Args('durationInDays', { type: () => Int }) durationInDays: number,
+    @Args('reason') reason: string,
+    @Args('wipeContent', { type: () => Boolean, nullable: true, defaultValue: false }) wipeContent: boolean,
+  ): Promise<User> {
+    return this.usersService.banUser(userId, durationInDays, reason, wipeContent);
+  }
+
+  @Mutation(() => User, { description: 'Levanta la suspensión de un usuario.' })
+  @UseGuards(GqlAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR)
+  async unbanUser(
+    @Args('userId') userId: string,
+  ): Promise<User> {
+    return this.usersService.unbanUser(userId);
+  }
+
+  @Query(() => [User], { name: 'getBannedUsers', description: 'Lista todos los usuarios actualmente baneados.' })
+  @UseGuards(GqlAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR)
+  async getBannedUsers(
+    @Args('limit', { type: () => Int, nullable: true, defaultValue: 15 }) limit: number,
+    @Args('offset', { type: () => Int, nullable: true, defaultValue: 0 }) offset: number,
+  ): Promise<User[]> {
+    return this.usersService.getBannedUsers(limit, offset);
   }
 }

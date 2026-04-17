@@ -57,6 +57,6 @@ export class Report {
     reporter: User;
 
     @Field(() => Date)
-    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+    @Column({ name: 'created_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
     createdAt: Date;
 }

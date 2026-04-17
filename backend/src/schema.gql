@@ -151,6 +151,7 @@ type JobOffer {
   salary: String
   contactPhone: String!
   createdAt: DateTime!
+  deletedAt: DateTime
   author: User!
   media: [JobOfferMedia!]
 }
@@ -171,6 +172,7 @@ type ProfessionalProfile {
   experienceYears: Int
   contactPhone: String!
   createdAt: DateTime!
+  deletedAt: DateTime
   user: User!
   media: [ProfessionalProfileMedia!]
 }
@@ -206,6 +208,8 @@ type User {
   coverUrl: String
   role: UserRole!
   lastActiveAt: DateTime
+  bannedUntil: DateTime
+  banReason: String
   posts(limit: Int = 5, offset: Int = 0): [Post!]
   customFields: [UserCustomField!]
   badge: UserBadge
@@ -233,17 +237,6 @@ enum UserRole {
 type UploadUrlResponse {
   signedUrl: String!
   publicUrl: String!
-}
-
-type ReadMessagesPayload {
-  conversationId: String!
-  readerId: String!
-}
-
-type ApplyToJobResponse {
-  application: JobApplication!
-  cvUploadUrl: String!
-  cvPublicUrl: String!
 }
 
 type StoreProductMedia {
@@ -329,6 +322,18 @@ enum ReportedItemType {
   SERVICE
   PRODUCT
   COMMENT
+  USER
+}
+
+type ReadMessagesPayload {
+  conversationId: String!
+  readerId: String!
+}
+
+type ApplyToJobResponse {
+  application: JobApplication!
+  cvUploadUrl: String!
+  cvPublicUrl: String!
 }
 
 type Query {
@@ -340,6 +345,9 @@ type Query {
   getUserProfile(id: String!): User!
   me: User!
   searchUsers(searchTerm: String!, limit: Int = 5, offset: Int = 0): [User!]!
+
+  """Lista todos los usuarios actualmente baneados."""
+  getBannedUsers(limit: Int = 15, offset: Int = 0): [User!]!
   isFollowing(followingId: String!): Boolean!
   getFollowers(userId: String!): [User!]!
   getFollowing(userId: String!): [User!]!
@@ -373,6 +381,7 @@ type Query {
   getStoreProductCommentById(id: ID!): StoreProductComment
   getPendingReports(limit: Int! = 20, offset: Int! = 0): [Report!]!
   getAllReports(limit: Int! = 20, offset: Int! = 0): [Report!]!
+  getMyReportStatus(reportedItemId: ID!): Report
 }
 
 union FeedItem = Post | JobOffer | ProfessionalProfile | StoreProduct
@@ -390,6 +399,14 @@ type Mutation {
   updateProfile(firstName: String, lastName: String, bio: String, username: String, phone: String): User!
   updateProfileMedia(photoUrl: String, coverUrl: String): User!
   pingPresence: Boolean!
+
+  """
+  Suspende o banea a un usuario por X días. Si durationInDays=999 se considera permanente. wipeContent permite borrar todo su contenido.
+  """
+  banUser(userId: String!, durationInDays: Int!, reason: String!, wipeContent: Boolean = false): User!
+
+  """Levanta la suspensión de un usuario."""
+  unbanUser(userId: String!): User!
   toggleFollow(followingId: String!): Boolean!
   createComment(postId: String!, content: String!, parentId: String): Comment!
   deleteComment(id: String!): Boolean!

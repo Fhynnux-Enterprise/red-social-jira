@@ -90,4 +90,19 @@ export class ReportsResolver {
     ): Promise<Report> {
         return this.reportsService.directModerateContent(input, user);
     }
+
+    /**
+     * Devuelve el reporte más reciente del usuario actual para un ítem dado.
+     * Retorna null si no existe ningún reporte previo.
+     * Si el status es PENDING: el usuario ya reportó y sigue pendiente.
+     * Si el status es RESOLVED o DISMISSED: puede reportar de nuevo.
+     */
+    @Query(() => Report, { nullable: true, name: 'getMyReportStatus' })
+    @UseGuards(GqlAuthGuard)
+    getMyReportStatus(
+        @Args('reportedItemId', { type: () => ID }) reportedItemId: string,
+        @CurrentUser() user: User,
+    ): Promise<Report | null> {
+        return this.reportsService.getMyReportForItem(reportedItemId, user);
+    }
 }

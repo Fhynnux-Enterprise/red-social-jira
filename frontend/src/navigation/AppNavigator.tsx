@@ -17,6 +17,7 @@ import JobsScreen from '../features/jobs/screens/JobsScreen';
 import StoreScreen from '../features/store/screens/StoreScreen';
 import NotificationsScreen from '../features/notifications/screens/NotificationsScreen';
 import ModerationScreen from '../features/moderation/screens/ModerationScreen';
+import BannedScreen from '../features/auth/screens/BannedScreen';
 import { useTheme } from '../theme/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery, useSubscription } from '@apollo/client/react';
@@ -208,6 +209,19 @@ function MainTabNavigator() {
 }
 
 export default function AppNavigator() {
+    const { banInfo, signOut } = useAuth() as any;
+
+    // Si el usuario está baneado, mostrar la pantalla de castigo en lugar de la app
+    if (banInfo) {
+        return (
+            <BannedScreen
+                bannedUntil={banInfo.bannedUntil}
+                banReason={banInfo.banReason}
+                onSignOut={signOut}
+            />
+        );
+    }
+
     return (
         <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
             <Stack.Screen name="MainTabs" component={MainTabNavigator} />

@@ -12,6 +12,7 @@ export enum ReportedItemType {
     SERVICE = 'SERVICE',
     PRODUCT = 'PRODUCT',
     COMMENT = 'COMMENT',
+    USER = 'USER',
 }
 
 registerEnumType(ReportStatus, {

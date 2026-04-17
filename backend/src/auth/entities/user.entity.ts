@@ -77,6 +77,14 @@ export class User {
     @Column({ name: 'last_active_at', type: 'timestamptz', nullable: true })
     lastActiveAt?: Date;
 
+    @Field(() => Date, { nullable: true })
+    @Column({ name: 'banned_until', type: 'timestamptz', nullable: true })
+    bannedUntil?: Date;
+
+    @Field({ nullable: true })
+    @Column({ name: 'ban_reason', type: 'varchar', nullable: true })
+    banReason?: string;
+
     @Field(() => [Post], { nullable: true })
     @OneToMany(() => Post, (post) => post.author)
     posts: Post[];

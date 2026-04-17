@@ -160,6 +160,20 @@ export class AuthService {
         if (!user) {
             throw new UnauthorizedException('Usuario no encontrado');
         }
+
+        // Si el usuario está baneado, lanzar excepción con JSON estructurado
+        // igual que el GqlAuthGuard, para que el frontend pueda detectar el ban
+        // tanto al iniciar como durante el uso de la app
+        if (user.bannedUntil && user.bannedUntil > new Date()) {
+            throw new UnauthorizedException(
+                JSON.stringify({
+                    code: 'USER_BANNED',
+                    bannedUntil: user.bannedUntil.toISOString(),
+                    banReason: user.banReason ?? 'Violación de las normas de la comunidad',
+                })
+            );
+        }
+
         return user;
     }
 }

@@ -41,7 +41,8 @@
       "expo-secure-store",
       "@react-native-google-signin/google-signin",
       "react-native-compressor",
-      "expo-video"
+      "expo-video",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

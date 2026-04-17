@@ -14,6 +14,7 @@ import {
   GET_STORE_PRODUCTS, GET_MY_STORE_PRODUCTS,
 } from '../graphql/store.operations';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
+import { Video as Compressor } from 'react-native-compressor';
 import Toast from 'react-native-toast-message';
 
 const COUNTRY_CODES = [
@@ -157,7 +158,25 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
         setLocalMedia(prev => prev.map((item, idx) => idx === i ? { ...item, status: 'uploading' } : item));
         const folder = m.type === 'VIDEO' ? 'store-videos' : 'store-images';
         try {
-          const remoteUrl = await uploadMedia(m.uri, m.mimeType, folder);
+          let uploadUri = m.uri;
+          let uploadMimeType = m.mimeType;
+
+          // Comprimir video antes de subir
+          if (m.type === 'VIDEO') {
+            try {
+              uploadUri = await Compressor.compress(m.uri, {
+                compressionMethod: 'manual',
+                bitrate: 3000000,
+                maxSize: 720
+              });
+              // El compresor siempre produce MP4
+              uploadMimeType = 'video/mp4';
+            } catch (compErr) {
+              console.warn('Compresión de video falló, usando original:', compErr);
+            }
+          }
+
+          const remoteUrl = await uploadMedia(uploadUri, uploadMimeType, folder);
           setLocalMedia(prev => prev.map((item, idx) => idx === i ? { ...item, status: 'done', remoteUrl } : item));
           uploadedMedia.push({ url: remoteUrl, type: m.type, order: i });
         } catch (uploadErr: any) {

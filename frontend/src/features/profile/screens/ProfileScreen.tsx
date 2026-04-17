@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback, memo } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, RefreshControl, Platform, FlatList } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, RefreshControl, Platform, FlatList, TextInput, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,8 +8,8 @@ import { useAuth } from '../../auth/context/AuthContext';
 import ThemeSelectorModal from '../../../components/ThemeSelectorModal';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import Toast from 'react-native-toast-message';
-import { useQuery, useMutation } from '@apollo/client/react';
-import { GET_USER_PROFILE } from '../graphql/profile.operations';
+import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
+import { GET_USER_PROFILE, CREATE_REPORT, GET_MY_REPORT_STATUS } from '../graphql/profile.operations';
 import { DELETE_POST, GET_POSTS } from '../../feed/graphql/posts.operations';
 import { TOGGLE_FOLLOW, IS_FOLLOWING } from '../../follows/graphql/follows.operations';
 import { GET_STORE_PRODUCTS_BY_USER } from '../../store/graphql/store.operations';
@@ -25,6 +25,7 @@ import ListFooter from '../../../components/ListFooter';
 import ProfileStats from '../components/ProfileStats';
 import ProfileActions from '../components/ProfileActions';
 import ProfileBio from '../components/ProfileBio';
+import BanUserModal from '../../moderation/components/BanUserModal';
 import { GET_OR_CREATE_CHAT } from '../../chat/graphql/chat.operations';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,12 +39,14 @@ interface ProfileHeaderProps {
     isFollowing: boolean;
     activeTab: 'all' | 'store' | 'jobs';
     colors: ThemeColors;
+    currentUserRole?: string;
     onToggleFollow: () => void;
     onMessage: () => void;
     onEditProfile: () => void;
     onOpenMenu: () => void;
     onGoBack: () => void;
     onTabChange: (tab: 'all' | 'store' | 'jobs') => void;
+    onOpenContextMenu: () => void;
 }
 
 const ProfileHeader = memo(({
@@ -52,12 +55,14 @@ const ProfileHeader = memo(({
     isFollowing,
     activeTab,
     colors,
+    currentUserRole,
     onToggleFollow,
     onMessage,
     onEditProfile,
     onOpenMenu,
     onGoBack,
     onTabChange,
+    onOpenContextMenu,
 }: ProfileHeaderProps) => {
     const headerStyles = useMemo(() => getStyles(colors, false), [colors]);
 
@@ -75,7 +80,7 @@ const ProfileHeader = memo(({
                         style={headerStyles.bannerGradient}
                     />
                 )}
-                <View style={[headerStyles.floatingHeader, !isMyProfile && { justifyContent: 'flex-start' }]}>
+                <View style={[headerStyles.floatingHeader, !isMyProfile && { justifyContent: 'space-between' }]}>
                     {isMyProfile ? (
                         <>
                             <TouchableOpacity onPress={onEditProfile} style={[headerStyles.floatingMenuButton, { marginRight: 10 }]}>
@@ -86,9 +91,15 @@ const ProfileHeader = memo(({
                             </TouchableOpacity>
                         </>
                     ) : (
-                        <TouchableOpacity onPress={onGoBack} style={headerStyles.floatingMenuButton}>
-                            <Ionicons name="arrow-back" size={24} color="#FFF" />
-                        </TouchableOpacity>
+                        <>
+                            <TouchableOpacity onPress={onGoBack} style={headerStyles.floatingMenuButton}>
+                                <Ionicons name="arrow-back" size={24} color="#FFF" />
+                            </TouchableOpacity>
+                            {/* Menú contextual para perfiles ajenos */}
+                            <TouchableOpacity onPress={onOpenContextMenu} style={headerStyles.floatingMenuButton}>
+                                <Ionicons name="ellipsis-vertical" size={24} color="#FFF" />
+                            </TouchableOpacity>
+                        </>
                     )}
                 </View>
             </View>
@@ -199,6 +210,14 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     const [hasMore, setHasMore] = useState(true);
     const [isFetchingMore, setIsFetchingMore] = useState(false);
 
+    // ── Menú contextual (perfil ajeno) ────────────────────────────────────────
+    const [isContextMenuVisible, setIsContextMenuVisible] = useState(false);
+    const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+    const [isBanModalVisible, setIsBanModalVisible] = useState(false);
+    const [reportReason, setReportReason] = useState('');
+    // Estado del reporte previo (null = nunca reportado, PENDING = pendiente, RESOLVED/DISMISSED = puede reportar de nuevo)
+    const [myReportStatus, setMyReportStatus] = useState<string | null>(null);
+
     const insets = useSafeAreaInsets();
     const isFocused = useIsFocused();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
@@ -272,6 +291,48 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     const [deletePost] = useMutation(DELETE_POST, {
         refetchQueries: [{ query: GET_POSTS }],
     });
+
+    const [createReport, { loading: reporting }] = useMutation(CREATE_REPORT, {
+        onCompleted: () => {
+            setIsReportModalVisible(false);
+            setReportReason('');
+            setMyReportStatus('PENDING');
+            // El Toast se muestra DESPUÉS de cerrar el modal para que sea visible
+            setTimeout(() => {
+                Toast.show({ type: 'success', text1: 'Denuncia enviada', text2: 'Gracias por ayudarnos a mantener la comunidad segura.' });
+            }, 400);
+        },
+        onError: (err) => {
+            const msg = err.message || '';
+            if (msg.includes('ALREADY_REPORTED')) {
+                setIsReportModalVisible(false);
+                setReportReason('');
+                setTimeout(() => {
+                    Toast.show({ type: 'info', text1: 'Ya enviaste una denuncia', text2: 'Tu reporte anterior sigue en revisión.' });
+                }, 400);
+            } else {
+                Toast.show({ type: 'error', text1: 'Error al reportar', text2: err.message });
+            }
+        },
+    });
+
+    const [fetchMyReportStatus] = useLazyQuery(GET_MY_REPORT_STATUS, {
+        fetchPolicy: 'network-only',
+        onCompleted: (data: any) => {
+            setMyReportStatus(data?.getMyReportStatus?.status ?? null);
+        },
+    });
+
+    // Al abrir el modal de reporte, verificar si ya hay un reporte activo
+    const handleOpenReportModal = useCallback(() => {
+        setIsContextMenuVisible(false);
+        setTimeout(() => {
+            if (profileUserId) {
+                fetchMyReportStatus({ variables: { reportedItemId: profileUserId } });
+            }
+            setIsReportModalVisible(true);
+        }, 250);
+    }, [profileUserId, fetchMyReportStatus]);
 
     const [getOrCreateChat] = useMutation<any>(GET_OR_CREATE_CHAT);
 
@@ -377,6 +438,22 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
 
     const handleOpenMenu = useCallback(() => setIsMenuVisible(true), []);
     const handleCloseMenu = useCallback(() => setIsMenuVisible(false), []);
+    const handleOpenContextMenu = useCallback(() => setIsContextMenuVisible(true), []);
+    const handleCloseContextMenu = useCallback(() => setIsContextMenuVisible(false), []);
+
+    const handleSendReport = useCallback(() => {
+        if (!reportReason.trim()) {
+            Toast.show({ type: 'info', text1: 'El motivo es obligatorio' });
+            return;
+        }
+        createReport({
+            variables: {
+                reportedItemId: profileUserId,
+                reportedItemType: 'USER',
+                reason: reportReason.trim(),
+            },
+        });
+    }, [reportReason, profileUserId, createReport]);
 
     // ── FlatList config ───────────────────────────────────────────────────────
     // onViewableItemsChanged DEBE ser una ref estable — no puede cambiar entre renders
@@ -400,14 +477,16 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
             isFollowing={isFollowing}
             activeTab={activeTab}
             colors={colors}
+            currentUserRole={authContext.user?.role}
             onToggleFollow={toggleFollow}
             onMessage={handleMessagePress}
             onEditProfile={handleEditProfile}
             onOpenMenu={handleOpenMenu}
             onGoBack={handleGoBack}
             onTabChange={setActiveTab}
+            onOpenContextMenu={handleOpenContextMenu}
         />
-    ), [userData, isMyProfile, isFollowing, activeTab, colors, toggleFollow, handleMessagePress, handleEditProfile, handleOpenMenu, handleGoBack]);
+    ), [userData, isMyProfile, isFollowing, activeTab, colors, toggleFollow, handleMessagePress, handleEditProfile, handleOpenMenu, handleGoBack, handleOpenContextMenu]);
 
     // Determinar qué datos para cada tab
     // IMPORTANTE: siempre marcar __itemType para que renderItem sepa qué componente usar
@@ -645,6 +724,148 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 }}
             />
 
+            {/* ─── Menú contextual para perfil ajeno ─── */}
+            <Modal visible={isContextMenuVisible} animationType="fade" transparent onRequestClose={handleCloseContextMenu}>
+                <TouchableWithoutFeedback onPress={handleCloseContextMenu}>
+                    <View style={styles.modalOverlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={[styles.contextMenu, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                <Text style={[styles.contextMenuTitle, { color: colors.textSecondary }]} numberOfLines={1}>
+                                    @{userData?.username}
+                                </Text>
+
+                                {/* Reportar — disponible para todos */}
+                                <TouchableOpacity
+                                    style={styles.contextMenuItem}
+                                    onPress={handleOpenReportModal}
+                                >
+                                    <View style={[styles.contextMenuIcon, { backgroundColor: 'rgba(244,67,54,0.1)' }]}>
+                                        <Ionicons name="flag-outline" size={20} color="#F44336" />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.contextMenuItemText, { color: colors.text }]}>Reportar usuario</Text>
+                                        <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>Notificar a moderación</Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                                </TouchableOpacity>
+
+                                {/* Banear — solo ADMIN y MODERATOR */}
+                                {['ADMIN', 'MODERATOR'].includes(authContext.user?.role) && (
+                                    <TouchableOpacity
+                                        style={styles.contextMenuItem}
+                                        onPress={() => { handleCloseContextMenu(); setTimeout(() => setIsBanModalVisible(true), 250); }}
+                                    >
+                                        <View style={[styles.contextMenuIcon, { backgroundColor: 'rgba(239,68,68,0.1)' }]}>
+                                            <Ionicons name="ban-outline" size={20} color="#EF4444" />
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={[styles.contextMenuItemText, { color: '#EF4444' }]}>Suspender usuario</Text>
+                                            <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>Aplicar sanción temporal o permanente</Text>
+                                        </View>
+                                        <Ionicons name="chevron-forward" size={16} color="#EF4444" />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+
+            {/* ─── Modal de Reporte ─── */}
+            {/* Usamos transparent + fondo manual para que el Toast quede por encima */}
+            <Modal
+                visible={isReportModalVisible}
+                animationType="slide"
+                transparent
+                onRequestClose={() => { setIsReportModalVisible(false); setReportReason(''); }}
+            >
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
+                    <SafeAreaView style={{ backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden', maxHeight: '90%' }} edges={['bottom']}>
+                        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                            <View style={[styles.reportHeader, { borderBottomColor: colors.border }]}>
+                                <TouchableOpacity onPress={() => { setIsReportModalVisible(false); setReportReason(''); }}>
+                                    <Ionicons name="close" size={24} color={colors.text} />
+                                </TouchableOpacity>
+                                <Text style={[styles.reportTitle, { color: colors.text }]}>Reportar a @{userData?.username}</Text>
+                                <View style={{ width: 24 }} />
+                            </View>
+
+                            <View style={{ padding: 20 }}>
+                                {/* Tarjeta del usuario */}
+                                <View style={[styles.reportUserCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                    <View style={[styles.reportAvatar, { backgroundColor: colors.surface }]}>
+                                        {userData?.photoUrl
+                                            ? <Image source={{ uri: userData.photoUrl }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                                            : <Text style={{ color: colors.textSecondary, fontSize: 18, fontWeight: '700' }}>{userData?.firstName?.[0]}{userData?.lastName?.[0]}</Text>
+                                        }
+                                    </View>
+                                    <View>
+                                        <Text style={[styles.reportUserName, { color: colors.text }]}>{userData?.firstName} {userData?.lastName}</Text>
+                                        <Text style={[styles.reportUsername, { color: colors.textSecondary }]}>@{userData?.username}</Text>
+                                    </View>
+                                </View>
+
+                                {/* Estado: ya reportado y pendiente */}
+                                {myReportStatus === 'PENDING' ? (
+                                    <View style={[styles.alreadyReportedBox, { backgroundColor: isDark ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.06)', borderColor: 'rgba(245,158,11,0.25)' }]}>
+                                        <Ionicons name="time-outline" size={28} color="#F59E0B" style={{ marginBottom: 10 }} />
+                                        <Text style={[styles.alreadyReportedTitle, { color: colors.text }]}>Denuncia en revisión</Text>
+                                        <Text style={[styles.alreadyReportedSub, { color: colors.textSecondary }]}>
+                                            Ya enviaste una denuncia sobre este usuario. Nuestro equipo de moderación está revisando el reporte.{`\n\n`}Si el usuario vuelve a cometer una infracción tras resolverse el reporte, podrás denunciarlo de nuevo.
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    /* Formulario de reporte */
+                                    <>
+                                        <Text style={[styles.reportLabel, { color: colors.text }]}>¿Por qué estás reportando este perfil?</Text>
+                                        <View style={[styles.reportInputBox, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', borderColor: colors.border }]}>
+                                            {['Contenido inapropiado', 'Acoso o bullying', 'Spam o publicidad', 'Información falsa', 'Otro motivo'].map((opt) => (
+                                                <TouchableOpacity
+                                                    key={opt}
+                                                    style={[styles.reportOption, { borderColor: colors.border }, reportReason === opt && { borderColor: colors.primary, backgroundColor: `${colors.primary}12` }]}
+                                                    onPress={() => setReportReason(opt)}
+                                                >
+                                                    <View style={[styles.reportRadio, { borderColor: reportReason === opt ? colors.primary : colors.border }]}>
+                                                        {reportReason === opt && <View style={[styles.reportRadioDot, { backgroundColor: colors.primary }]} />}
+                                                    </View>
+                                                    <Text style={[styles.reportOptionText, { color: reportReason === opt ? colors.primary : colors.text }]}>{opt}</Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    </>
+                                )}
+                            </View>
+
+                            {/* Footer — solo visible cuando puede reportar */}
+                            {myReportStatus !== 'PENDING' && (
+                                <View style={[styles.reportFooter, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
+                                    <TouchableOpacity
+                                        style={[styles.reportSendBtn, { backgroundColor: '#F44336', opacity: !reportReason.trim() || reporting ? 0.5 : 1 }]}
+                                        onPress={handleSendReport}
+                                        disabled={!reportReason.trim() || reporting}
+                                    >
+                                        {reporting
+                                            ? <ActivityIndicator color="#FFF" size="small" />
+                                            : <><Ionicons name="flag" size={16} color="#FFF" style={{ marginRight: 8 }} /><Text style={styles.reportSendText}>Enviar denuncia</Text></>
+                                        }
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+                        </KeyboardAvoidingView>
+                    </SafeAreaView>
+                </View>
+            </Modal>
+
+
+            {/* ─── Modal de Baneo ─── */}
+            <BanUserModal
+                visible={isBanModalVisible}
+                onClose={() => setIsBanModalVisible(false)}
+                targetUser={userData ? { id: userData.id, firstName: userData.firstName, lastName: userData.lastName, username: userData.username } : null}
+                onSuccess={() => refetchProfile()}
+            />
+
+
             <CommentsModal
                 visible={!!selectedPostForComments}
                 post={commentsModalData.post}
@@ -772,4 +993,158 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     },
     settingLeft: { flexDirection: 'row', alignItems: 'center' },
     settingText: { fontSize: 16, color: colors.text, marginLeft: 16 },
+    // ─── Menú contextual (perfil ajeno) ───────────────────────────────────────
+    contextMenu: {
+        position: 'absolute',
+        top: 60,
+        right: 16,
+        width: 260,
+        borderRadius: 16,
+        borderWidth: 1,
+        paddingVertical: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.18,
+        shadowRadius: 16,
+        elevation: 16,
+    },
+    contextMenuTitle: {
+        fontSize: 11,
+        fontWeight: '700',
+        letterSpacing: 0.5,
+        textTransform: 'uppercase',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+        marginBottom: 4,
+    },
+    contextMenuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+    },
+    contextMenuIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    contextMenuItemText: {
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    contextMenuItemSub: {
+        fontSize: 11,
+        marginTop: 1,
+    },
+    // ─── Modal de reporte ─────────────────────────────────────────────────────
+    reportHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 16,
+        borderBottomWidth: 1,
+    },
+    reportTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    reportUserCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        padding: 14,
+        borderRadius: 14,
+        borderWidth: 1,
+        marginBottom: 20,
+    },
+    reportAvatar: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+    },
+    reportUserName: {
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    reportUsername: {
+        fontSize: 13,
+        marginTop: 2,
+    },
+    reportLabel: {
+        fontSize: 14,
+        fontWeight: '700',
+        marginBottom: 12,
+    },
+    reportInputBox: {
+        borderRadius: 14,
+        borderWidth: 1,
+        overflow: 'hidden',
+    },
+    reportOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        padding: 14,
+        borderBottomWidth: 1,
+    },
+    reportRadio: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        borderWidth: 2,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    reportRadioDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+    },
+    reportOptionText: {
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    reportFooter: {
+        padding: 16,
+        borderTopWidth: 1,
+    },
+    reportSendBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 14,
+        borderRadius: 14,
+    },
+    reportSendText: {
+        color: '#FFF',
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    // Panel de "ya reportado"
+    alreadyReportedBox: {
+        alignItems: 'center',
+        borderRadius: 16,
+        borderWidth: 1,
+        padding: 20,
+        marginTop: 4,
+    },
+    alreadyReportedTitle: {
+        fontSize: 16,
+        fontWeight: '800',
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    alreadyReportedSub: {
+        fontSize: 13.5,
+        lineHeight: 20,
+        textAlign: 'center',
+    },
 });
