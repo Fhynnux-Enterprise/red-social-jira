@@ -1,39 +1,5 @@
 import { gql } from '@apollo/client';
 
-export const STORE_PRODUCT_FIELDS = gql`
-  fragment StoreProductFields on StoreProduct {
-    id
-    title
-    description
-    price
-    currency
-    location
-    contactPhone
-    condition
-    category
-    isAvailable
-    createdAt
-    seller {
-      id
-      username
-      firstName
-      lastName
-      photoUrl
-    }
-    media {
-      url
-      type
-      order
-    }
-    commentsCount
-    likes {
-      id
-      user {
-        id
-      }
-    }
-  }
-`;
 
 export const GET_STORE_PRODUCTS = gql`
   query GetStoreProducts($limit: Int, $offset: Int) {
@@ -49,6 +15,7 @@ export const GET_STORE_PRODUCTS = gql`
       category
       isAvailable
       createdAt
+      editedAt
       seller {
         id
         username
@@ -86,6 +53,7 @@ export const GET_MY_STORE_PRODUCTS = gql`
       category
       isAvailable
       createdAt
+      editedAt
       seller {
         id
         username
@@ -160,6 +128,7 @@ export const UPDATE_STORE_PRODUCT = gql`
       category
       isAvailable
       createdAt
+      editedAt
       seller {
         id
         username
@@ -249,8 +218,17 @@ export const CREATE_STORE_PRODUCT_COMMENT = gql`
       id
       content
       createdAt
+      updatedAt
+      likesCount
+      isLikedByMe
+      parentId
+      parent {
+        id
+      }
+      editedAt
       user {
         id
+        username
         firstName
         lastName
         photoUrl
@@ -265,10 +243,14 @@ export const GET_STORE_PRODUCT_COMMENTS = gql`
       id
       content
       createdAt
+      updatedAt
       likesCount
       isLikedByMe
+      parentId
+      editedAt
       user {
         id
+        username
         firstName
         lastName
         photoUrl
@@ -277,10 +259,14 @@ export const GET_STORE_PRODUCT_COMMENTS = gql`
         id
         content
         createdAt
+        updatedAt
         likesCount
         isLikedByMe
+        parentId
+        editedAt
         user {
           id
+          username
           firstName
           lastName
           photoUrl

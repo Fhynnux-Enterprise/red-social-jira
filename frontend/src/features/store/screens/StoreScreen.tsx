@@ -5,14 +5,16 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery } from '@apollo/client/react';
+import { useQuery, useMutation } from '@apollo/client/react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../../theme/ThemeContext';
-import { GET_STORE_PRODUCTS, GET_MY_STORE_PRODUCTS } from '../graphql/store.operations';
+import { GET_STORE_PRODUCTS, GET_MY_STORE_PRODUCTS, DELETE_STORE_PRODUCT } from '../graphql/store.operations';
 import StoreProductCard from '../components/StoreProductCard';
 import CreateProductModal from '../components/CreateProductModal';
 import CommentsModal from '../../comments/components/CommentsModal';
 import ListFooter from '../../../components/ListFooter';
+import PostOptionsModal from '../../feed/components/PostOptionsModal';
+import Toast from 'react-native-toast-message';
 
 interface TabConfig {
   key: TabKey;
@@ -42,6 +44,8 @@ export default function StoreScreen() {
 
   // ── Comments Modal State ──
   const [selectedPostForComments, setSelectedPostForComments] = useState<any>(null);
+  const [isOptionsVisible, setIsOptionsVisible] = useState(false);
+  const [selectedProductForOptions, setSelectedProductForOptions] = useState<any>(null);
 
   // ── Tab indicator animado ──
   const [tabWidths, setTabWidths] = useState<number[]>([]);
@@ -138,7 +142,25 @@ export default function StoreScreen() {
 
   const handleEdit = (item: any) => {
     setEditItem(item);
+    // Ya no cerramos el CommentsModal aquí
     setCreateVisible(true);
+  };
+
+  const [deleteProduct] = useMutation(DELETE_STORE_PRODUCT, {
+    onCompleted: () => {
+      setIsOptionsVisible(false);
+      Toast.show({ type: 'success', text1: 'Producto eliminado' });
+      refetchAll();
+      refetchMine();
+    },
+    onError: (err) => {
+      Toast.show({ type: 'error', text1: 'Error', text2: err.message });
+    }
+  });
+
+  const handleOptionsPress = (product: any) => {
+    setSelectedProductForOptions(product);
+    setIsOptionsVisible(true);
   };
 
   const handleCloseModal = () => {
@@ -331,8 +353,23 @@ export default function StoreScreen() {
                 setSelectedPostForComments((prev: any) => ({ ...prev, post: commentsModalData.prevPost }));
             }
         }}
+        onOptionsPress={handleOptionsPress}
         nextPost={commentsModalData.nextPost}
         prevPost={commentsModalData.prevPost}
+      />
+
+      <PostOptionsModal
+        visible={isOptionsVisible}
+        onClose={() => setIsOptionsVisible(false)}
+        onEdit={() => {
+          setIsOptionsVisible(false);
+          handleEdit(selectedProductForOptions);
+        }}
+        onDelete={() => {
+          if (selectedProductForOptions?.id) {
+            deleteProduct({ variables: { id: selectedProductForOptions.id } });
+          }
+        }}
       />
     </View>
   );

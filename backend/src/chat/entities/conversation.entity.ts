@@ -31,4 +31,7 @@ export class Conversation {
 
     @Field(() => Number, { nullable: true })
     unreadCount?: number;
+
+    @Field(() => Boolean)
+    isBlocked: boolean;
 }

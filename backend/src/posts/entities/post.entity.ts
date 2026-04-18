@@ -49,6 +49,10 @@ export class Post {
     @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
     deletedAt?: Date;
 
+    @Field({ nullable: true })
+    @Column({ name: 'edited_at', type: 'timestamptz', nullable: true })
+    editedAt?: Date;
+
     @Field(() => [Comment], { nullable: true })
     @OneToMany(() => Comment, comment => comment.post)
     comments: Comment[];

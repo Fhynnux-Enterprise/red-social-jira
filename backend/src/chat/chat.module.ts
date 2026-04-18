@@ -6,10 +6,12 @@ import { Message } from './entities/message.entity';
 import { ChatService } from './chat.service';
 import { ChatResolver } from './chat.resolver';
 import { User } from '../auth/entities/user.entity';
+import { UserBlocksModule } from '../user-blocks/user-blocks.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Conversation, Participant, Message, User]),
+    UserBlocksModule,
   ],
   providers: [ChatService, ChatResolver],
   exports: [TypeOrmModule],

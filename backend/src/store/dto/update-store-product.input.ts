@@ -1,11 +1,12 @@
 import { InputType, Field, Float, ID, Int } from '@nestjs/graphql';
-import { IsOptional, IsString, IsNumber, IsArray, ValidateNested, IsBoolean } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsArray, ValidateNested, IsBoolean, IsUUID } from 'class-validator';
 import { Type } from 'class-transformer';
 import { StoreProductMediaInput } from './create-store-product.input';
 
 @InputType()
 export class UpdateStoreProductInput {
   @Field(() => ID)
+  @IsUUID()
   id: string;
 
   @Field({ nullable: true })

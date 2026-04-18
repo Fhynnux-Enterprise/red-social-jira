@@ -17,7 +17,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_MARGIN = 4;
 const CARD_WIDTH = SCREEN_WIDTH - (CARD_MARGIN * 2);
 
-const MAX_CHARS = 125;
+const MAX_CHARS = 150;
 
 export interface PostCardProps {
     item: any;
@@ -53,7 +53,7 @@ export default function PostCard({
     const authContext = useAuth() as any;
     const userId = authContext.user?.id || currentUserId;
 
-    const isEdited = item.updatedAt && new Date(item.updatedAt).getTime() > new Date(item.createdAt).getTime() + 2000;
+    const isEdited = !!item.editedAt;
 
     const displayCount = item.likes?.length || 0;
     const commentsCount = item.commentsCount ?? item.comments?.length ?? 0;
@@ -67,7 +67,7 @@ export default function PostCard({
 
     const isTruncatable = !isModalView && (item.content?.length ?? 0) > MAX_CHARS;
     const displayContent = isTruncatable && !isExpanded
-        ? item.content.slice(0, MAX_CHARS).trimEnd() + '...'
+        ? item.content.slice(0, MAX_CHARS).trimEnd() 
         : (item.content ?? '');
 
     useEffect(() => {
@@ -167,7 +167,7 @@ export default function PostCard({
                         </Text>
                         <View style={styles.dateRow}>
                             <Text style={styles.dateText}>{formatDate(item.createdAt)}</Text>
-                            {isEdited && <Text style={styles.editedBadge}> · editado</Text>}
+                            {isEdited && <Text style={styles.editedBadge}> · Editado</Text>}
                         </View>
                     </View>
                 </TouchableOpacity>

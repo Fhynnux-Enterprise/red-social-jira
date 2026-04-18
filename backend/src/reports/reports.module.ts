@@ -11,9 +11,13 @@ import { Comment } from '../comments/entities/comment.entity';
 import { StoreProductComment } from '../store/entities/store-product-comment.entity';
 import { JobOffer } from '../jobs/entities/job-offer.entity';
 import { ProfessionalProfile } from '../jobs/entities/professional-profile.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-    imports: [TypeOrmModule.forFeature([Report, Post, PostMedia, StoreProduct, StoreProductMedia, Comment, StoreProductComment, JobOffer, ProfessionalProfile])],
+    imports: [
+        TypeOrmModule.forFeature([Report, Post, PostMedia, StoreProduct, StoreProductMedia, Comment, StoreProductComment, JobOffer, ProfessionalProfile]),
+        NotificationsModule
+    ],
     providers: [ReportsService, ReportsResolver],
     exports: [ReportsService],
 })

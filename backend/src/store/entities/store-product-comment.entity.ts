@@ -64,10 +64,15 @@ export class StoreProductComment {
   @JoinColumn({ name: 'parent_id' })
   parent?: StoreProductComment;
 
+  @Field({ nullable: true })
   @Column({ name: 'parent_id', nullable: true })
   parentId?: string;
 
   @Field(() => [StoreProductComment], { nullable: true })
   @OneToMany(() => StoreProductComment, comment => comment.parent)
   replies?: StoreProductComment[];
+
+  @Field({ nullable: true })
+  @Column({ name: 'edited_at', type: 'timestamptz', nullable: true })
+  editedAt?: Date;
 }

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+// Force restart to sync schema changes for ProfessionalProfile
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GraphQLModule } from '@nestjs/graphql';
@@ -21,6 +22,9 @@ import { FeedModule } from './feed/feed.module';
 import { StoreModule } from './store/store.module';
 import { ReportsModule } from './reports/reports.module';
 import { GqlAuthGuard } from './auth/guards/gql-auth.guard';
+import { NotificationsModule } from './notifications/notifications.module';
+import { AppealsModule } from './appeals/appeals.module';
+import { UserBlocksModule } from './user-blocks/user-blocks.module';
 
 @Module({
   imports: [
@@ -91,6 +95,9 @@ import { GqlAuthGuard } from './auth/guards/gql-auth.guard';
     FeedModule,
     StoreModule,
     ReportsModule,
+    NotificationsModule,
+    AppealsModule,
+    UserBlocksModule,
   ],
   controllers: [],
   providers: [GqlAuthGuard],

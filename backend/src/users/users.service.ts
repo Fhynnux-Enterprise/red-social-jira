@@ -11,6 +11,8 @@ import { JobOffer } from '../jobs/entities/job-offer.entity';
 import { ProfessionalProfile } from '../jobs/entities/professional-profile.entity';
 import { Report } from '../reports/entities/report.entity';
 import { ReportStatus, ReportedItemType } from '../reports/enums/report.enums';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/enums/notification.enums';
 
 @Injectable()
 export class UsersService {
@@ -21,6 +23,7 @@ export class UsersService {
     private readonly badgeRepository: Repository<UserBadge>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly notificationsService: NotificationsService,
   ) { }
 
   async addCustomField(
@@ -221,6 +224,13 @@ export class UsersService {
       );
     });
 
+    await this.notificationsService.createNotification(
+      targetUserId,
+      'Tu cuenta ha sido suspendida',
+      `Tu cuenta ha sido suspendida ${actionDesc}. Motivo: ${reason}`,
+      NotificationType.MODERATION
+    );
+
     return user;
   }
 
@@ -250,10 +260,16 @@ export class UsersService {
     return this.userRepository.findOne({ where: { id: targetUserId } }) as Promise<User>;
   }
 
-  async getBannedUsers(limit: number = 15, offset: number = 0): Promise<User[]> {
-    return this.userRepository
+  async getBannedUsers(limit: number = 15, offset: number = 0, searchTerm?: string): Promise<User[]> {
+    const query = this.userRepository
       .createQueryBuilder('user')
-      .where('user.bannedUntil > :now', { now: new Date() })
+      .where('user.bannedUntil > :now', { now: new Date() });
+
+    if (searchTerm) {
+      query.andWhere('(user.username ILIKE :term OR user.firstName ILIKE :term OR user.lastName ILIKE :term)', { term: `%${searchTerm}%` });
+    }
+
+    return query
       .orderBy('user.bannedUntil', 'ASC')
       .take(limit)
       .skip(offset)

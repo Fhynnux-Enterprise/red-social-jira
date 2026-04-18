@@ -8,11 +8,14 @@ import { User } from '../auth/entities/user.entity';
 import { FollowsModule } from '../follows/follows.module';
 import { PostsModule } from '../posts/posts.module';
 
+import { NotificationsModule } from '../notifications/notifications.module';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([UserCustomField, UserBadge, User]),
     FollowsModule,
     PostsModule,
+    NotificationsModule,
   ],
   providers: [UsersService, UsersResolver],
   exports: [UsersService],

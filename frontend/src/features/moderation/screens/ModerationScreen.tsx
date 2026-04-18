@@ -11,7 +11,7 @@ import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
 import { useApolloClient } from '@apollo/client/react';
 import Toast from 'react-native-toast-message';
 import { useTheme } from '../../../theme/ThemeContext';
-import { GET_ALL_REPORTS, RESOLVE_REPORT, DISMISS_REPORT, GET_POST_BY_ID, GET_STORE_PRODUCT_BY_ID, GET_JOB_OFFER_BY_ID, GET_COMMENT_BY_ID, GET_STORE_PRODUCT_COMMENT_BY_ID, GET_PROFESSIONAL_PROFILE_BY_ID, UNBAN_USER, GET_BANNED_USERS, GET_USER_MINIMAL_PROFILE } from '../graphql/moderation.operations';
+import { GET_ALL_REPORTS, RESOLVE_REPORT, DISMISS_REPORT, GET_POST_BY_ID, GET_STORE_PRODUCT_BY_ID, GET_JOB_OFFER_BY_ID, GET_COMMENT_BY_ID, GET_STORE_PRODUCT_COMMENT_BY_ID, GET_PROFESSIONAL_PROFILE_BY_ID, UNBAN_USER, GET_BANNED_USERS, GET_USER_MINIMAL_PROFILE, GET_PENDING_APPEALS, RESOLVE_APPEAL } from '../graphql/moderation.operations';
 import PostCard from '../../feed/components/PostCard';
 import StoreProductCard from '../../store/components/StoreProductCard';
 import JobOfferCard from '../../jobs/components/JobOfferCard';
@@ -49,7 +49,7 @@ export default function ModerationScreen() {
     const navigation = useNavigation();
     const insets = useSafeAreaInsets();
 
-    const [activeTab, setActiveTab] = useState<'reports' | 'banned'>('reports');
+    const [activeTab, setActiveTab] = useState<'reports' | 'banned' | 'appeals'>('reports');
     const [selectedReport, setSelectedReport] = useState<any>(null);
     const [previewVisible, setPreviewVisible] = useState(false);
     const [fetchedItem, setFetchedItem] = useState<any>(null);
@@ -57,13 +57,15 @@ export default function ModerationScreen() {
     const [fullProductVisible, setFullProductVisible] = useState(false);
     const [pendingAction, setPendingAction] = useState<null | { type: 'resolve' | 'resolve_delete' | 'dismiss' }>(null);
     const [confirmNote, setConfirmNote] = useState('');
-    const [unbanTarget, setUnbanTarget] = useState<{ id: string; firstName: string; lastName: string; username: string } | null>(null);
+    const [unbanTarget, setUnbanTarget] = useState<{ id: string; firstName: string; lastName: string; username: string; appealId?: string } | null>(null);
     const [banModalVisible, setBanModalVisible] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
     const [hasMore, setHasMore] = useState(true);
+    const [statusFilter, setStatusFilter] = useState<string | null>(null);
+    const [bannedSearchTerm, setBannedSearchTerm] = useState('');
 
     const { data, loading, refetch, fetchMore } = useQuery(GET_ALL_REPORTS, {
-        variables: { limit: 15, offset: 0 },
+        variables: { limit: 15, offset: 0, filter: statusFilter },
         fetchPolicy: 'cache-and-network',
         onCompleted: (res) => {
             if (res?.getAllReports?.length < 15) {
@@ -80,6 +82,7 @@ export default function ModerationScreen() {
         fetchMore({
             variables: {
                 offset: data?.getAllReports?.length || 0,
+                filter: statusFilter,
             },
             updateQuery: (prev, { fetchMoreResult }) => {
                 if (!fetchMoreResult || fetchMoreResult.getAllReports.length === 0) {
@@ -167,7 +170,7 @@ export default function ModerationScreen() {
         refetch: refetchBanned,
         fetchMore: fetchMoreBanned,
     } = useQuery(GET_BANNED_USERS, {
-        variables: { limit: 15, offset: 0 },
+        variables: { limit: 15, offset: 0, searchTerm: bannedSearchTerm },
         skip: activeTab !== 'banned',
         fetchPolicy: 'network-only',
         onCompleted: (res) => {
@@ -187,6 +190,7 @@ export default function ModerationScreen() {
         fetchMoreBanned({
             variables: {
                 offset: bannedUsers.length,
+                searchTerm: bannedSearchTerm,
             },
             updateQuery: (prev, { fetchMoreResult }) => {
                 if (!fetchMoreResult || fetchMoreResult.getBannedUsers.length === 0) {
@@ -216,6 +220,67 @@ export default function ModerationScreen() {
             Alert.alert('Error', err.message || 'No se pudo levantar la suspensión.');
         },
     });
+
+    // ── Query para apelaciones pendientes ──────────────────────────────────────────
+    const [loadingAppealsMore, setLoadingAppealsMore] = useState(false);
+    const [hasAppealsMore, setHasAppealsMore] = useState(true);
+
+    const {
+        data: appealsData,
+        loading: appealsLoading,
+        refetch: refetchAppeals,
+        fetchMore: fetchMoreAppeals,
+    } = useQuery(GET_PENDING_APPEALS, {
+        variables: { limit: 15, offset: 0 },
+        skip: activeTab !== 'appeals',
+        fetchPolicy: 'network-only',
+        onCompleted: (res) => {
+            if (res?.getPendingAppeals?.length < 15) {
+                setHasAppealsMore(false);
+            } else {
+                setHasAppealsMore(true);
+            }
+        }
+    });
+
+    const pendingAppeals: any[] = appealsData?.getPendingAppeals || [];
+
+    const handleLoadMoreAppeals = () => {
+        if (loadingAppealsMore || !hasAppealsMore || appealsLoading) return;
+        setLoadingAppealsMore(true);
+        fetchMoreAppeals({
+            variables: { offset: pendingAppeals.length },
+            updateQuery: (prev, { fetchMoreResult }) => {
+                if (!fetchMoreResult || fetchMoreResult.getPendingAppeals.length === 0) {
+                    setHasAppealsMore(false);
+                    return prev;
+                }
+                if (fetchMoreResult.getPendingAppeals.length < 15) {
+                    setHasAppealsMore(false);
+                }
+                const newItems = fetchMoreResult.getPendingAppeals.filter(
+                    (newItem: any) => !prev.getPendingAppeals.some((prevItem: any) => prevItem.id === newItem.id)
+                );
+                return {
+                    getPendingAppeals: [...prev.getPendingAppeals, ...newItems],
+                };
+            },
+        }).then(() => setLoadingAppealsMore(false)).catch(() => setLoadingAppealsMore(false));
+    };
+
+    const [resolveAppeal, { loading: resolvingAppeal }] = useMutation(RESOLVE_APPEAL, {
+        onCompleted: (res) => {
+            Toast.show({ type: 'success', text1: 'Apelación resuelta', text2: `La apelación ha sido ${res.resolveAppeal.status === 'APPROVED' ? 'Aprobada' : 'Rechazada'}.` });
+            refetchAppeals();
+            if (res.resolveAppeal.status === 'APPROVED') {
+                refetchBanned();
+            }
+        },
+        onError: (err) => {
+            Alert.alert('Error', err.message || 'No se pudo resolver la apelación.');
+        },
+    });
+
 
     const [getPost] = useLazyQuery(GET_POST_BY_ID);
     const [getProduct] = useLazyQuery(GET_STORE_PRODUCT_BY_ID);
@@ -409,7 +474,79 @@ export default function ModerationScreen() {
                     <Ionicons name="ban-outline" size={16} color={activeTab === 'banned' ? '#EF4444' : colors.textSecondary} />
                     <Text style={[styles.tabLabel, { color: activeTab === 'banned' ? '#EF4444' : colors.textSecondary }]}>Baneados</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                    style={[styles.tabItem, activeTab === 'appeals' && styles.tabItemActive, activeTab === 'appeals' && { borderBottomColor: colors.primary }]}
+                    onPress={() => setActiveTab('appeals')}
+                >
+                    <Ionicons name="scale-outline" size={16} color={activeTab === 'appeals' ? colors.primary : colors.textSecondary} />
+                    <Text style={[styles.tabLabel, { color: activeTab === 'appeals' ? colors.primary : colors.textSecondary }]}>Apelaciones</Text>
+                </TouchableOpacity>
             </View>
+
+            {activeTab === 'reports' && (
+                <View style={[styles.filterContainer, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+                        {[
+                            { label: 'Todas', value: null, icon: 'list-outline' },
+                            { label: 'Pendientes', value: 'PENDING', icon: 'time-outline' },
+                            { label: 'Resueltas', value: 'RESOLVED', icon: 'checkmark-circle-outline' },
+                            { label: 'Eliminadas', value: 'DELETED', icon: 'trash-outline' },
+                            { label: 'Descartadas', value: 'DISMISSED', icon: 'close-circle-outline' },
+                        ].map((filter) => {
+                            const isActive = statusFilter === filter.value;
+                            return (
+                                <TouchableOpacity
+                                    key={filter.label}
+                                    style={[
+                                        styles.filterChip,
+                                        { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', borderColor: colors.border },
+                                        isActive && { backgroundColor: colors.primary, borderColor: colors.primary }
+                                    ]}
+                                    onPress={() => {
+                                        setStatusFilter(filter.value);
+                                        setHasMore(true);
+                                    }}
+                                >
+                                    <Ionicons 
+                                        name={filter.icon as any} 
+                                        size={14} 
+                                        color={isActive ? '#FFF' : colors.textSecondary} 
+                                        style={{ marginRight: 6 }} 
+                                    />
+                                    <Text style={[styles.filterChipText, { color: isActive ? '#FFF' : colors.textSecondary }]}>
+                                        {filter.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </ScrollView>
+                </View>
+            )}
+
+            {activeTab === 'banned' && (
+                <View style={[styles.searchContainer, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+                    <View style={[styles.searchBar, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', borderColor: colors.border }]}>
+                        <Ionicons name="search" size={18} color={colors.textSecondary} />
+                        <TextInput
+                            style={[styles.searchInput, { color: colors.text }]}
+                            placeholder="Buscar por nombre o @username..."
+                            placeholderTextColor={colors.textSecondary}
+                            value={bannedSearchTerm}
+                            onChangeText={(text) => {
+                                setBannedSearchTerm(text);
+                                setHasBannedMore(true);
+                            }}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                        />
+                        {bannedSearchTerm.length > 0 && (
+                            <TouchableOpacity onPress={() => setBannedSearchTerm('')}>
+                                <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                </View>
+            )}
 
             {loading && reports.length === 0 ? (
                 <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 60 }} />
@@ -439,16 +576,26 @@ export default function ModerationScreen() {
                         </View>
                     }
                 />
-            ) : (
+            ) : activeTab === 'banned' ? (
                 // ── Tab de usuarios baneados ──────────────────────────────────────────────
                 bannedUsersLoading ? (
                     <ActivityIndicator size="large" color="#EF4444" style={{ marginTop: 60 }} />
                 ) : bannedUsers.length === 0 ? (
                     <View style={styles.emptyContainer}>
-                        <Ionicons name="shield-checkmark-outline" size={80} color={colors.textSecondary} style={{ opacity: 0.2, marginBottom: 16 }} />
-                        <Text style={[styles.emptyTitle, { color: colors.text }]}>Sin usuarios baneados</Text>
+                        <Ionicons 
+                            name={bannedSearchTerm ? "search-outline" : "shield-checkmark-outline"} 
+                            size={80} 
+                            color={colors.textSecondary} 
+                            style={{ opacity: 0.2, marginBottom: 16 }} 
+                        />
+                        <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                            {bannedSearchTerm ? 'Sin coincidencias' : 'Sin usuarios baneados'}
+                        </Text>
                         <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
-                            No hay usuarios con sanciones activas.
+                            {bannedSearchTerm 
+                                ? `No se encontraron usuarios que coincidan con "${bannedSearchTerm}".`
+                                : 'No hay usuarios con sanciones activas.'
+                            }
                         </Text>
                     </View>
                 ) : (
@@ -519,6 +666,116 @@ export default function ModerationScreen() {
                                 </View>
                             );
                         }}
+                    />
+                )
+            ) : (
+                // ── Tab de Apelaciones ──────────────────────────────────────────────
+                appealsLoading ? (
+                    <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 60 }} />
+                ) : pendingAppeals.length === 0 ? (
+                    <View style={styles.emptyContainer}>
+                        <Ionicons name="checkmark-circle-outline" size={80} color={colors.textSecondary} style={{ opacity: 0.2, marginBottom: 16 }} />
+                        <Text style={[styles.emptyTitle, { color: colors.text }]}>Sin apelaciones</Text>
+                        <Text style={[styles.emptySub, { color: colors.textSecondary }]}>No hay apelaciones pendientes por revisar.</Text>
+                    </View>
+                ) : (
+                    <FlatList
+                        data={pendingAppeals}
+                        keyExtractor={(item) => item.id}
+                        contentContainerStyle={{ padding: 12, paddingBottom: insets.bottom + 20 }}
+                        refreshControl={<RefreshControl refreshing={appealsLoading} onRefresh={() => { setHasAppealsMore(true); refetchAppeals(); }} colors={[colors.primary]} tintColor={colors.primary} />}
+                        onEndReached={handleLoadMoreAppeals}
+                        onEndReachedThreshold={0.5}
+                        ListFooterComponent={
+                            loadingAppealsMore ? (
+                                <View style={{ paddingVertical: 20 }}>
+                                    <ActivityIndicator size="small" color={colors.primary} />
+                                </View>
+                            ) : null
+                        }
+                        renderItem={({ item }) => (
+                            <View style={[styles.bannedCard, { backgroundColor: colors.surface, borderColor: item.type === 'ACCOUNT_BAN' ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)' }]}>
+                                <View style={styles.bannedCardTop}>
+                                    <View style={[styles.bannedAvatar, { backgroundColor: item.type === 'ACCOUNT_BAN' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)' }]}>
+                                        {item.user.photoUrl ? (
+                                            <Image source={{ uri: item.user.photoUrl }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                                        ) : (
+                                            <Text style={styles.bannedAvatarText}>{item.user.firstName?.[0]}{item.user.lastName?.[0]}</Text>
+                                        )}
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.bannedName, { color: colors.text }]}>{item.user.firstName} {item.user.lastName}</Text>
+                                        <Text style={[styles.bannedUsername, { color: colors.textSecondary }]}>@{item.user.username}</Text>
+                                    </View>
+                                    <View style={[styles.bannedTypeBadge, { backgroundColor: item.type === 'ACCOUNT_BAN' ? 'rgba(239,68,68,0.12)' : 'rgba(245,158,11,0.12)' }]}>
+                                        <Ionicons name={item.type === 'ACCOUNT_BAN' ? "ban" : "trash-outline"} size={12} color={item.type === 'ACCOUNT_BAN' ? '#EF4444' : '#F59E0B'} />
+                                        <Text style={[styles.bannedTypeBadgeText, { color: item.type === 'ACCOUNT_BAN' ? '#EF4444' : '#F59E0B' }]}>
+                                            {item.type === 'ACCOUNT_BAN' ? 'CUENTA BANEADA' : 'CONTENIDO'}
+                                        </Text>
+                                    </View>
+                                </View>
+
+                                <View style={[styles.bannedInfo, { backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', borderColor: colors.border, marginTop: 12 }]}>
+                                    <View style={styles.bannedInfoRow}>
+                                        <Ionicons name="calendar-outline" size={13} color={colors.textSecondary} />
+                                        <Text style={[styles.bannedInfoLabel, { color: colors.textSecondary }]}>Enviado el:</Text>
+                                        <Text style={[styles.bannedInfoValue, { color: colors.text }]}>
+                                            {new Date(item.createdAt).toLocaleDateString()} a las {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </Text>
+                                    </View>
+                                    <View style={[styles.bannedInfoRow, { alignItems: 'flex-start' }]}>
+                                        <Ionicons name="document-text-outline" size={13} color={colors.textSecondary} style={{ marginTop: 2 }} />
+                                        <Text style={[styles.bannedInfoLabel, { color: colors.textSecondary }]}>Justificación:</Text>
+                                        <Text style={[styles.bannedInfoValue, { color: colors.text, fontStyle: 'italic', flex: 1 }]} numberOfLines={4}>
+                                            "{item.reason}"
+                                        </Text>
+                                    </View>
+                                </View>
+    
+                                <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+                                    <TouchableOpacity
+                                        style={[{ flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' }, { borderColor: colors.error, backgroundColor: 'transparent' }, resolvingAppeal && { opacity: 0.5 }]}
+                                        disabled={resolvingAppeal}
+                                        onPress={() => {
+                                            Alert.alert('Rechazar apelación', 'La sanción se mantendrá intacta. ¿Confirmar?', [
+                                                { text: 'Cancelar', style: 'cancel' },
+                                                { text: 'Rechazar', style: 'destructive', onPress: () => resolveAppeal({ variables: { input: { appealId: item.id, approve: false } } }) }
+                                            ]);
+                                        }}
+                                    >
+                                        <Ionicons name="close-circle-outline" size={16} color={colors.error} style={{ marginRight: 6 }} />
+                                        <Text style={[{ fontSize: 14, fontWeight: '600' }, { color: colors.error }]}>Rechazar</Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                        style={[{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' }, { backgroundColor: '#22C55E' }, resolvingAppeal && { opacity: 0.5 }]}
+                                        disabled={resolvingAppeal}
+                                        onPress={() => {
+                                            if (item.type === 'ACCOUNT_BAN') {
+                                                // Abrir el mismo modal de confirmación que en la pestaña Baneados
+                                                setUnbanTarget({
+                                                    id: item.user.id,
+                                                    firstName: item.user.firstName,
+                                                    lastName: item.user.lastName,
+                                                    username: item.user.username,
+                                                    appealId: item.id,
+                                                });
+                                            } else {
+                                                Alert.alert('Restaurar contenido', 'Esto restaurará el contenido eliminado. ¿Continuar?', [
+                                                    { text: 'Cancelar', style: 'cancel' },
+                                                    { text: 'Restaurar', onPress: () => resolveAppeal({ variables: { input: { appealId: item.id, approve: true } } }) }
+                                                ]);
+                                            }
+                                        }}
+                                    >
+                                        <Ionicons name="shield-checkmark-outline" size={16} color="white" style={{ marginRight: 6 }} />
+                                        <Text style={{ fontSize: 14, fontWeight: '600', color: 'white' }}>
+                                            {item.type === 'ACCOUNT_BAN' ? 'Desbanear' : 'Restaurar'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        )}
                     />
                 )
             )}
@@ -961,16 +1218,22 @@ export default function ModerationScreen() {
                                 <Text style={[styles.unbanCancelText, { color: colors.textSecondary }]}>Cancelar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                                style={[styles.unbanConfirmBtn, unbanning && { opacity: 0.6 }]}
+                                style={[styles.unbanConfirmBtn, (unbanning || resolvingAppeal) && { opacity: 0.6 }]}
                                 onPress={() => {
                                     if (unbanTarget) {
-                                        unbanUser({ variables: { userId: unbanTarget.id } });
+                                        if (unbanTarget.appealId) {
+                                            // Viene de la pestaña de Apelaciones → aprobar la apelación (el backend hace el unban)
+                                            resolveAppeal({ variables: { input: { appealId: unbanTarget.appealId, approve: true } } });
+                                        } else {
+                                            // Viene de la pestaña de Baneados → unban directo
+                                            unbanUser({ variables: { userId: unbanTarget.id } });
+                                        }
                                         setUnbanTarget(null);
                                     }
                                 }}
-                                disabled={unbanning}
+                                disabled={unbanning || resolvingAppeal}
                             >
-                                {unbanning
+                                {(unbanning || resolvingAppeal)
                                     ? <ActivityIndicator color="#FFF" size="small" />
                                     : <>
                                         <Ionicons name="shield-checkmark-outline" size={16} color="#FFF" style={{ marginRight: 6 }} />
@@ -1311,5 +1574,46 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '700',
         color: '#FFF',
+    },
+    // ─── Filtros ─────────────────────────────────────────────────────────────
+    filterContainer: {
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+    },
+    filterScroll: {
+        paddingHorizontal: 12,
+        gap: 8,
+    },
+    filterChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 20,
+        borderWidth: 1,
+    },
+    filterChipText: {
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    // ─── Buscador ────────────────────────────────────────────────────────────
+    searchContainer: {
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+    },
+    searchBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        height: 44,
+        borderRadius: 12,
+        borderWidth: 1,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 14,
+        marginLeft: 8,
+        height: '100%',
     },
 });

@@ -1,5 +1,5 @@
 import { ObjectType, Field, Int, ID } from '@nestjs/graphql';
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, DeleteDateColumn, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, OneToMany } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 import { ProfessionalProfileMedia } from './professional-profile-media.entity';
 
@@ -29,6 +29,14 @@ export class ProfessionalProfile {
   @Field()
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
+
+  @Field()
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt: Date;
+
+  @Field({ nullable: true })
+  @Column({ name: 'edited_at', type: 'timestamptz', nullable: true })
+  editedAt?: Date;
 
   @Field({ nullable: true })
   @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })

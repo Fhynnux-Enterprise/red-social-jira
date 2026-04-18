@@ -7,7 +7,7 @@ import {
     LayoutAnimation, BackHandler
 } from 'react-native';
 
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { Ionicons } from '@expo/vector-icons';
 import { GET_COMMENTS, CREATE_COMMENT, DELETE_COMMENT, UPDATE_COMMENT } from '../graphql/comments.operations';
@@ -46,6 +46,7 @@ const formatTimeAgo = (date: Date) => {
 };
 
 const formatDate = (isoString: string) => {
+    if (!isoString) return '';
     const utcString = isoString.endsWith('Z') ? isoString : `${isoString}Z`;
     const date = new Date(utcString);
     const hoy = new Date();
@@ -79,6 +80,7 @@ export default function CommentsModal({
     onNextPost, onPrevPost, nextPost, prevPost, hasMorePosts = false,
     onOptionsPress, initialExpanded = false
 }: CommentsModalProps) {
+    const isFocused = useIsFocused();
     const { colors, isDark } = useTheme();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const insets = useSafeAreaInsets();
@@ -114,6 +116,7 @@ export default function CommentsModal({
     const isPost = !post?.__typename || post.__typename === 'Post';
     const isStore = post?.__typename === 'StoreProduct';
     const isCommentable = isPost || isStore;
+    const isEdited = !!post?.editedAt;
     const effectiveIsMinimized = isMinimized || !isCommentable;
     // Para todos los tipos de publicación, remap los aliases de Apollo al campo 'media' estándar
     const normalizedItem = React.useMemo(() => {
@@ -129,8 +132,8 @@ export default function CommentsModal({
                 ...post,
                 title: post.storeTitle ?? post.title,
                 media: post.storeMedia ?? post.media ?? [],
-                location: post.storeLocation,
-                contactPhone: post.storeContactPhone,
+                location: post.storeLocation ?? post.location,
+                contactPhone: post.storeContactPhone ?? post.contactPhone,
             };
         }
         // Post: remap postMedia alias
@@ -464,15 +467,21 @@ export default function CommentsModal({
     useEffect(() => {
         if (!visible) return;
         const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+            // Si la pantalla no está enfocada (ej. hay un fullScreenModal encima),
+            // no consumimos el evento y dejamos que pase a la siguiente pantalla.
+            if (!isFocused) {
+                return false;
+            }
+
             if (!isMinimized) {
                 toggleMinimize();
             } else {
                 closeWithAnimation();
             }
-            return true; // consume el evento para que no cierre la pantalla anterior
+            return true;
         });
         return () => sub.remove();
-    }, [visible, isMinimized]);
+    }, [visible, isMinimized, isFocused]);
 
     // ── Teclado ────────────────────────────────────────────────────────────
     const keyboardOffset = useRef(new Animated.Value(Math.max(insets.bottom, 16))).current;
@@ -979,9 +988,9 @@ export default function CommentsModal({
                             content: commentText,
                             createdAt: new Date().toISOString(),
                             updatedAt: new Date().toISOString(),
-                            parentId: replyingTo?.id || null,
                             likesCount: 0,
                             isLikedByMe: false,
+                            parent: replyingTo?.id ? { __typename: 'StoreProductComment', id: replyingTo.id } : null,
                             user: {
                                 __typename: 'User',
                                 id: currentUser.id,
@@ -998,6 +1007,7 @@ export default function CommentsModal({
                             content: commentText,
                             createdAt: new Date().toISOString(),
                             updatedAt: new Date().toISOString(),
+                            editedAt: null,
                             parentId: replyingTo?.id || null,
                             likesCount: 0,
                             isLikedByMe: false,
@@ -1047,21 +1057,12 @@ export default function CommentsModal({
 
     if (!visible) return null;
 
-    const isEdited = post?.updatedAt &&
-        new Date(post.updatedAt).getTime() > new Date(post.createdAt).getTime() + 2000;
 
     return (
         <Modal
             visible={visible}
             transparent
             animationType="none"
-            onRequestClose={() => {
-                if (!isMinimized) {
-                    toggleMinimize();
-                } else {
-                    closeWithAnimation();
-                }
-            }}
             statusBarTranslucent
         >
 
@@ -1490,10 +1491,21 @@ export default function CommentsModal({
                                                 <ActivityIndicator size="large" color={colors.primary} />
                                             </View>
                                         ) : error ? (
-                                            <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
-                                                <Text style={{ color: colors.error }}>Error cargando comentarios</Text>
-                                                <TouchableOpacity onPress={() => refetch()} style={{ marginTop: 10 }}>
-                                                    <Text style={{ color: colors.primary }}>Reintentar</Text>
+                                            <View style={styles.errorContainer} {...emptyAreaPan.panHandlers}>
+                                                <View style={[styles.errorIconCircle, { backgroundColor: colors.error + '15' }]}>
+                                                    <Ionicons name="cloud-offline-outline" size={40} color={colors.error} />
+                                                </View>
+                                                <Text style={[styles.errorTitle, { color: colors.text }]}>¡Ups! Algo salió mal</Text>
+                                                <Text style={[styles.errorSubTitle, { color: colors.textSecondary }]}>
+                                                    No pudimos conectar con el servidor para cargar los comentarios.
+                                                </Text>
+                                                <TouchableOpacity 
+                                                    onPress={() => refetch()} 
+                                                    style={[styles.retryButton, { backgroundColor: colors.primary }]}
+                                                    activeOpacity={0.8}
+                                                >
+                                                    <Ionicons name="refresh-outline" size={20} color="white" />
+                                                    <Text style={styles.retryButtonText}>Reintentar</Text>
                                                 </TouchableOpacity>
                                             </View>
                                         ) : (!currentDataList || currentDataList.length === 0) ? (
@@ -1882,5 +1894,50 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     likeUserName: {
         fontSize: 16,
         fontWeight: '600',
+    },
+    errorContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 40,
+        paddingVertical: 60,
+    },
+    errorIconCircle: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    errorTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    errorSubTitle: {
+        fontSize: 14,
+        textAlign: 'center',
+        marginBottom: 24,
+        lineHeight: 20,
+    },
+    retryButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        borderRadius: 25,
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 3,
+    },
+    retryButtonText: {
+        color: 'white',
+        fontSize: 15,
+        fontWeight: 'bold',
+        marginLeft: 8,
     },
 });

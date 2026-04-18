@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Dimensions, Image, Modal, ActivityIndicator
+  View, Text, TouchableOpacity, StyleSheet, Dimensions, Image, Modal, ActivityIndicator, TouchableWithoutFeedback
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../theme/ThemeContext';
@@ -14,6 +14,8 @@ import { GET_OR_CREATE_CHAT } from '../../chat/graphql/chat.operations';
 import { useApolloClient } from '@apollo/client/react';
 import { useNavigation } from '@react-navigation/native';
 import ReportModal from '../../reports/components/ReportModal';
+import CopyTextModal from '../../../components/CopyTextModal';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -29,8 +31,11 @@ interface StoreProduct {
   category?: string;
   isAvailable: boolean;
   createdAt: string;
+  editedAt?: string;
   seller: { id: string; username: string; firstName: string; lastName: string; photoUrl?: string };
   media?: { url: string; type: string; order: number }[];
+  likes?: { user: { id: string } }[];
+  commentsCount?: number;
 }
 
 interface Props {
@@ -75,8 +80,9 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
   const { user } = useAuth() as any;
   const router = useRouter();
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
 
-  const [innerCardWidth, setInnerCardWidth] = useState(SCREEN_WIDTH - 8); // default width with marginHorizontal 4
+  const [innerCardWidth, setInnerCardWidth] = useState(SCREEN_WIDTH - 8);
 
   const isOwner = user?.id === item.seller?.id;
 
@@ -84,8 +90,8 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
+  const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
 
-  const isModeratorOrAdmin = user?.role === 'ADMIN' || user?.role === 'MODERATOR';
   const client = useApolloClient();
 
   const displayLiked = item.likes?.some(l => l.user?.id === user?.id) || false;
@@ -99,6 +105,16 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
 
   const [toggleLikeMutation] = useMutation(TOGGLE_STORE_PRODUCT_LIKE);
   const [getOrCreateChat, { loading: creatingChat }] = useMutation(GET_OR_CREATE_CHAT);
+
+  const getFullCopyText = () => {
+    let text = `${item.title}\n\n`;
+    text += `Precio: $${parseFloat(String(item.price)).toFixed(2)} ${item.currency || 'USD'}\n`;
+    text += `Descripción: ${item.description}\n`;
+    if (item.location) text += `Ubicación: ${item.location}\n`;
+    if (item.contactPhone) text += `Teléfono: ${item.contactPhone}\n`;
+    if (item.condition) text += `Estado: ${conditionLabel(item.condition)}\n`;
+    return text;
+  };
 
   const handleLikePress = () => {
     if (!user?.id) return;
@@ -116,9 +132,6 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
         user: {
           __typename: 'User',
           id: user.id,
-          firstName: user.firstName || '',
-          lastName: user.lastName || '',
-          photoUrl: user.photoUrl || null,
         }
       });
     }
@@ -157,240 +170,241 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
     <>
       <TouchableOpacity
         style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-        disabled={!onPress}
         activeOpacity={onPress ? 0.7 : 1}
         onPress={onPress}
+        onLongPress={() => setIsCopyModalVisible(true)}
+        delayLongPress={250}
         onLayout={(e) => setInnerCardWidth(e.nativeEvent.layout.width)}
       >
-      {/* ── Header del vendedor ── */}
-      {!hideSellerRow && (
-        <View style={styles.header}>
-          {/* Banner de categoría */}
-          <View style={styles.storeBanner}>
-            <Ionicons name="storefront-outline" size={12} color="#FF6524" style={{ marginRight: 6 }} />
-            <Text style={styles.storeBannerText}>
-              {item.category ? item.category.toUpperCase() : 'TIENDA'}
-            </Text>
-          </View>
+        {!hideSellerRow && (
+          <View style={styles.header}>
+            <View style={styles.storeBanner}>
+              <Ionicons name="storefront-outline" size={12} color="#FF6524" style={{ marginRight: 6 }} />
+              <Text style={styles.storeBannerText}>
+                {item.category ? item.category.toUpperCase() : 'TIENDA'}
+              </Text>
+            </View>
 
-          <View style={styles.headerRow}>
-            <TouchableOpacity
-              style={styles.sellerRow}
-              activeOpacity={0.7}
-              onPress={() => router.push({ pathname: '/profile', params: { userId: item.seller?.id } })}
-            >
-              <View style={styles.avatarWrap}>
-                {item.seller?.photoUrl ? (
-                  <Image source={{ uri: item.seller.photoUrl }} style={styles.avatarImg} />
-                ) : (
-                  <Text style={styles.avatarInitials}>
-                    {item.seller?.firstName?.[0]}{item.seller?.lastName?.[0]}
+            <View style={styles.headerRow}>
+              <TouchableOpacity
+                style={styles.sellerRow}
+                activeOpacity={0.7}
+                onPress={() => router.push({ pathname: '/profile', params: { userId: item.seller?.id } })}
+              >
+                <View style={styles.avatarWrap}>
+                  {item.seller?.photoUrl ? (
+                    <Image source={{ uri: item.seller.photoUrl }} style={styles.avatarImg} />
+                  ) : (
+                    <Text style={styles.avatarInitials}>
+                      {item.seller?.firstName?.[0]}{item.seller?.lastName?.[0]}
+                    </Text>
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sellerName, { color: colors.text }]} numberOfLines={1}>
+                    {item.seller?.firstName} {item.seller?.lastName}
                   </Text>
-                )}
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.sellerName, { color: colors.text }]} numberOfLines={1}>
-                  {item.seller?.firstName} {item.seller?.lastName}
-                </Text>
-                <Text style={[styles.sellerDate, { color: colors.textSecondary }]}>
-                  {formatDate(item.createdAt)}
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            {isOwner && (
-              <TouchableOpacity onPress={() => setMenuVisible(true)} style={styles.ellipsis} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                  <Text style={[styles.sellerDate, { color: colors.textSecondary }]}>
+                    {formatDate(item.createdAt)}
+                    {!!item.editedAt && " • Editado"}
+                  </Text>
+                </View>
               </TouchableOpacity>
-            )}
-            {!isOwner && (
-              <TouchableOpacity onPress={() => setReportVisible(true)} style={styles.ellipsis} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      )}
 
-      {/* ── Info del producto ── */}
-      <TouchableOpacity 
-        style={styles.body} 
-        activeOpacity={0.9} 
-        onPress={() => {
-          setIsDescExpanded(!isDescExpanded);
-          if (onPress) onPress();
-        }}
-      >
-        {/* Título */}
-        <View style={styles.titleRow}>
-          <Text style={[styles.title, { color: colors.text, flex: 1 }]}>
-            {item.title}
-          </Text>
-        </View>
-
-        {/* Ubicación y Precio */}
-        <View style={styles.locationRow}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-            {item.location && (
-              <>
-                <Ionicons name="location-outline" size={13} color="#FF6524" />
-                <Text style={[styles.locationText, { color: colors.textSecondary, marginLeft: 4 }]} numberOfLines={1}>
-                  {item.location}
-                </Text>
-              </>
-            )}
-          </View>
-          <View style={[styles.priceBadge, { backgroundColor: isDark ? 'rgba(76,175,80,0.15)' : 'rgba(76,175,80,0.1)' }]}>
-            <Text style={[styles.price, { color: '#4CAF50' }]}>
-              Precio: ${parseFloat(String(item.price)).toFixed(2)}
-            </Text>
-          </View>
-        </View>
-
-        {/* Condition badge */}
-        {item.condition && (
-          <View style={[styles.conditionBadge, { backgroundColor: `${conditionColor(item.condition)}18` }]}>
-            <View style={[styles.conditionDot, { backgroundColor: conditionColor(item.condition) }]} />
-            <Text style={[styles.conditionText, { color: conditionColor(item.condition) }]}>
-              {conditionLabel(item.condition)}
-            </Text>
+              {isOwner && (
+                <TouchableOpacity onPress={() => setMenuVisible(true)} style={styles.ellipsis} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                  <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+              {!isOwner && (
+                <TouchableOpacity onPress={() => setReportVisible(true)} style={styles.ellipsis} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                  <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         )}
 
-        {/* Descripción */}
-        <Text style={[styles.description, { color: colors.textSecondary }]} numberOfLines={isDescExpanded ? undefined : 3}>
-          {item.description}
-        </Text>
+        <View style={styles.body}>
+          <View style={styles.titleRow}>
+            <Text style={[styles.title, { color: colors.text, flex: 1 }]}>
+              {item.title}
+            </Text>
+          </View>
+
+          <View style={styles.locationRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+              {item.location && (
+                <>
+                  <Ionicons name="location-outline" size={13} color="#FF6524" />
+                  <Text style={[styles.locationText, { color: colors.textSecondary, marginLeft: 4 }]} numberOfLines={1}>
+                    {item.location}
+                  </Text>
+                </>
+              )}
+            </View>
+            <View style={[styles.priceBadge, { backgroundColor: isDark ? 'rgba(76,175,80,0.15)' : 'rgba(76,175,80,0.1)' }]}>
+              <Text style={[styles.price, { color: '#4CAF50' }]}>
+                Precio: ${parseFloat(String(item.price)).toFixed(2)}
+              </Text>
+            </View>
+          </View>
+
+          {item.condition && (
+            <View style={[styles.conditionBadge, { backgroundColor: `${conditionColor(item.condition)}18` }]}>
+              <View style={[styles.conditionDot, { backgroundColor: conditionColor(item.condition) }]} />
+              <Text style={[styles.conditionText, { color: conditionColor(item.condition) }]}>
+                {conditionLabel(item.condition)}
+              </Text>
+            </View>
+          )}
+
+          {item.description.length > 150 && !isDescExpanded ? (
+            <Text style={[styles.description, { color: colors.textSecondary }]}>
+              {item.description.slice(0, 150)}
+              <Text style={{ color: colors.primary, fontWeight: 'bold' }} onPress={() => setIsDescExpanded(true)}> ...más</Text>
+            </Text>
+          ) : (
+            <Text style={[styles.description, { color: colors.textSecondary }]}>
+              {item.description}
+              {item.description.length > 150 && isDescExpanded && (
+                <Text style={{ color: colors.primary, fontWeight: 'bold' }} onPress={() => setIsDescExpanded(false)}> Ver menos.</Text>
+              )}
+            </Text>
+          )}
+        </View>
+
+        {item.media && item.media.length > 0 && (
+          <View style={{ width: '100%', backgroundColor: colors.surface }}>
+            <ImageCarousel media={item.media} containerWidth={cardWidth ?? innerCardWidth} customAspectRatio={1.1} onPress={onPress} disableFullscreen={!!onPress && !isModalView} />
+          </View>
+        )}
+
+        <View style={styles.contactRow}>
+          {item.contactPhone && (
+            <TouchableOpacity
+              style={[styles.contactBtn, { backgroundColor: '#25D366' }]}
+              onPress={async () => {
+                const rawPhone = item.contactPhone!.replace(/\s+/g, '').replace(/[^+\d]/g, '');
+                const phone = rawPhone.startsWith('+') ? rawPhone.slice(1) : rawPhone;
+                const { Linking } = await import('react-native');
+                Linking.openURL(`https://wa.me/${phone}?text=Hola, vi tu publicación "${item.title}" y me interesa.`);
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="logo-whatsapp" size={16} color="#FFF" />
+              <Text style={styles.contactBtnText}>WhatsApp</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            style={[styles.contactBtn, { backgroundColor: colors.primary, opacity: creatingChat ? 0.7 : 1 }]}
+            activeOpacity={0.8}
+            disabled={creatingChat}
+            onPress={async () => {
+              if (!item.seller?.id) return;
+              try {
+                const { data } = await getOrCreateChat({ variables: { targetUserId: item.seller.id } });
+                if (data?.getOrCreateOneOnOneChat?.id) {
+                  router.push({
+                    pathname: '/chatRoom',
+                    params: { conversationId: data.getOrCreateOneOnOneChat.id }
+                  });
+                }
+              } catch (err) {
+                Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir el chat con el vendedor.' });
+              }
+            }}
+          >
+            <Ionicons name="chatbubbles-outline" size={16} color="#FFF" />
+            <Text style={styles.contactBtnText}>Mensaje Privado</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+        {!isModalView && (
+          <View style={styles.actionsRow}>
+            <TouchableOpacity style={styles.actionBtn} onPress={handleLikePress} activeOpacity={0.7}>
+              <Ionicons
+                name={localLiked ? 'heart' : 'heart-outline'}
+                size={21}
+                color={localLiked ? '#FF3B30' : colors.textSecondary}
+              />
+              {localCount > 0 && (
+                <Text style={[styles.actionCount, localLiked && { color: '#FF3B30' }]}>
+                  {localCount}
+                </Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionBtn} onPress={onCommentPress ?? onPress} activeOpacity={0.7}>
+              <Ionicons name="chatbubble-outline" size={19} color={colors.textSecondary} />
+              {(item.commentsCount ?? 0) > 0 && (
+                <Text style={styles.actionCount}>{item.commentsCount}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <Modal visible={menuVisible} transparent animationType="slide" onRequestClose={() => setMenuVisible(false)} statusBarTranslucent>
+          <TouchableWithoutFeedback onPress={() => setMenuVisible(false)}>
+            <View style={styles.menuBackdrop}>
+              <TouchableWithoutFeedback>
+                <View style={[styles.menuBox, { backgroundColor: colors.surface, paddingBottom: insets.bottom + 20 }]}>
+                  <View style={[styles.menuHandle, { backgroundColor: isDark ? '#444' : '#DDD' }]} />
+                  <Text style={[styles.menuTitle, { color: colors.text }]}>Opciones</Text>
+                  
+                  {onEdit && (
+                    <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); onEdit(item); }}>
+                      <View style={[styles.menuIconWrap, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
+                        <Ionicons name="pencil" size={20} color={colors.text} />
+                      </View>
+                      <Text style={[styles.menuLabel, { color: colors.text }]}>Editar producto</Text>
+                    </TouchableOpacity>
+                  )}
+                  
+                  <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); setTimeout(() => setConfirmDelete(true), 150); }}>
+                    <View style={[styles.menuIconWrap, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
+                      <Ionicons name="trash" size={20} color="#FF3B30" />
+                    </View>
+                    <Text style={[styles.menuLabel, { color: '#FF3B30' }]}>Eliminar producto</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity style={[styles.menuItem, { marginTop: 10, borderBottomWidth: 0 }]} onPress={() => setMenuVisible(false)}>
+                    <View style={[styles.menuIconWrap, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>
+                      <Ionicons name="close" size={20} color={colors.textSecondary} />
+                    </View>
+                    <Text style={[styles.menuLabel, { color: colors.textSecondary }]}>Cancelar</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+
+        <Modal visible={confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(false)} statusBarTranslucent>
+          <View style={styles.confirmBackdrop}>
+            <View style={[styles.confirmBox, { backgroundColor: colors.surface }]}>
+              <View style={styles.confirmIcon}>
+                <Ionicons name="trash" size={32} color="#F44336" />
+              </View>
+              <Text style={[styles.confirmTitle, { color: colors.text }]}>¿Eliminar publicación?</Text>
+              <Text style={[styles.confirmMsg, { color: colors.textSecondary }]}>
+                Esta acción no se puede deshacer. El producto dejará de aparecer en la tienda.
+              </Text>
+              <View style={styles.confirmBtns}>
+                <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: colors.border }]} onPress={() => setConfirmDelete(false)} disabled={deleting}>
+                  <Text style={[styles.confirmBtnText, { color: colors.text }]}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: '#F44336' }]} onPress={() => deleteProduct({ variables: { id: item.id } })} disabled={deleting}>
+                  <Text style={[styles.confirmBtnText, { color: '#FFF' }]}>Eliminar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </TouchableOpacity>
 
-      {/* ── Carrusel de imágenes (Al final) ── */}
-      {item.media && item.media.length > 0 && (
-        <View style={{ width: '100%', backgroundColor: colors.surface }}>
-          <ImageCarousel media={item.media} containerWidth={cardWidth ?? innerCardWidth} customAspectRatio={1.1} onPress={onPress} disableFullscreen={!!onPress && !isModalView} />
-        </View>
-      )}
-
-      {/* Botones de contacto (debajo de la imagen) */}
-      <View style={styles.contactRow}>
-        {item.contactPhone && (
-          <TouchableOpacity
-            style={[styles.contactBtn, { backgroundColor: '#25D366' }]}
-            onPress={async () => {
-              const rawPhone = item.contactPhone!.replace(/\s+/g, '').replace(/[^+\d]/g, '');
-              const phone = rawPhone.startsWith('+') ? rawPhone.slice(1) : rawPhone;
-              const { Linking } = await import('react-native');
-              Linking.openURL(`https://wa.me/${phone}?text=Hola, vi tu publicación "${item.title}" y me interesa.`);
-            }}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="logo-whatsapp" size={16} color="#FFF" />
-            <Text style={styles.contactBtnText}>WhatsApp</Text>
-          </TouchableOpacity>
-        )}
-
-        <TouchableOpacity
-          style={[styles.contactBtn, { backgroundColor: colors.primary, opacity: creatingChat ? 0.7 : 1 }]}
-          activeOpacity={0.8}
-          disabled={creatingChat}
-          onPress={async () => {
-            if (!item.seller?.id) return;
-            try {
-              const { data } = await getOrCreateChat({ variables: { targetUserId: item.seller.id } });
-              if (data?.getOrCreateOneOnOneChat?.id) {
-                (navigation as any).navigate('ChatRoom', { conversationId: data.getOrCreateOneOnOneChat.id });
-              }
-            } catch (err) {
-              Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir el chat con el vendedor.' });
-            }
-          }}
-        >
-          <Ionicons name="chatbubbles-outline" size={16} color="#FFF" />
-          <Text style={styles.contactBtnText}>Mensaje Privado</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Divider ── */}
-      <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-      {/* ── Actions + stats ── */}
-      {!isModalView && (
-        <View style={styles.actionsRow}>
-          <TouchableOpacity style={styles.actionBtn} onPress={handleLikePress} activeOpacity={0.7}>
-            <Ionicons
-              name={localLiked ? 'heart' : 'heart-outline'}
-            size={21}
-            color={localLiked ? '#FF3B30' : colors.textSecondary}
-          />
-          {localCount > 0 && (
-            <Text style={[styles.actionCount, localLiked && { color: '#FF3B30' }]}>
-              {localCount}
-            </Text>
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} onPress={onCommentPress ?? onPress} activeOpacity={0.7}>
-          <Ionicons name="chatbubble-outline" size={19} color={colors.textSecondary} />
-          {(item.commentsCount ?? 0) > 0 && (
-            <Text style={styles.actionCount}>{item.commentsCount}</Text>
-          )}
-        </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ── Menú del dueño ── */}
-      <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
-        <TouchableOpacity style={styles.menuBackdrop} activeOpacity={1} onPress={() => setMenuVisible(false)}>
-          <View style={[styles.menuBox, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.menuTitle, { color: colors.textSecondary }]}>Opciones</Text>
-            {onEdit && (
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => { setMenuVisible(false); onEdit(item); }}
-              >
-                <View style={styles.menuIconWrap}>
-                  <Ionicons name="create-outline" size={20} color="#FF6524" />
-                </View>
-                <Text style={[styles.menuLabel, { color: colors.text }]}>Editar producto</Text>
-                <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
-              </TouchableOpacity>
-            )}
-            <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => { setMenuVisible(false); setTimeout(() => setConfirmDelete(true), 150); }}
-            >
-              <View style={[styles.menuIconWrap, { backgroundColor: 'rgba(244,67,54,0.1)' }]}>
-                <Ionicons name="trash-outline" size={20} color="#F44336" />
-              </View>
-              <Text style={[styles.menuLabel, { color: '#F44336' }]}>Eliminar producto</Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* ── Confirm delete ── */}
-      <Modal visible={confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(false)}>
-        <View style={styles.confirmBackdrop}>
-          <View style={[styles.confirmBox, { backgroundColor: colors.surface }]}>
-            <View style={styles.confirmIcon}>
-              <Ionicons name="trash" size={32} color="#F44336" />
-            </View>
-            <Text style={[styles.confirmTitle, { color: colors.text }]}>¿Eliminar publicación?</Text>
-            <Text style={[styles.confirmMsg, { color: colors.textSecondary }]}>
-              Esta acción no se puede deshacer. El producto dejará de aparecer en la tienda.
-            </Text>
-            <View style={styles.confirmBtns}>
-              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: colors.border }]} onPress={() => setConfirmDelete(false)} disabled={deleting}>
-                <Text style={[styles.confirmBtnText, { color: colors.text }]}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: '#F44336' }]} onPress={() => deleteProduct({ variables: { id: item.id } })} disabled={deleting}>
-                <Text style={[styles.confirmBtnText, { color: '#FFF' }]}>Eliminar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </TouchableOpacity>
       <ReportModal
         visible={reportVisible}
         onClose={() => setReportVisible(false)}
@@ -402,7 +416,11 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
           setReportVisible(false);
         }}
       />
-
+      <CopyTextModal
+        visible={isCopyModalVisible}
+        textToCopy={getFullCopyText()}
+        onClose={() => setIsCopyModalVisible(false)}
+      />
     </>
   );
 }
@@ -465,12 +483,12 @@ const styles = StyleSheet.create({
   contactBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13 },
   // Menu
   menuBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  menuBox: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingTop: 12 },
-  menuTitle: { fontSize: 13, fontWeight: '600', textAlign: 'center', marginBottom: 16 },
-  menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 14 },
-  menuIconWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,101,36,0.1)', justifyContent: 'center', alignItems: 'center' },
-  menuLabel: { flex: 1, fontSize: 16, fontWeight: '600' },
-  menuDivider: { height: 1, marginVertical: 4 },
+  menuBox: { borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 12, elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 10 },
+  menuHandle: { width: 40, height: 5, borderRadius: 3, alignSelf: 'center', marginBottom: 16 },
+  menuTitle: { fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 16 },
+  menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1 },
+  menuIconWrap: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  menuLabel: { fontSize: 16, fontWeight: '500' },
   // Confirm
   confirmBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   confirmBox: { width: '100%', maxWidth: 340, borderRadius: 16, padding: 24, alignItems: 'center' },

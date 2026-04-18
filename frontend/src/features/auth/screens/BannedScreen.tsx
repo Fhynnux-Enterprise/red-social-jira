@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import AppealModal from '../../notifications/components/AppealModal';
 
 const { width } = Dimensions.get('window');
 
@@ -24,6 +25,8 @@ export default function BannedScreen({ bannedUntil, banReason, onSignOut }: Bann
     const glowAnim   = useRef(new Animated.Value(0)).current;
     const shakeAnim  = useRef(new Animated.Value(0)).current;
     const ringAnim   = useRef(new Animated.Value(1)).current;
+
+    const [isAppealModalVisible, setAppealModalVisible] = React.useState(false);
 
     const isPermanent = (() => {
         const until = new Date(bannedUntil);
@@ -237,6 +240,25 @@ export default function BannedScreen({ bannedUntil, banReason, onSignOut }: Bann
                         </View>
                     </Animated.View>
 
+                    {/* ── Appeal button ── */}
+                    <Animated.View style={{ opacity: fadeAnim, width: '100%', marginBottom: 12 }}>
+                        <TouchableOpacity
+                            style={[styles.signOutBtn, { borderColor: 'rgba(245,158,11,0.3)' }]}
+                            onPress={() => setAppealModalVisible(true)}
+                            activeOpacity={0.75}
+                        >
+                            <LinearGradient
+                                colors={['rgba(245,158,11,0.18)', 'rgba(245,158,11,0.08)']}
+                                style={StyleSheet.absoluteFillObject}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                            />
+                            <Ionicons name="scale-outline" size={20} color="#F59E0B" />
+                            <Text style={[styles.signOutText, { color: '#F59E0B' }]}>Apelar Suspensión</Text>
+                            <Ionicons name="chevron-forward" size={16} color="rgba(245,158,11,0.5)" />
+                        </TouchableOpacity>
+                    </Animated.View>
+
                     {/* ── Sign out button ── */}
                     <Animated.View style={{ opacity: fadeAnim, width: '100%' }}>
                         <TouchableOpacity
@@ -257,6 +279,13 @@ export default function BannedScreen({ bannedUntil, banReason, onSignOut }: Bann
                     </Animated.View>
                 </ScrollView>
             </SafeAreaView>
+
+            {/* Modal de Apelación */}
+            <AppealModal
+                visible={isAppealModalVisible}
+                onClose={() => setAppealModalVisible(false)}
+                appealType="ACCOUNT_BAN"
+            />
         </View>
     );
 }

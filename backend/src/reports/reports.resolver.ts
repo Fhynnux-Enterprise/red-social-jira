@@ -48,8 +48,9 @@ export class ReportsResolver {
     getAllReports(
         @Args('limit', { type: () => Int, defaultValue: 20 }) limit: number,
         @Args('offset', { type: () => Int, defaultValue: 0 }) offset: number,
+        @Args('filter', { type: () => String, nullable: true }) filter?: string,
     ): Promise<Report[]> {
-        return this.reportsService.getAllReports(limit, offset);
+        return this.reportsService.getAllReports(limit, offset, filter);
     }
 
     /**

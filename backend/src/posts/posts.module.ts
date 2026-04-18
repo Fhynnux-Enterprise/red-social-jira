@@ -7,12 +7,14 @@ import { PostLike } from './entities/post-like.entity';
 import { PostMedia } from './entities/post-media.entity';
 
 import { StorageModule } from '../storage/storage.module';
+import { UserBlocksModule } from '../user-blocks/user-blocks.module';
 import { PostsSubscriber } from './subscribers/posts.subscriber';
 
 @Module({
     imports: [
         TypeOrmModule.forFeature([Post, PostLike, PostMedia]),
         StorageModule,
+        UserBlocksModule,
     ],
     providers: [PostsResolver, PostsService, PostsSubscriber],
     exports: [PostsService],

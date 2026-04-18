@@ -1,8 +1,8 @@
 import { gql } from '@apollo/client';
 
 export const GET_ALL_REPORTS = gql`
-    query GetAllReports($limit: Int, $offset: Int) {
-        getAllReports(limit: $limit, offset: $offset) {
+    query GetAllReports($limit: Int, $offset: Int, $filter: String) {
+        getAllReports(limit: $limit, offset: $offset, filter: $filter) {
             id
             reason
             status
@@ -293,8 +293,8 @@ export const UNBAN_USER = gql`
 `;
 
 export const GET_BANNED_USERS = gql`
-    query GetBannedUsers($limit: Int, $offset: Int) {
-        getBannedUsers(limit: $limit, offset: $offset) {
+    query GetBannedUsers($limit: Int, $offset: Int, $searchTerm: String) {
+        getBannedUsers(limit: $limit, offset: $offset, searchTerm: $searchTerm) {
             id
             firstName
             lastName
@@ -319,6 +319,35 @@ export const GET_USER_MINIMAL_PROFILE = gql`
             role
             bannedUntil
             banReason
+        }
+    }
+`;
+
+export const GET_PENDING_APPEALS = gql`
+    query GetPendingAppeals($limit: Int, $offset: Int) {
+        getPendingAppeals(limit: $limit, offset: $offset) {
+            id
+            reason
+            status
+            type
+            referenceId
+            createdAt
+            user {
+                id
+                firstName
+                lastName
+                username
+                photoUrl
+            }
+        }
+    }
+`;
+
+export const RESOLVE_APPEAL = gql`
+    mutation ResolveAppeal($input: ResolveAppealInput!) {
+        resolveAppeal(input: $input) {
+            id
+            status
         }
     }
 `;

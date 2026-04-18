@@ -175,7 +175,8 @@ export class UsersResolver {
   async getBannedUsers(
     @Args('limit', { type: () => Int, nullable: true, defaultValue: 15 }) limit: number,
     @Args('offset', { type: () => Int, nullable: true, defaultValue: 0 }) offset: number,
+    @Args('searchTerm', { type: () => String, nullable: true }) searchTerm?: string,
   ): Promise<User[]> {
-    return this.usersService.getBannedUsers(limit, offset);
+    return this.usersService.getBannedUsers(limit, offset, searchTerm);
   }
 }

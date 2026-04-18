@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
 import { GET_USER_CONVERSATIONS, DELETE_CONVERSATION_FOR_ME, INBOX_UPDATE_SUBSCRIPTION, GET_OR_CREATE_CHAT } from '../graphql/chat.operations';
 import { GET_ONLINE_FOLLOWING, GET_ONLINE_FOLLOWING_COUNT } from '../../follows/graphql/follows.operations';
 import { useQuery, useMutation, useSubscription, useApolloClient } from '@apollo/client/react';
@@ -183,7 +184,10 @@ export default function ChatListScreen() {
                 variables: { targetUserId: currentUser.id }
             });
             const conversationId = (result.data as any).getOrCreateOneOnOneChat.id;
-            (navigation as any).navigate('ChatRoom', { conversationId });
+            router.push({
+                pathname: '/chatRoom',
+                params: { conversationId }
+            });
         } catch (err) {
             console.error("Error al abrir chat propio:", err);
             Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo crear el chat personal' });
@@ -192,7 +196,10 @@ export default function ChatListScreen() {
 
     const handleOpenDirectChat = async (userId: string, existingConversationId?: string) => {
         if (existingConversationId) {
-            (navigation as any).navigate('ChatRoom', { conversationId: existingConversationId });
+            router.push({
+                pathname: '/chatRoom',
+                params: { conversationId: existingConversationId }
+            });
             return;
         }
         try {
@@ -200,7 +207,10 @@ export default function ChatListScreen() {
                 variables: { targetUserId: userId }
             });
             const conversationId = (result.data as any).getOrCreateOneOnOneChat.id;
-            (navigation as any).navigate('ChatRoom', { conversationId });
+            router.push({
+                pathname: '/chatRoom',
+                params: { conversationId }
+            });
         } catch (err) {
             console.error("Error al abrir chat:", err);
             Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir el chat' });
@@ -283,7 +293,10 @@ export default function ChatListScreen() {
         return (
             <TouchableOpacity
                 style={[styles.chatRow, { borderBottomColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }]}
-                onPress={() => (navigation as any).navigate('ChatRoom', { conversationId: item.id })}
+                onPress={() => router.push({
+                    pathname: '/chatRoom',
+                    params: { conversationId: item.id }
+                })}
                 onLongPress={() => {
                     setSelectedConversation(item);
                     setIsMenuVisible(true);

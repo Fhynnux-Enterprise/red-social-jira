@@ -4,6 +4,7 @@ import {
   ScrollView, Modal, ActivityIndicator, Alert, FlatList, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import ConfirmModal from '../../../components/ConfirmModal';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -66,28 +67,32 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [localMedia, setLocalMedia] = useState<LocalMedia[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
 
   useEffect(() => {
     if (visible) {
       if (editItem) {
-        setTitle(editItem.title ?? '');
-        setDescription(editItem.description ?? '');
-        setPrice(String(editItem.price ?? ''));
-        setLocation(editItem.location ?? '');
-        if (editItem.contactPhone) {
-          const matched = COUNTRY_CODES.find(c => editItem.contactPhone.startsWith(c.code));
+        setTitle(editItem.title || editItem.storeTitle || '');
+        setDescription(editItem.description || editItem.storeDescription || '');
+        setPrice(String(editItem.price || editItem.storePrice || ''));
+        setLocation(editItem.location || editItem.storeLocation || '');
+        
+        const phoneToUse = editItem.contactPhone || editItem.storeContactPhone || '';
+        if (phoneToUse) {
+          const matched = COUNTRY_CODES.find(c => phoneToUse.startsWith(c.code));
           if (matched) {
             setCountryCode(matched.code);
-            setPhone(editItem.contactPhone.slice(matched.code.length));
+            setPhone(phoneToUse.slice(matched.code.length));
           } else {
-            setPhone(editItem.contactPhone);
+            setPhone(phoneToUse);
           }
         } else {
           setCountryCode('+593');
           setPhone('');
         }
-        // Pre-fill existing media as already-uploaded
-        const existingMedia: LocalMedia[] = (editItem.media ?? []).map((m: any) => ({
+        // Pre-fill existing media
+        const rawMedia = editItem.media || editItem.storeMedia || [];
+        const existingMedia: LocalMedia[] = rawMedia.map((m: any) => ({
           uri: m.url,
           mimeType: m.type === 'VIDEO' ? 'video/mp4' : 'image/jpeg',
           type: m.type,
@@ -200,7 +205,7 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
         currency: 'USD',
         location: location.trim() || undefined,
         contactPhone,
-        media: uploadedMedia,
+        media: editItem ? undefined : uploadedMedia,
       };
 
       if (editItem) {
@@ -223,32 +228,49 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
   const selectedCountry = COUNTRY_CODES.find(c => c.code === countryCode) ?? COUNTRY_CODES[0];
   const isUploading = localMedia.some(m => m.status === 'uploading');
 
-  return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
-        {/* Header */}
-        <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-          <TouchableOpacity onPress={onClose} disabled={submitting} style={styles.headerBtn}>
-            <Ionicons name="close" size={24} color={submitting ? colors.textSecondary : colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>
-            {editItem ? 'Editar Producto' : 'Publicar Producto'}
-          </Text>
-          <TouchableOpacity
-            onPress={handleSubmit}
-            disabled={!canSubmit}
-            style={[styles.headerSaveBtn, { backgroundColor: canSubmit ? '#FF6524' : colors.border }]}
-          >
-            {submitting
-              ? <ActivityIndicator size="small" color="#FFF" />
-              : <Text style={{ color: canSubmit ? '#FFF' : colors.textSecondary, fontWeight: '700', fontSize: 14 }}>
-                  {editItem ? 'Guardar' : 'Publicar'}
-                </Text>
-            }
-          </TouchableOpacity>
-        </View>
+  const handleClose = () => {
+    const hasChanges = editItem
+      ? (title !== (editItem.title || editItem.storeTitle || '') ||
+         description !== (editItem.description || editItem.storeDescription || '') ||
+         price !== String(editItem.price || editItem.storePrice || '') ||
+         location !== (editItem.location || editItem.storeLocation || '') ||
+         phone !== (editItem.contactPhone || editItem.storeContactPhone || '').replace(countryCode, ''))
+      : (title.trim() !== '' || description.trim() !== '' || price.trim() !== '' || location.trim() !== '' || phone.trim() !== '' || localMedia.length > 0);
 
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+    if (hasChanges) {
+      setShowExitConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+
+  return (
+    <>
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
+        <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+          {/* Header */}
+          <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+            <TouchableOpacity onPress={handleClose} disabled={submitting} style={styles.headerBtn}>
+              <Ionicons name="close" size={24} color={submitting ? colors.textSecondary : colors.text} />
+            </TouchableOpacity>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>
+              {editItem ? 'Editar Producto' : 'Publicar Producto'}
+            </Text>
+            <TouchableOpacity
+              onPress={handleSubmit}
+              disabled={!canSubmit}
+              style={[styles.headerSaveBtn, { backgroundColor: canSubmit ? '#FF6524' : colors.border }]}
+            >
+              {submitting
+                ? <ActivityIndicator size="small" color="#FFF" />
+                : <Text style={{ color: canSubmit ? '#FFF' : colors.textSecondary, fontWeight: '700', fontSize: 14 }}>
+                    {editItem ? 'Guardar' : 'Publicar'}
+                  </Text>
+              }
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
 
 
           {/* Título */}
@@ -262,8 +284,9 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
             value={title}
             onChangeText={setTitle}
             editable={!submitting}
-            maxLength={120}
+            maxLength={100}
           />
+          <Text style={[styles.counter, { color: colors.textSecondary }]}>{title.length}/100</Text>
 
           {/* Precio en USD */}
           <Text style={[styles.label, { color: colors.textSecondary }]}>
@@ -281,6 +304,7 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
               onChangeText={setPrice}
               keyboardType="decimal-pad"
               editable={!submitting}
+              maxLength={25}
             />
             <Text style={[styles.usdLabel, { color: colors.textSecondary }]}>USD</Text>
           </View>
@@ -299,9 +323,9 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
             value={description}
             onChangeText={setDescription}
             editable={!submitting}
-            maxLength={800}
+            maxLength={3000}
           />
-          <Text style={[styles.counter, { color: colors.textSecondary }]}>{description.length}/800</Text>
+          <Text style={[styles.counter, { color: colors.textSecondary }]}>{description.length}/3000</Text>
 
           {/* Ubicación */}
           <Text style={[styles.label, { color: colors.textSecondary }]}>
@@ -314,7 +338,9 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
             value={location}
             onChangeText={setLocation}
             editable={!submitting}
+            maxLength={50}
           />
+          <Text style={[styles.counter, { color: colors.textSecondary }]}>{location.length}/50</Text>
 
           {/* Teléfono con selector de país */}
           <Text style={[styles.label, { color: colors.textSecondary }]}>
@@ -337,32 +363,40 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
               onChangeText={setPhone}
               keyboardType="phone-pad"
               editable={!submitting}
+              maxLength={25}
             />
           </View>
 
           {/* ── Selector de fotos/videos ── */}
           <Text style={[styles.label, { color: colors.textSecondary, marginTop: 16 }]}>Multimedia (Opcional)</Text>
-          <TouchableOpacity
-            style={[styles.mediaButton, { borderColor: colors.border }]}
-            activeOpacity={0.7}
-            onPress={handlePickMedia}
-            disabled={submitting}
-          >
-            <View style={styles.mediaButtonIconGradientWrapper}>
-              <MaskedView
-                style={{ width: 20, height: 20 }}
-                maskElement={<Ionicons name="image" size={20} color="black" />}
-              >
-                <LinearGradient
-                  colors={[colors.primary, colors.secondary]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={{ flex: 1 }}
-                />
-              </MaskedView>
+          {!editItem ? (
+            <TouchableOpacity
+              style={[styles.mediaButton, { borderColor: colors.border }]}
+              activeOpacity={0.7}
+              onPress={handlePickMedia}
+              disabled={submitting}
+            >
+              <View style={styles.mediaButtonIconGradientWrapper}>
+                <MaskedView
+                  style={{ width: 20, height: 20 }}
+                  maskElement={<Ionicons name="image" size={20} color="black" />}
+                >
+                  <LinearGradient
+                    colors={[colors.primary, colors.secondary]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={{ flex: 1 }}
+                  />
+                </MaskedView>
+              </View>
+              <Text style={styles.mediaButtonText}>Añadir foto o video</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={[styles.mediaButton, { borderStyle: 'solid', backgroundColor: colors.surface, opacity: 0.8, borderColor: colors.border }]}>
+              <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} style={{ marginRight: 8 }} />
+              <Text style={[styles.mediaButtonText, { color: colors.textSecondary }]}>Las fotos o videos no se pueden cambiar al editar</Text>
             </View>
-            <Text style={styles.mediaButtonText}>Añadir foto o video</Text>
-          </TouchableOpacity>
+          )}
 
           {localMedia.length > 0 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
@@ -388,7 +422,7 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
                       <ActivityIndicator size="small" color="#FFF" />
                     </View>
                   )}
-                  {m.status !== 'uploading' && (
+                  {m.status !== 'uploading' && !editItem && (
                     <TouchableOpacity
                       style={styles.removeMediaButton}
                       onPress={() => handleRemoveMedia(i)}
@@ -435,6 +469,21 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
         </TouchableOpacity>
       </Modal>
     </Modal>
+
+    <ConfirmModal
+      visible={showExitConfirm}
+      title="¿Salir de la edición?"
+      message="Tienes cambios sin guardar. Si sales ahora, se perderán."
+      confirmText="Salir"
+      cancelText="Continuar editando"
+      onConfirm={() => {
+        setShowExitConfirm(false);
+        onClose();
+      }}
+      onCancel={() => setShowExitConfirm(false)}
+      isDestructive={true}
+    />
+    </>
   );
 }
 
@@ -544,4 +593,11 @@ const styles = StyleSheet.create({
   },
   pickerItemName: { flex: 1, fontSize: 15, fontWeight: '600' },
   pickerItemCode: { fontSize: 14 },
+  counter: {
+    fontSize: 10,
+    textAlign: 'right',
+    marginTop: -14,
+    marginBottom: 10,
+    fontWeight: '600',
+  },
 });

@@ -75,6 +75,7 @@ export class CommentsService {
             throw new UnauthorizedException('No tienes permiso para editar este comentario');
         }
         comment.content = content;
+        comment.editedAt = new Date(); // Marca de edición real del usuario
         const saved = await this.commentRepository.save(comment);
         return this.mapComment(saved, userId);
     }

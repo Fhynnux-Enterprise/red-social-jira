@@ -13,6 +13,8 @@ import { Comment } from '../comments/entities/comment.entity';
 import { StoreProductComment } from '../store/entities/store-product-comment.entity';
 import { JobOffer } from '../jobs/entities/job-offer.entity';
 import { ProfessionalProfile } from '../jobs/entities/professional-profile.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/enums/notification.enums';
 
 @Injectable()
 export class ReportsService implements OnModuleInit {
@@ -58,6 +60,7 @@ export class ReportsService implements OnModuleInit {
         private readonly jobOfferRepository: Repository<JobOffer>,
         @InjectRepository(ProfessionalProfile)
         private readonly professionalProfileRepository: Repository<ProfessionalProfile>,
+        private readonly notificationsService: NotificationsService,
     ) {}
 
     /**
@@ -117,11 +120,34 @@ export class ReportsService implements OnModuleInit {
     }
 
     /**
-     * Devuelve todos los reportes. Solo para ADMIN.
+     * Devuelve todos los reportes con soporte opcional para filtrado por estado.
+     * Solo para ADMIN.
      */
-    async getAllReports(limit = 20, offset = 0): Promise<Report[]> {
-        const reports = await this.reportRepository.createQueryBuilder('report')
-            .leftJoinAndSelect('report.reporter', 'reporter')
+    async getAllReports(limit = 20, offset = 0, filter?: string): Promise<Report[]> {
+        const query = this.reportRepository.createQueryBuilder('report')
+            .leftJoinAndSelect('report.reporter', 'reporter');
+
+        if (filter) {
+            if (filter === 'PENDING') {
+                query.where('report.status = :status', { status: ReportStatus.PENDING });
+            } else if (filter === 'RESOLVED') {
+                // "Resuelta" -> Resuelta pero NO eliminada
+                query.where('report.status = :status AND report.contentDeleted = :deleted', { 
+                    status: ReportStatus.RESOLVED, 
+                    deleted: false 
+                });
+            } else if (filter === 'DISMISSED') {
+                query.where('report.status = :status', { status: ReportStatus.DISMISSED });
+            } else if (filter === 'DELETED') {
+                // "Eliminada" -> Resuelta Y eliminada
+                query.where('report.status = :status AND report.contentDeleted = :deleted', { 
+                    status: ReportStatus.RESOLVED, 
+                    deleted: true 
+                });
+            }
+        }
+
+        const reports = await query
             .orderBy('report.createdAt', 'DESC', 'NULLS LAST')
             .take(limit)
             .skip(offset)
@@ -155,8 +181,9 @@ export class ReportsService implements OnModuleInit {
 
         // 2. Si se solicitó borrar el contenido, ejecutamos el borrado real (soft-delete)
         let didDelete = false;
+        let ownerId: string | null = null;
         if (input.deleteContent) {
-            await this.softDeleteContent(report.reportedItemType, report.reportedItemId);
+            ownerId = await this.softDeleteContent(report.reportedItemType, report.reportedItemId);
             didDelete = true;
         }
 
@@ -165,6 +192,15 @@ export class ReportsService implements OnModuleInit {
         report.moderatorNote = input.moderatorNote;
         report.contentDeleted = didDelete;
         const resolvedReport = await this.reportRepository.save(report);
+
+        if (didDelete && ownerId) {
+            await this.notificationsService.createNotification(
+                ownerId,
+                'Tu contenido ha sido eliminado',
+                `Tu contenido ha sido eliminado por un moderador debido a reportes de la comunidad. Nota del moderador: ${input.moderatorNote || 'Ninguna'}`,
+                NotificationType.MODERATION
+            );
+        }
 
         // 4. Actualizar TODAS las demás denuncias pendientes del mismo ítem
         for (const related of relatedReports) {
@@ -184,7 +220,16 @@ export class ReportsService implements OnModuleInit {
      */
     async directModerateContent(input: any, moderator: User): Promise<Report> {
         // 1. Ejecutar el soft delete / hard delete según el tipo
-        await this.softDeleteContent(input.reportedItemType, input.reportedItemId);
+        const ownerId = await this.softDeleteContent(input.reportedItemType, input.reportedItemId);
+
+        if (ownerId) {
+            await this.notificationsService.createNotification(
+                ownerId,
+                'Tu contenido ha sido eliminado',
+                `Tu contenido ha sido eliminado por un moderador. Nota del moderador: ${input.moderatorNote || 'Eliminado por moderación directa.'}`,
+                NotificationType.MODERATION
+            );
+        }
 
         // 2. Upsert del reporte de auditoría:
         //    Si el moderador ya tenía un reporte previo del mismo ítem, lo actualizamos.
@@ -241,10 +286,14 @@ export class ReportsService implements OnModuleInit {
     private async softDeleteContent(
         type: ReportedItemType,
         itemId: string,
-    ): Promise<void> {
+    ): Promise<string | null> {
         const now = new Date();
+        let ownerId: string | null = null;
 
         if (type === ReportedItemType.POST) {
+            const post = await this.postRepository.findOne({ where: { id: itemId } });
+            if (post) ownerId = post.authorId;
+
             // 1. Soft-delete de los media del post (sin tocar R2)
             await this.postMediaRepository
                 .createQueryBuilder()
@@ -264,6 +313,9 @@ export class ReportsService implements OnModuleInit {
             console.log(`[Moderation] POST ${itemId} soft-deleted (R2 intacto).`);
 
         } else if (type === ReportedItemType.PRODUCT) {
+            const product = await this.storeProductRepository.findOne({ where: { id: itemId } });
+            if (product) ownerId = product.sellerId;
+
             // 1. Soft-delete de los media del producto (sin tocar R2)
             await this.storeProductMediaRepository
                 .createQueryBuilder()
@@ -285,6 +337,7 @@ export class ReportsService implements OnModuleInit {
             // 1. Identificar si es comentario de post o de producto
             const postComment = await this.commentRepository.findOne({ where: { id: itemId } });
             if (postComment) {
+                ownerId = postComment.userId;
                 // Eliminar respuestas (hijos) primero, luego el comentario raíz
                 await this.commentRepository.delete({ parentId: itemId });
                 await this.commentRepository.delete({ id: itemId });
@@ -293,21 +346,32 @@ export class ReportsService implements OnModuleInit {
                 // Buscar en comentarios de tienda
                 const storeComment = await this.storeProductCommentRepository.findOne({ where: { id: itemId } });
                 if (storeComment) {
+                    ownerId = storeComment.userId;
                     await this.storeProductCommentRepository.delete({ parentId: itemId });
                     await this.storeProductCommentRepository.delete({ id: itemId });
                     console.log(`[Moderation] StoreProduct Comment ${itemId} + replies hard-deleted.`);
                 }
             }
         } else if (type === ReportedItemType.JOB_OFFER) {
+            const job = await this.jobOfferRepository.findOne({ where: { id: itemId } });
+            if (job) ownerId = job.authorId;
+
             // Hard-delete: JobOffer no tiene soft-delete column
             await this.jobOfferRepository.delete({ id: itemId });
             console.log(`[Moderation] JOB_OFFER ${itemId} hard-deleted.`);
 
         } else if (type === ReportedItemType.SERVICE) {
+            const service = await this.professionalProfileRepository.findOne({ where: { id: itemId } });
+            if (service) ownerId = service.userId;
+
             // Hard-delete: ProfessionalProfile no tiene soft-delete column
             await this.professionalProfileRepository.delete({ id: itemId });
             console.log(`[Moderation] SERVICE (ProfessionalProfile) ${itemId} hard-deleted.`);
+        } else if (type === ReportedItemType.USER) {
+            ownerId = itemId;
         }
+
+        return ownerId;
     }
 
     /**

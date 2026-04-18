@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Conversation } from './entities/conversation.entity';
 import { Participant } from './entities/participant.entity';
 import { Message } from './entities/message.entity';
 import { User } from '../auth/entities/user.entity';
+import { UserBlocksService } from '../user-blocks/user-blocks.service';
 
 @Injectable()
 export class ChatService {
@@ -17,10 +18,21 @@ export class ChatService {
         private messageRepository: Repository<Message>,
         @InjectRepository(User)
         private userRepository: Repository<User>,
+        private userBlocksService: UserBlocksService,
     ) { }
 
     async getOrCreateOneOnOneChat(currentUserId: string, targetUserId: string): Promise<Conversation> {
         const isSelfChat = currentUserId === targetUserId;
+
+        if (!isSelfChat) {
+            const isBlocked = await this.userBlocksService.checkIfBlocked(currentUserId, targetUserId);
+            if (isBlocked) {
+                throw new ForbiddenException({
+                    code: 'CHAT_BLOCKED',
+                    message: 'No puedes comunicarte con este usuario.',
+                });
+            }
+        }
 
         // 1. Buscar si ya existe la conversación entre ambos (o consigo mismo)
         let existingQuery = this.conversationRepository
@@ -98,6 +110,20 @@ export class ChatService {
         const isParticipant = conversation.participants.some(p => p.userId === senderId);
         if (!isParticipant) {
             throw new BadRequestException('No eres parte de esta conversación');
+        }
+
+        // Si es un chat 1:1, verificar bloqueos
+        if (conversation.participants.length === 2) {
+            const otherParticipant = conversation.participants.find(p => p.userId !== senderId);
+            if (otherParticipant) {
+                const isBlocked = await this.userBlocksService.checkIfBlocked(senderId, otherParticipant.userId);
+                if (isBlocked) {
+                    throw new ForbiddenException({
+                        code: 'CHAT_BLOCKED',
+                        message: 'No puedes comunicarte con este usuario.',
+                    });
+                }
+            }
         }
 
         const newMessage = this.messageRepository.create({

@@ -69,6 +69,11 @@ export class GqlAuthGuard extends AuthGuard('jwt') {
 
         // 4. Comprobar si el ban sigue activo
         if (dbUser.bannedUntil && dbUser.bannedUntil > new Date()) {
+            const info = ctx.getInfo();
+            if (info && info.fieldName === 'createAppeal') {
+                return true; // Permitimos a los usuarios baneados crear apelaciones
+            }
+
             throw new UnauthorizedException(
                 JSON.stringify({
                     code: 'USER_BANNED',

@@ -20,6 +20,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import { useLocalSearchParams } from 'expo-router';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '../../../navigation/AppNavigator';
 import { useQuery, useMutation, useSubscription, useApolloClient } from '@apollo/client/react';
@@ -64,8 +65,10 @@ export default function ChatRoomScreen() {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
     const route = useRoute<any>();
+    const localParams = useLocalSearchParams();
     const insets = useSafeAreaInsets();
-    const { conversationId } = route.params || {};
+    const params = route.params || localParams || {};
+    const { conversationId } = params;
     const { user: currentUser } = useAuth() as any;
     const [messageText, setMessageText] = useState('');
     const [selectedMessage, setSelectedMessage] = useState<any>(null);
@@ -963,7 +966,10 @@ export default function ChatRoomScreen() {
                     
                     <TouchableOpacity 
                         style={styles.headerInfoContainer} 
-                        onPress={() => navigation.navigate('ChatDetails', { conversationId })}
+                        onPress={() => router.push({
+                            pathname: '/chatDetails',
+                            params: { conversationId }
+                        })}
                         activeOpacity={0.7}
                     >
                         {otherUser?.photoUrl ? (

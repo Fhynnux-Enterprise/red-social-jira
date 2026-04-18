@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Mod
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
+import { useNavigation, useRoute, useIsFocused, useFocusEffect } from '@react-navigation/native';
+import { useRouter, router } from 'expo-router';
 import { useAuth } from '../../auth/context/AuthContext';
 import ThemeSelectorModal from '../../../components/ThemeSelectorModal';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
@@ -20,8 +21,9 @@ import PostCard from '../../feed/components/PostCard';
 import StoreProductCard from '../../store/components/StoreProductCard';
 import JobOfferCard from '../../jobs/components/JobOfferCard';
 import ProfessionalCard from '../../jobs/components/ProfessionalCard';
-import CommentsModal from '../../comments/components/CommentsModal';
 import ListFooter from '../../../components/ListFooter';
+import CommentsModal from '../../comments/components/CommentsModal';
+import CreateProductModal from '../../store/components/CreateProductModal';
 import ProfileStats from '../components/ProfileStats';
 import ProfileActions from '../components/ProfileActions';
 import ProfileBio from '../components/ProfileBio';
@@ -200,6 +202,8 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     const [editingPostId, setEditingPostId] = useState<string | undefined>(undefined);
     const [editingPostContent, setEditingPostContent] = useState<string>('');
     const [editingPostTitle, setEditingPostTitle] = useState<string>('');
+    const [isCreateStoreVisible, setIsCreateStoreVisible] = useState(false);
+    const [editingProduct, setEditingProduct] = useState<any>(null);
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<any>(null);
     const [selectedPostForComments, setSelectedPostForComments] = useState<{
@@ -209,6 +213,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     } | null>(null);
     const [hasMore, setHasMore] = useState(true);
     const [isFetchingMore, setIsFetchingMore] = useState(false);
+    const resumeCommentsRef = useRef<any>(null);
 
     // ── Menú contextual (perfil ajeno) ────────────────────────────────────────
     const [isContextMenuVisible, setIsContextMenuVisible] = useState(false);
@@ -371,6 +376,20 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         setHasMore(true);
     }, [profileUserId]);
 
+    // Restaurar CommentsModal al volver de una pantalla (ej. editar empleo)
+    useFocusEffect(
+        useCallback(() => {
+            if (resumeCommentsRef.current) {
+                // Pequeño delay para permitir que la animación de la pantalla termine
+                const timer = setTimeout(() => {
+                    setSelectedPostForComments(resumeCommentsRef.current);
+                    resumeCommentsRef.current = null;
+                }, 300);
+                return () => clearTimeout(timer);
+            }
+        }, [])
+    );
+
     // ── Handlers ──────────────────────────────────────────────────────────────
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
@@ -422,11 +441,58 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         try {
             const { data } = await getOrCreateChat({ variables: { targetUserId: profileUserId } });
             const conversationId = data.getOrCreateOneOnOneChat.id;
-            (navigation as any).navigate('ChatRoom', { conversationId });
+            router.push({
+                pathname: '/chatRoom',
+                params: { conversationId }
+            });
         } catch (error) {
             Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir el chat' });
         }
     }, [profileUserId, getOrCreateChat, navigation]);
+
+    // Ref para handleEdit para que sea accesible desde callbacks estables
+    const handleEditRef = useRef<any>(null);
+
+    const handleEdit = useCallback((item: any) => {
+        setIsOptionsMenuVisible(false);
+        const type = item.__itemType;
+
+        if (type === 'store') {
+            setEditingProduct(item);
+            setIsCreateStoreVisible(true);
+        } else if (type === 'job' || type === 'professional') {
+            router.push({
+                pathname: '/jobs/create',
+                params: { 
+                    editId: item.id, 
+                    editData: JSON.stringify(item),
+                    initialTab: type === 'job' ? 'offer' : 'service'
+                }
+            });
+        } else if (type === 'post') {
+            setEditingPostId(item.id);
+            setEditingPostContent(item.content);
+            setEditingPostTitle(item.title || '');
+            setIsCreatePostVisible(true);
+        }
+    }, [router]);
+
+    handleEditRef.current = handleEdit;
+    const stableHandleEdit = useCallback((item: any) => handleEditRef.current?.(item), []);
+
+    // Handlers para renderItem que deben ser estables para no disparar re-renders del FlatList
+    const handleOptionsPressRef = useRef<any>(null);
+    handleOptionsPressRef.current = (p: any) => {
+        setSelectedPost(p);
+        setIsOptionsMenuVisible(true);
+    };
+    const stableHandleOptionsPress = useCallback((p: any) => handleOptionsPressRef.current?.(p), []);
+
+    const onOpenCommentsRef = useRef<any>(null);
+    onOpenCommentsRef.current = (item: any, initialTab?: any, minimize?: any) => {
+        setSelectedPostForComments({ post: item, minimize: !!minimize, initialTab });
+    };
+    const stableOnOpenComments = useCallback((item: any, tab?: any, min?: any) => onOpenCommentsRef.current?.(item, tab, min), []);
 
     const handleEditProfile = useCallback(() => {
         navigation.navigate('EditProfile' as never);
@@ -457,10 +523,23 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
 
     // ── FlatList config ───────────────────────────────────────────────────────
     // onViewableItemsChanged DEBE ser una ref estable — no puede cambiar entre renders
-    const onViewableItemsChangedRef = useRef(({ viewableItems }: any) => {
-        setVisiblePostId(viewableItems.length > 0 ? viewableItems[0].item.id : null);
-    });
-    const onViewableItemsChanged = onViewableItemsChangedRef.current;
+    const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
+        if (viewableItems.length > 0) {
+            const firstId = viewableItems[0].item.id;
+            setVisiblePostId(prev => (prev === firstId ? prev : firstId));
+        } else {
+            setVisiblePostId(prev => (prev === null ? prev : null));
+        }
+    }, []);
+
+    // Ref para el estado de comentarios, para usar en callbacks sin dependencias y evitar re-renders del FlatList
+    const selectedPostForCommentsRef = useRef(selectedPostForComments);
+    selectedPostForCommentsRef.current = selectedPostForComments;
+
+    // Ref estable para "isOverlayActive" — evita que renderItem dependa de estado
+    // y fuerce el re-render de todos los items cuando se abre un modal.
+    const overlayActiveRef = useRef(false);
+    overlayActiveRef.current = !!selectedPostForComments || isCreatePostVisible || isCreateStoreVisible || isOptionsMenuVisible || isMenuVisible || isReportModalVisible || isBanModalVisible || isContextMenuVisible;
 
     // viewabilityConfig DEBE ser una ref estable, nunca recreada ni condicional
     const viewabilityConfig = useRef({
@@ -546,13 +625,22 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 item={item} 
                 onPress={() => openInModal(false)} 
                 onCommentPress={() => openInModal(true)}
+                onEdit={stableHandleEdit}
             />;
         }
         if (type === 'job') {
-            return <JobOfferCard item={item} onPress={() => openInModal(false)} />;
+            return <JobOfferCard 
+                item={item} 
+                onPress={() => openInModal(false)} 
+                onEdit={stableHandleEdit}
+            />;
         }
         if (type === 'professional') {
-            return <ProfessionalCard item={item} onPress={() => openInModal(false)} />;
+            return <ProfessionalCard 
+                item={item} 
+                onPress={() => openInModal(false)} 
+                onEdit={stableHandleEdit}
+            />;
         }
         if (type === 'post') {
             // item ya viene con author inyectado desde allTabData
@@ -560,23 +648,20 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 <PostCard
                     item={item}
                     currentUserId={currentUserId}
-                    onOptionsPress={(p: any) => {
-                        setSelectedPost(p);
-                        setIsOptionsMenuVisible(true);
-                    }}
+                    onOptionsPress={stableHandleOptionsPress}
                     onOpenComments={(_, initialTab, minimize) =>
-                        setSelectedPostForComments({ post: item, minimize: !!minimize, initialTab })
+                        stableOnOpenComments(item, initialTab, minimize)
                     }
                     isViewable={item.id === visiblePostId}
                     isFocused={isFocused}
-                    isOverlayActive={!!selectedPostForComments || isCreatePostVisible}
+                    isOverlayActive={overlayActiveRef.current}
                     isModalView={false}
                 />
             );
         }
         // Fallback seguro: no renderizar nada si el tipo es desconocido
         return null;
-    }, [currentUserId, visiblePostId, isFocused, selectedPostForComments, isCreatePostVisible, userData]);
+    }, [currentUserId, visiblePostId, isFocused, userData, stableHandleEdit, stableHandleOptionsPress, stableOnOpenComments]);
 
     const keyExtractor = useCallback((item: any) => {
         const type = item.__itemType;
@@ -643,6 +728,10 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                         <ListFooter />
                     ) : null
                 }
+                initialNumToRender={5}
+                maxToRenderPerBatch={5}
+                windowSize={10}
+                removeClippedSubviews={Platform.OS === 'android'}
             />
 
             {/* Menú lateral de configuración */}
@@ -674,7 +763,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                                 )}
                                 <TouchableOpacity
                                     style={styles.settingButton}
-                                    onPress={() => { handleCloseMenu(); setTimeout(() => setIsThemeModalVisible(true), 300); }}
+                                    onPress={() => { handleCloseMenu(); setTimeout(() => setIsThemeModalVisible(true), 400); }}
                                 >
                                     <View style={styles.settingLeft}>
                                         <Ionicons name="color-palette-outline" size={24} color={colors.text} />
@@ -700,29 +789,6 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 onSelectTheme={(theme) => setThemeMode(theme)}
             />
 
-            <CreatePostModal
-                visible={isCreatePostVisible}
-                onClose={() => { setIsCreatePostVisible(false); refetchProfile(); }}
-                postId={editingPostId}
-                initialContent={editingPostContent}
-                initialTitle={editingPostTitle}
-            />
-
-            <PostOptionsModal
-                visible={isOptionsMenuVisible}
-                onClose={() => setIsOptionsMenuVisible(false)}
-                onEdit={() => {
-                    if (selectedPost) {
-                        setEditingPostId(selectedPost.id);
-                        setEditingPostContent(selectedPost.content);
-                        setEditingPostTitle(selectedPost.title || '');
-                        setIsCreatePostVisible(true);
-                    }
-                }}
-                onDelete={() => {
-                    if (selectedPost) deletePost({ variables: { id: selectedPost.id } });
-                }}
-            />
 
             {/* ─── Menú contextual para perfil ajeno ─── */}
             <Modal visible={isContextMenuVisible} animationType="fade" transparent onRequestClose={handleCloseContextMenu}>
@@ -866,6 +932,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
             />
 
 
+            {/* CommentsModal — siempre montado para mantener estado y UI fluida */}
             <CommentsModal
                 visible={!!selectedPostForComments}
                 post={commentsModalData.post}
@@ -910,6 +977,46 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                     setIsOptionsMenuVisible(true);
                 }}
             />
+
+            {isCreatePostVisible && (
+            <CreatePostModal
+                visible={isCreatePostVisible}
+                onClose={() => {
+                    setIsCreatePostVisible(false);
+                    setEditingPostId(null);
+                    setEditingPostContent('');
+                    setEditingPostTitle('');
+                }}
+                postId={editingPostId}
+                initialContent={editingPostContent}
+                initialTitle={editingPostTitle}
+            />
+            )}
+
+            {isCreateStoreVisible && (
+            <CreateProductModal
+                visible={isCreateStoreVisible}
+                onClose={() => {
+                    setIsCreateStoreVisible(false);
+                    setEditingProduct(null);
+                    onRefresh();
+                }}
+                editItem={editingProduct}
+            />
+            )}
+
+            {isOptionsMenuVisible && (
+            <PostOptionsModal
+                visible={isOptionsMenuVisible}
+                onClose={() => setIsOptionsMenuVisible(false)}
+                onEdit={() => {
+                    if (selectedPost) stableHandleEdit(selectedPost);
+                }}
+                onDelete={() => {
+                    if (selectedPost) deletePost({ variables: { id: selectedPost.id } });
+                }}
+            />
+            )}
         </SafeAreaView>
     );
 }

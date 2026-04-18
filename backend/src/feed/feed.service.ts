@@ -23,14 +23,14 @@ export class FeedService {
    * Obtiene un feed unificado con Posts, Ofertas de Empleo, Perfiles Profesionales y Productos
    * ordenados cronológicamente de más nuevo a más viejo, con paginación.
    */
-  async getUnifiedFeed(limit: number, offset: number): Promise<FeedItemType[]> {
+  async getUnifiedFeed(limit: number, offset: number, userId?: string): Promise<FeedItemType[]> {
     const fetchLimit = limit + offset + 20;
 
     const [posts, jobOffers, professionals, products] = await Promise.all([
-      this.postsService.findAll(fetchLimit, 0),
-      this.jobsService.findAllJobOffers(fetchLimit, 0),
-      this.professionalsService.findAllProfessionals(fetchLimit, 0),
-      this.storeService.findAll(fetchLimit, 0),
+      this.postsService.findAll(fetchLimit, 0, userId),
+      this.jobsService.findAllJobOffers(fetchLimit, 0, userId),
+      this.professionalsService.findAllProfessionals(fetchLimit, 0, userId),
+      this.storeService.findAll(fetchLimit, 0, userId),
     ]);
 
     const combined: FeedItemType[] = [

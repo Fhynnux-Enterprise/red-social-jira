@@ -91,13 +91,7 @@ export default function CommentItem({
         }
     };
 
-    const isEdited = (() => {
-        if (!item.createdAt || !item.updatedAt) return false;
-        const created = new Date(item.createdAt).getTime();
-        const updated = new Date(item.updatedAt).getTime();
-        if (isNaN(created) || isNaN(updated)) return false;
-        return updated - created > 2000;
-    })();
+    const isEdited = !!item.editedAt;
 
     return (
         <View style={[styles.mainContainer, (isReply || isNestedReply) && styles.replyWrapper]}>

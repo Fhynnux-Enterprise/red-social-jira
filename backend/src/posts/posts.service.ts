@@ -5,6 +5,8 @@ import { Post } from './entities/post.entity';
 import { PostLike } from './entities/post-like.entity';
 import { PostMedia } from './entities/post-media.entity';
 import { PostMediaInput } from './dto/post-media.input';
+import { UserBlocksService } from '../user-blocks/user-blocks.service';
+import { UserBlock } from '../user-blocks/entities/user-block.entity';
 
 @Injectable()
 export class PostsService {
@@ -16,6 +18,7 @@ export class PostsService {
         @InjectRepository(PostMedia)
         private readonly postMediaRepository: Repository<PostMedia>,
         private readonly dataSource: DataSource,
+        private readonly userBlocksService: UserBlocksService,
     ) { }
 
     async createPost(content: string, authorId: string, media?: PostMediaInput[], title?: string): Promise<Post> {
@@ -61,13 +64,28 @@ export class PostsService {
         }
     }
 
-    async findAll(limit: number = 5, offset: number = 0): Promise<Post[]> {
-        const posts = await this.postsRepository.createQueryBuilder('post')
+    async findAll(limit: number = 5, offset: number = 0, viewerId?: string): Promise<Post[]> {
+        const query = this.postsRepository.createQueryBuilder('post')
             .leftJoinAndSelect('post.author', 'author')
             .leftJoinAndSelect('post.likes', 'likes')
             .leftJoinAndSelect('likes.user', 'likeUser')
             .leftJoinAndSelect('post.media', 'media')
-            .where('post.deletedAt IS NULL')
+            .where('post.deletedAt IS NULL');
+
+        if (viewerId) {
+            query.andWhere(qb => {
+                const subQuery = qb.subQuery()
+                    .select('1')
+                    .from(UserBlock, 'ub')
+                    .where('ub.blockerId = :viewerId AND ub.blockedId = post.authorId')
+                    .orWhere('ub.blockerId = post.authorId AND ub.blockedId = :viewerId')
+                    .getQuery();
+                return 'NOT EXISTS ' + subQuery;
+            });
+            query.setParameter('viewerId', viewerId);
+        }
+
+        const posts = await query
             .orderBy('post.createdAt', 'DESC')
             .addOrderBy('post.id', 'DESC')
             .take(limit)
@@ -204,6 +222,7 @@ export class PostsService {
 
         post.content = content;
         if (title !== undefined) post.title = title;
+        post.editedAt = new Date(); // Marca de edición real del usuario (distinto a updatedAt del sistema)
         await this.postsRepository.save(post);
         return post;
     }

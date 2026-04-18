@@ -12,6 +12,8 @@ import { StoreProductComment } from './entities/store-product-comment.entity';
 import { StoreProductCommentLike } from './entities/store-product-comment-like.entity';
 import { CreateStoreProductInput } from './dto/create-store-product.input';
 import { UpdateStoreProductInput } from './dto/update-store-product.input';
+import { UserBlocksService } from '../user-blocks/user-blocks.service';
+import { UserBlock } from '../user-blocks/entities/user-block.entity';
 
 @Injectable()
 export class StoreService {
@@ -26,6 +28,7 @@ export class StoreService {
     private readonly commentRepo: Repository<StoreProductComment>,
     @InjectRepository(StoreProductCommentLike)
     private readonly commentLikeRepo: Repository<StoreProductCommentLike>,
+    private readonly userBlocksService: UserBlocksService,
   ) {}
 
   async create(data: CreateStoreProductInput, userId: string): Promise<StoreProduct> {
@@ -51,14 +54,30 @@ export class StoreService {
     }) as Promise<StoreProduct>;
   }
 
-  async findAll(limit = 20, offset = 0): Promise<StoreProduct[]> {
-    return this.productRepo.find({
-      where: { isAvailable: true },
-      take: limit,
-      skip: offset,
-      order: { createdAt: 'DESC' },
-      relations: ['seller', 'media'],
-    });
+  async findAll(limit = 20, offset = 0, viewerId?: string): Promise<StoreProduct[]> {
+    const query = this.productRepo.createQueryBuilder('product')
+      .where('product.isAvailable = true')
+      .leftJoinAndSelect('product.seller', 'seller')
+      .leftJoinAndSelect('product.media', 'media');
+
+    if (viewerId) {
+      query.andWhere(qb => {
+        const subQuery = qb.subQuery()
+          .select('1')
+          .from(UserBlock, 'ub')
+          .where('ub.blockerId = :viewerId AND ub.blockedId = product.sellerId')
+          .orWhere('ub.blockerId = product.sellerId AND ub.blockedId = :viewerId')
+          .getQuery();
+        return 'NOT EXISTS ' + subQuery;
+      });
+      query.setParameter('viewerId', viewerId);
+    }
+
+    return query
+      .take(limit)
+      .skip(offset)
+      .orderBy('product.createdAt', 'DESC')
+      .getMany();
   }
 
   async findMine(userId: string): Promise<StoreProduct[]> {
@@ -97,7 +116,12 @@ export class StoreService {
       throw new ForbiddenException('Sin permiso para editar este producto');
 
     const { id, media, ...updates } = data;
-    Object.assign(product, updates);
+    Object.keys(updates).forEach(key => {
+      if (updates[key] !== undefined) {
+        product[key] = updates[key];
+      }
+    });
+    product.editedAt = new Date(); // Marca de edición real del usuario
     await this.productRepo.save(product);
 
     // Reemplazar media si se envía

@@ -22,6 +22,8 @@ import { StoriesBar } from '../../stories/components/StoriesBar';
 import FeedItemDetailModal from '../components/FeedItemDetailModal';
 import StoreProductCard from '../../store/components/StoreProductCard';
 import ListFooter from '../../../components/ListFooter';
+import NotificationBell from '../../notifications/components/NotificationBell';
+import CreateProductModal from '../../store/components/CreateProductModal';
 
 export interface PostAuthor {
     id: string;
@@ -79,10 +81,14 @@ export default function FeedScreen() {
     const [editingPostId, setEditingPostId] = useState<string | undefined>(undefined);
     const [editingPostContent, setEditingPostContent] = useState<string>('');
     const [editingPostTitle, setEditingPostTitle] = useState<string>('');
+    const [editingPostMedia, setEditingPostMedia] = useState<any[]>([]);
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<Post | null>(null);
     const [selectedPostForComments, setSelectedPostForComments] = useState<SelectedPostForComments | null>(null);
     const [selectedFeedItem, setSelectedFeedItem] = useState<any | null>(null);
+    const [isStoreModalVisible, setIsStoreModalVisible] = useState(false);
+    const [editingProduct, setEditingProduct] = useState<any | null>(null);
+    const resumeCommentsRef = useRef<any>(null);
 
     const isFocused = useIsFocused();
     // Estado para trackear qué post está visible en pantalla (para autoplay)
@@ -154,6 +160,18 @@ export default function FeedScreen() {
         return unsubscribe;
     }, [navigation, isFocused, scrollOffset, handleRefresh]);
 
+    useFocusEffect(
+        useCallback(() => {
+            if (resumeCommentsRef.current) {
+                const timer = setTimeout(() => {
+                    setSelectedPostForComments(resumeCommentsRef.current);
+                    resumeCommentsRef.current = null;
+                }, 300);
+                return () => clearTimeout(timer);
+            }
+        }, [])
+    );
+
     const renderFooter = useCallback(() => {
         if (isFetchingMore) {
             return (
@@ -170,7 +188,7 @@ export default function FeedScreen() {
         return null;
     }, [isFetchingMore, colors.primary, hasMore, data?.getFeed?.length]);
 
-    const handleOptionsPress = useCallback((item: Post) => {
+    const handleOptionsPress = useCallback((item: any) => {
         setSelectedPost(item);
         setIsOptionsMenuVisible(true);
     }, []);
@@ -222,9 +240,6 @@ export default function FeedScreen() {
     }).current;
 
     const renderFeedItem = useCallback(({ item }: { item: any }) => {
-        // Para Posts: abre expandido con comentarios. Para Ofertas/Servicios: solo muestra la tarjeta (minimizado = sin burbuja de comentarios)
-        const openInModal = (isPost = false) =>
-            setSelectedPostForComments({ post: item, minimize: !isPost, initialTab: 'comments', initialExpanded: false });
 
         if (item.__typename === 'JobOffer') {
             const mappedItem = { 
@@ -232,14 +247,40 @@ export default function FeedScreen() {
                 title: item.jobTitle ?? item.title, 
                 media: item.jobMedia ?? [] 
             };
-            return <JobOfferCard item={mappedItem} onPress={() => openInModal(false)} />;
+            return <JobOfferCard 
+                item={mappedItem} 
+                onPress={() => setSelectedPostForComments({ post: mappedItem, minimize: true, initialTab: 'comments', initialExpanded: false })}
+                onEdit={(itemToEdit) => {
+                    router.push({
+                        pathname: '/jobs/create',
+                        params: { 
+                            editId: itemToEdit.id, 
+                            editData: JSON.stringify(itemToEdit),
+                            initialTab: 'job'
+                        }
+                    });
+                }}
+            />;
         }
         if (item.__typename === 'ProfessionalProfile') {
             const mappedItem = { 
                 ...item, 
                 media: item.profMedia ?? [] 
             };
-            return <ProfessionalCard item={mappedItem} onPress={() => openInModal(false)} />;
+            return <ProfessionalCard 
+                item={mappedItem} 
+                onPress={() => setSelectedPostForComments({ post: mappedItem, minimize: true, initialTab: 'comments', initialExpanded: false })}
+                onEdit={(itemToEdit) => {
+                    router.push({
+                        pathname: '/jobs/create',
+                        params: { 
+                            editId: itemToEdit.id, 
+                            editData: JSON.stringify(itemToEdit),
+                            initialTab: 'service'
+                        }
+                    });
+                }}
+            />;
         }
         if (item.__typename === 'StoreProduct') {
             const mappedItem = {
@@ -251,8 +292,12 @@ export default function FeedScreen() {
             };
             return <StoreProductCard 
                 item={mappedItem} 
-                onPress={() => openInModal(false)}
-                onCommentPress={() => openInModal(true)} 
+                onPress={() => setSelectedPostForComments({ post: mappedItem, minimize: true, initialTab: 'comments', initialExpanded: false })}
+                onCommentPress={() => setSelectedPostForComments({ post: mappedItem, minimize: false, initialTab: 'comments', initialExpanded: false })}
+                onEdit={(itemToEdit) => {
+                    setEditingProduct(itemToEdit);
+                    setIsStoreModalVisible(true);
+                }}
             />;
         }
         
@@ -267,7 +312,7 @@ export default function FeedScreen() {
                 item={mappedPost}
                 currentUserId={currentUser?.id}
                 onOptionsPress={handleOptionsPress}
-                onOpenComments={(_: any, initialTab?: 'comments' | 'likes', minimize?: boolean, initialExpanded?: boolean) =>
+                onOpenComments={(_, initialTab, minimize, initialExpanded) =>
                     setSelectedPostForComments({ post: mappedPost, minimize: !!minimize, initialTab, initialExpanded })
                 }
                 isViewable={item.id === visiblePostId}
@@ -313,6 +358,7 @@ export default function FeedScreen() {
                     >
                         <Ionicons name="search-outline" size={22} color={colors.text} />
                     </TouchableOpacity>
+                    <NotificationBell />
                 </View>
             </View>
 
@@ -401,10 +447,13 @@ export default function FeedScreen() {
             {/* Modal para Crear/Editar Publicación */}
             <CreatePostModal
                 visible={isModalVisible}
-                onClose={() => setIsModalVisible(false)}
+                onClose={() => {
+                    setIsModalVisible(false);
+                }}
                 postId={editingPostId}
                 initialContent={editingPostContent}
                 initialTitle={editingPostTitle}
+                initialMedia={editingPostMedia}
             />
 
             {/* Modal Menú de Opciones de la Publicación Inferior */}
@@ -413,22 +462,70 @@ export default function FeedScreen() {
                 onClose={() => setIsOptionsMenuVisible(false)}
                 onEdit={() => {
                     if (selectedPost) {
-                        setEditingPostId(selectedPost.id);
-                        setEditingPostContent(selectedPost.content);
-                        setEditingPostTitle(selectedPost.title || '');
-                        setIsModalVisible(true);
+                        const type = selectedPost.__typename;
+                        setIsOptionsMenuVisible(false);
+                        // Ya no cerramos el CommentsModal aquí para que permanezca abierto al terminar de editar
+
+                        if (type === 'StoreProduct') {
+                            setEditingProduct(selectedPost);
+                            setIsStoreModalVisible(true);
+                        } else if (type === 'JobOffer' || type === 'ProfessionalProfile') {
+                            router.push({
+                                pathname: '/jobs/create',
+                                params: { 
+                                    editId: selectedPost.id, 
+                                    editData: JSON.stringify(selectedPost),
+                                    initialTab: type === 'ProfessionalProfile' ? 'service' : 'offer'
+                                }
+                            });
+                        } else {
+                            // Default: Post
+                            setEditingPostId(selectedPost.id);
+                            setEditingPostContent(selectedPost.content);
+                            setEditingPostTitle(selectedPost.title || '');
+                            setEditingPostMedia(selectedPost.media || []);
+                            setIsModalVisible(true);
+                        }
                     }
                 }}
                 onDelete={() => {
                     if (selectedPost) {
-                        deletePost({ variables: { id: selectedPost.id } })
-                            .then(() => Toast.show({ type: 'success', text1: 'Eliminado', text2: 'Publicación borrada con éxito' }))
-                            .catch((err: any) => Toast.show({ type: 'error', text1: 'Error', text2: err.message }));
+                        const type = selectedPost.__typename;
+                        setIsOptionsMenuVisible(false);
+                        
+                        // Si es algo diferente a Post, el borrado se maneja diferente en la DB (usamos el delete correspondiente)
+                        // Pero para simplicidad, si es Post usamos deletePost mutation
+                        if (!type || type === 'Post') {
+                            deletePost({ variables: { id: selectedPost.id } })
+                                .then(() => Toast.show({ type: 'success', text1: 'Eliminado', text2: 'Publicación borrada con éxito' }))
+                                .catch((err: any) => Toast.show({ type: 'error', text1: 'Error', text2: err.message }));
+                        } else {
+                            // Para Store y Jobs, el Delete está en sus respectivos componentes, 
+                            // pero si se dispara desde aquí podemos mostrar un aviso o implementar el delete global
+                            Alert.alert("Eliminar", "¿Estás seguro de eliminar esta publicación?", [
+                                { text: "Cancelar", style: "cancel" },
+                                { text: "Eliminar", style: "destructive", onPress: () => {
+                                    // Implementar borrado según tipo si es necesario
+                                    Toast.show({ type: 'info', text1: 'Aviso', text2: 'Usa el menú de la tarjeta para eliminar este tipo de contenido.' });
+                                }}
+                            ]);
+                        }
                     }
                 }}
             />
 
-            {/* Modal de Comentarios — maneja Posts, Ofertas y Perfiles con swipe TikTok */}
+            {/* Modal para Editar Producto desde el Feed */}
+            <CreateProductModal
+                visible={isStoreModalVisible}
+                onClose={() => {
+                    setIsStoreModalVisible(false);
+                    setEditingProduct(null);
+                    handleRefresh();
+                }}
+                editItem={editingProduct}
+            />
+
+            {/* CommentsModal — siempre montado para mantener estado y UI fluida */}
             <CommentsModal
                 visible={!!selectedPostForComments}
                 post={

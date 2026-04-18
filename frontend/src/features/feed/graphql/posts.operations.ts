@@ -14,6 +14,7 @@ export const GET_POSTS = gql`
             }
             createdAt
             updatedAt
+            editedAt
             commentsCount
             likes {
                 id
@@ -76,6 +77,7 @@ export const UPDATE_POST = gql`
                 order
             }
             createdAt
+            editedAt
             comments {
                 id
             }
@@ -124,6 +126,7 @@ export const GET_FEED = gql`
                 title
                 createdAt
                 updatedAt
+                editedAt
                 commentsCount
                 postMedia: media {
                     id
@@ -157,6 +160,7 @@ export const GET_FEED = gql`
                 salary
                 contactPhone
                 createdAt
+                editedAt
                 jobMedia: media {
                     id
                     url
@@ -178,6 +182,7 @@ export const GET_FEED = gql`
                 experienceYears
                 contactPhone
                 createdAt
+                editedAt
                 profMedia: media {
                     id
                     url
@@ -204,6 +209,7 @@ export const GET_FEED = gql`
                 category
                 isAvailable
                 createdAt
+                editedAt
                 commentsCount
                 storeMedia: media {
                     id

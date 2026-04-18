@@ -8,7 +8,9 @@ export const GET_JOB_OFFERS = gql`
       description
       location
       salary
+      contactPhone
       createdAt
+      editedAt
       author {
         id
         username
@@ -32,7 +34,9 @@ export const GET_PROFESSIONALS = gql`
       profession
       description
       experienceYears
+      contactPhone
       createdAt
+      editedAt
       user {
         id
         username
@@ -80,6 +84,7 @@ export const UPSERT_PROFESSIONAL_PROFILE = gql`
       description
       experienceYears
       createdAt
+      editedAt
       user {
         id
         username
@@ -220,7 +225,9 @@ export const GET_JOB_OFFERS_BY_USER = gql`
       description
       location
       salary
+      contactPhone
       createdAt
+      editedAt
       author {
         id
         username
@@ -244,7 +251,9 @@ export const GET_PROFESSIONAL_PROFILES_BY_USER = gql`
       profession
       description
       experienceYears
+      contactPhone
       createdAt
+      editedAt
       user {
         id
         username
@@ -271,6 +280,7 @@ export const GET_MY_JOB_OFFERS = gql`
       salary
       contactPhone
       createdAt
+      editedAt
       author {
         id
         username
@@ -294,7 +304,9 @@ export const GET_MY_PROFESSIONAL_PROFILE = gql`
       profession
       description
       experienceYears
+      contactPhone
       createdAt
+      editedAt
       user {
         id
         username
@@ -321,6 +333,7 @@ export const UPDATE_JOB_OFFER = gql`
       salary
       contactPhone
       createdAt
+      editedAt
       author {
         id
         username
@@ -358,6 +371,7 @@ export const UPDATE_PROFESSIONAL_PROFILE = gql`
       experienceYears
       contactPhone
       createdAt
+      editedAt
       user {
         id
         username

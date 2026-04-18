@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { ProfessionalProfile } from './entities/professional-profile.entity';
 import { ProfessionalProfileMedia } from './entities/professional-profile-media.entity';
 import { UpsertProfessionalProfileInput } from './dto/upsert-professional-profile.input';
+import { UserBlocksService } from '../user-blocks/user-blocks.service';
+import { UserBlock } from '../user-blocks/entities/user-block.entity';
 
 @Injectable()
 export class ProfessionalsService {
@@ -12,6 +14,7 @@ export class ProfessionalsService {
     private readonly profileRepository: Repository<ProfessionalProfile>,
     @InjectRepository(ProfessionalProfileMedia)
     private readonly mediaRepository: Repository<ProfessionalProfileMedia>,
+    private readonly userBlocksService: UserBlocksService,
   ) {}
 
   async upsertProfessionalProfile(data: UpsertProfessionalProfileInput, userId: string): Promise<ProfessionalProfile> {
@@ -44,12 +47,28 @@ export class ProfessionalsService {
     })) ?? savedProfile;
   }
 
-  async findAllProfessionals(limit: number = 20, offset: number = 0): Promise<ProfessionalProfile[]> {
-    return this.profileRepository.find({
-      take: limit,
-      skip: offset,
-      order: { createdAt: 'DESC' },
-    });
+  async findAllProfessionals(limit: number = 20, offset: number = 0, viewerId?: string): Promise<ProfessionalProfile[]> {
+    const query = this.profileRepository.createQueryBuilder('profile')
+      .leftJoinAndSelect('profile.user', 'user');
+
+    if (viewerId) {
+      query.andWhere(qb => {
+        const subQuery = qb.subQuery()
+          .select('1')
+          .from(UserBlock, 'ub')
+          .where('ub.blockerId = :viewerId AND ub.blockedId = profile.userId')
+          .orWhere('ub.blockerId = profile.userId AND ub.blockedId = :viewerId')
+          .getQuery();
+        return 'NOT EXISTS ' + subQuery;
+      });
+      query.setParameter('viewerId', viewerId);
+    }
+
+    return query
+      .take(limit)
+      .skip(offset)
+      .orderBy('profile.createdAt', 'DESC')
+      .getMany();
   }
   
   async findOneByUserId(userId: string): Promise<ProfessionalProfile | null> {
@@ -86,19 +105,13 @@ export class ProfessionalsService {
     if (profile.userId !== userId) throw new ForbiddenException('No puedes editar este perfil.');
 
     const { media, ...profileData } = data;
-    Object.assign(profile, profileData);
-    const saved = await this.profileRepository.save(profile);
-
-    if (media !== undefined) {
-      // Eliminar media antigua y reemplazar
-      await this.mediaRepository.delete({ professionalProfileId: id });
-      if (media.length > 0) {
-        const mediaEntities = media.map((m) =>
-          this.mediaRepository.create({ ...m, professionalProfileId: id }),
-        );
-        await this.mediaRepository.save(mediaEntities);
+    Object.keys(profileData).forEach(key => {
+      if ((profileData as any)[key] !== undefined) {
+        (profile as any)[key] = (profileData as any)[key];
       }
-    }
+    });
+    profile.editedAt = new Date(); // Marca de edición real del usuario
+    const saved = await this.profileRepository.save(profile);
 
     return (await this.profileRepository.findOne({
       where: { id },

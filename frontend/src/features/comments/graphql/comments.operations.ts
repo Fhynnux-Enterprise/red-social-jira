@@ -7,6 +7,7 @@ export const GET_COMMENTS = gql`
       content
       createdAt
       updatedAt
+      editedAt
       likesCount
       isLikedByMe
       user {
@@ -21,6 +22,7 @@ export const GET_COMMENTS = gql`
         content
         createdAt
         updatedAt
+        editedAt
         likesCount
         isLikedByMe
         user {
@@ -42,6 +44,7 @@ export const CREATE_COMMENT = gql`
       content
       createdAt
       updatedAt
+      editedAt
       likesCount
       isLikedByMe
       parentId
@@ -72,6 +75,7 @@ export const UPDATE_COMMENT = gql`
       content
       createdAt
       updatedAt
+      editedAt
       likesCount
       isLikedByMe
       replies {

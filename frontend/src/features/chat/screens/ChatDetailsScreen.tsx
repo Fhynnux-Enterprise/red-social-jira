@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { AppStackParamList } from '../../../navigation/AppNavigator';
@@ -30,8 +31,10 @@ export default function ChatDetailsScreen() {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
     const route = useRoute<any>();
+    const localParams = useLocalSearchParams();
     const insets = useSafeAreaInsets();
-    const { conversationId } = route.params || {};
+    const params = route.params || localParams || {};
+    const { conversationId } = params;
     const { user: currentUser } = useAuth() as any;
     const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
     
@@ -75,7 +78,9 @@ export default function ChatDetailsScreen() {
             });
             client.cache.evict({ id: `Conversation:${conversationId}` });
             client.cache.gc();
-            navigation.navigate('MainTabs', { screen: 'Messages' });
+            router.push({
+                pathname: '/(tabs)/chatList'
+            });
         } catch (err) {
             console.error("Error al eliminar conversación:", err);
             Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo eliminar la conversación.' });
@@ -130,7 +135,10 @@ export default function ChatDetailsScreen() {
                 <View style={styles.actionsGrid}>
                     <TouchableOpacity 
                         style={[styles.actionBtn, { backgroundColor: colors.surface }]}
-                        onPress={() => navigation.navigate('Profile', { userId: otherUser.id })}
+                        onPress={() => router.push({
+                            pathname: '/profile',
+                            params: { userId: otherUser.id }
+                        })}
                     >
                         <Ionicons name="person" size={24} color={colors.primary} />
                         <Text style={[styles.actionLabel, { color: colors.text }]}>Perfil</Text>
@@ -143,7 +151,10 @@ export default function ChatDetailsScreen() {
 
                     <TouchableOpacity 
                         style={[styles.actionBtn, { backgroundColor: colors.surface }]}
-                        onPress={() => navigation.navigate('ChatRoom', { conversationId, activateSearch: true })}
+                        onPress={() => router.push({
+                            pathname: '/chatRoom',
+                            params: { conversationId, activateSearch: true }
+                        })}
                     >
                         <Ionicons name="search" size={24} color={colors.primary} />
                         <Text style={[styles.actionLabel, { color: colors.text }]}>Buscar</Text>

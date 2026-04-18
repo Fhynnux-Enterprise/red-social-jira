@@ -12,6 +12,7 @@ import { User } from '../auth/entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
 import { CreateChatArgs, SendMessageArgs } from './dto/chat.args';
+import { UserBlocksService } from '../user-blocks/user-blocks.service';
 
 @ObjectType()
 export class ReadMessagesPayload {
@@ -28,6 +29,7 @@ export class ChatResolver {
         private readonly chatService: ChatService,
         @InjectRepository(Message)
         private messageRepository: Repository<Message>,
+        private readonly userBlocksService: UserBlocksService,
     ) { }
 
     @Query(() => [Conversation], { name: 'getUserConversations' })
@@ -221,5 +223,21 @@ export class ChatResolver {
         }
 
         return this.chatService.getChatMedia(conversationId, user.id);
+    }
+
+    @ResolveField(() => Boolean)
+    @UseGuards(GqlAuthGuard)
+    async isBlocked(
+        @Parent() conversation: Conversation,
+        @CurrentUser() user: User,
+    ): Promise<boolean> {
+        if (!conversation.participants || conversation.participants.length !== 2) {
+            return false;
+        }
+        
+        const otherParticipant = conversation.participants.find(p => p.userId !== user.id);
+        if (!otherParticipant) return false;
+
+        return this.userBlocksService.checkIfBlocked(user.id, otherParticipant.userId);
     }
 }

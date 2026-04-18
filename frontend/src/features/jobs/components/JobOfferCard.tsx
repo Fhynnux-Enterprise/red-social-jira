@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import {
-    View, Text, StyleSheet, TouchableOpacity, Image, Platform, Dimensions, Modal, ActivityIndicator, KeyboardAvoidingView, TextInput, Alert,
+    View, Text, StyleSheet, TouchableOpacity, Image, Platform, Dimensions, Modal, ActivityIndicator, KeyboardAvoidingView, TextInput, Alert, TouchableWithoutFeedback
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -13,6 +13,7 @@ import { useAuth } from '../../auth/context/AuthContext';
 import ApplyJobModal from './ApplyJobModal';
 import ImageCarousel from '../../feed/components/ImageCarousel';
 import ReportModal from '../../reports/components/ReportModal';
+import CopyTextModal from '../../../components/CopyTextModal';
 import {
     DELETE_JOB_OFFER,
     GET_JOB_OFFERS,
@@ -41,6 +42,8 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
     const [menuVisible, setMenuVisible] = useState(false);
     const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
     const [reportVisible, setReportVisible] = useState(false);
+    const [isDescExpanded, setIsDescExpanded] = useState(false);
+    const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
 
     const isModeratorOrAdmin = authContext?.user?.role === 'ADMIN' || authContext?.user?.role === 'MODERATOR';
     const client = useApolloClient();
@@ -112,6 +115,15 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
         }
     };
 
+    const getFullCopyText = () => {
+        let text = `${item.title}\n\n`;
+        text += `Descripción: ${item.description}\n`;
+        text += `Ubicación: ${item.location}\n`;
+        if (item.salary) text += `Salario: $${item.salary.replace(/\$/g, '')}\n`;
+        if (item.contactPhone) text += `Teléfono: ${item.contactPhone}\n`;
+        return text;
+    };
+
     const [cardWidth, setCardWidth] = useState(Dimensions.get('window').width - 32);
 
     return (
@@ -119,6 +131,8 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
             <TouchableOpacity
                 style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 onPress={onPress}
+                onLongPress={() => setIsCopyModalVisible(true)}
+                delayLongPress={250}
                 activeOpacity={0.7}
                 onLayout={(e) => setCardWidth(e.nativeEvent.layout.width)}
             >
@@ -150,6 +164,7 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
                                 </Text>
                                 <Text style={[styles.postDate, { color: colors.textSecondary }]}>
                                     {formatDate(item.createdAt)}
+                                    {!!item.editedAt && " • Editado"}
                                 </Text>
                             </View>
                         </TouchableOpacity>
@@ -178,10 +193,8 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
                 </View>
                 )}
 
-                <TouchableOpacity 
+                <View 
                     style={[styles.contentPadding, { paddingBottom: 4, paddingTop: 1 }]}
-                    activeOpacity={0.9}
-                    onPress={onPress}
                 >
                     {/* Título */}
                     <Text style={[styles.title, { color: colors.text }]} numberOfLines={hideAuthorRow ? 2 : 1}>
@@ -197,9 +210,19 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
                     </View>
 
                     {/* Descripción */}
-                    <Text style={[styles.description, { color: colors.textSecondary }]} numberOfLines={2}>
-                        {item.description}
-                    </Text>
+                    {item.description.length > 150 && !isDescExpanded ? (
+                        <Text style={[styles.description, { color: colors.textSecondary }]}>
+                            {item.description.slice(0, 150)}
+                            <Text style={{ color: colors.primary, fontWeight: 'bold' }} onPress={() => setIsDescExpanded(true)}> ...más</Text>
+                        </Text>
+                    ) : (
+                        <Text style={[styles.description, { color: colors.textSecondary }]}>
+                            {item.description}
+                            {item.description.length > 150 && isDescExpanded && (
+                                <Text style={{ color: colors.primary, fontWeight: 'bold' }} onPress={() => setIsDescExpanded(false)}> Ver menos.</Text>
+                            )}
+                        </Text>
+                    )}
 
                     {/* Salario */}
                     {!!item.salary && (
@@ -210,7 +233,7 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
                             </Text>
                         </View>
                     )}
-                </TouchableOpacity>
+                </View>
 
                 {/* Carrusel multimedia */}
                 {item.media && item.media.length > 0 && (
@@ -267,70 +290,38 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
             />
 
             {/* ── Menú de opciones (owner) ── */}
-            <Modal
-                visible={menuVisible}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setMenuVisible(false)}
-            >
-                <TouchableOpacity
-                    style={styles.menuOverlay}
-                    activeOpacity={1}
-                    onPress={() => setMenuVisible(false)}
-                >
-                    <View style={[styles.menuSheet, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
-                        {/* Handle */}
-                        <View style={[styles.menuHandle, { backgroundColor: colors.border }]} />
-
-                        <Text style={[styles.menuTitle, { color: colors.textSecondary }]}>
-                            Opciones de la oferta
-                        </Text>
-
-                        {/* Editar */}
-                        <TouchableOpacity
-                            style={[styles.menuItem, { borderBottomColor: colors.border }]}
-                            onPress={handleEdit}
-                            activeOpacity={0.7}
-                        >
-                            <View style={[styles.menuItemIcon, { backgroundColor: 'rgba(255,101,36,0.1)' }]}>
-                                <Ionicons name="create-outline" size={20} color="#FF6524" />
+            <Modal visible={menuVisible} transparent animationType="slide" onRequestClose={() => setMenuVisible(false)} statusBarTranslucent>
+                <TouchableWithoutFeedback onPress={() => setMenuVisible(false)}>
+                    <View style={styles.menuOverlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={[styles.menuSheet, { backgroundColor: colors.surface, paddingBottom: insets.bottom + 20 }]}>
+                                <View style={[styles.menuHandle, { backgroundColor: isDark ? '#444' : '#DDD' }]} />
+                                <Text style={[styles.menuTitle, { color: colors.text }]}>Opciones</Text>
+                                
+                                <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={handleEdit}>
+                                    <View style={[styles.menuItemIcon, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
+                                        <Ionicons name="pencil" size={20} color={colors.text} />
+                                    </View>
+                                    <Text style={[styles.menuItemTitle, { color: colors.text }]}>Editar oferta</Text>
+                                </TouchableOpacity>
+                                
+                                <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={handleDelete} disabled={deleting}>
+                                    <View style={[styles.menuItemIcon, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
+                                        {deleting ? <ActivityIndicator size="small" color="#FF3B30" /> : <Ionicons name="trash" size={20} color="#FF3B30" />}
+                                    </View>
+                                    <Text style={[styles.menuItemTitle, { color: '#FF3B30' }]}>Eliminar oferta</Text>
+                                </TouchableOpacity>
+                                
+                                <TouchableOpacity style={[styles.menuItem, { marginTop: 10, borderBottomWidth: 0 }]} onPress={() => setMenuVisible(false)}>
+                                    <View style={[styles.menuItemIcon, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>
+                                        <Ionicons name="close" size={20} color={colors.textSecondary} />
+                                    </View>
+                                    <Text style={[styles.menuItemTitle, { color: colors.textSecondary }]}>Cancelar</Text>
+                                </TouchableOpacity>
                             </View>
-                            <View style={styles.menuItemText}>
-                                <Text style={[styles.menuItemTitle, { color: colors.text }]}>Editar oferta</Text>
-                                <Text style={[styles.menuItemSub, { color: colors.textSecondary }]}>Modifica los datos de tu publicación</Text>
-                            </View>
-                            <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-                        </TouchableOpacity>
-
-                        {/* Eliminar */}
-                        <TouchableOpacity
-                            style={styles.menuItem}
-                            onPress={handleDelete}
-                            activeOpacity={0.7}
-                            disabled={deleting}
-                        >
-                            <View style={[styles.menuItemIcon, { backgroundColor: 'rgba(244,67,54,0.1)' }]}>
-                                {deleting
-                                    ? <ActivityIndicator size="small" color="#F44336" />
-                                    : <Ionicons name="trash-outline" size={20} color="#F44336" />
-                                }
-                            </View>
-                            <View style={styles.menuItemText}>
-                                <Text style={[styles.menuItemTitle, { color: '#F44336' }]}>Eliminar oferta</Text>
-                                <Text style={[styles.menuItemSub, { color: colors.textSecondary }]}>Esta acción no se puede deshacer</Text>
-                            </View>
-                        </TouchableOpacity>
-
-                        {/* Cancelar */}
-                        <TouchableOpacity
-                            style={[styles.cancelBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)' }]}
-                            onPress={() => setMenuVisible(false)}
-                            activeOpacity={0.7}
-                        >
-                            <Text style={[styles.cancelText, { color: colors.text }]}>Cancelar</Text>
-                        </TouchableOpacity>
+                        </TouchableWithoutFeedback>
                     </View>
-                </TouchableOpacity>
+                </TouchableWithoutFeedback>
             </Modal>
 
             {/* ── Modal de confirmación de eliminación ── */}
@@ -339,6 +330,7 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
                 transparent
                 animationType="fade"
                 onRequestClose={() => setConfirmDeleteVisible(false)}
+                statusBarTranslucent
             >
                 <View style={styles.confirmOverlay}>
                     <View style={[styles.confirmCard, { backgroundColor: colors.surface }]}>
@@ -399,6 +391,11 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
                     client.cache.gc();
                     setReportVisible(false);
                 }}
+            />
+            <CopyTextModal
+                visible={isCopyModalVisible}
+                textToCopy={getFullCopyText()}
+                onClose={() => setIsCopyModalVisible(false)}
             />
         </>
     );
@@ -622,51 +619,53 @@ const styles = StyleSheet.create({
     // ── Menú de opciones ──
     menuOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
         justifyContent: 'flex-end',
     },
     menuSheet: {
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        paddingHorizontal: 16,
-        paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingHorizontal: 20,
         paddingTop: 12,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
     },
     menuHandle: {
         width: 40,
-        height: 4,
-        borderRadius: 2,
+        height: 5,
+        borderRadius: 3,
         alignSelf: 'center',
         marginBottom: 16,
     },
     menuTitle: {
-        fontSize: 12,
-        fontWeight: '600',
-        textTransform: 'uppercase',
-        letterSpacing: 0.8,
-        marginBottom: 12,
-        paddingHorizontal: 4,
+        fontSize: 18,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        marginBottom: 16,
     },
     menuItem: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 14,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        gap: 14,
+        borderBottomWidth: 1,
     },
     menuItemIcon: {
-        width: 42,
-        height: 42,
-        borderRadius: 12,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
+        marginRight: 12,
     },
     menuItemText: {
         flex: 1,
     },
     menuItemTitle: {
         fontSize: 16,
-        fontWeight: '600',
+        fontWeight: '500',
     },
     menuItemSub: {
         fontSize: 12,

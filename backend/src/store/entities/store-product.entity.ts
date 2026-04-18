@@ -4,6 +4,7 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
+  UpdateDateColumn,
   DeleteDateColumn,
   ManyToOne,
   JoinColumn,
@@ -61,9 +62,17 @@ export class StoreProduct {
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
+  @Field()
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt: Date;
+
   @Field({ nullable: true })
   @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deletedAt?: Date;
+
+  @Field({ nullable: true })
+  @Column({ name: 'edited_at', type: 'timestamptz', nullable: true })
+  editedAt?: Date;
 
   @Field(() => User)
   @ManyToOne(() => User, { eager: true })
