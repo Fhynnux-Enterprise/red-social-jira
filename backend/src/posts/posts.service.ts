@@ -103,10 +103,12 @@ export class PostsService {
             const postIds = posts.map(p => p.id);
             const rows: { postId: string; count: string }[] = await this.postsRepository.manager
                 .query(
-                    `SELECT post_id as "postId", COUNT(id) as "count"
-                     FROM comments
-                     WHERE post_id = ANY($1) AND deleted_at IS NULL
-                     GROUP BY post_id`,
+                    `SELECT c.post_id as "postId", COUNT(c.id) as "count"
+                     FROM comments c
+                     LEFT JOIN comments p ON c.parent_id = p.id AND p.deleted_at IS NULL
+                     WHERE c.post_id = ANY($1) AND c.deleted_at IS NULL
+                       AND (c.parent_id IS NULL OR p.id IS NOT NULL)
+                     GROUP BY c.post_id`,
                     [postIds],
                 );
             const countMap = new Map(rows.map(r => [r.postId, parseInt(r.count, 10)]));
@@ -157,10 +159,12 @@ export class PostsService {
             const postIds = posts.map(p => p.id);
             const rows: { postId: string; count: string }[] = await this.postsRepository.manager
                 .query(
-                    `SELECT post_id as "postId", COUNT(id) as "count"
-                     FROM comments
-                     WHERE post_id = ANY($1) AND deleted_at IS NULL
-                     GROUP BY post_id`,
+                    `SELECT c.post_id as "postId", COUNT(c.id) as "count"
+                     FROM comments c
+                     LEFT JOIN comments p ON c.parent_id = p.id AND p.deleted_at IS NULL
+                     WHERE c.post_id = ANY($1) AND c.deleted_at IS NULL
+                       AND (c.parent_id IS NULL OR p.id IS NOT NULL)
+                     GROUP BY c.post_id`,
                     [postIds],
                 );
             const countMap = new Map(rows.map(r => [r.postId, parseInt(r.count, 10)]));
@@ -196,10 +200,12 @@ export class PostsService {
             const postIds = posts.map(p => p.id);
             const rows: { postId: string; count: string }[] = await this.postsRepository.manager
                 .query(
-                    `SELECT post_id as "postId", COUNT(id) as "count"
-                     FROM comments
-                     WHERE post_id = ANY($1) AND deleted_at IS NULL
-                     GROUP BY post_id`,
+                    `SELECT c.post_id as "postId", COUNT(c.id) as "count"
+                     FROM comments c
+                     LEFT JOIN comments p ON c.parent_id = p.id AND p.deleted_at IS NULL
+                     WHERE c.post_id = ANY($1) AND c.deleted_at IS NULL
+                       AND (c.parent_id IS NULL OR p.id IS NOT NULL)
+                     GROUP BY c.post_id`,
                     [postIds],
                 );
             const countMap = new Map(rows.map(r => [r.postId, parseInt(r.count, 10)]));

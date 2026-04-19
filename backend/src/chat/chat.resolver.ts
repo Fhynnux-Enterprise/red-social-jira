@@ -134,7 +134,7 @@ export class ChatResolver {
         @CurrentUser() user: User,
         @Args() args: SendMessageArgs,
     ) {
-        const newMessage = await this.chatService.sendMessage(user.id, args.conversationId, args.content, args.imageUrl, args.videoUrl, args.storyId);
+        const newMessage = await this.chatService.sendMessage(user.id, args.conversationId, args.content, args.imageUrl, args.videoUrl, args.storyId, args.audioUrl, args.audioDuration);
         pubSub.publish('MESSAGE_ADDED_EVENT', { 
             messageAdded: newMessage, 
             inboxUpdate: newMessage 
@@ -237,6 +237,10 @@ export class ChatResolver {
         
         const otherParticipant = conversation.participants.find(p => p.userId !== user.id);
         if (!otherParticipant) return false;
+
+        if (otherParticipant.user?.bannedUntil && new Date(otherParticipant.user.bannedUntil) > new Date()) {
+            return true;
+        }
 
         return this.userBlocksService.checkIfBlocked(user.id, otherParticipant.userId);
     }

@@ -23,7 +23,7 @@ export class JobsService {
     const saved = await this.jobOfferRepository.save(jobOffer);
     return this.jobOfferRepository.findOne({
       where: { id: saved.id },
-      relations: ['author'],
+      relations: ['author', 'media'],
     }) as Promise<JobOffer>;
   }
 
@@ -43,7 +43,7 @@ export class JobsService {
 
     return this.jobOfferRepository.findOne({
       where: { id },
-      relations: ['author'],
+      relations: ['author', 'media'],
     }) as Promise<JobOffer>;
   }
 
@@ -58,7 +58,8 @@ export class JobsService {
 
   async findAllJobOffers(limit: number = 20, offset: number = 0, viewerId?: string): Promise<JobOffer[]> {
     const query = this.jobOfferRepository.createQueryBuilder('job')
-      .leftJoinAndSelect('job.author', 'author');
+      .leftJoinAndSelect('job.author', 'author')
+      .leftJoinAndSelect('job.media', 'media');
 
     if (viewerId) {
       query.andWhere(qb => {
@@ -84,7 +85,7 @@ export class JobsService {
     return this.jobOfferRepository.find({
       where: { authorId: userId },
       order: { createdAt: 'DESC' },
-      relations: ['author'],
+      relations: ['author', 'media'],
     });
   }
 
@@ -99,7 +100,7 @@ export class JobsService {
   async getJobOfferById(id: string): Promise<JobOffer> {
     const offer = await this.jobOfferRepository.findOne({
       where: { id },
-      relations: ['author'],
+      relations: ['author', 'media'],
     });
     if (!offer) throw new NotFoundException('Oferta no encontrada');
     return offer;

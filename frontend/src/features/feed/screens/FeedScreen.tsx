@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, Image, Platform, Alert, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQuery, useMutation } from '@apollo/client/react';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { useFocusEffect, useNavigation, useIsFocused } from '@react-navigation/native';
-import { GET_POSTS, DELETE_POST, GET_FEED } from '../graphql/posts.operations';
+import { DELETE_POST, GET_FEED } from '../graphql/posts.operations';
+import { DELETE_STORE_PRODUCT } from '../../store/graphql/store.operations';
+import { DELETE_JOB_OFFER, DELETE_PROFESSIONAL_PROFILE } from '../../jobs/graphql/jobs.operations';
 import JobOfferCard from '../../jobs/components/JobOfferCard';
 import ProfessionalCard from '../../jobs/components/ProfessionalCard';
 import { Ionicons } from '@expo/vector-icons';
@@ -89,6 +91,7 @@ export default function FeedScreen() {
     const [isStoreModalVisible, setIsStoreModalVisible] = useState(false);
     const [editingProduct, setEditingProduct] = useState<any | null>(null);
     const resumeCommentsRef = useRef<any>(null);
+    const apolloClient = useApolloClient();
 
     const isFocused = useIsFocused();
     // Estado para trackear qué post está visible en pantalla (para autoplay)
@@ -117,6 +120,10 @@ export default function FeedScreen() {
     const [deletePost] = useMutation(DELETE_POST, {
         refetchQueries: [{ query: GET_FEED, variables: { limit: 10, offset: 0 } }],
     });
+
+    const [deleteStoreProduct] = useMutation(DELETE_STORE_PRODUCT);
+    const [deleteJobOffer] = useMutation(DELETE_JOB_OFFER);
+    const [deleteProfessionalProfile] = useMutation(DELETE_PROFESSIONAL_PROFILE);
 
     const isFetchingMore = networkStatus === 3;
 
@@ -492,23 +499,57 @@ export default function FeedScreen() {
                     if (selectedPost) {
                         const type = selectedPost.__typename;
                         setIsOptionsMenuVisible(false);
+
+                        // Determinar cuál será la siguiente publicación a mostrar
+                        const feed = data?.getFeed || [];
+                        const currentIndex = feed.findIndex((p: any) => p.id === selectedPost.id);
+                        let targetPost = null;
+
+                        if (currentIndex !== -1) {
+                            if (currentIndex < feed.length - 1) {
+                                targetPost = feed[currentIndex + 1];
+                            } else if (currentIndex > 0) {
+                                targetPost = feed[currentIndex - 1];
+                            }
+                        }
+
+                        const afterDelete = (deletedId: string, typename: string) => {
+                            // Evict from Apollo cache — removes item from ALL cached queries instantly
+                            apolloClient.cache.evict({ id: apolloClient.cache.identify({ __typename: typename, id: deletedId }) });
+                            apolloClient.cache.gc();
+
+                            const label = type === 'StoreProduct' ? 'Producto' : type === 'JobOffer' ? 'Oferta' : type === 'ProfessionalProfile' ? 'Servicio' : 'Publicación';
+                            setTimeout(() => Toast.show({ 
+                                type: 'success', 
+                                text1: 'Eliminado', 
+                                text2: `${label} borrada con éxito`,
+                            }), 350);
+                            
+                            // Solo navegar si el CommentsModal estaba abierto al momento de eliminar
+                            if (selectedPostForComments) {
+                                if (targetPost) {
+                                    setSelectedPostForComments({
+                                        post: targetPost,
+                                        minimize: !!selectedPostForComments?.minimize,
+                                        initialTab: selectedPostForComments?.initialTab,
+                                        initialExpanded: false
+                                    });
+                                } else {
+                                    setSelectedPostForComments(null);
+                                }
+                            }
+                        };
+
+                        const onError = (err: any) => Toast.show({ type: 'error', text1: 'Error', text2: err.message });
                         
-                        // Si es algo diferente a Post, el borrado se maneja diferente en la DB (usamos el delete correspondiente)
-                        // Pero para simplicidad, si es Post usamos deletePost mutation
                         if (!type || type === 'Post') {
-                            deletePost({ variables: { id: selectedPost.id } })
-                                .then(() => Toast.show({ type: 'success', text1: 'Eliminado', text2: 'Publicación borrada con éxito' }))
-                                .catch((err: any) => Toast.show({ type: 'error', text1: 'Error', text2: err.message }));
-                        } else {
-                            // Para Store y Jobs, el Delete está en sus respectivos componentes, 
-                            // pero si se dispara desde aquí podemos mostrar un aviso o implementar el delete global
-                            Alert.alert("Eliminar", "¿Estás seguro de eliminar esta publicación?", [
-                                { text: "Cancelar", style: "cancel" },
-                                { text: "Eliminar", style: "destructive", onPress: () => {
-                                    // Implementar borrado según tipo si es necesario
-                                    Toast.show({ type: 'info', text1: 'Aviso', text2: 'Usa el menú de la tarjeta para eliminar este tipo de contenido.' });
-                                }}
-                            ]);
+                            deletePost({ variables: { id: selectedPost.id } }).then(() => afterDelete(selectedPost.id, 'Post')).catch(onError);
+                        } else if (type === 'StoreProduct') {
+                            deleteStoreProduct({ variables: { id: selectedPost.id } }).then(() => afterDelete(selectedPost.id, 'StoreProduct')).catch(onError);
+                        } else if (type === 'JobOffer') {
+                            deleteJobOffer({ variables: { id: selectedPost.id } }).then(() => afterDelete(selectedPost.id, 'JobOffer')).catch(onError);
+                        } else if (type === 'ProfessionalProfile') {
+                            deleteProfessionalProfile({ variables: { id: selectedPost.id } }).then(() => afterDelete(selectedPost.id, 'ProfessionalProfile')).catch(onError);
                         }
                     }
                 }}

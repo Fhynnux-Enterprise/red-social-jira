@@ -5,6 +5,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
   ManyToOne,
   OneToMany,
   JoinColumn,
@@ -75,4 +76,8 @@ export class StoreProductComment {
   @Field({ nullable: true })
   @Column({ name: 'edited_at', type: 'timestamptz', nullable: true })
   editedAt?: Date;
+
+  @Field({ nullable: true })
+  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deletedAt?: Date;
 }

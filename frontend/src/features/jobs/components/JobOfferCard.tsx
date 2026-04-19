@@ -70,13 +70,22 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
     };
 
     const [deleteJobOffer, { loading: deleting }] = useMutation(DELETE_JOB_OFFER, {
-        refetchQueries: [
-            { query: GET_JOB_OFFERS, variables: { limit: 20, offset: 0 } },
-            { query: GET_MY_JOB_OFFERS },
-        ],
-        onCompleted: () => setMenuVisible(false),
+        onCompleted: (_, clientOptions) => {
+            // Evict the deleted item from all Apollo caches instantly
+            const deletedId = clientOptions?.variables?.id;
+            if (deletedId) {
+                client.cache.evict({ id: client.cache.identify({ __typename: 'JobOffer', id: deletedId }) });
+                client.cache.gc();
+            }
+            setConfirmDeleteVisible(false);
+            setTimeout(() => Toast.show({
+                type: 'success',
+                text1: 'Oferta eliminada',
+                text2: 'La oferta fue eliminada exitosamente.',
+            }), 400);
+        },
         onError: (err) => {
-            setMenuVisible(false);
+            setConfirmDeleteVisible(false);
             Alert.alert('Error', err.message || 'No se pudo eliminar la oferta.');
         },
     });

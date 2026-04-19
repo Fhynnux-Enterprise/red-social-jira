@@ -87,12 +87,14 @@ export const ChatBubbleVideo = ({ url, width, height, onPressFullScreen }: ChatB
                 delayPressIn={0}
             >
                 <View pointerEvents="none" style={{ width, height }}>
-                    <VideoView
-                        player={player}
-                        style={{ width, height }}
-                        contentFit="cover"
-                        nativeControls={false}
-                    />
+                    {player && (
+                        <VideoView
+                            player={player}
+                            style={{ width, height }}
+                            contentFit="cover"
+                            nativeControls={false}
+                        />
+                    )}
                 </View>
                 {!hasStartedPlaying && (
                     <View style={styles.playOverlay}>

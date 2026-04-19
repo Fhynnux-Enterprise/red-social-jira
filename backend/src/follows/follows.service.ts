@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Follow } from './entities/follow.entity';
 import { User } from '../auth/entities/user.entity';
+import { UserBlock } from '../user-blocks/entities/user-block.entity';
 
 @Injectable()
 export class FollowsService {
@@ -74,8 +75,17 @@ export class FollowsService {
             .innerJoinAndSelect('follow.following', 'following')
             .where('follow.followerId = :userId', { userId })
             .andWhere('following.lastActiveAt > :fiveMinutesAgo', { fiveMinutesAgo })
+            // Filtro de invisibilidad bidireccional por bloqueos
+            .andWhere(qb => {
+                const subQuery = qb.subQuery()
+                    .select('1')
+                    .from(UserBlock, 'ub')
+                    .where('(ub.blockerId = :userId AND ub.blockedId = following.id) OR (ub.blockerId = following.id AND ub.blockedId = :userId)')
+                    .getQuery();
+                return 'NOT EXISTS ' + subQuery;
+            })
             .orderBy('following.lastActiveAt', 'DESC')
-            .take(30) // Límite de seguridad para el carrusel
+            .take(30)
             .getMany();
             
         return follows.map(f => f.following);
@@ -89,6 +99,15 @@ export class FollowsService {
             .innerJoin('follow.following', 'following')
             .where('follow.followerId = :userId', { userId })
             .andWhere('following.lastActiveAt > :fiveMinutesAgo', { fiveMinutesAgo })
+            // Filtro de invisibilidad bidireccional por bloqueos
+            .andWhere(qb => {
+                const subQuery = qb.subQuery()
+                    .select('1')
+                    .from(UserBlock, 'ub')
+                    .where('(ub.blockerId = :userId AND ub.blockedId = following.id) OR (ub.blockerId = following.id AND ub.blockedId = :userId)')
+                    .getQuery();
+                return 'NOT EXISTS ' + subQuery;
+            })
             .getCount();
     }
 }

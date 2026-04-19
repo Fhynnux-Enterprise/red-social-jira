@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import Toast from 'react-native-toast-message';
+import { customToastConfig } from '../../../components/CustomToast';
 import {
     View, Text, TouchableOpacity, Platform, StyleSheet,
     Image, ActivityIndicator, TouchableWithoutFeedback,
@@ -990,7 +992,9 @@ export default function CommentsModal({
                             updatedAt: new Date().toISOString(),
                             likesCount: 0,
                             isLikedByMe: false,
+                            parentId: replyingTo?.id || null,
                             parent: replyingTo?.id ? { __typename: 'StoreProductComment', id: replyingTo.id } : null,
+                            editedAt: null,
                             user: {
                                 __typename: 'User',
                                 id: currentUser.id,
@@ -1495,9 +1499,9 @@ export default function CommentsModal({
                                                 <View style={[styles.errorIconCircle, { backgroundColor: colors.error + '15' }]}>
                                                     <Ionicons name="cloud-offline-outline" size={40} color={colors.error} />
                                                 </View>
-                                                <Text style={[styles.errorTitle, { color: colors.text }]}>¡Ups! Algo salió mal</Text>
+                                                <Text style={[styles.errorTitle, { color: colors.text }]}>No hay conexión</Text>
                                                 <Text style={[styles.errorSubTitle, { color: colors.textSecondary }]}>
-                                                    No pudimos conectar con el servidor para cargar los comentarios.
+                                                    Verifica tu internet e inténtalo de nuevo.
                                                 </Text>
                                                 <TouchableOpacity 
                                                     onPress={() => refetch()} 
@@ -1694,6 +1698,7 @@ export default function CommentsModal({
                     }}
                 />
             )}
+            <Toast config={customToastConfig} position="top" topOffset={60} />
         </Modal>
     );
 }

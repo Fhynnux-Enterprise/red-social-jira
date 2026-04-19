@@ -12,11 +12,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery } from '@apollo/client/react';
+import { gql } from '@apollo/client';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { Alert } from 'react-native';
 import { Video as Compressor } from 'react-native-compressor';
-import { CREATE_POST, UPDATE_POST, GET_POSTS } from '../graphql/posts.operations';
+import { CREATE_POST, UPDATE_POST, GET_POSTS, GET_FEED } from '../graphql/posts.operations';
 import { GET_ME } from '../../profile/graphql/profile.operations';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import { Image, ScrollView } from 'react-native';
@@ -25,6 +26,7 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { useAuth } from '../../auth/context/AuthContext';
 import ConfirmModal from '../../../components/ConfirmModal';
+import { customToastConfig } from '../../../components/CustomToast';
 
 interface CreatePostModalProps {
     visible: boolean;
@@ -135,7 +137,33 @@ export default function CreatePostModal({
     const currentUser = meData?.me;
 
     const [createPost, { loading: creating }] = useMutation(CREATE_POST, {
-        refetchQueries: [{ query: GET_POSTS, variables: { limit: 5, offset: 0 } }],
+        update(cache, { data }) {
+            const newPost = data?.createPost;
+            if (!newPost) return;
+            try {
+                // Write the normalized Post object into the cache
+                const newPostRef = cache.writeFragment({
+                    data: { ...newPost, __typename: 'Post' },
+                    fragment: gql`
+                        fragment NewFeedPost on Post {
+                            id __typename content title
+                            createdAt updatedAt editedAt commentsCount
+                            media { id url type order }
+                            likes { id user { id firstName lastName username photoUrl } }
+                            author { id firstName lastName username photoUrl }
+                        }
+                    `,
+                });
+                // Prepend to ALL cached variants of getFeed
+                cache.modify({
+                    fields: {
+                        getFeed(existingRefs = [], { toReference }) {
+                            return [newPostRef, ...existingRefs];
+                        },
+                    },
+                });
+            } catch {}
+        },
     });
 
     const [updatePost, { loading: updating }] = useMutation(UPDATE_POST, {
@@ -293,14 +321,14 @@ export default function CreatePostModal({
                 await updatePost({ variables: { id: postId, content, title: title.trim() || null } });
                 setContent('');
                 setTitle('');
-                Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'La publicación fue modificada' });
                 onClose();
+                setTimeout(() => Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'Tu publicación fue modificada exitosamente.' }), 350);
             } else {
                 await createPost({ variables: { content, title: title.trim() || null, media: mediaInput.length > 0 ? mediaInput : null } });
                 setContent('');
                 setTitle('');
-                Toast.show({ type: 'success', text1: '¡Publicado!', text2: 'Tu post está ahora en el Feed.' });
                 onClose();
+                setTimeout(() => Toast.show({ type: 'success', text1: '¡Publicado!', text2: '¡Tu publicación fue creada exitosamente!' }), 350);
             }
         } catch (error: any) {
             setIsUploadingMedia(false);
@@ -529,6 +557,7 @@ export default function CreatePostModal({
                     </View>
                 </KeyboardAvoidingView>
             </View >
+            <Toast config={customToastConfig} position="top" topOffset={60} />
         </Modal >
     );
 }

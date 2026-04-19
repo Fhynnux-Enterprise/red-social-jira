@@ -20,7 +20,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '../../../navigation/AppNavigator';
 import { useQuery, useMutation, useSubscription, useApolloClient } from '@apollo/client/react';
@@ -34,31 +34,40 @@ import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { Video as VideoCompressor } from 'react-native-compressor';
 import { OnlineStatusIndicator } from '../components/OnlineStatusIndicator';
 import { ChatBubbleVideo } from '../components/ChatBubbleVideo';
+import { AudioPlayerBubble } from '../components/AudioPlayerBubble';
 import ZoomableImageViewer from '../../feed/components/ZoomableImageViewer';
 import { InteractiveVideoPlayer } from '../../feed/components/ImageCarousel';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import { useAudioRecorder, RecordingPresets, requestRecordingPermissionsAsync, getRecordingPermissionsAsync, useAudioRecorderState, useAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import { useAudioUpload } from '../../storage/hooks/useAudioUpload';
+import * as FileSystem from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
 
 // Componente para manejar la miniatura de respuesta a historia (especialmente para videos)
 const StoryReplyThumbnail = ({ uri, isVideo, style }: { uri: string; isVideo: boolean; style: any }) => {
     const player = useVideoPlayer(isVideo ? uri : null, (p) => {
-        p.muted = true;
-        p.pause();
+        if (p) {
+            p.muted = true;
+            p.pause();
+        }
     });
 
-    if (isVideo && player) {
-        return (
-            <View style={[style, { overflow: 'hidden', backgroundColor: '#000' }]}>
-                <VideoView 
-                    player={player} 
-                    style={StyleSheet.absoluteFill} 
-                    contentFit="cover" 
-                    nativeControls={false}
-                />
-            </View>
-        );
+    // En Android, evitamos pasar el player a VideoView si no hay video o el objeto se está liberando
+    // Usamos una doble comprobación para evitar el error de "shared object released"
+    if (!isVideo || !player || !uri) {
+        return <Image source={{ uri: uri || undefined }} style={style} />;
     }
 
-    return <Image source={{ uri }} style={style} />;
+    return (
+        <View style={[style, { overflow: 'hidden', backgroundColor: '#000' }]}>
+            <VideoView 
+                player={player} 
+                style={StyleSheet.absoluteFill} 
+                contentFit="cover" 
+                nativeControls={false}
+            />
+        </View>
+    );
 };
 
 export default function ChatRoomScreen() {
@@ -70,6 +79,7 @@ export default function ChatRoomScreen() {
     const params = route.params || localParams || {};
     const { conversationId } = params;
     const { user: currentUser } = useAuth() as any;
+    const router = useRouter();
     const [messageText, setMessageText] = useState('');
     const [selectedMessage, setSelectedMessage] = useState<any>(null);
     const [isActionModalVisible, setIsActionModalVisible] = useState(false);
@@ -96,6 +106,35 @@ export default function ChatRoomScreen() {
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [videoPreview, setVideoPreview] = useState<string | null>(null);
     const [isMuted, setIsMuted] = useState(true);
+    
+    // Grabación de Audio
+    const { uploadAudio, isUploading: isUploadingAudio } = useAudioUpload();
+    const recorder = useAudioRecorder({ 
+        ...RecordingPresets.HIGH_QUALITY, 
+        isMeteringEnabled: true 
+    });
+    const recorderState = useAudioRecorderState(recorder, 500); // Forzar actualización cada 500ms
+    const [isRecording, setIsRecording] = useState(false);
+    const [meteringHistory, setMeteringHistory] = useState<number[]>([]);
+    
+    // Reproductor de previsualización (para cuando se pausa la grabación)
+    const previewPlayer = useAudioPlayer(recorder.uri);
+
+    // Efecto para capturar los niveles de audio (waveform)
+    useEffect(() => {
+        if (isRecording && recorderState.isRecording && recorderState.metering !== undefined) {
+            // Normalizar el nivel (-160 a 0)
+            const level = Math.max(0.1, (recorderState.metering + 160) / 160);
+            setMeteringHistory(prev => [...prev.slice(-30), level]);
+        }
+    }, [recorderState.metering, isRecording, recorderState.isRecording]);
+
+    // Asegurar que el preview player tiene el audio cargado cuando se pausa
+    useEffect(() => {
+        if (recorderState.isPaused && recorder.uri) {
+            previewPlayer.replace(recorder.uri);
+        }
+    }, [recorderState.isPaused, recorder.uri]);
     
     // Visor de Galería Unificado
     const [viewerVisible, setViewerVisible] = useState(false);
@@ -126,12 +165,24 @@ export default function ChatRoomScreen() {
     // Fuente única para la galería: si ya cargó mediaData, la usamos.
     // Si no, usamos lo que haya cargado en el chat localmente.
     const chatMediaList = useMemo(() => {
-        if (mediaData?.getChatMedia) {
-            return mediaData.getChatMedia; 
-        }
-        return localMessages
-            .filter((m: any) => (m.imageUrl || m.videoUrl) && !m.isDeletedForAll)
-            .reverse();
+        // Obtenemos multimedia de los mensajes locales cargados actualmente
+        const localMedia = localMessages
+            .filter((m: any) => (m.imageUrl || m.videoUrl) && !m.isDeletedForAll);
+            
+        // Si hay datos del backend (historial completo), los usamos como base
+        const backendMedia = mediaData?.getChatMedia || [];
+        
+        // Combinamos ambos evitando duplicados por ID o URL
+        const combined = [...localMedia];
+        backendMedia.forEach((bm: any) => {
+            const exists = combined.some(lm => lm.id === bm.id || (lm.imageUrl && lm.imageUrl === bm.imageUrl) || (lm.videoUrl && lm.videoUrl === bm.videoUrl));
+            if (!exists) {
+                combined.push(bm);
+            }
+        });
+
+        // Ordenamos cronológicamente (más antiguos primero para el swipe natural)
+        return combined.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     }, [mediaData, localMessages]);
     useEffect(() => {
         const serverMsgs: any[] = (queryData as any)?.getChatMessages || [];
@@ -266,11 +317,14 @@ export default function ChatRoomScreen() {
         skip: !conversationId,
     });
 
+    // Memos para info de la conversación
+    const isBlocked = useMemo(() => (convData as any)?.getConversation?.isBlocked, [convData]);
+
     const otherUser = useMemo(() => {
         const participants = (convData as any)?.getConversation?.participants;
         if (!participants || participants.length === 0) return null;
         const other = participants.find((p: any) => p.user.id !== currentUser?.id);
-        return other ? other.user : participants[0].user;
+        return other ? other.user : (participants[0]?.user || null);
     }, [convData, currentUser?.id]);
 
     const [deleteMessageForMeMutation] = useMutation(DELETE_MESSAGE_FOR_ME);
@@ -449,6 +503,127 @@ export default function ChatRoomScreen() {
             });
         } catch (err) {
             console.error("Error sending message:", err);
+        }
+    };
+
+    const resolveMediaUrl = (url?: string | null, fallbackType: 'avatar' | 'none' = 'none', username: string = 'U') => {
+        if (!url) {
+            if (fallbackType === 'avatar') return `https://i.pravatar.cc/150?u=${username}`;
+            return '';
+        }
+        if (url.startsWith('http') || url.startsWith('file://')) return url;
+        const serverUrl = 'https://canton-enterprise-production.up.railway.app';
+        return `${serverUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+    };
+
+    const handleDownloadAudio = async () => {
+        if (!selectedMessage?.audioUrl) return;
+        setIsActionModalVisible(false);
+        
+        try {
+            // Pedir permisos si no los tenemos
+            const { status } = await MediaLibrary.requestPermissionsAsync();
+            if (status !== 'granted') {
+                Toast.show({ type: 'error', text1: 'Permiso denegado', text2: 'Necesitamos acceso a la galería para guardar el audio.' });
+                return;
+            }
+
+            const fileUri = FileSystem.documentDirectory + `audio_${selectedMessage.id}.m4a`;
+            const download = await FileSystem.downloadAsync(selectedMessage.audioUrl, fileUri);
+            
+            if (download.status === 200) {
+                await MediaLibrary.createAssetAsync(download.uri);
+                Toast.show({ type: 'success', text1: 'Audio descargado', text2: 'Se guardó en tu galería/archivos.' });
+            }
+        } catch (error) {
+            Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo descargar el audio.' });
+        }
+    };
+
+    const formatDuration = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const startRecording = async () => {
+        try {
+            const permission = await getRecordingPermissionsAsync();
+            
+            if (permission.status !== 'granted') {
+                const request = await requestRecordingPermissionsAsync();
+                if (request.status !== 'granted') {
+                    Toast.show({ 
+                        type: 'error', 
+                        text1: 'Permisos de Micrófono', 
+                        text2: 'Necesitamos acceso al micrófono para grabar audios.' 
+                    });
+                    return;
+                }
+            }
+
+            // Aseguramos el modo de audio para grabación
+            await setAudioModeAsync({
+                allowsRecording: true,
+                playsInSilentMode: true,
+            });
+
+            setMeteringHistory([]);
+            setIsRecording(true);
+            
+            await recorder.prepareToRecordAsync();
+            await recorder.record();
+        } catch (err) {
+            setIsRecording(false);
+        }
+    };
+
+    const togglePauseRecording = async () => {
+        if (recorder.isRecording) {
+            await recorder.pause();
+        } else {
+            await recorder.record();
+        }
+    };
+
+    const cancelRecording = async () => {
+        try {
+            await recorder.stop();
+        } catch (err) { }
+        setIsRecording(false);
+        setMeteringHistory([]);
+    };
+
+    const stopRecording = async () => {
+        try {
+            // Usamos recorderState.durationMillis que es más fiable y está en ms
+            const durationMs = recorderState.durationMillis;
+            const durationSeconds = Math.floor(durationMs / 1000);
+            const uri = recorder.uri;
+            
+            await recorder.stop();
+            setIsRecording(false);
+
+            // Permitir audios de al menos 1 segundo
+            if (!uri || durationSeconds < 1) {
+                if (uri) await recorder.stop(); // Asegurar parada
+                return;
+            }
+
+            const publicAudioUrl = await uploadAudio(uri);
+
+            await sendMessageMutation({
+                variables: {
+                    conversationId,
+                    content: '',
+                    audioUrl: publicAudioUrl,
+                    audioDuration: durationSeconds
+                }
+            });
+        } catch (err) {
+            console.error('Failed to upload recording', err);
+            Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo enviar el audio.' });
+            setIsRecording(false);
         }
     };
 
@@ -682,15 +857,10 @@ export default function ChatRoomScreen() {
         return (
             <View style={styles.profileSummary}>
                 <View style={styles.summaryAvatarContainer}>
-                    {otherUser?.photoUrl ? (
-                        <Image source={{ uri: otherUser.photoUrl }} style={styles.summaryAvatar} />
-                    ) : (
-                        <View style={[styles.summaryAvatarPlaceholder, { backgroundColor: colors.primary + '20' }]}>
-                            <Text style={[styles.summaryAvatarText, { color: colors.primary }]}>
-                                {otherUser?.firstName?.[0]}{otherUser?.lastName?.[0]}
-                            </Text>
-                        </View>
-                    )}
+                    <Image 
+                        source={{ uri: resolveMediaUrl(otherUser?.photoUrl || otherUser?.avatarUrl, 'avatar', otherUser?.username) }} 
+                        style={styles.summaryAvatar} 
+                    />
                 </View>
                 <Text style={[styles.summaryName, { color: colors.text }]}>
                     {otherUser.firstName} {otherUser.lastName}
@@ -756,11 +926,8 @@ export default function ChatRoomScreen() {
             isMine ? styles.myBubble : styles.theirBubble,
             {
                 backgroundColor: isMine ? colors.primary : (isDark ? '#2C2C2E' : '#FFFFFF'),
-                // Dynamic border radius for grouping
-                borderTopRightRadius: isMine && isPrevSame ? 5 : 20,
-                borderBottomRightRadius: isMine && isNextSame ? 5 : 20,
-                borderTopLeftRadius: !isMine && isPrevSame ? 5 : 20,
-                borderBottomLeftRadius: !isMine && isNextSame ? 5 : 20,
+                // Bordes siempre redondeados (20px) según petición del usuario
+                borderRadius: 20,
             }
         ];
 
@@ -771,6 +938,14 @@ export default function ChatRoomScreen() {
                     isMine ? styles.myMessageRow : styles.theirMessageRow,
                     { marginBottom: isNextSame ? 2 : 12 }
                 ]}>
+                    {!isMine && (
+                        <View style={styles.bubbleAvatarContainer}>
+                            <Image 
+                                source={{ uri: resolveMediaUrl(item.sender?.photoUrl || item.sender?.avatarUrl, 'avatar', item.sender?.username) }} 
+                                style={styles.bubbleAvatar} 
+                            />
+                        </View>
+                    )}
                     <View style={[bubbleStyles, { backgroundColor: isDark ? '#2C2C2E' : '#E5E5EA', borderWidth: 1, borderColor: isDark ? '#3C3C3E' : '#D1D1D6' }]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                             <Ionicons name="ban-outline" size={16} color={colors.textSecondary} style={{ marginRight: 6 }} />
@@ -782,6 +957,14 @@ export default function ChatRoomScreen() {
                             </Text>
                         </View>
                     </View>
+                    {isMine && (
+                        <View style={styles.bubbleAvatarContainerRight}>
+                            <Image 
+                                source={{ uri: resolveMediaUrl(currentUser?.photoUrl || currentUser?.avatarUrl, 'avatar', currentUser?.username) }} 
+                                style={styles.bubbleAvatar} 
+                            />
+                        </View>
+                    )}
                 </View>
             );
         }
@@ -790,18 +973,29 @@ export default function ChatRoomScreen() {
             <View style={[
                 styles.messageRow,
                 isMine ? styles.myMessageRow : styles.theirMessageRow,
-                { marginBottom: isNextSame ? 2 : 12 }
+                { marginBottom: isNextSame ? 4 : 16 }
             ]}>
-                <TouchableOpacity 
-                    activeOpacity={0.8}
-                    onLongPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                        setSelectedMessage(item);
-                        setIsActionModalVisible(true);
-                    }}
-                    delayLongPress={200}
-                    style={bubbleStyles}
-                >
+                {/* Avatar izquierdo (para otros) */}
+                {!isMine && (
+                    <View style={styles.bubbleAvatarContainer}>
+                        <Image 
+                            source={{ uri: resolveMediaUrl(item.sender?.photoUrl || item.sender?.avatarUrl, 'avatar', item.sender?.username) }} 
+                            style={styles.bubbleAvatar} 
+                        />
+                    </View>
+                )}
+
+                <View style={[styles.bubbleWrapper, { alignItems: isMine ? 'flex-end' : 'flex-start' }]}>
+                    <TouchableOpacity 
+                        activeOpacity={0.8}
+                        onLongPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                            setSelectedMessage(item);
+                            setIsActionModalVisible(true);
+                        }}
+                        delayLongPress={200}
+                        style={bubbleStyles}
+                    >
                     {item.storyId && (
                         <TouchableOpacity 
                             style={[
@@ -831,7 +1025,7 @@ export default function ChatRoomScreen() {
                             </View>
                             {(item.imageUrl || item.videoUrl) ? (
                                 <StoryReplyThumbnail 
-                                    uri={(item.imageUrl || item.videoUrl) as string} 
+                                    uri={resolveMediaUrl((item.imageUrl || item.videoUrl) as string)} 
                                     isVideo={!!item.videoUrl} 
                                     style={styles.storyReplyThumb} 
                                 />
@@ -846,7 +1040,10 @@ export default function ChatRoomScreen() {
                         <TouchableOpacity
                             activeOpacity={0.9}
                             onPress={() => {
-                                const mIdx = chatMediaList.findIndex(m => m.id === item.id);
+                                const mIdx = chatMediaList.findIndex(m => 
+                                    m.id === item.id || 
+                                    (item.imageUrl && m.imageUrl === item.imageUrl)
+                                );
                                 if (mIdx !== -1) {
                                     setViewerActiveIndex(mIdx);
                                     setViewerVisible(true);
@@ -854,7 +1051,7 @@ export default function ChatRoomScreen() {
                             }}
                         >
                             <Image
-                                source={{ uri: item.imageUrl }}
+                                source={{ uri: resolveMediaUrl(item.imageUrl) }}
                                 style={{
                                     width: screenWidth * 0.55,
                                     height: screenWidth * 0.55 * 0.75,
@@ -868,12 +1065,15 @@ export default function ChatRoomScreen() {
                     {item.videoUrl && !item.storyId && (
                         <View style={{ width: screenWidth * 0.55, borderRadius: 12, overflow: 'hidden', marginBottom: item.content ? 6 : 0 }}>
                             <ChatBubbleVideo
-                                url={item.videoUrl}
+                                url={resolveMediaUrl(item.videoUrl)}
                                 width={screenWidth * 0.55}
                                 height={screenWidth * 0.55 * 0.75}
                                 onPressFullScreen={() => {
                                     setIsMuted(false);
-                                    const mIdx = chatMediaList.findIndex(m => m.id === item.id);
+                                    const mIdx = chatMediaList.findIndex(m => 
+                                        m.id === item.id || 
+                                        (item.videoUrl && m.videoUrl === item.videoUrl)
+                                    );
                                     if (mIdx !== -1) {
                                         setViewerActiveIndex(mIdx);
                                         setViewerVisible(true);
@@ -882,34 +1082,84 @@ export default function ChatRoomScreen() {
                             />
                         </View>
                     )}
+                    {item.audioUrl && (
+                        <AudioPlayerBubble 
+                            audioUrl={resolveMediaUrl(item.audioUrl)} 
+                            audioDuration={item.audioDuration} 
+                            isMine={isMine}
+                            messageTime={new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                            isRead={item.isRead}
+                            isEdited={!!item.editedAt}
+                        />
+                    )}
                     {item.content ? (
-                        <HighlightedText text={item.content} sub={searchTerm} mine={isMine} />
-                    ) : null}
-                    <View style={styles.messageFooter}>
-                        {item.editedAt && (
-                            <Text style={[
-                                styles.messageTime,
-                                { color: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary, fontStyle: 'italic', marginRight: 4 }
-                            ]}>
-                                Editado
-                            </Text>
-                        )}
-                        <Text style={[
-                            styles.messageTime,
-                            { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }
-                        ]}>
-                            {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
-                        </Text>
-                        {isMine && (
-                            <Ionicons 
-                                name="checkmark-done" 
-                                size={16} 
-                                color={item.isRead ? "#00E5FF" : "rgba(255,255,255,0.4)"} 
-                                style={{ marginLeft: 4, marginBottom: -1 }}
-                            />
-                        )}
+                        <>
+                            <HighlightedText text={item.content} sub={searchTerm} mine={isMine} />
+                            <View style={styles.messageFooter}>
+                                {item.editedAt && (
+                                    <Text style={[
+                                        styles.messageTime,
+                                        { color: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary, fontStyle: 'italic', marginRight: 4 }
+                                    ]}>
+                                        Editado
+                                    </Text>
+                                )}
+                                <Text style={[
+                                    styles.messageTime,
+                                    { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }
+                                ]}>
+                                    {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                                </Text>
+                                {isMine && (
+                                    <Ionicons 
+                                        name="checkmark-done" 
+                                        size={16} 
+                                        color={item.isRead ? "#00E5FF" : "rgba(255,255,255,0.4)"} 
+                                        style={{ marginLeft: 4, marginBottom: -1 }}
+                                    />
+                                )}
+                            </View>
+                        </>
+                    ) : (
+                        !item.audioUrl && (
+                            <View style={styles.messageFooter}>
+                                {item.editedAt && (
+                                    <Text style={[
+                                        styles.messageTime,
+                                        { color: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary, fontStyle: 'italic', marginRight: 4 }
+                                    ]}>
+                                        Editado
+                                    </Text>
+                                )}
+                                <Text style={[
+                                    styles.messageTime,
+                                    { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }
+                                ]}>
+                                    {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                                </Text>
+                                {isMine && (
+                                    <Ionicons 
+                                        name="checkmark-done" 
+                                        size={16} 
+                                        color={item.isRead ? "#00E5FF" : "rgba(255,255,255,0.4)"} 
+                                        style={{ marginLeft: 4, marginBottom: -1 }}
+                                    />
+                                )}
+                            </View>
+                        )
+                    )}
+                    </TouchableOpacity>
+                </View>
+
+                {/* Avatar derecho (para mí) */}
+                {isMine && (
+                    <View style={styles.bubbleAvatarContainerRight}>
+                        <Image 
+                            source={{ uri: resolveMediaUrl(currentUser?.photoUrl || currentUser?.avatarUrl, 'avatar', currentUser?.username) }} 
+                            style={styles.bubbleAvatar} 
+                        />
                     </View>
-                </TouchableOpacity>
+                )}
             </View>
         );
     };
@@ -972,25 +1222,22 @@ export default function ChatRoomScreen() {
                         })}
                         activeOpacity={0.7}
                     >
-                        {otherUser?.photoUrl ? (
-                            <Image source={{ uri: otherUser.photoUrl }} style={styles.headerAvatar} />
-                        ) : (
-                            <View style={[styles.headerAvatarPlaceholder, { backgroundColor: colors.primary + '20' }]}>
-                                <Text style={[styles.headerAvatarText, { color: colors.primary }]}>
-                                    {otherUser?.firstName?.[0]}{otherUser?.lastName?.[0]}
-                                </Text>
-                            </View>
-                        )}
+                        <Image 
+                            source={{ uri: resolveMediaUrl(otherUser?.photoUrl || otherUser?.avatarUrl, 'avatar', otherUser?.username) }} 
+                            style={styles.headerAvatar} 
+                        />
                         <View style={styles.headerTextContainer}>
                             <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
                                 {otherUser ? `${otherUser.firstName} ${otherUser.lastName} ${otherUser.id === currentUser?.id ? '(Tú)' : ''}` : 'Cargando...'}
                             </Text>
-                            <View style={styles.onlineStatus}>
-                                <OnlineStatusIndicator 
-                                    lastActiveAt={otherUser?.lastActiveAt} 
-                                    showText={true} 
-                                />
-                            </View>
+                            {!isBlocked && (
+                                <View style={styles.onlineStatus}>
+                                    <OnlineStatusIndicator 
+                                        lastActiveAt={otherUser?.lastActiveAt} 
+                                        showText={true} 
+                                    />
+                                </View>
+                            )}
                         </View>
                     </TouchableOpacity>
 
@@ -1054,7 +1301,7 @@ export default function ChatRoomScreen() {
                     )}
                 </View>
 
-                {/* Input de Mensajes */}
+                {/* Input de Mensajes o Mensaje de Bloqueo */}
                 <View style={[styles.inputWrapper, 
                     { 
                         borderTopColor: colors.border, 
@@ -1062,73 +1309,176 @@ export default function ChatRoomScreen() {
                         paddingBottom: 10
                     }
                 ]}>
-                    {/* Preview de media seleccionada */}
-                    {(imagePreview || videoPreview) && (
-                        <View style={[styles.imagePreviewBar, { backgroundColor: isDark ? '#1C1C1E' : '#F0F0F0' }]}>
-                            {imagePreview && <Image source={{ uri: imagePreview }} style={styles.imagePreviewThumb} />}
-                            {videoPreview && (
-                                <View style={[styles.imagePreviewThumb, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }]}>
-                                    <Ionicons name="videocam" size={20} color="#FFF" />
+                    {isBlocked ? (
+                        <View style={[styles.blockedInfoContainer, { backgroundColor: isDark ? 'rgba(255,101,36,0.08)' : 'rgba(255,101,36,0.05)' }]}>
+                            <Ionicons name="lock-closed" size={18} color={colors.primary} style={{ marginRight: 8 }} />
+                            <Text style={[styles.blockedInfoText, { color: colors.textSecondary }]}>
+                                No puedes responder a esta conversación.
+                            </Text>
+                        </View>
+                    ) : (
+                        <>
+                            {/* Preview de media seleccionada */}
+                            {(imagePreview || videoPreview) && (
+                                <View style={[styles.imagePreviewBar, { backgroundColor: isDark ? '#1C1C1E' : '#F0F0F0' }]}>
+                                    {imagePreview && <Image source={{ uri: imagePreview }} style={styles.imagePreviewThumb} />}
+                                    {videoPreview && (
+                                        <View style={[styles.imagePreviewThumb, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }]}>
+                                            <Ionicons name="videocam" size={20} color="#FFF" />
+                                        </View>
+                                    )}
+                                    <Text style={[styles.imagePreviewText, { color: colors.textSecondary }]} numberOfLines={1}>
+                                        {videoPreview ? 'Video adjunto' : 'Imagen adjunta'}
+                                    </Text>
+                                    <TouchableOpacity onPress={() => { setImagePreview(null); setVideoPreview(null); }} style={styles.imagePreviewClose}>
+                                        <Ionicons name="close-circle" size={22} color={colors.textSecondary} />
+                                    </TouchableOpacity>
                                 </View>
                             )}
-                            <Text style={[styles.imagePreviewText, { color: colors.textSecondary }]} numberOfLines={1}>
-                                {videoPreview ? 'Video adjunto' : 'Imagen adjunta'}
-                            </Text>
-                            <TouchableOpacity onPress={() => { setImagePreview(null); setVideoPreview(null); }} style={styles.imagePreviewClose}>
-                                <Ionicons name="close-circle" size={22} color={colors.textSecondary} />
-                            </TouchableOpacity>
-                        </View>
+
+                            {/* Status de subida */}
+                            {isUploadingMedia && uploadStatusText ? (
+                                <View style={[styles.uploadStatusBar, { backgroundColor: isDark ? '#1C1C1E' : '#F0F0F0' }]}>
+                                    <ActivityIndicator size="small" color={colors.primary} />
+                                    <Text style={[styles.uploadStatusText, { color: colors.textSecondary }]}>{uploadStatusText}</Text>
+                                </View>
+                            ) : null}
+
+                            <View style={[styles.inputContainer, { backgroundColor: isDark ? '#1C1C1E' : '#F7F7F7', paddingVertical: 10 }]}>
+                                {isRecording ? (
+                                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10 }}>
+                                        {/* Botón de borrar */}
+                                        <TouchableOpacity onPress={cancelRecording} style={{ padding: 8 }}>
+                                            <Ionicons name="trash-outline" size={22} color="#FF3B30" />
+                                        </TouchableOpacity>
+                                        
+                                        {/* Área central: Waveform o Reproductor de Preview */}
+                                        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', marginHorizontal: 10 }}>
+                                            {(!recorder.isRecording || recorderState.isPaused) && recorderState.durationMillis > 0 ? (
+                                                <TouchableOpacity 
+                                                    onPress={() => {
+                                                        if (previewPlayer.playing) {
+                                                            previewPlayer.pause();
+                                                        } else {
+                                                            if (recorder.uri) {
+                                                                // Asegurar que el player tiene el URI correcto antes de sonar
+                                                                previewPlayer.replace(recorder.uri);
+                                                                previewPlayer.play();
+                                                            } else {
+                                                                console.log("No recorder URI available yet");
+                                                            }
+                                                        }
+                                                    }}
+                                                    style={{ marginRight: 10 }}
+                                                >
+                                                    <Ionicons name={previewPlayer.playing ? "pause" : "play"} size={22} color={colors.primary} />
+                                                </TouchableOpacity>
+                                            ) : (
+                                                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF3B30', marginRight: 8 }} />
+                                            )}
+
+                                            <View style={{ flex: 1, height: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                                                {meteringHistory.length > 0 ? (
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                        {meteringHistory.map((level, i) => (
+                                                            <View 
+                                                                key={i} 
+                                                                style={{ 
+                                                                    width: 2, 
+                                                                    height: Math.max(4, 30 * level), 
+                                                                    backgroundColor: colors.primary, 
+                                                                    marginHorizontal: 1,
+                                                                    borderRadius: 1,
+                                                                    opacity: recorderState.isPaused ? 0.6 : 1
+                                                                }} 
+                                                            />
+                                                        ))}
+                                                    </View>
+                                                ) : (
+                                                    <Text style={{ color: colors.textSecondary, fontSize: 13, fontStyle: 'italic' }}>
+                                                        Iniciando...
+                                                    </Text>
+                                                )}
+                                            </View>
+                                            
+                                            <Text style={{ fontSize: 14, color: colors.text, fontWeight: '600', marginLeft: 10, minWidth: 40 }}>
+                                                {formatDuration(Math.floor(recorderState.durationMillis / 1000))}
+                                            </Text>
+                                        </View>
+
+                                        {/* Botón de Pausa/Play para grabar */}
+                                        <TouchableOpacity onPress={togglePauseRecording} style={{ padding: 8, marginRight: 5 }}>
+                                            <Ionicons 
+                                                name={recorder.isRecording ? "pause-circle" : "play-circle"} 
+                                                size={28} 
+                                                color={colors.primary} 
+                                            />
+                                        </TouchableOpacity>
+
+                                        {/* Botón de enviar */}
+                                        <TouchableOpacity 
+                                            onPress={stopRecording} 
+                                            disabled={isUploadingAudio}
+                                            style={[styles.sendButton, { backgroundColor: colors.primary }]}
+                                        >
+                                            {isUploadingAudio ? (
+                                                <ActivityIndicator size="small" color="#FFF" />
+                                            ) : (
+                                                <Ionicons name="arrow-up" size={20} color="#FFF" />
+                                            )}
+                                        </TouchableOpacity>
+                                    </View>
+                                ) : (
+                                    <>
+                                        <TouchableOpacity
+                                            onPress={handlePickMedia}
+                                            style={styles.attachButton}
+                                            disabled={isUploadingMedia || isUploadingAudio}
+                                        >
+                                            {isUploadingMedia ? (
+                                                <ActivityIndicator size="small" color={colors.primary} />
+                                            ) : (
+                                                <Ionicons name="attach-outline" size={24} color={colors.primary} style={{ transform: [{ rotate: '45deg' }] }} />
+                                            )}
+                                        </TouchableOpacity>
+
+                                        <TextInput
+                                            style={[styles.input, { color: colors.text }]}
+                                            placeholder="Mensaje..."
+                                            placeholderTextColor={colors.textSecondary}
+                                            multiline
+                                            value={messageText}
+                                            onChangeText={setMessageText}
+                                        />
+
+                                        {!messageText.trim() && !imagePreview && !videoPreview ? (
+                                            <TouchableOpacity 
+                                                onPress={startRecording}
+                                                style={[styles.sendButton, { backgroundColor: colors.primary }]}
+                                            >
+                                                <Ionicons name="mic" size={20} color="#FFF" />
+                                            </TouchableOpacity>
+                                        ) : (
+                                            <TouchableOpacity 
+                                                onPress={handleSend}
+                                                disabled={isUploadingMedia || isUploadingAudio}
+                                                style={[
+                                                    styles.sendButton, 
+                                                    { backgroundColor: colors.primary }
+                                                ]}
+                                            >
+                                                {isUploadingMedia || isUploadingAudio ? (
+                                                    <ActivityIndicator size="small" color="#FFF" />
+                                                ) : (
+                                                    <Ionicons name="arrow-up" size={20} color="#FFF" />
+                                                )}
+                                            </TouchableOpacity>
+                                        )}
+                                    </>
+                                )}
+                            </View>
+                        </>
                     )}
-
-                    {/* Status de subida */}
-                    {isUploadingMedia && uploadStatusText ? (
-                        <View style={[styles.uploadStatusBar, { backgroundColor: isDark ? '#1C1C1E' : '#F0F0F0' }]}>
-                            <ActivityIndicator size="small" color={colors.primary} />
-                            <Text style={[styles.uploadStatusText, { color: colors.textSecondary }]}>{uploadStatusText}</Text>
-                        </View>
-                    ) : null}
-
-                    <View style={[styles.inputContainer, { backgroundColor: isDark ? '#1C1C1E' : '#F7F7F7' }]}>
-                        <TouchableOpacity
-                            onPress={handlePickMedia}
-                            style={styles.attachButton}
-                            disabled={isUploadingMedia}
-                        >
-                            {isUploadingMedia ? (
-                                <ActivityIndicator size="small" color={colors.primary} />
-                            ) : (
-                                <Ionicons name="attach-outline" size={24} color={colors.primary} style={{ transform: [{ rotate: '45deg' }] }} />
-                            )}
-                        </TouchableOpacity>
-
-                        <TextInput
-                            style={[styles.input, { color: colors.text }]}
-                            placeholder="Mensaje..."
-                            placeholderTextColor={colors.textSecondary}
-                            multiline
-                            value={messageText}
-                            onChangeText={setMessageText}
-                        />
-
-                        <TouchableOpacity 
-                            onPress={handleSend}
-                            disabled={(!messageText.trim() && !imagePreview && !videoPreview) || isUploadingMedia}
-                            style={[
-                                styles.sendButton, 
-                                { backgroundColor: (messageText.trim().length > 0 || imagePreview || videoPreview) && !isUploadingMedia ? colors.primary : (isDark ? '#2C2C2E' : '#E5E5EA') }
-                            ]}
-                        >
-                            {isUploadingMedia ? (
-                                <ActivityIndicator size="small" color="#FFF" />
-                            ) : (
-                                <Ionicons 
-                                    name="arrow-up" 
-                                    size={20} 
-                                    color={(messageText.trim().length > 0 || imagePreview || videoPreview) ? "#FFF" : colors.textSecondary} 
-                                />
-                            )}
-                        </TouchableOpacity>
-                    </View>
                 </View>
             </Animated.View>
 
@@ -1167,7 +1517,7 @@ export default function ChatRoomScreen() {
                             <View style={{ width: screenWidth, height: Dimensions.get('window').height, justifyContent: 'center' }}>
                                 {item.videoUrl ? (
                                     <InteractiveVideoPlayer
-                                        url={item.videoUrl}
+                                        url={resolveMediaUrl(item.videoUrl)}
                                         width={screenWidth}
                                         height={Dimensions.get('window').height}
                                         isMuted={isMuted}
@@ -1180,7 +1530,7 @@ export default function ChatRoomScreen() {
                                     />
                                 ) : (
                                     <ZoomableImageViewer
-                                        url={item.imageUrl}
+                                        url={resolveMediaUrl(item.imageUrl)}
                                         onClose={() => setViewerVisible(false)}
                                     />
                                 )}
@@ -1247,13 +1597,23 @@ export default function ChatRoomScreen() {
 
                         <View style={[styles.actionModalDivider, { backgroundColor: colors.border }]} />
 
-                        <TouchableOpacity 
-                            style={styles.actionModalBtn}
-                            onPress={handleCopy}
-                        >
-                            <Ionicons name="copy-outline" size={24} color={colors.text} />
-                            <Text style={[styles.actionModalText, { color: colors.text }]}>Copiar texto</Text>
-                        </TouchableOpacity>
+                        {selectedMessage?.audioUrl ? (
+                            <TouchableOpacity 
+                                style={styles.actionModalBtn}
+                                onPress={handleDownloadAudio}
+                            >
+                                <Ionicons name="download-outline" size={24} color={colors.text} />
+                                <Text style={[styles.actionModalText, { color: colors.text }]}>Descargar audio</Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity 
+                                style={styles.actionModalBtn}
+                                onPress={handleCopy}
+                            >
+                                <Ionicons name="copy-outline" size={24} color={colors.text} />
+                                <Text style={[styles.actionModalText, { color: colors.text }]}>Copiar texto</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
                 </TouchableOpacity>
             </Modal>
@@ -1280,7 +1640,7 @@ export default function ChatRoomScreen() {
                                 <Text style={[styles.confirmModalBtnText, { color: colors.text }]}>Cancelar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity 
-                                style={styles.confirmModalBtn}
+                                style={[styles.confirmModalBtn]}
                                 onPress={confirmModalData.onConfirm}
                             >
                                 <Text style={[styles.confirmModalBtnText, { color: '#FF3B30', fontWeight: 'bold' }]}>
@@ -1291,13 +1651,16 @@ export default function ChatRoomScreen() {
                     </View>
                 </View>
             </Modal>
-        </View>
-    );
+    </View>
+);
 }
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+    },
+    metaText: {
+        fontSize: 11,
     },
     center: {
         flex: 1,
@@ -1393,8 +1756,9 @@ const styles = StyleSheet.create({
     },
     messageRow: {
         flexDirection: 'row',
-        marginBottom: 12,
-        width: '100%',
+        alignItems: 'center', // Centrado verticalmente con el globo
+        paddingHorizontal: 12,
+        marginVertical: 2,
     },
     myMessageRow: {
         justifyContent: 'flex-end',
@@ -1402,8 +1766,25 @@ const styles = StyleSheet.create({
     theirMessageRow: {
         justifyContent: 'flex-start',
     },
+    bubbleAvatarContainer: {
+        marginRight: 6,
+        marginBottom: 2,
+    },
+    bubbleAvatarContainerRight: {
+        marginLeft: 6,
+        marginBottom: 2,
+    },
+    bubbleAvatar: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#CCC',
+    },
+    bubbleWrapper: {
+        maxWidth: '75%',
+        position: 'relative',
+    },
     bubble: {
-        maxWidth: '80%',
         paddingHorizontal: 14,
         paddingVertical: 10,
         elevation: 1,
@@ -1413,12 +1794,10 @@ const styles = StyleSheet.create({
         shadowRadius: 2,
     },
     myBubble: {
-        borderTopLeftRadius: 20,
-        borderBottomLeftRadius: 20,
+        // Eliminamos las variaciones de radio
     },
     theirBubble: {
-        borderTopRightRadius: 20,
-        borderBottomRightRadius: 20,
+        // Eliminamos las variaciones de radio
     },
     messageText: {
         fontSize: 15,
@@ -1625,17 +2004,23 @@ const styles = StyleSheet.create({
     imagePreviewBar: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderTopLeftRadius: 16,
-        borderTopRightRadius: 16,
-        marginBottom: -4,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 20,
+        marginHorizontal: 10,
+        marginBottom: 8,
+        // Elevación suave
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+        elevation: 2,
     },
     imagePreviewThumb: {
-        width: 40,
-        height: 40,
-        borderRadius: 8,
-        marginRight: 10,
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        marginRight: 12,
     },
     imagePreviewText: {
         flex: 1,
@@ -1667,13 +2052,22 @@ const styles = StyleSheet.create({
     uploadStatusBar: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 14,
-        paddingVertical: 6,
-        gap: 8,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 20,
+        marginHorizontal: 10,
+        marginBottom: 8,
+        gap: 10,
+        // Elevación suave para que resalte sobre el fondo
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+        elevation: 2,
     },
     uploadStatusText: {
-        fontSize: 12,
-        fontWeight: '500',
+        fontSize: 13,
+        fontWeight: '600',
     },
     storyReplyContainer: {
         flexDirection: 'row',
@@ -1704,5 +2098,19 @@ const styles = StyleSheet.create({
         borderRadius: 6,
         marginLeft: 10,
         backgroundColor: '#000',
+    },
+    blockedInfoContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderRadius: 12,
+        marginVertical: 4,
+    },
+    blockedInfoText: {
+        fontSize: 14,
+        fontWeight: '600',
+        textAlign: 'center',
     },
 });

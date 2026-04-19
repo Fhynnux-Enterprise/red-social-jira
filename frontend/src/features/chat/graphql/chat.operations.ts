@@ -4,6 +4,7 @@ export const GET_CONVERSATION = gql`
   query GetConversation($conversationId: String!) {
     getConversation(conversationId: $conversationId) {
       id
+      isBlocked
       participants {
         user {
           id
@@ -26,6 +27,7 @@ export const GET_USER_CONVERSATIONS = gql`
     getUserConversations {
       id
       updatedAt
+      isBlocked
       participants {
         user {
           id
@@ -39,6 +41,8 @@ export const GET_USER_CONVERSATIONS = gql`
         content
         imageUrl
         videoUrl
+        audioUrl
+        audioDuration
         createdAt
       }
       unreadCount
@@ -53,6 +57,8 @@ export const GET_CHAT_MESSAGES = gql`
       content
       imageUrl
       videoUrl
+      audioUrl
+      audioDuration
       createdAt
       isRead
       isDeletedForAll
@@ -60,6 +66,8 @@ export const GET_CHAT_MESSAGES = gql`
       storyId
       sender {
         id
+        username
+        photoUrl
       }
     }
   }
@@ -72,6 +80,8 @@ export const MESSAGE_ADDED_SUBSCRIPTION = gql`
       content
       imageUrl
       videoUrl
+      audioUrl
+      audioDuration
       createdAt
       isRead
       isDeletedForAll
@@ -79,6 +89,8 @@ export const MESSAGE_ADDED_SUBSCRIPTION = gql`
       storyId
       sender {
         id
+        username
+        photoUrl
       }
     }
   }
@@ -121,12 +133,14 @@ export const EDIT_MESSAGE = gql`
 `;
 
 export const SEND_MESSAGE = gql`
-  mutation SendMessage($conversationId: String!, $content: String, $imageUrl: String, $videoUrl: String, $storyId: String) {
-    sendMessage(conversationId: $conversationId, content: $content, imageUrl: $imageUrl, videoUrl: $videoUrl, storyId: $storyId) {
+  mutation SendMessage($conversationId: String!, $content: String, $imageUrl: String, $videoUrl: String, $storyId: String, $audioUrl: String, $audioDuration: Int) {
+    sendMessage(conversationId: $conversationId, content: $content, imageUrl: $imageUrl, videoUrl: $videoUrl, storyId: $storyId, audioUrl: $audioUrl, audioDuration: $audioDuration) {
       id
       content
       imageUrl
       videoUrl
+      audioUrl
+      audioDuration
       createdAt
       isRead
       isDeletedForAll
@@ -134,6 +148,8 @@ export const SEND_MESSAGE = gql`
       storyId
       sender {
         id
+        username
+        photoUrl
       }
     }
   }
@@ -184,6 +200,8 @@ export const INBOX_UPDATE_SUBSCRIPTION = gql`
       content
       imageUrl
       videoUrl
+      audioUrl
+      audioDuration
       createdAt
       conversationId
       storyId

@@ -50,8 +50,18 @@ export const CREATE_POST = gql`
                 order
             }
             createdAt
-            comments {
+            updatedAt
+            editedAt
+            commentsCount
+            likes {
                 id
+                user {
+                    id
+                    firstName
+                    lastName
+                    username
+                    photoUrl
+                }
             }
             author {
                 id

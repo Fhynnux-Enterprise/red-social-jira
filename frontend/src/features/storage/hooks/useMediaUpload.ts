@@ -21,9 +21,9 @@ export const useMediaUpload = () => {
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
       allowsEditing,
       mediaTypes:
-        mediaTypes === 'Images' ? ImagePicker.MediaTypeOptions.Images :
-        mediaTypes === 'Videos' ? ImagePicker.MediaTypeOptions.Videos :
-        ImagePicker.MediaTypeOptions.All,
+        mediaTypes === 'Images' ? ['images'] :
+        mediaTypes === 'Videos' ? ['videos'] :
+        ['images', 'videos'],
       videoMaxDuration,
       quality,
     });

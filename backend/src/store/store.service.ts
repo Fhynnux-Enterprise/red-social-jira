@@ -230,7 +230,11 @@ export class StoreService {
   }
 
   async countComments(productId: string): Promise<number> {
-    return this.commentRepo.count({ where: { storeProductId: productId } });
+    return this.commentRepo.createQueryBuilder('comment')
+      .leftJoin('comment.parent', 'parent')
+      .where('comment.storeProductId = :productId', { productId })
+      .andWhere('(comment.parentId IS NULL OR parent.id IS NOT NULL)')
+      .getCount();
   }
 
   async toggleCommentLike(commentId: string, userId: string): Promise<StoreProductComment> {

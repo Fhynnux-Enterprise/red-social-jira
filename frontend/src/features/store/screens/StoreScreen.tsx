@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery, useMutation } from '@apollo/client/react';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../../theme/ThemeContext';
 import { GET_STORE_PRODUCTS, GET_MY_STORE_PRODUCTS, DELETE_STORE_PRODUCT } from '../graphql/store.operations';
@@ -35,6 +35,7 @@ const TABS: TabConfig[] = [
 export default function StoreScreen() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const apolloClient = useApolloClient();
 
   const [activeTab, setActiveTab] = useState<TabKey>('all');
   const [createVisible, setCreateVisible] = useState(false);
@@ -147,11 +148,15 @@ export default function StoreScreen() {
   };
 
   const [deleteProduct] = useMutation(DELETE_STORE_PRODUCT, {
-    onCompleted: () => {
+    onCompleted: (_, clientOptions) => {
+      // Evict the deleted item from all Apollo caches instantly
+      const deletedId = clientOptions?.variables?.id;
+      if (deletedId) {
+        apolloClient.cache.evict({ id: apolloClient.cache.identify({ __typename: 'StoreProduct', id: deletedId }) });
+        apolloClient.cache.gc();
+      }
       setIsOptionsVisible(false);
       Toast.show({ type: 'success', text1: 'Producto eliminado' });
-      refetchAll();
-      refetchMine();
     },
     onError: (err) => {
       Toast.show({ type: 'error', text1: 'Error', text2: err.message });
@@ -163,11 +168,14 @@ export default function StoreScreen() {
     setIsOptionsVisible(true);
   };
 
-  const handleCloseModal = () => {
+  const handleCloseModal = (wasEditing?: boolean) => {
     setCreateVisible(false);
     setEditItem(null);
-    refetchAll();
-    refetchMine();
+    // Only refetch if we were editing (creation already updates the cache)
+    if (wasEditing) {
+      refetchAll();
+      refetchMine();
+    }
   };
 
   const renderEmpty = () => (
@@ -258,7 +266,7 @@ export default function StoreScreen() {
           ListEmptyComponent={renderEmpty}
           ListFooterComponent={products.length > 0 ? <ListFooter /> : null}
           onRefresh={() => { refetchAll(); refetchMine(); }}
-          refreshing={loading}
+          refreshing={false}
         />
       )}
 
@@ -332,7 +340,7 @@ export default function StoreScreen() {
       {/* ── MODAL ── */}
       <CreateProductModal
         visible={createVisible}
-        onClose={handleCloseModal}
+        onClose={() => handleCloseModal(!!editItem)}
         editItem={editItem}
       />
 
@@ -367,7 +375,32 @@ export default function StoreScreen() {
         }}
         onDelete={() => {
           if (selectedProductForOptions?.id) {
-            deleteProduct({ variables: { id: selectedProductForOptions.id } });
+            setIsOptionsVisible(false);
+
+            // Determinar cuál será la siguiente publicación a mostrar
+            const currentIndex = products.findIndex((p: any) => p.id === selectedProductForOptions.id);
+            let targetPost = null;
+
+            if (currentIndex !== -1) {
+              if (currentIndex < products.length - 1) {
+                targetPost = products[currentIndex + 1];
+              } else if (currentIndex > 0) {
+                targetPost = products[currentIndex - 1];
+              }
+            }
+
+            deleteProduct({ variables: { id: selectedProductForOptions.id } })
+              .then(() => {
+                if (targetPost) {
+                  setSelectedPostForComments({
+                    post: targetPost,
+                    minimize: !!selectedPostForComments?.minimize,
+                    initialTab: selectedPostForComments?.initialTab
+                  });
+                } else {
+                  setSelectedPostForComments(null);
+                }
+              });
           }
         }}
       />

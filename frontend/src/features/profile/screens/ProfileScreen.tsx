@@ -13,8 +13,9 @@ import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
 import { GET_USER_PROFILE, CREATE_REPORT, GET_MY_REPORT_STATUS } from '../graphql/profile.operations';
 import { DELETE_POST, GET_POSTS } from '../../feed/graphql/posts.operations';
 import { TOGGLE_FOLLOW, IS_FOLLOWING } from '../../follows/graphql/follows.operations';
-import { GET_STORE_PRODUCTS_BY_USER } from '../../store/graphql/store.operations';
-import { GET_JOB_OFFERS_BY_USER, GET_PROFESSIONAL_PROFILES_BY_USER } from '../../jobs/graphql/jobs.operations';
+import { BLOCK_USER, UNBLOCK_USER } from '../../user-blocks/graphql/user-blocks.operations';
+import { GET_STORE_PRODUCTS_BY_USER, DELETE_STORE_PRODUCT } from '../../store/graphql/store.operations';
+import { GET_JOB_OFFERS_BY_USER, GET_PROFESSIONAL_PROFILES_BY_USER, DELETE_JOB_OFFER, DELETE_PROFESSIONAL_PROFILE } from '../../jobs/graphql/jobs.operations';
 import CreatePostModal from '../../feed/components/CreatePostModal';
 import PostOptionsModal from '../../feed/components/PostOptionsModal';
 import PostCard from '../../feed/components/PostCard';
@@ -29,6 +30,7 @@ import ProfileActions from '../components/ProfileActions';
 import ProfileBio from '../components/ProfileBio';
 import BanUserModal from '../../moderation/components/BanUserModal';
 import { GET_OR_CREATE_CHAT } from '../../chat/graphql/chat.operations';
+import BlockedUsersModal from '../../user-blocks/components/BlockedUsersModal';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ProfileHeader — Componente memoizado separado del screen principal.
@@ -205,6 +207,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     const [isCreateStoreVisible, setIsCreateStoreVisible] = useState(false);
     const [editingProduct, setEditingProduct] = useState<any>(null);
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
+    const [isBlockedUsersVisible, setIsBlockedUsersVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<any>(null);
     const [selectedPostForComments, setSelectedPostForComments] = useState<{
         post: any;
@@ -295,6 +298,46 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
 
     const [deletePost] = useMutation(DELETE_POST, {
         refetchQueries: [{ query: GET_POSTS }],
+    });
+
+    const [deleteStoreProduct] = useMutation(DELETE_STORE_PRODUCT, {
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Producto eliminado' });
+            onRefresh();
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message })
+    });
+
+    const [deleteJobOffer] = useMutation(DELETE_JOB_OFFER, {
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Oferta eliminada' });
+            onRefresh();
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message })
+    });
+
+    const [deleteProfessional] = useMutation(DELETE_PROFESSIONAL_PROFILE, {
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Servicio eliminado' });
+            onRefresh();
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message })
+    });
+
+    const [blockUser] = useMutation(BLOCK_USER, {
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Usuario bloqueado' });
+            refetchProfile();
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error al bloquear', text2: err.message }),
+    });
+
+    const [unblockUser] = useMutation(UNBLOCK_USER, {
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Usuario desbloqueado' });
+            refetchProfile();
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error al desbloquear', text2: err.message }),
     });
 
     const [createReport, { loading: reporting }] = useMutation(CREATE_REPORT, {
@@ -402,7 +445,9 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 refetchProfs(),
             ]);
         } catch (error) {
-            console.error('Error refreshing profile:', error);
+            if (!(error as any)?.message?.includes('Usuario no encontrado')) {
+                console.error('Error refreshing profile:', error);
+            }
         } finally {
             setRefreshing(false);
         }
@@ -499,13 +544,36 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     }, [navigation]);
 
     const handleGoBack = useCallback(() => {
-        navigation.goBack();
+        if (navigation.canGoBack()) {
+            navigation.goBack();
+        } else {
+            router.replace('/');
+        }
     }, [navigation]);
 
     const handleOpenMenu = useCallback(() => setIsMenuVisible(true), []);
     const handleCloseMenu = useCallback(() => setIsMenuVisible(false), []);
     const handleOpenContextMenu = useCallback(() => setIsContextMenuVisible(true), []);
     const handleCloseContextMenu = useCallback(() => setIsContextMenuVisible(false), []);
+
+    const handleBlockToggle = useCallback(async () => {
+        if (!userData) return;
+        handleCloseContextMenu();
+        
+        const isBlocked = userData.isBlockedByMe;
+        if (isBlocked) {
+            await unblockUser({ variables: { userId: userData.id } });
+        } else {
+            // Confirmación antes de bloquear
+            Toast.show({
+                type: 'info',
+                text1: 'Bloqueando usuario...',
+                text2: 'Por favor espera',
+                visibilityTime: 2000,
+            });
+            await blockUser({ variables: { userId: userData.id } });
+        }
+    }, [userData, handleCloseContextMenu, blockUser, unblockUser]);
 
     const handleSendReport = useCallback(() => {
         if (!reportReason.trim()) {
@@ -689,12 +757,28 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         );
     }
 
-    if (!userData && !gqlLoading) {
+    const isNotFoundError = gqlError?.message?.includes('Usuario no encontrado');
+
+    if ((!userData || isNotFoundError) && !gqlLoading) {
         return (
-            <SafeAreaView style={styles.centerContainer}>
-                <Text style={styles.errorText}>
-                    {gqlError ? 'Error al cargar el perfil' : 'No se encontró el perfil'}
-                </Text>
+            <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <View style={styles.errorFullContainer}>
+                    <View style={styles.errorIconCircle}>
+                        <Ionicons name="person-remove-outline" size={60} color={colors.textSecondary} />
+                    </View>
+                    <Text style={[styles.errorFullTitle, { color: colors.text }]}>Usuario no encontrado</Text>
+                    <Text style={[styles.errorFullSub, { color: colors.textSecondary }]}>
+                        Este perfil no existe, ha sido desactivado o no tienes permiso para verlo en este momento.
+                    </Text>
+                    
+                    <TouchableOpacity 
+                        style={[styles.errorGoBackBtn, { backgroundColor: colors.primary }]}
+                        onPress={handleGoBack}
+                    >
+                        <Ionicons name="arrow-back" size={20} color="white" style={{ marginRight: 8 }} />
+                        <Text style={styles.errorGoBackText}>Volver atrás</Text>
+                    </TouchableOpacity>
+                </View>
             </SafeAreaView>
         );
     }
@@ -771,6 +855,16 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                                     </View>
                                     <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                                 </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.settingButton}
+                                    onPress={() => { handleCloseMenu(); setTimeout(() => setIsBlockedUsersVisible(true), 300); }}
+                                >
+                                    <View style={styles.settingLeft}>
+                                        <Ionicons name="lock-closed-outline" size={24} color={colors.text} />
+                                        <Text style={styles.settingText}>Bloqueados</Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                </TouchableOpacity>
                                 <View style={styles.spacer} />
                                 <TouchableOpacity style={styles.logoutButton} onPress={signOut}>
                                     <Ionicons name="log-out-outline" size={24} color={colors.error} />
@@ -811,6 +905,29 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                                     <View style={{ flex: 1 }}>
                                         <Text style={[styles.contextMenuItemText, { color: colors.text }]}>Reportar usuario</Text>
                                         <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>Notificar a moderación</Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                                
+                                {/* Bloquear / Desbloquear */}
+                                <TouchableOpacity
+                                    style={styles.contextMenuItem}
+                                    onPress={handleBlockToggle}
+                                >
+                                    <View style={[styles.contextMenuIcon, { backgroundColor: userData?.isBlockedByMe ? 'rgba(76,175,80,0.1)' : 'rgba(255,152,0,0.1)' }]}>
+                                        <Ionicons 
+                                            name={userData?.isBlockedByMe ? "lock-open-outline" : "lock-closed-outline"} 
+                                            size={20} 
+                                            color={userData?.isBlockedByMe ? "#4CAF50" : "#FF9800"} 
+                                        />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.contextMenuItemText, { color: colors.text }]}>
+                                            {userData?.isBlockedByMe ? 'Desbloquear usuario' : 'Bloquear usuario'}
+                                        </Text>
+                                        <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
+                                            {userData?.isBlockedByMe ? 'Permitir comunicación' : 'Impedir comunicación mutua'}
+                                        </Text>
                                     </View>
                                     <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
                                 </TouchableOpacity>
@@ -1005,6 +1122,13 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
             />
             )}
 
+            {isBlockedUsersVisible && (
+                <BlockedUsersModal
+                    visible={isBlockedUsersVisible}
+                    onClose={() => setIsBlockedUsersVisible(false)}
+                />
+            )}
+
             {isOptionsMenuVisible && (
             <PostOptionsModal
                 visible={isOptionsMenuVisible}
@@ -1013,7 +1137,58 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                     if (selectedPost) stableHandleEdit(selectedPost);
                 }}
                 onDelete={() => {
-                    if (selectedPost) deletePost({ variables: { id: selectedPost.id } });
+                    if (selectedPost) {
+                        const type = selectedPost.__typename;
+                        setIsOptionsMenuVisible(false);
+
+                        // Determinar cuál será la siguiente publicación a mostrar
+                        const currentIndex = tabData.findIndex((p: any) => p.id === selectedPost.id);
+                        let targetPost = null;
+
+                        if (currentIndex !== -1) {
+                            if (currentIndex < tabData.length - 1) {
+                                targetPost = tabData[currentIndex + 1];
+                            } else if (currentIndex > 0) {
+                                targetPost = tabData[currentIndex - 1];
+                            }
+                        }
+
+                        const afterDelete = () => {
+                            Toast.show({ 
+                                type: 'success', 
+                                text1: 'Eliminado', 
+                                text2: `${type === 'StoreProduct' ? 'Producto' : type === 'JobOffer' ? 'Oferta' : type === 'ProfessionalProfile' ? 'Servicio' : 'Publicación'} borrada con éxito` 
+                            });
+                            
+                            if (targetPost) {
+                                // Navegar a la siguiente/anterior
+                                // Aseguramos que tenga author
+                                const itemWithAuthor = targetPost.author ? targetPost : { ...targetPost, author: userData };
+                                setSelectedPostForComments({
+                                    post: itemWithAuthor,
+                                    minimize: !!selectedPostForComments?.minimize,
+                                    initialTab: selectedPostForComments?.initialTab,
+                                    initialExpanded: false
+                                });
+                            } else {
+                                // Si no hay más, cerrar
+                                setSelectedPostForComments(null);
+                            }
+                            onRefresh();
+                        };
+
+                        const onError = (err: any) => Toast.show({ type: 'error', text1: 'Error', text2: err.message });
+                        
+                        if (!type || type === 'Post') {
+                            deletePost({ variables: { id: selectedPost.id } }).then(afterDelete).catch(onError);
+                        } else if (type === 'StoreProduct') {
+                            deleteStoreProduct({ variables: { id: selectedPost.id } }).then(afterDelete).catch(onError);
+                        } else if (type === 'JobOffer') {
+                            deleteJobOffer({ variables: { id: selectedPost.id } }).then(afterDelete).catch(onError);
+                        } else if (type === 'ProfessionalProfile') {
+                            deleteProfessional({ variables: { id: selectedPost.id } }).then(afterDelete).catch(onError);
+                        }
+                    }
                 }}
             />
             )}
@@ -1253,5 +1428,52 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         fontSize: 13.5,
         lineHeight: 20,
         textAlign: 'center',
+    },
+    // Error Full UI
+    errorFullContainer: {
+        alignItems: 'center',
+        paddingHorizontal: 40,
+    },
+    errorIconCircle: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+        backgroundColor: colors.surface,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 24,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderStyle: 'dashed',
+    },
+    errorFullTitle: {
+        fontSize: 22,
+        fontWeight: '900',
+        marginBottom: 12,
+        textAlign: 'center',
+    },
+    errorFullSub: {
+        fontSize: 15,
+        textAlign: 'center',
+        lineHeight: 22,
+        marginBottom: 32,
+    },
+    errorGoBackBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 32,
+        paddingVertical: 14,
+        borderRadius: 25,
+        elevation: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 5,
+    },
+    errorGoBackText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: 'bold',
     },
 });

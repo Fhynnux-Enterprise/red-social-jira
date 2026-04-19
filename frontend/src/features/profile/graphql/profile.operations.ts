@@ -66,6 +66,8 @@ export const GET_USER_PROFILE = gql`
       role
       bannedUntil
       banReason
+      isBlockedByMe
+      theyBlockedMe
       customFields {
         id
         title

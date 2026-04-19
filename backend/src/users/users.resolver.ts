@@ -13,6 +13,7 @@ import { UserRole } from '../auth/enums/user-role.enum';
 import { FollowsService } from '../follows/follows.service';
 import { PostsService } from '../posts/posts.service';
 import { Post } from '../posts/entities/post.entity';
+import { UserBlocksService } from '../user-blocks/user-blocks.service';
 
 @Resolver(() => User)
 export class UsersResolver {
@@ -20,6 +21,7 @@ export class UsersResolver {
     private readonly usersService: UsersService,
     private readonly followsService: FollowsService,
     private readonly postsService: PostsService,
+    private readonly userBlocksService: UserBlocksService,
   ) { }
 
   @ResolveField(() => Int)
@@ -30,6 +32,29 @@ export class UsersResolver {
   @ResolveField(() => Int)
   async followingCount(@Parent() user: User): Promise<number> {
     return this.followsService.getFollowingCount(user.id);
+  }
+
+  @ResolveField(() => Boolean)
+  async isBlockedByMe(
+    @Parent() user: User,
+    @CurrentUser() currentUser: any,
+  ): Promise<boolean> {
+    if (!currentUser) return false;
+    return this.userBlocksService.checkIfBlocked(currentUser.id, user.id).then(async (both) => {
+        // checkIfBlocked checks both ways, but we want specifically if I blocked them
+        const blockedUsers = await this.userBlocksService.getBlockedUsers(currentUser.id);
+        return blockedUsers.some(u => u.id === user.id);
+    });
+  }
+
+  @ResolveField(() => Boolean)
+  async theyBlockedMe(
+    @Parent() user: User,
+    @CurrentUser() currentUser: any,
+  ): Promise<boolean> {
+    if (!currentUser) return false;
+    const blockerIds = await this.userBlocksService.getBlockedAndBlockerIds(user.id);
+    return blockerIds.includes(currentUser.id);
   }
 
   @ResolveField(() => [Post])
@@ -92,6 +117,14 @@ export class UsersResolver {
     // Si el usuario está baneado, ocultarlo (simular que no existe)
     // a menos que sea un ADMIN o MODERATOR quien lo consulta.
     if (user.bannedUntil && new Date(user.bannedUntil) > new Date()) {
+      if (currentUser.role !== UserRole.ADMIN && currentUser.role !== UserRole.MODERATOR) {
+        throw new BadRequestException('Usuario no encontrado');
+      }
+    }
+
+    // Invisibilidad bidireccional por bloqueos
+    const isBlocked = await this.userBlocksService.checkIfBlocked(currentUser.id, user.id);
+    if (isBlocked) {
       if (currentUser.role !== UserRole.ADMIN && currentUser.role !== UserRole.MODERATOR) {
         throw new BadRequestException('Usuario no encontrado');
       }

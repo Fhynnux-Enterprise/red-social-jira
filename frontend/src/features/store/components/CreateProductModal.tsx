@@ -17,6 +17,7 @@ import {
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { Video as Compressor } from 'react-native-compressor';
 import Toast from 'react-native-toast-message';
+import { customToastConfig } from '../../../components/CustomToast';
 
 const COUNTRY_CODES = [
   { code: '+593', flag: '🇪🇨', name: 'Ecuador' },
@@ -109,10 +110,36 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
   }, [visible, editItem]);
 
   const [createProduct] = useMutation(CREATE_STORE_PRODUCT, {
-    refetchQueries: [
-      { query: GET_STORE_PRODUCTS, variables: { limit: 30, offset: 0 } },
-      { query: GET_MY_STORE_PRODUCTS },
-    ],
+    update(cache, { data }) {
+      const newProduct = data?.createStoreProduct;
+      if (!newProduct) return;
+      // Prepend to public list
+      try {
+        const existing = cache.readQuery<{ storeProducts: any[] }>({
+          query: GET_STORE_PRODUCTS,
+          variables: { limit: 30, offset: 0 },
+        });
+        if (existing) {
+          cache.writeQuery({
+            query: GET_STORE_PRODUCTS,
+            variables: { limit: 30, offset: 0 },
+            data: { storeProducts: [newProduct, ...existing.storeProducts] },
+          });
+        }
+      } catch {}
+      // Prepend to my products list
+      try {
+        const existingMine = cache.readQuery<{ myStoreProducts: any[] }>({
+          query: GET_MY_STORE_PRODUCTS,
+        });
+        if (existingMine) {
+          cache.writeQuery({
+            query: GET_MY_STORE_PRODUCTS,
+            data: { myStoreProducts: [newProduct, ...existingMine.myStoreProducts] },
+          });
+        }
+      } catch {}
+    },
   });
 
   const [updateProduct] = useMutation(UPDATE_STORE_PRODUCT, {
@@ -210,12 +237,13 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
 
       if (editItem) {
         await updateProduct({ variables: { input: { id: editItem.id, ...input } } });
-        Toast.show({ type: 'success', text1: '¡Producto actualizado!' });
+        onClose();
+        setTimeout(() => Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'Tu producto fue actualizado exitosamente.' }), 350);
       } else {
         await createProduct({ variables: { input } });
-        Toast.show({ type: 'success', text1: '¡Producto publicado!' });
+        onClose();
+        setTimeout(() => Toast.show({ type: 'success', text1: '¡Publicado!', text2: '¡Tu producto fue creado exitosamente!' }), 350);
       }
-      onClose();
     } catch (e: any) {
       const msg = e?.graphQLErrors?.[0]?.message || e?.message || 'Error inesperado';
       Alert.alert('Error', msg);
@@ -468,6 +496,7 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
           </View>
         </TouchableOpacity>
       </Modal>
+      <Toast config={customToastConfig} position="top" topOffset={60} />
     </Modal>
 
     <ConfirmModal

@@ -96,7 +96,7 @@ export class ChatService {
         return savedConversation;
     }
 
-    async sendMessage(senderId: string, conversationId: string, content: string, imageUrl?: string, videoUrl?: string, storyId?: string): Promise<Message> {
+    async sendMessage(senderId: string, conversationId: string, content: string, imageUrl?: string, videoUrl?: string, storyId?: string, audioUrl?: string, audioDuration?: number): Promise<Message> {
         const conversation = await this.conversationRepository.findOne({
             where: { id: conversationId },
             relations: ['participants']
@@ -131,6 +131,8 @@ export class ChatService {
             imageUrl: imageUrl || undefined,
             videoUrl: videoUrl || undefined,
             storyId: storyId || undefined,
+            audioUrl: audioUrl || undefined,
+            audioDuration: audioDuration || undefined,
             conversationId,
             userId: senderId,
             isRead: false,

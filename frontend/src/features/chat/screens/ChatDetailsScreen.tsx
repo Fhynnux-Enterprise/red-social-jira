@@ -23,6 +23,7 @@ import Toast from 'react-native-toast-message';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import ZoomableImageViewer from '../../feed/components/ZoomableImageViewer';
 import { InteractiveVideoPlayer } from '../../feed/components/ImageCarousel';
+import { BLOCK_USER, UNBLOCK_USER } from '../../user-blocks/graphql/user-blocks.operations';
 import { Dimensions, FlatList, Animated } from 'react-native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -37,6 +38,7 @@ export default function ChatDetailsScreen() {
     const { conversationId } = params;
     const { user: currentUser } = useAuth() as any;
     const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
+    const [isBlockConfirmVisible, setIsBlockConfirmVisible] = useState(false);
     
     // Estados para el visor multimedia
     const [viewerVisible, setViewerVisible] = useState(false);
@@ -47,7 +49,7 @@ export default function ChatDetailsScreen() {
         outputRange: [0, 1, 0]
     });
 
-    const { data, loading } = useQuery<any>(GET_CONVERSATION, {
+    const { data, loading, refetch } = useQuery<any>(GET_CONVERSATION, {
         variables: { conversationId },
         skip: !conversationId,
     });
@@ -56,6 +58,8 @@ export default function ChatDetailsScreen() {
         variables: { conversationId },
         skip: !conversationId,
     });
+
+    const isBlocked = useMemo(() => data?.getConversation?.isBlocked, [data]);
 
     const otherUser = useMemo(() => {
         const participants = data?.getConversation?.participants;
@@ -67,6 +71,35 @@ export default function ChatDetailsScreen() {
 
     const handleDeleteChat = () => {
         setIsConfirmModalVisible(true);
+    };
+
+    const [blockUser, { loading: blocking }] = useMutation(BLOCK_USER, {
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Usuario bloqueado' });
+            refetch();
+            setIsBlockConfirmVisible(false);
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message }),
+    });
+
+    const [unblockUser, { loading: unblocking }] = useMutation(UNBLOCK_USER, {
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Usuario desbloqueado' });
+            refetch();
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message }),
+    });
+
+    const handleBlockAction = () => {
+        if (isBlocked) {
+            unblockUser({ variables: { userId: otherUser.id } });
+        } else {
+            setIsBlockConfirmVisible(true);
+        }
+    };
+
+    const confirmBlockUser = () => {
+        blockUser({ variables: { userId: otherUser.id } });
     };
 
     const handleConfirmDelete = async () => {
@@ -134,14 +167,24 @@ export default function ChatDetailsScreen() {
                 {/* Quick Actions */}
                 <View style={styles.actionsGrid}>
                     <TouchableOpacity 
-                        style={[styles.actionBtn, { backgroundColor: colors.surface }]}
-                        onPress={() => router.push({
-                            pathname: '/profile',
-                            params: { userId: otherUser.id }
-                        })}
+                        style={[styles.actionBtn, { backgroundColor: colors.surface, opacity: isBlocked ? 0.5 : 1 }]}
+                        onPress={() => {
+                            if (isBlocked) {
+                                Toast.show({
+                                    type: 'info',
+                                    text1: 'Acceso restringido',
+                                    text2: 'No puedes ver este perfil.'
+                                });
+                                return;
+                            }
+                            router.push({
+                                pathname: '/profile',
+                                params: { userId: otherUser.id }
+                            });
+                        }}
                     >
-                        <Ionicons name="person" size={24} color={colors.primary} />
-                        <Text style={[styles.actionLabel, { color: colors.text }]}>Perfil</Text>
+                        <Ionicons name="person" size={24} color={isBlocked ? colors.textSecondary : colors.primary} />
+                        <Text style={[styles.actionLabel, { color: isBlocked ? colors.textSecondary : colors.text }]}>Perfil</Text>
                     </TouchableOpacity>
                     
                     <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.surface }]}>
@@ -216,6 +259,21 @@ export default function ChatDetailsScreen() {
                         <Ionicons name="trash-outline" size={22} color="#FF3B30" />
                         <Text style={[styles.optionText, { color: '#FF3B30' }]}>Eliminar conversación</Text>
                     </TouchableOpacity>
+
+                    <TouchableOpacity 
+                        style={[styles.optionItem, { borderBottomWidth: 0 }]}
+                        onPress={handleBlockAction}
+                        disabled={blocking || unblocking}
+                    >
+                        <Ionicons 
+                            name={isBlocked ? "shield-checkmark-outline" : "shield-outline"} 
+                            size={22} 
+                            color={isBlocked ? colors.primary : "#FF3B30"} 
+                        />
+                        <Text style={[styles.optionText, { color: isBlocked ? colors.primary : "#FF3B30" }]}>
+                            {isBlocked ? 'Desbloquear usuario' : 'Bloquear usuario'}
+                        </Text>
+                    </TouchableOpacity>
                 </View>
 
                 <View style={{ height: 40 }} />
@@ -249,6 +307,47 @@ export default function ChatDetailsScreen() {
                                 <Text style={[styles.confirmModalBtnText, { color: '#FF3B30', fontWeight: 'bold' }]}>
                                     Eliminar
                                 </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+            
+            <Modal
+                visible={isBlockConfirmVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setIsBlockConfirmVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.confirmModalContainer, { backgroundColor: colors.surface }]}>
+                        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#FF3B3015', justifyContent: 'center', alignItems: 'center', marginBottom: 15, marginTop: 10 }}>
+                            <Ionicons name="shield-outline" size={40} color="#FF3B30" />
+                        </View>
+                        <Text style={[styles.confirmModalTitle, { color: colors.text }]}>¿Bloquear a {otherUser?.firstName}?</Text>
+                        <Text style={[styles.confirmModalMessage, { color: colors.textSecondary }]}>
+                            No podrán enviarse mensajes ni ver sus perfiles mutuamente. Podrás desbloquearlo después desde Configuración.
+                        </Text>
+                        
+                        <View style={[styles.confirmModalActions, { borderTopColor: colors.border }]}>
+                            <TouchableOpacity 
+                                style={[styles.confirmModalBtn, { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: colors.border }]}
+                                onPress={() => setIsBlockConfirmVisible(false)}
+                            >
+                                <Text style={[styles.confirmModalBtnText, { color: colors.text }]}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={styles.confirmModalBtn}
+                                onPress={confirmBlockUser}
+                                disabled={blocking}
+                            >
+                                {blocking ? (
+                                    <ActivityIndicator size="small" color="#FF3B30" />
+                                ) : (
+                                    <Text style={[styles.confirmModalBtnText, { color: '#FF3B30', fontWeight: 'bold' }]}>
+                                        Bloquear
+                                    </Text>
+                                )}
                             </TouchableOpacity>
                         </View>
                     </View>

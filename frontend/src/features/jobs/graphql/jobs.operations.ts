@@ -61,10 +61,14 @@ export const CREATE_JOB_OFFER = gql`
       description
       location
       salary
+      contactPhone
       createdAt
+      editedAt
       author {
         id
         username
+        firstName
+        lastName
         photoUrl
       }
       media {
@@ -83,11 +87,14 @@ export const UPSERT_PROFESSIONAL_PROFILE = gql`
       profession
       description
       experienceYears
+      contactPhone
       createdAt
       editedAt
       user {
         id
         username
+        firstName
+        lastName
         photoUrl
       }
       media {

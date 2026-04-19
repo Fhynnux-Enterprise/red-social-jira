@@ -45,7 +45,7 @@ export default function AppealModal({ visible, onClose, notificationItem, appeal
             Toast.show({
                 type: 'success',
                 text1: 'Apelación Enviada',
-                text2: 'Tu caso será revisado por la Corte Suprema.',
+                text2: 'Tu caso será revisado pronto.',
             });
             
             setReason('');

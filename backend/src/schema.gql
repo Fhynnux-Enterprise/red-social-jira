@@ -88,6 +88,8 @@ type Message {
   imageUrl: String
   videoUrl: String
   storyId: String
+  audioUrl: String
+  audioDuration: Int
   conversationId: String!
   isRead: Boolean!
   createdAt: DateTime!
@@ -231,6 +233,8 @@ type User {
   jobApplications: [JobApplication!]
   followersCount: Int!
   followingCount: Int!
+  isBlockedByMe: Boolean!
+  theyBlockedMe: Boolean!
 }
 
 """Roles disponibles en la plataforma"""
@@ -292,6 +296,7 @@ type StoreProductComment {
   parentId: String
   replies: [StoreProductComment!]
   editedAt: DateTime
+  deletedAt: DateTime
 }
 
 type StoreProduct {
@@ -402,7 +407,7 @@ type Query {
   getPosts(limit: Int! = 5, offset: Int! = 0): [Post!]!
   getPostById(id: String!): Post
   searchPosts(query: String!, limit: Int! = 5, offset: Int! = 0): [Post!]!
-  getMyBlockedUsers: [User!]!
+  getMyBlockedUsers(limit: Float, offset: Float): [User!]!
   getUserProfile(id: String!): User!
   me: User!
   searchUsers(searchTerm: String!, limit: Int = 5, offset: Int = 0): [User!]!
@@ -485,7 +490,7 @@ type Mutation {
   deleteConversationForMe(conversationId: String!): Boolean!
   editMessage(messageId: String!, newContent: String!): Message!
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
-  sendMessage(conversationId: String!, content: String = "", imageUrl: String, videoUrl: String, storyId: String): Message!
+  sendMessage(conversationId: String!, content: String = "", imageUrl: String, videoUrl: String, storyId: String, audioUrl: String, audioDuration: Int): Message!
   markMessagesAsRead(conversationId: String!): Boolean!
   createStory(mediaUrl: String!, mediaType: String!, content: String): Story!
   markStoryAsViewed(storyId: String!): Boolean!

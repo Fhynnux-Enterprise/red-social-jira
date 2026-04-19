@@ -15,18 +15,18 @@ export const getUserOnlineStatus = (lastActiveAt: string | Date | undefined | nu
 
     // Si pasó más tiempo, formateamos relativamente
     if (diffMinutes < 60) {
-        return { isOnline: false, text: `Activo hace ${diffMinutes} m` };
+        return { isOnline: false, text: `Últ. vez hace (${diffMinutes}) m` };
     }
 
     const diffHours = Math.floor(diffMinutes / 60);
     if (diffHours < 24) {
-        return { isOnline: false, text: `Activo hace ${diffHours} h` };
+        return { isOnline: false, text: `Últ. vez hace (${diffHours}) h` };
     }
 
     const diffDays = Math.floor(diffHours / 24);
     if (diffDays === 1) {
-        return { isOnline: false, text: 'Activo ayer' };
+        return { isOnline: false, text: 'Últ. vez ayer' };
     }
 
-    return { isOnline: false, text: `Activo hace ${diffDays} d` };
+    return { isOnline: false, text: `Últ. vez hace ${diffDays} días` };
 };

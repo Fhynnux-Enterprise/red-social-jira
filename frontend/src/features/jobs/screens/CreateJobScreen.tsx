@@ -8,13 +8,14 @@ import ConfirmModal from '../../../components/ConfirmModal';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMutation } from '@apollo/client/react';
+import { useMutation, useApolloClient } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { Video as Compressor } from 'react-native-compressor';
 import Toast from 'react-native-toast-message';
+import { customToastConfig } from '../../../components/CustomToast';
 import { CREATE_JOB_OFFER, UPDATE_JOB_OFFER, UPSERT_PROFESSIONAL_PROFILE, UPDATE_PROFESSIONAL_PROFILE, GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS } from '../graphql/jobs.operations';
 import { useLocalSearchParams } from 'expo-router';
 
@@ -45,6 +46,7 @@ export default function CreateJobScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const params = useLocalSearchParams<{ editId?: string; editData?: string; initialTab?: string }>();
+    const apolloClient = useApolloClient();
     const isEditing = !!params.editId;
     const editData = params.editData ? JSON.parse(params.editData as string) : null;
 
@@ -226,13 +228,41 @@ export default function CreateJobScreen() {
     );
 
     const [createJobOffer] = useMutation(CREATE_JOB_OFFER, {
-        // No refetchQueries aquí: evita el "salto" visual del feed al publicar.
-        // El cache se invalida automáticamente cuando el usuario vuelve al feed.
+        update(cache, { data }) {
+            const newOffer = data?.createJobOffer;
+            if (!newOffer) return;
+            // Prepend to public list
+            try {
+                const existing = cache.readQuery<{ jobOffers: any[] }>({
+                    query: GET_JOB_OFFERS,
+                    variables: { limit: 20, offset: 0 },
+                });
+                if (existing) {
+                    cache.writeQuery({
+                        query: GET_JOB_OFFERS,
+                        variables: { limit: 20, offset: 0 },
+                        data: { jobOffers: [newOffer, ...existing.jobOffers] },
+                    });
+                }
+            } catch {}
+            // Prepend to my offers list
+            try {
+                const existingMine = cache.readQuery<{ myJobOffers: any[] }>({
+                    query: GET_MY_JOB_OFFERS,
+                });
+                if (existingMine) {
+                    cache.writeQuery({
+                        query: GET_MY_JOB_OFFERS,
+                        data: { myJobOffers: [newOffer, ...existingMine.myJobOffers] },
+                    });
+                }
+            } catch {}
+        },
         onCompleted: () => {
             isReadyToLeave.current = true;
             setLoading(false);
-            Toast.show({ type: 'success', text1: '¡Publicado!', text2: 'Tu oferta ha sido creada correctamente.' });
             router.back();
+            setTimeout(() => Toast.show({ type: 'success', text1: '¡Publicado!', text2: '¡Tu oferta fue creada exitosamente!' }), 350);
         },
         onError: (error) => { setLoading(false); Toast.show({ type: 'error', text1: 'Error al publicar', text2: error.message || 'No se pudo crear la oferta.' }); }
     });
@@ -245,19 +275,35 @@ export default function CreateJobScreen() {
         onCompleted: () => {
             isReadyToLeave.current = true;
             setLoading(false);
-            Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'La oferta se ha modificado correctamente.' });
             router.back();
+            setTimeout(() => Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'Tu oferta fue modificada exitosamente.' }), 350);
         },
         onError: (error) => { setLoading(false); Toast.show({ type: 'error', text1: 'Error al guardar', text2: error.message || 'No se pudo actualizar la oferta.' }); }
     });
 
     const [upsertProfessionalProfile] = useMutation(UPSERT_PROFESSIONAL_PROFILE, {
-        refetchQueries: [{ query: GET_PROFESSIONALS, variables: { limit: 20, offset: 0 } }],
+        update(cache, { data }) {
+            const newProfile = data?.upsertProfessionalProfile;
+            if (!newProfile) return;
+            try {
+                const existing = cache.readQuery<{ professionalProfiles: any[] }>({
+                    query: GET_PROFESSIONALS,
+                    variables: { limit: 20, offset: 0 },
+                });
+                if (existing) {
+                    cache.writeQuery({
+                        query: GET_PROFESSIONALS,
+                        variables: { limit: 20, offset: 0 },
+                        data: { professionalProfiles: [newProfile, ...existing.professionalProfiles] },
+                    });
+                }
+            } catch {}
+        },
         onCompleted: () => {
             isReadyToLeave.current = true;
             setLoading(false);
-            Toast.show({ type: 'success', text1: '¡Listo!', text2: 'Tu servicio ha sido guardado.' });
             router.back();
+            setTimeout(() => Toast.show({ type: 'success', text1: '¡Publicado!', text2: '¡Tu servicio fue creado exitosamente!' }), 350);
         },
         onError: (error) => {
             setLoading(false);
@@ -270,8 +316,8 @@ export default function CreateJobScreen() {
         onCompleted: () => {
             isReadyToLeave.current = true;
             setLoading(false);
-            Toast.show({ type: 'success', text1: '¡Listo!', text2: 'Perfil actualizado correctamente.' });
             router.back();
+            setTimeout(() => Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'Tu servicio fue actualizado exitosamente.' }), 350);
         },
         onError: (error) => {
             setLoading(false);
@@ -846,6 +892,7 @@ export default function CreateJobScreen() {
                 onCancel={() => setShowExitConfirm(false)}
                 isDestructive={true}
             />
+            <Toast config={customToastConfig} position="top" topOffset={60} />
         </KeyboardAvoidingView>
     );
 }

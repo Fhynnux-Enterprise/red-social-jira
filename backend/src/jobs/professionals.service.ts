@@ -49,7 +49,8 @@ export class ProfessionalsService {
 
   async findAllProfessionals(limit: number = 20, offset: number = 0, viewerId?: string): Promise<ProfessionalProfile[]> {
     const query = this.profileRepository.createQueryBuilder('profile')
-      .leftJoinAndSelect('profile.user', 'user');
+      .leftJoinAndSelect('profile.user', 'user')
+      .leftJoinAndSelect('profile.media', 'media');
 
     if (viewerId) {
       query.andWhere(qb => {

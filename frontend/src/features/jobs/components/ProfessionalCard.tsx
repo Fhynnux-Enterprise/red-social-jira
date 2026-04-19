@@ -52,13 +52,19 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
     const [getOrCreateChat] = useMutation(GET_OR_CREATE_CHAT);
 
     const [deleteProfile, { loading: deleting }] = useMutation(DELETE_PROFESSIONAL_PROFILE, {
-        refetchQueries: [
-            { query: GET_PROFESSIONALS, variables: { limit: 20, offset: 0 } },
-            { query: GET_MY_PROFESSIONAL_PROFILE },
-        ],
-        onCompleted: () => {
+        onCompleted: (_, clientOptions) => {
+            // Evict the deleted item from all Apollo caches instantly
+            const deletedId = clientOptions?.variables?.id;
+            if (deletedId) {
+                client.cache.evict({ id: client.cache.identify({ __typename: 'ProfessionalProfile', id: deletedId }) });
+                client.cache.gc();
+            }
             setConfirmDeleteVisible(false);
-            Toast.show({ type: 'success', text1: 'Servicio eliminado' });
+            setTimeout(() => Toast.show({
+                type: 'success',
+                text1: 'Servicio eliminado',
+                text2: 'El servicio fue eliminado exitosamente.',
+            }), 400);
         },
         onError: (err) => {
             setConfirmDeleteVisible(false);

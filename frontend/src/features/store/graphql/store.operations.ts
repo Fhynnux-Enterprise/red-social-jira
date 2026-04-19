@@ -91,6 +91,7 @@ export const CREATE_STORE_PRODUCT = gql`
       category
       isAvailable
       createdAt
+      editedAt
       seller {
         id
         username

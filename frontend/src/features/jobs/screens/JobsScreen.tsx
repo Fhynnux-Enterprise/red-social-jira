@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery, useMutation } from '@apollo/client/react';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../../theme/ThemeContext';
 import { GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS, GET_MY_APPLICATIONS, GET_MY_PROFESSIONAL_PROFILE, DELETE_APPLICATION } from '../graphql/jobs.operations';
@@ -40,6 +40,7 @@ export default function JobsScreen() {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const router = useRouter();
+    const apolloClient = useApolloClient();
     const [activeTab, setActiveTab] = useState<TabKey>('offers');
     const [resultsTab, setResultsTab] = useState<ResultsTabKey>('my_applications');
     const [fabOpen, setFabOpen] = useState(false);
@@ -95,21 +96,37 @@ export default function JobsScreen() {
     });
 
     const [deleteJobOffer] = useMutation(DELETE_JOB_OFFER, {
-        onCompleted: () => {
+        onCompleted: (_, clientOptions) => {
+            // Evict the deleted item from all Apollo caches instantly
+            const deletedId = clientOptions?.variables?.id;
+            if (deletedId) {
+                apolloClient.cache.evict({ id: apolloClient.cache.identify({ __typename: 'JobOffer', id: deletedId }) });
+                apolloClient.cache.gc();
+            }
             setIsOptionsVisible(false);
-            Toast.show({ type: 'success', text1: 'Oferta eliminada' });
-            refetchOffers();
-            refetchMyOffers();
+            setTimeout(() => Toast.show({
+                type: 'success',
+                text1: 'Oferta eliminada',
+                text2: 'La oferta fue eliminada exitosamente.',
+            }), 400);
         },
         onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message })
     });
 
     const [deleteProfessional] = useMutation(DELETE_PROFESSIONAL_PROFILE, {
-        onCompleted: () => {
+        onCompleted: (_, clientOptions) => {
+            // Evict the deleted item from all Apollo caches instantly
+            const deletedId = clientOptions?.variables?.id;
+            if (deletedId) {
+                apolloClient.cache.evict({ id: apolloClient.cache.identify({ __typename: 'ProfessionalProfile', id: deletedId }) });
+                apolloClient.cache.gc();
+            }
             setIsOptionsVisible(false);
-            Toast.show({ type: 'success', text1: 'Servicio eliminado' });
-            refetchProfs();
-            refetchMyServices();
+            setTimeout(() => Toast.show({
+                type: 'success',
+                text1: 'Servicio eliminado',
+                text2: 'El servicio fue eliminado exitosamente.',
+            }), 400);
         },
         onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message })
     });
@@ -121,10 +138,39 @@ export default function JobsScreen() {
 
     const handleDelete = () => {
         if (!selectedItemForOptions?.id) return;
+        setIsOptionsVisible(false);
+
+        const dataList = getListData();
+        const currentIndex = dataList.findIndex((p: any) => p.id === selectedItemForOptions.id);
+        let targetPost = null;
+
+        if (currentIndex !== -1) {
+            if (currentIndex < dataList.length - 1) {
+                targetPost = dataList[currentIndex + 1];
+            } else if (currentIndex > 0) {
+                targetPost = dataList[currentIndex - 1];
+            }
+        }
+
+        const afterDelete = () => {
+            // Solo navegar dentro del CommentsModal si ya estaba abierto al momento de eliminar
+            if (selectedPostForComments) {
+                if (targetPost) {
+                    setSelectedPostForComments({
+                        post: targetPost,
+                        minimize: !!selectedPostForComments?.minimize,
+                        initialTab: selectedPostForComments?.initialTab
+                    });
+                } else {
+                    setSelectedPostForComments(null);
+                }
+            }
+        };
+
         if (selectedItemForOptions.__typename === 'JobOffer') {
-            deleteJobOffer({ variables: { id: selectedItemForOptions.id } });
+            deleteJobOffer({ variables: { id: selectedItemForOptions.id } }).then(afterDelete);
         } else if (selectedItemForOptions.__typename === 'ProfessionalProfile') {
-            deleteProfessional({ variables: { id: selectedItemForOptions.id } });
+            deleteProfessional({ variables: { id: selectedItemForOptions.id } }).then(afterDelete);
         }
     };
 

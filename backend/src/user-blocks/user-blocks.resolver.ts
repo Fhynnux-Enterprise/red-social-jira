@@ -30,7 +30,11 @@ export class UserBlocksResolver {
 
   @Query(() => [User], { name: 'getMyBlockedUsers' })
   @UseGuards(JwtGqlGuard)
-  async getMyBlockedUsers(@CurrentUser() user: any): Promise<User[]> {
-    return this.userBlocksService.getBlockedUsers(user.id);
+  async getMyBlockedUsers(
+    @CurrentUser() user: any,
+    @Args('limit', { nullable: true }) limit?: number,
+    @Args('offset', { nullable: true }) offset?: number,
+  ): Promise<User[]> {
+    return this.userBlocksService.getBlockedUsers(user.id, limit, offset);
   }
 }

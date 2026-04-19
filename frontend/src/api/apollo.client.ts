@@ -173,6 +173,17 @@ export const apolloClient = new ApolloClient({
                     getUserProfile: {
                         keyArgs: ['id'],
                     },
+                    getMyBlockedUsers: {
+                        keyArgs: false,
+                        merge(existing = [], incoming, { args }) {
+                            const offset = args?.offset || 0;
+                            if (offset === 0) return incoming; // Si es la primera página o refetch, reemplazamos
+
+                            const existingRefs = new Set(existing.map((ref: any) => ref.__ref));
+                            const uniqueIncoming = incoming.filter((ref: any) => !existingRefs.has(ref.__ref));
+                            return [...existing, ...uniqueIncoming];
+                        },
+                    },
                 },
             },
             // Política para la entidad Post normalizada:

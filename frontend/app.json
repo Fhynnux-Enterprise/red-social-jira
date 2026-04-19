@@ -42,7 +42,14 @@
       "@react-native-google-signin/google-signin",
       "react-native-compressor",
       "expo-video",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Permite que Chunchi City use el micrófono para grabar mensajes de voz."
+        }
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true,

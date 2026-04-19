@@ -7,6 +7,7 @@ import { User } from '../auth/entities/user.entity';
 import { Comment } from '../comments/entities/comment.entity';
 import { Post } from '../posts/entities/post.entity';
 import { StoreProduct } from '../store/entities/store-product.entity';
+import { StoreProductComment } from '../store/entities/store-product-comment.entity';
 import { JobOffer } from '../jobs/entities/job-offer.entity';
 import { ProfessionalProfile } from '../jobs/entities/professional-profile.entity';
 import { Report } from '../reports/entities/report.entity';
@@ -207,6 +208,8 @@ export class UsersService {
         await transactionalEntityManager.update(StoreProduct, { sellerId: targetUserId }, { deletedAt: now });
         await transactionalEntityManager.update(JobOffer, { authorId: targetUserId }, { deletedAt: now });
         await transactionalEntityManager.update(ProfessionalProfile, { userId: targetUserId }, { deletedAt: now });
+        await transactionalEntityManager.update(Comment, { userId: targetUserId }, { deletedAt: now });
+        await transactionalEntityManager.update(StoreProductComment, { userId: targetUserId }, { deletedAt: now });
       }
 
       // Resolver las denuncias PENDIENTES hacia este perfil de usuario
@@ -254,6 +257,8 @@ export class UsersService {
       await transactionalEntityManager.restore(StoreProduct, { sellerId: targetUserId });
       await transactionalEntityManager.restore(JobOffer, { authorId: targetUserId });
       await transactionalEntityManager.restore(ProfessionalProfile, { userId: targetUserId });
+      await transactionalEntityManager.restore(Comment, { userId: targetUserId });
+      await transactionalEntityManager.restore(StoreProductComment, { userId: targetUserId });
     });
 
     // Retornar el usuario actualizado

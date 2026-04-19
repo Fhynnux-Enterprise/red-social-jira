@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
-import { ObjectType, Field, ID } from '@nestjs/graphql';
+import { ObjectType, Field, ID, Int } from '@nestjs/graphql';
 import { User } from '../../auth/entities/user.entity';
 import { Conversation } from './conversation.entity';
 
@@ -25,6 +25,14 @@ export class Message {
     @Field({ nullable: true })
     @Column({ name: 'story_id', type: 'text', nullable: true })
     storyId: string;
+
+    @Field({ nullable: true })
+    @Column({ name: 'audio_url', type: 'text', nullable: true })
+    audioUrl: string;
+
+    @Field(() => Int, { nullable: true })
+    @Column({ name: 'audio_duration', type: 'int', nullable: true })
+    audioDuration: number;
 
     @Column({ name: 'user_id' })
     userId: string;

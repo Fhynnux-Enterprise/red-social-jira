@@ -43,10 +43,13 @@ export class UserBlocksService {
     return !!result.affected && result.affected > 0;
   }
 
-  async getBlockedUsers(userId: string): Promise<User[]> {
+  async getBlockedUsers(userId: string, limit: number = 20, offset: number = 0): Promise<User[]> {
     const blocks = await this.userBlockRepository.find({
       where: { blockerId: userId },
       relations: ['blocked'],
+      take: limit,
+      skip: offset,
+      order: { createdAt: 'DESC' },
     });
 
     return blocks.map((block) => block.blocked);

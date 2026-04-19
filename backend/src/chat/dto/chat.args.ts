@@ -1,5 +1,5 @@
-import { ArgsType, Field } from '@nestjs/graphql';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { ArgsType, Field, Int } from '@nestjs/graphql';
+import { IsNotEmpty, IsOptional, IsString, IsInt } from 'class-validator';
 
 @ArgsType()
 export class CreateChatArgs {
@@ -35,4 +35,14 @@ export class SendMessageArgs {
     @IsString()
     @IsOptional()
     storyId?: string;
+
+    @Field({ nullable: true })
+    @IsString()
+    @IsOptional()
+    audioUrl?: string;
+
+    @Field(() => Int, { nullable: true })
+    @IsInt()
+    @IsOptional()
+    audioDuration?: number;
 }
