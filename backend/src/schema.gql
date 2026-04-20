@@ -94,6 +94,7 @@ type Message {
   fileName: String
   fileSize: Int
   fileMimeType: String
+  userId: String!
   conversationId: String!
   isRead: Boolean!
   createdAt: DateTime!
@@ -433,7 +434,7 @@ type Query {
   getChatMessages(conversationId: String!, limit: Float, offset: Float): [Message!]!
   searchMessagesInChat(conversationId: String!, searchTerm: String!): [Message!]!
   getConversation(conversationId: String!): Conversation
-  getChatMedia(conversationId: String!): [Message!]!
+  getChatMedia(conversationId: String!, limit: Int, offset: Int): [Message!]!
   getActiveStories(limit: Int! = 20, offset: Int! = 0): [Story!]!
   getViewedStoryIds: [String!]!
   jobOffers(limit: Int! = 20, offset: Int! = 0): [JobOffer!]!
@@ -493,6 +494,8 @@ type Mutation {
   toggleCommentLike(commentId: String!): Comment!
   deleteMessageForMe(messageId: String!): Boolean!
   deleteMessageForAll(messageId: String!): Boolean!
+  deleteMessagesBulk(messageIds: [String!]!): Boolean!
+  deleteMessagesBulkForMe(messageIds: [String!]!): Boolean!
   deleteConversationForMe(conversationId: String!): Boolean!
   editMessage(messageId: String!, newContent: String!): Message!
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!

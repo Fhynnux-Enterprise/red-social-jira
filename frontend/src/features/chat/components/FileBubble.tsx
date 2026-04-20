@@ -14,9 +14,10 @@ interface FileBubbleProps {
   fileSize?: number;
   fileMimeType?: string;
   isMine: boolean;
+  onLongPress?: () => void;
 }
 
-export const FileBubble: React.FC<FileBubbleProps> = ({ fileUrl, fileName, fileSize, fileMimeType, isMine }) => {
+export const FileBubble: React.FC<FileBubbleProps> = ({ fileUrl, fileName, fileSize, fileMimeType, isMine, onLongPress }) => {
   const { colors, isDark } = useTheme();
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -81,6 +82,7 @@ export const FileBubble: React.FC<FileBubbleProps> = ({ fileUrl, fileName, fileS
   return (
     <TouchableOpacity 
       onPress={handleOpenFile} 
+      onLongPress={onLongPress}
       activeOpacity={0.7}
       style={[
         styles.container, 

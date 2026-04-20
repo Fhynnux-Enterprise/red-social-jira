@@ -26,7 +26,7 @@ import { AppStackParamList } from '../../../navigation/AppNavigator';
 import { useQuery, useMutation, useSubscription, useApolloClient } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION, DELETE_MESSAGE_FOR_ME, DELETE_MESSAGE_FOR_ALL, EDIT_MESSAGE, SEARCH_MESSAGES_IN_CHAT, MESSAGE_ADDED_SUBSCRIPTION, MARK_MESSAGES_AS_READ, MESSAGES_READ_SUBSCRIPTION, GET_CHAT_MEDIA } from '../graphql/chat.operations';
+import { GET_CHAT_MESSAGES, SEND_MESSAGE, GET_CONVERSATION, DELETE_MESSAGE_FOR_ME, DELETE_MESSAGE_FOR_ALL, DELETE_MESSAGES_BULK, DELETE_MESSAGES_BULK_FOR_ME, EDIT_MESSAGE, SEARCH_MESSAGES_IN_CHAT, MESSAGE_ADDED_SUBSCRIPTION, MARK_MESSAGES_AS_READ, MESSAGES_READ_SUBSCRIPTION, GET_CHAT_MEDIA } from '../graphql/chat.operations';
 import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
 import Toast from 'react-native-toast-message';
@@ -68,6 +68,7 @@ const StoryReplyThumbnail = ({ uri, isVideo, style }: { uri: string; isVideo: bo
                 style={StyleSheet.absoluteFill}
                 contentFit="cover"
                 nativeControls={false}
+                surfaceType="textureView"
             />
         </View>
     );
@@ -95,6 +96,15 @@ export default function ChatRoomScreen() {
         confirmText: '',
         onConfirm: () => { }
     });
+
+    // Estados de Selección Múltiple
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
+    const [selectionType, setSelectionType] = useState<'forMe' | 'forAll'>('forAll');
+    const [justDeletedIds, setJustDeletedIds] = useState<Set<string>>(new Set());
+    const [justDeletedForAllIds, setJustDeletedForAllIds] = useState<Set<string>>(new Set());
+    const [deleteMessagesBulkMutation] = useMutation(DELETE_MESSAGES_BULK);
+    const [deleteMessagesBulkForMeMutation] = useMutation(DELETE_MESSAGES_BULK_FOR_ME);
 
     // Estados de búsqueda
     const [isSearchMode, setIsSearchMode] = useState(false);
@@ -141,6 +151,50 @@ export default function ChatRoomScreen() {
     // Visor de Galería Unificado
     const [viewerVisible, setViewerVisible] = useState(false);
     const [viewerActiveIndex, setViewerActiveIndex] = useState(0);
+
+    const SCREEN_HEIGHT = Dimensions.get('window').height;
+    
+    // Gesto de Arrastrar para Cerrar (Swipe-to-close)
+    const viewerTranslateY = useRef(new Animated.Value(0)).current;
+    const viewerScale = viewerTranslateY.interpolate({
+        inputRange: [-SCREEN_HEIGHT, 0, SCREEN_HEIGHT],
+        outputRange: [0.9, 1, 0.9],
+        extrapolate: 'clamp'
+    });
+    const viewerBgOpacity = viewerTranslateY.interpolate({
+        inputRange: [-SCREEN_HEIGHT / 2, 0, SCREEN_HEIGHT / 2],
+        outputRange: [0, 1, 0],
+        extrapolate: 'clamp'
+    });
+
+    const viewerPanResponder = useRef(
+        PanResponder.create({
+            onMoveShouldSetPanResponder: (_, gestureState) => {
+                return Math.abs(gestureState.dy) > 20 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+            },
+            onPanResponderMove: (_, gestureState) => {
+                viewerTranslateY.setValue(gestureState.dy);
+            },
+            onPanResponderRelease: (_, gestureState) => {
+                if (Math.abs(gestureState.dy) > 120 || Math.abs(gestureState.vy) > 0.5) {
+                    Animated.timing(viewerTranslateY, {
+                        toValue: gestureState.dy > 0 ? SCREEN_HEIGHT : -SCREEN_HEIGHT,
+                        duration: 250,
+                        useNativeDriver: true,
+                    }).start(() => {
+                        setViewerVisible(false);
+                        viewerTranslateY.setValue(0);
+                    });
+                } else {
+                    Animated.spring(viewerTranslateY, {
+                        toValue: 0,
+                        useNativeDriver: true,
+                        bounciness: 8
+                    }).start();
+                }
+            },
+        })
+    ).current;
 
     const screenWidth = Dimensions.get('window').width;
 
@@ -226,13 +280,30 @@ export default function ChatRoomScreen() {
 
             // Luego mezclamos con los del servidor
             serverMsgs.forEach((sm: any) => {
+                // REGLA CRÍTICA 1: Si el ID está en la lista de "recién borrados para mí", lo ignoramos por completo
+                if (justDeletedIds.has(sm.id)) return;
+
+                // REGLA CRÍTICA 2: Si el ID está en "recién borrados para todos", lo forzamos como borrado
+                let msgToProcess = { ...sm };
+                if (justDeletedForAllIds.has(sm.id)) {
+                    msgToProcess = { 
+                        ...sm, 
+                        isDeletedForAll: true, 
+                        content: "", 
+                        imageUrl: null, 
+                        videoUrl: null, 
+                        audioUrl: null, 
+                        fileUrl: null 
+                    };
+                }
+
                 const local = msgMap.get(sm.id);
                 // REGLA DE ORO: Si ya sabemos que está leído localmente (por WS), 
                 // mantenemos ese estado aunque el servidor (caché lenta) diga lo contrario.
                 if (local && local.isRead && !sm.isRead) {
-                    msgMap.set(sm.id, { ...sm, isRead: true, readAt: local.readAt || sm.readAt });
+                    msgMap.set(sm.id, { ...msgToProcess, isRead: true, readAt: local.readAt || sm.readAt });
                 } else {
-                    msgMap.set(sm.id, sm);
+                    msgMap.set(sm.id, msgToProcess);
                 }
             });
 
@@ -243,6 +314,115 @@ export default function ChatRoomScreen() {
             );
         });
     }, [queryData]);
+
+
+    // Lógica de Selección Múltiple
+    const toggleMessageSelection = (id: string) => {
+        setSelectedMessageIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedMessageIds.size === 0) return;
+
+        const isForAll = selectionType === 'forAll';
+
+        setConfirmModalData({
+            title: isForAll ? 'Eliminar para todos' : 'Eliminar para mí',
+            message: `¿Estás seguro de que quieres eliminar ${selectedMessageIds.size} mensajes ${isForAll ? 'para todos' : 'para ti'}?`,
+            confirmText: isForAll ? 'Eliminar para todos' : 'Eliminar para mí',
+            onConfirm: async () => {
+                setIsConfirmModalVisible(false);
+                try {
+                    const idsToBulk = Array.from(selectedMessageIds);
+                    
+                    if (isForAll) {
+                        // 1. Actualización optimista de estado local
+                        setJustDeletedForAllIds(prev => {
+                            const next = new Set(prev);
+                            idsToBulk.forEach(id => next.add(id));
+                            return next;
+                        });
+                        setLocalMessages(prev => prev.map(m => 
+                            selectedMessageIds.has(m.id) 
+                                ? { ...m, isDeletedForAll: true, content: "", imageUrl: null, videoUrl: null, audioUrl: null, fileUrl: null } 
+                                : m
+                        ));
+
+                        // 2. Ejecutar mutación SIN refetchQueries
+                        await deleteMessagesBulkMutation({
+                            variables: { messageIds: idsToBulk }
+                        });
+
+                        // 3. Actualizar caché de Apollo manualmente
+                        try {
+                            const queryVars = { conversationId, limit: MESSAGES_LIMIT, offset: 0 };
+                            const existing: any = client.readQuery({ query: GET_CHAT_MESSAGES, variables: queryVars });
+                            if (existing?.getChatMessages) {
+                                client.writeQuery({
+                                    query: GET_CHAT_MESSAGES,
+                                    variables: queryVars,
+                                    data: {
+                                        getChatMessages: existing.getChatMessages.map((m: any) => 
+                                            selectedMessageIds.has(m.id)
+                                                ? { ...m, isDeletedForAll: true, content: "", imageUrl: null, videoUrl: null, audioUrl: null, fileUrl: null }
+                                                : m
+                                        )
+                                    }
+                                });
+                            }
+                        } catch (e) {}
+                    } else {
+                        // 1. Actualización optimista para borrado local
+                        setJustDeletedIds(prev => {
+                            const next = new Set(prev);
+                            idsToBulk.forEach(id => next.add(id));
+                            return next;
+                        });
+                        setLocalMessages(prev => prev.filter(m => !selectedMessageIds.has(m.id)));
+
+                        // 2. Ejecutar mutación SIN refetchQueries
+                        await deleteMessagesBulkForMeMutation({
+                            variables: { messageIds: idsToBulk }
+                        });
+
+                        // 3. Actualizar caché de Apollo manualmente
+                        try {
+                            const queryVars = { conversationId, limit: MESSAGES_LIMIT, offset: 0 };
+                            const existing: any = client.readQuery({ query: GET_CHAT_MESSAGES, variables: queryVars });
+                            if (existing?.getChatMessages) {
+                                client.writeQuery({
+                                    query: GET_CHAT_MESSAGES,
+                                    variables: queryVars,
+                                    data: {
+                                        getChatMessages: existing.getChatMessages.filter((m: any) => !selectedMessageIds.has(m.id))
+                                    }
+                                });
+                            }
+                        } catch (e) {}
+                    }
+                    
+                    setIsSelectionMode(false);
+                    setSelectedMessageIds(new Set());
+                } catch (e: any) {
+                    Alert.alert('Error', e.message);
+                }
+            }
+        });
+        setIsConfirmModalVisible(true);
+    };
+
+    const cancelSelection = () => {
+        setIsSelectionMode(false);
+        setSelectedMessageIds(new Set());
+    };
 
 
     const [markMessagesAsReadMutation] = useMutation(MARK_MESSAGES_AS_READ);
@@ -272,7 +452,22 @@ export default function ChatRoomScreen() {
             if (!newMsg) return;
 
             setLocalMessages(prev => {
+                // 1. Si el mensaje ya existe por ID real, no hacer nada
                 if (prev.some((m: any) => m.id === newMsg.id)) return prev;
+
+                // 2. Si el mensaje es mío, intentar "reclamar" un mensaje optimista pendiente
+                if (newMsg.sender.id === currentUser?.id) {
+                    // Buscamos el mensaje optimista más antiguo (el que debería confirmarse primero)
+                    const tempIdx = [...prev].reverse().findIndex(m => m.id.toString().startsWith('temp-'));
+                    if (tempIdx !== -1) {
+                        const actualIdx = prev.length - 1 - tempIdx;
+                        const newArr = [...prev];
+                        newArr[actualIdx] = newMsg;
+                        return newArr;
+                    }
+                }
+
+                // 3. Si no es mío o no hay optimistas, añadir normalmente
                 return [newMsg, ...prev];
             });
 
@@ -472,6 +667,39 @@ export default function ChatRoomScreen() {
         setVideoPreview(null);
         setDocumentPreview(null);
 
+        // --- ACTUALIZACIÓN OPTIMISTA (Mensaje Instantáneo) ---
+        const optimisticId = `temp-${Date.now()}`;
+        const optimisticMsg = {
+            id: optimisticId,
+            content: content || '',
+            imageUrl: pendingImage || null,
+            videoUrl: pendingVideo || null,
+            audioUrl: null,
+            audioDuration: null,
+            fileUrl: pendingDocument?.uri || null,
+            fileName: pendingDocument?.name || null,
+            fileSize: pendingDocument?.size || null,
+            fileMimeType: pendingDocument?.mimeType || null,
+            createdAt: new Date().toISOString(),
+            isRead: false,
+            isDeletedForAll: false,
+            editedAt: null,
+            readAt: null,
+            sender: {
+                id: currentUser.id,
+                firstName: currentUser.firstName,
+                lastName: currentUser.lastName,
+                username: currentUser.username,
+                photoUrl: currentUser.photoUrl,
+                __typename: 'User'
+            },
+            isOptimistic: true, // Marca interna por si queremos darle un estilo sutil (ej. opacidad 0.7)
+            __typename: 'Message'
+        };
+
+        // Lo inyectamos al tope de la lista inmediatamente
+        setLocalMessages(prev => [optimisticMsg, ...prev]);
+
         try {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
@@ -559,7 +787,7 @@ export default function ChatRoomScreen() {
             setIsUploadingMedia(false);
             setUploadStatusText('');
 
-            await sendMessageMutation({
+            const result = await sendMessageMutation({
                 variables: {
                     conversationId,
                     content: content || '',
@@ -571,6 +799,20 @@ export default function ChatRoomScreen() {
                     fileMimeType: pendingDocument?.mimeType || undefined,
                 },
             });
+
+            // Reemplazar el mensaje optimista con el real del servidor
+            if (result.data?.sendMessage) {
+                const realMsg = result.data.sendMessage;
+                setLocalMessages(prev => {
+                    // Si el mensaje real ya llegó por suscripción (WS ganó la carrera)
+                    if (prev.some(m => m.id === realMsg.id)) {
+                        // Eliminamos el temporal que ya no es necesario
+                        return prev.filter(m => m.id !== optimisticId);
+                    }
+                    // Si no, reemplazamos el temporal por el real
+                    return prev.map(m => m.id === optimisticId ? realMsg : m);
+                });
+            }
         } catch (err) {
             console.error("Error sending message:", err);
         }
@@ -578,7 +820,7 @@ export default function ChatRoomScreen() {
 
     const resolveMediaUrl = (url?: string | null, fallbackType: 'avatar' | 'none' = 'none', username: string = 'U') => {
         if (!url) {
-            if (fallbackType === 'avatar') return `https://i.pravatar.cc/150?u=${username}`;
+            if (fallbackType === 'avatar') return `https://ui-avatars.com/api/?name=${username}&background=E5E5EA&color=8E8E93&size=150`;
             return '';
         }
         if (url.startsWith('http') || url.startsWith('file://')) return url;
@@ -739,9 +981,41 @@ export default function ChatRoomScreen() {
                 return;
             }
 
+            // --- ACTUALIZACIÓN OPTIMISTA (Audio Instantáneo) ---
+            const optimisticId = `temp-${Date.now()}`;
+            const optimisticMsg = {
+                id: optimisticId,
+                content: '',
+                imageUrl: null,
+                videoUrl: null,
+                audioUrl: uri, // Usamos el URI local instantáneo
+                audioDuration: durationSeconds,
+                fileUrl: null,
+                fileName: null,
+                fileSize: null,
+                fileMimeType: null,
+                createdAt: new Date().toISOString(),
+                isRead: false,
+                isDeletedForAll: false,
+                editedAt: null,
+                readAt: null,
+                sender: {
+                    id: currentUser.id,
+                    firstName: currentUser.firstName,
+                    lastName: currentUser.lastName,
+                    username: currentUser.username,
+                    photoUrl: currentUser.photoUrl,
+                    __typename: 'User'
+                },
+                isOptimistic: true,
+                __typename: 'Message'
+            };
+
+            setLocalMessages(prev => [optimisticMsg, ...prev]);
+
             const publicAudioUrl = await uploadAudio(uri);
 
-            await sendMessageMutation({
+            const result = await sendMessageMutation({
                 variables: {
                     conversationId,
                     content: '',
@@ -749,6 +1023,20 @@ export default function ChatRoomScreen() {
                     audioDuration: durationSeconds
                 }
             });
+
+            // Reemplazar el mensaje optimista con el real del servidor
+            if (result.data?.sendMessage) {
+                const realMsg = result.data.sendMessage;
+                setLocalMessages(prev => {
+                    // Si el mensaje real ya llegó por suscripción (WS ganó la carrera)
+                    if (prev.some(m => m.id === realMsg.id)) {
+                        // Eliminamos el temporal que ya no es necesario
+                        return prev.filter(m => m.id !== optimisticId);
+                    }
+                    // Si no, reemplazamos el temporal por el real
+                    return prev.map(m => m.id === optimisticId ? realMsg : m);
+                });
+            }
 
             // Resetear el modo de audio para permitir reproducción
             await setAudioModeAsync({
@@ -1107,6 +1395,7 @@ export default function ChatRoomScreen() {
         ];
 
         const isStatusVisible = (lastReadMessage?.id === item.id || showStatusId === item.id) && isMine;
+        const isSelected = selectedMessageIds.has(item.id);
 
         if (item.isDeletedForAll) {
             return (
@@ -1116,15 +1405,49 @@ export default function ChatRoomScreen() {
                         isMine ? styles.myMessageRow : styles.theirMessageRow,
                         { marginBottom: isStatusVisible ? 0 : (isNextSame ? 2 : 10) }
                     ]}>
+                        {isSelectionMode && selectionType === 'forMe' && (
+                            <TouchableOpacity 
+                                onPress={() => toggleMessageSelection(item.id)}
+                                style={{ marginRight: 10 }}
+                            >
+                                <Ionicons 
+                                    name={isSelected ? "checkmark-circle" : "ellipse-outline"} 
+                                    size={24} 
+                                    color={isSelected ? colors.primary : colors.textSecondary} 
+                                />
+                            </TouchableOpacity>
+                        )}
                         {!isMine && (
                             <View style={styles.bubbleAvatarContainer}>
-                                <Image
-                                    source={{ uri: resolveMediaUrl(item.sender?.photoUrl || item.sender?.avatarUrl, 'avatar', item.sender?.username) }}
-                                    style={styles.bubbleAvatar}
-                                />
+                                {item.sender?.photoUrl || item.sender?.avatarUrl ? (
+                                    <Image
+                                        source={{ uri: resolveMediaUrl(item.sender?.photoUrl || item.sender?.avatarUrl) }}
+                                        style={styles.bubbleAvatar}
+                                    />
+                                ) : (
+                                    <View style={[styles.bubbleAvatar, { 
+                                        backgroundColor: isDark ? '#3A3A3C' : '#E5E5EA', 
+                                        justifyContent: 'center', 
+                                        alignItems: 'center' 
+                                    }]}>
+                                        <Text style={{ color: isDark ? '#AEAEB2' : '#8E8E93', fontSize: 10, fontWeight: 'bold' }}>
+                                            {item.sender?.firstName?.[0]}{item.sender?.lastName?.[0]}
+                                        </Text>
+                                    </View>
+                                )}
                             </View>
                         )}
-                        <View style={[bubbleStyles, { backgroundColor: isDark ? '#2C2C2E' : '#E5E5EA', borderWidth: 1, borderColor: isDark ? '#3C3C3E' : '#D1D1D6' }]}>
+                        <TouchableOpacity 
+                            activeOpacity={0.8}
+                            onLongPress={() => {
+                                if (isSelectionMode) return;
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                setSelectedMessage(item);
+                                setIsActionModalVisible(true);
+                            }}
+                            delayLongPress={200}
+                            style={[bubbleStyles, { backgroundColor: isDark ? '#2C2C2E' : '#E5E5EA', borderWidth: 1, borderColor: isDark ? '#3C3C3E' : '#D1D1D6' }]}
+                        >
                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                 <Ionicons name="ban-outline" size={16} color={colors.textSecondary} style={{ marginRight: 6 }} />
                                 <Text style={[
@@ -1134,13 +1457,25 @@ export default function ChatRoomScreen() {
                                     Este mensaje fue eliminado
                                 </Text>
                             </View>
-                        </View>
+                        </TouchableOpacity>
                         {isMine && (
                             <View style={styles.bubbleAvatarContainerRight}>
-                                <Image
-                                    source={{ uri: resolveMediaUrl(currentUser?.photoUrl || currentUser?.avatarUrl, 'avatar', currentUser?.username) }}
-                                    style={styles.bubbleAvatar}
-                                />
+                                {currentUser?.photoUrl || currentUser?.avatarUrl ? (
+                                    <Image
+                                        source={{ uri: resolveMediaUrl(currentUser?.photoUrl || currentUser?.avatarUrl) }}
+                                        style={styles.bubbleAvatar}
+                                    />
+                                ) : (
+                                    <View style={[styles.bubbleAvatar, { 
+                                        backgroundColor: isDark ? '#3A3A3C' : '#E5E5EA', 
+                                        justifyContent: 'center', 
+                                        alignItems: 'center' 
+                                    }]}>
+                                        <Text style={{ color: isDark ? '#AEAEB2' : '#8E8E93', fontSize: 10, fontWeight: 'bold' }}>
+                                            {currentUser?.firstName?.[0]}{currentUser?.lastName?.[0]}
+                                        </Text>
+                                    </View>
+                                )}
                             </View>
                         )}
                     </View>
@@ -1158,21 +1493,52 @@ export default function ChatRoomScreen() {
                         paddingHorizontal: 16 
                     }
                 ]}>
-                    {/* Avatar izquierdo (para otros) */}
+                    {isSelectionMode && (selectionType === 'forMe' || (isMine && !item.isDeletedForAll)) && (
+                        <TouchableOpacity 
+                            onPress={() => toggleMessageSelection(item.id)}
+                            style={{ marginRight: 10 }}
+                        >
+                            <Ionicons 
+                                name={isSelected ? "checkmark-circle" : "ellipse-outline"} 
+                                size={24} 
+                                color={isSelected ? colors.primary : colors.textSecondary} 
+                            />
+                        </TouchableOpacity>
+                    )}
+
                     {!isMine && (
                         <View style={styles.bubbleAvatarContainer}>
-                            <Image
-                                source={{ uri: resolveMediaUrl(item.sender?.photoUrl || item.sender?.avatarUrl, 'avatar', item.sender?.username) }}
-                                style={styles.bubbleAvatar}
-                            />
+                            {item.sender?.photoUrl || item.sender?.avatarUrl ? (
+                                <Image
+                                    source={{ uri: resolveMediaUrl(item.sender?.photoUrl || item.sender?.avatarUrl) }}
+                                    style={styles.bubbleAvatar}
+                                />
+                            ) : (
+                                <View style={[styles.bubbleAvatar, { 
+                                    backgroundColor: isDark ? '#3A3A3C' : '#E5E5EA', 
+                                    justifyContent: 'center', 
+                                    alignItems: 'center' 
+                                }]}>
+                                    <Text style={{ color: isDark ? '#AEAEB2' : '#8E8E93', fontSize: 10, fontWeight: 'bold' }}>
+                                        {item.sender?.firstName?.[0]}{item.sender?.lastName?.[0]}
+                                    </Text>
+                                </View>
+                            )}
                         </View>
                     )}
 
                     <View style={[styles.bubbleWrapper, { alignItems: isMine ? 'flex-end' : 'flex-start' }]}>
                         <TouchableOpacity
                             activeOpacity={0.8}
-                            onPress={() => setShowStatusId(showStatusId === item.id ? null : item.id)}
+                            onPress={() => {
+                                if (isSelectionMode) {
+                                    toggleMessageSelection(item.id);
+                                } else {
+                                    setShowStatusId(showStatusId === item.id ? null : item.id);
+                                }
+                            }}
                             onLongPress={() => {
+                                if (isSelectionMode || item.isDeletedForAll) return;
                                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                                 setSelectedMessage(item);
                                 setIsActionModalVisible(true);
@@ -1191,10 +1557,20 @@ export default function ChatRoomScreen() {
                                         }
                                     ]}
                                     onPress={() => {
+                                        if (isSelectionMode) {
+                                            toggleMessageSelection(item.id);
+                                            return;
+                                        }
                                         navigation.navigate('StoryViewer', {
                                             userId: item.sender?.id,
                                             initialStoryId: item.storyId
                                         });
+                                    }}
+                                    onLongPress={() => {
+                                        if (isSelectionMode || item.isDeletedForAll) return;
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                        setSelectedMessage(item);
+                                        setIsActionModalVisible(true);
                                     }}
                                 >
                                     <View style={[styles.storyReplyIndicator, { backgroundColor: isMine ? '#FFF' : colors.primary }]} />
@@ -1224,6 +1600,10 @@ export default function ChatRoomScreen() {
                                 <TouchableOpacity
                                     activeOpacity={0.9}
                                     onPress={() => {
+                                        if (isSelectionMode) {
+                                            toggleMessageSelection(item.id);
+                                            return;
+                                        }
                                         const mIdx = chatMediaList.findIndex(m =>
                                             m.id === item.id ||
                                             (item.imageUrl && m.imageUrl === item.imageUrl)
@@ -1232,6 +1612,12 @@ export default function ChatRoomScreen() {
                                             setViewerActiveIndex(mIdx);
                                             setViewerVisible(true);
                                         }
+                                    }}
+                                    onLongPress={() => {
+                                        if (isSelectionMode || item.isDeletedForAll) return;
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                        setSelectedMessage(item);
+                                        setIsActionModalVisible(true);
                                     }}
                                 >
                                     <Image
@@ -1253,6 +1639,10 @@ export default function ChatRoomScreen() {
                                         width={screenWidth * 0.55}
                                         height={screenWidth * 0.55 * 0.75}
                                         onPressFullScreen={() => {
+                                            if (isSelectionMode) {
+                                                toggleMessageSelection(item.id);
+                                                return;
+                                            }
                                             setIsMuted(false);
                                             const mIdx = chatMediaList.findIndex(m =>
                                                 m.id === item.id ||
@@ -1262,6 +1652,12 @@ export default function ChatRoomScreen() {
                                                 setViewerActiveIndex(mIdx);
                                                 setViewerVisible(true);
                                             }
+                                        }}
+                                        onLongPress={() => {
+                                            if (isSelectionMode || item.isDeletedForAll) return;
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                            setSelectedMessage(item);
+                                            setIsActionModalVisible(true);
                                         }}
                                     />
                                 </View>
@@ -1273,6 +1669,12 @@ export default function ChatRoomScreen() {
                                     isMine={isMine}
                                     messageTime={new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
                                     isEdited={!!item.editedAt}
+                                    onLongPress={() => {
+                                        if (isSelectionMode || item.isDeletedForAll) return;
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                        setSelectedMessage(item);
+                                        setIsActionModalVisible(true);
+                                    }}
                                 />
                             )}
                             {item.fileUrl && (
@@ -1282,6 +1684,12 @@ export default function ChatRoomScreen() {
                                     fileSize={item.fileSize}
                                     fileMimeType={item.fileMimeType}
                                     isMine={isMine}
+                                    onLongPress={() => {
+                                        if (isSelectionMode || item.isDeletedForAll) return;
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                        setSelectedMessage(item);
+                                        setIsActionModalVisible(true);
+                                    }}
                                 />
                             )}
                             {item.content ? (
@@ -1327,18 +1735,28 @@ export default function ChatRoomScreen() {
                         </TouchableOpacity>
                     </View>
 
-                    {/* Avatar derecho (para mí) */}
                     {isMine && (
                         <View style={styles.bubbleAvatarContainerRight}>
-                            <Image
-                                source={{ uri: resolveMediaUrl(currentUser?.photoUrl || currentUser?.avatarUrl, 'avatar', currentUser?.username) }}
-                                style={styles.bubbleAvatar}
-                            />
+                            {currentUser?.photoUrl || currentUser?.avatarUrl ? (
+                                <Image
+                                    source={{ uri: resolveMediaUrl(currentUser?.photoUrl || currentUser?.avatarUrl) }}
+                                    style={styles.bubbleAvatar}
+                                />
+                            ) : (
+                                <View style={[styles.bubbleAvatar, { 
+                                    backgroundColor: isDark ? '#3A3A3C' : '#E5E5EA', 
+                                    justifyContent: 'center', 
+                                    alignItems: 'center' 
+                                }]}>
+                                    <Text style={{ color: isDark ? '#AEAEB2' : '#8E8E93', fontSize: 10, fontWeight: 'bold' }}>
+                                        {currentUser?.firstName?.[0]}{currentUser?.lastName?.[0]}
+                                    </Text>
+                                </View>
+                            )}
                         </View>
                     )}
                 </View>
                 
-                {/* Etiqueta de "Visto" o "No leído" (automático para el último o manual al tocar) */}
                 {(lastReadMessage?.id === item.id || showStatusId === item.id) && isMine && (
                     <View style={{ width: '100%', alignItems: 'flex-end', paddingRight: isMine ? 50 : 20, marginTop: 2, marginBottom: 10 }}>
                         <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '600' }}>
@@ -1352,6 +1770,40 @@ export default function ChatRoomScreen() {
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+            {/* Header de Selección Múltiple */}
+            {isSelectionMode && (
+                <View style={[
+                    styles.selectionHeader, 
+                    { 
+                        backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+                        paddingTop: insets.top,
+                        borderBottomColor: colors.border
+                    }
+                ]}>
+                    <View style={styles.selectionHeaderContent}>
+                        <TouchableOpacity onPress={cancelSelection} style={styles.selectionHeaderButton}>
+                            <Text style={{ color: colors.primary, fontSize: 16 }}>Cancelar</Text>
+                        </TouchableOpacity>
+                        
+                        <Text style={[styles.selectionTitle, { color: colors.text }]}>
+                            {selectedMessageIds.size} seleccionados
+                        </Text>
+                        
+                        <TouchableOpacity 
+                            onPress={handleBulkDelete} 
+                            style={styles.selectionHeaderButton}
+                            disabled={selectedMessageIds.size === 0}
+                        >
+                            <Ionicons 
+                                name="trash-outline" 
+                                size={22} 
+                                color={selectedMessageIds.size === 0 ? colors.textSecondary : '#FF3B30'} 
+                            />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            )}
+
             {/* Header Dinámico (Normal o Búsqueda) */}
             {isSearchMode ? (
                 <View style={[styles.searchHeader, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
@@ -1408,10 +1860,26 @@ export default function ChatRoomScreen() {
                         })}
                         activeOpacity={0.7}
                     >
-                        <Image
-                            source={{ uri: resolveMediaUrl(otherUser?.photoUrl || otherUser?.avatarUrl, 'avatar', otherUser?.username) }}
-                            style={styles.headerAvatar}
-                        />
+                        {otherUser?.photoUrl || otherUser?.avatarUrl ? (
+                            <Image
+                                source={{ uri: resolveMediaUrl(otherUser?.photoUrl || otherUser?.avatarUrl) }}
+                                style={styles.headerAvatar}
+                            />
+                        ) : (
+                            <View style={[styles.headerAvatar, { 
+                                backgroundColor: isDark ? '#3A3A3C' : '#E5E5EA', 
+                                justifyContent: 'center', 
+                                alignItems: 'center' 
+                            }]}>
+                                <Text style={{ 
+                                    color: isDark ? '#AEAEB2' : '#8E8E93', 
+                                    fontSize: 16, 
+                                    fontWeight: 'bold' 
+                                }}>
+                                    {otherUser?.firstName?.[0]}{otherUser?.lastName?.[0]}
+                                </Text>
+                            </View>
+                        )}
                         <View style={styles.headerTextContainer}>
                             <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
                                 {otherUser ? `${otherUser.firstName} ${otherUser.lastName} ${otherUser.id === currentUser?.id ? '(Tú)' : ''}` : 'Cargando...'}
@@ -1708,10 +2176,16 @@ export default function ChatRoomScreen() {
             <Modal
                 visible={viewerVisible}
                 transparent
-                animationType="fade"
+                animationType="none" // Quitamos el fade nativo para usar nuestra animación de arrastre
                 onRequestClose={() => setViewerVisible(false)}
             >
-                <View style={{ flex: 1, backgroundColor: 'black' }}>
+                <Animated.View 
+                    style={{ 
+                        flex: 1, 
+                        backgroundColor: 'black',
+                        opacity: viewerBgOpacity 
+                    }}
+                >
                     <TouchableOpacity
                         style={[styles.fullscreenCloseBtn, { zIndex: 999, top: insets.top + 20 }]}
                         onPress={() => setViewerVisible(false)}
@@ -1719,48 +2193,82 @@ export default function ChatRoomScreen() {
                         <Ionicons name="close" size={28} color="#FFF" />
                     </TouchableOpacity>
 
-                    <FlatList
-                        data={chatMediaList}
-                        horizontal
-                        pagingEnabled
-                        initialScrollIndex={viewerActiveIndex}
-                        getItemLayout={(_, index) => ({
-                            length: screenWidth,
-                            offset: screenWidth * index,
-                            index,
-                        })}
-                        showsHorizontalScrollIndicator={false}
-                        keyExtractor={(item) => item.id}
-                        onMomentumScrollEnd={(event) => {
-                            const xOffset = event.nativeEvent.contentOffset.x;
-                            const index = Math.round(xOffset / screenWidth);
-                            setViewerActiveIndex(index);
+                    {chatMediaList[viewerActiveIndex]?.videoUrl && (
+                        <TouchableOpacity
+                            style={[
+                                styles.fullscreenCloseBtn, 
+                                { 
+                                    zIndex: 999, 
+                                    top: insets.top + 80,
+                                    backgroundColor: 'rgba(0,0,0,0.5)'
+                                }
+                            ]}
+                            onPress={() => {
+                                // Si está muteado y presionamos, quitamos el mute (volumen ON)
+                                setIsMuted(!isMuted);
+                            }}
+                        >
+                            <Ionicons 
+                                name={isMuted ? "volume-mute" : "volume-high"} 
+                                size={22} 
+                                color="#FFF" 
+                            />
+                        </TouchableOpacity>
+                    )}
+
+                    <Animated.View 
+                        style={{ 
+                            flex: 1, 
+                            transform: [
+                                { translateY: viewerTranslateY },
+                                { scale: viewerScale }
+                            ] 
                         }}
-                        renderItem={({ item, index }) => (
-                            <View style={{ width: screenWidth, height: Dimensions.get('window').height, justifyContent: 'center' }}>
-                                {item.videoUrl ? (
-                                    <InteractiveVideoPlayer
-                                        url={resolveMediaUrl(item.videoUrl)}
-                                        width={screenWidth}
-                                        height={Dimensions.get('window').height}
-                                        isMuted={isMuted}
-                                        shouldPlay={viewerActiveIndex === index && viewerVisible}
-                                        toggleMute={() => setIsMuted(!isMuted)}
-                                        isInteractive={true}
-                                        hideExpand={true}
-                                        contentFit="contain"
-                                        insets={insets}
-                                    />
-                                ) : (
-                                    <ZoomableImageViewer
-                                        url={resolveMediaUrl(item.imageUrl)}
-                                        onClose={() => setViewerVisible(false)}
-                                    />
-                                )}
-                            </View>
-                        )}
-                    />
-                </View>
+                        {...viewerPanResponder.panHandlers}
+                    >
+                        <FlatList
+                            data={chatMediaList}
+                            horizontal
+                            pagingEnabled
+                            initialScrollIndex={viewerActiveIndex}
+                            getItemLayout={(_, index) => ({
+                                length: screenWidth,
+                                offset: screenWidth * index,
+                                index,
+                            })}
+                            showsHorizontalScrollIndicator={false}
+                            keyExtractor={(item) => item.id}
+                            onMomentumScrollEnd={(event) => {
+                                const xOffset = event.nativeEvent.contentOffset.x;
+                                const index = Math.round(xOffset / screenWidth);
+                                setViewerActiveIndex(index);
+                            }}
+                            renderItem={({ item, index }) => (
+                                <View style={{ width: screenWidth, height: Dimensions.get('window').height, justifyContent: 'center' }}>
+                                    {item.videoUrl ? (
+                                        <InteractiveVideoPlayer
+                                            url={resolveMediaUrl(item.videoUrl)}
+                                            width={screenWidth}
+                                            height={Dimensions.get('window').height}
+                                            isMuted={isMuted}
+                                            shouldPlay={viewerActiveIndex === index && viewerVisible}
+                                            toggleMute={() => setIsMuted(!isMuted)}
+                                            isInteractive={true}
+                                            hideExpand={true}
+                                            contentFit="contain"
+                                            insets={insets}
+                                        />
+                                    ) : (
+                                        <ZoomableImageViewer
+                                            url={resolveMediaUrl(item.imageUrl)}
+                                            onClose={() => setViewerVisible(false)}
+                                        />
+                                    )}
+                                </View>
+                            )}
+                        />
+                    </Animated.View>
+                </Animated.View>
             </Modal>
 
             {/* Modal de Acciones del Mensaje */}
@@ -1780,18 +2288,32 @@ export default function ChatRoomScreen() {
                             <>
                                 <TouchableOpacity
                                     style={styles.actionModalBtn}
-                                    onPress={handleDeleteForAll}
+                                    onPress={() => {
+                                        setIsActionModalVisible(false);
+                                        if (selectedMessage) {
+                                            setSelectionType('forAll');
+                                            setIsSelectionMode(true);
+                                            setSelectedMessageIds(new Set([selectedMessage.id]));
+                                        }
+                                    }}
                                 >
-                                    <Ionicons name="trash-outline" size={24} color="#FF3B30" />
-                                    <Text style={[styles.actionModalText, { color: '#FF3B30' }]}>Eliminar para todos</Text>
+                                    <Ionicons name="checkbox-outline" size={24} color="#FF3B30" />
+                                    <Text style={[styles.actionModalText, { color: '#FF3B30' }]}>Eliminar para todos (Selección múltiple)</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
                                     style={styles.actionModalBtn}
-                                    onPress={handleDeleteForMe}
+                                    onPress={() => {
+                                        setIsActionModalVisible(false);
+                                        if (selectedMessage) {
+                                            setSelectionType('forMe');
+                                            setIsSelectionMode(true);
+                                            setSelectedMessageIds(new Set([selectedMessage.id]));
+                                        }
+                                    }}
                                 >
                                     <Ionicons name="trash-bin-outline" size={24} color={colors.text} />
-                                    <Text style={[styles.actionModalText, { color: colors.text }]}>Eliminar para mí</Text>
+                                    <Text style={[styles.actionModalText, { color: colors.text }]}>Eliminar para mí (Selección múltiple)</Text>
                                 </TouchableOpacity>
 
                                 <View style={[styles.actionModalDivider, { backgroundColor: colors.border }]} />
@@ -1811,10 +2333,17 @@ export default function ChatRoomScreen() {
                         ) : (
                             <TouchableOpacity
                                 style={styles.actionModalBtn}
-                                onPress={handleDeleteForMe}
+                                onPress={() => {
+                                    setIsActionModalVisible(false);
+                                    if (selectedMessage) {
+                                        setSelectionType('forMe');
+                                        setIsSelectionMode(true);
+                                        setSelectedMessageIds(new Set([selectedMessage.id]));
+                                    }
+                                }}
                             >
                                 <Ionicons name="trash-outline" size={24} color="#FF3B30" />
-                                <Text style={[styles.actionModalText, { color: '#FF3B30' }]}>Eliminar</Text>
+                                <Text style={[styles.actionModalText, { color: '#FF3B30' }]}>Eliminar (Selección múltiple)</Text>
                             </TouchableOpacity>
                         )}
 
@@ -1981,7 +2510,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center', // Centrado verticalmente con el globo
         paddingHorizontal: 12,
-        marginVertical: 0,
+        marginVertical: 2,
     },
     myMessageRow: {
         justifyContent: 'flex-end',
@@ -2335,5 +2864,27 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
         textAlign: 'center',
+    },
+    selectionHeader: {
+        width: '100%',
+        borderBottomWidth: 0.5,
+        zIndex: 100,
+        position: 'absolute',
+        top: 0,
+        left: 0,
+    },
+    selectionHeaderContent: {
+        height: 60,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+    },
+    selectionTitle: {
+        fontSize: 17,
+        fontWeight: 'bold',
+    },
+    selectionHeaderButton: {
+        padding: 8,
     },
 });

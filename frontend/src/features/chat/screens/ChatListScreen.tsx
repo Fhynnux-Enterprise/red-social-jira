@@ -143,17 +143,26 @@ export default function ChatListScreen() {
     }, [currentUser?.id]);
 
     const filteredConversations = React.useMemo(() => {
-        if (!searchQuery.trim()) return conversations;
+        let result = conversations;
         
-        const query = searchQuery.toLowerCase();
-        return conversations.filter(conv => {
-            const otherUser = getOtherParticipant(conv.participants);
-            if (!otherUser) return false;
-            
-            const fullName = `${otherUser.firstName} ${otherUser.lastName}`.toLowerCase();
-            const username = (otherUser.username || '').toLowerCase();
-            
-            return fullName.includes(query) || username.includes(query);
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase();
+            result = conversations.filter(conv => {
+                const otherUser = getOtherParticipant(conv.participants);
+                if (!otherUser) return false;
+                
+                const fullName = `${otherUser.firstName} ${otherUser.lastName}`.toLowerCase();
+                const username = (otherUser.username || '').toLowerCase();
+                
+                return fullName.includes(query) || username.includes(query);
+            });
+        }
+
+        // Ordenar siempre por la fecha de la última actividad real (mensaje)
+        return [...result].sort((a, b) => {
+            const timeA = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : new Date(a.createdAt).getTime();
+            const timeB = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : new Date(b.createdAt).getTime();
+            return timeB - timeA;
         });
     }, [conversations, searchQuery, getOtherParticipant]);
 
@@ -233,10 +242,18 @@ export default function ChatListScreen() {
             );
         }
 
+        const currentUserId = String(currentUser?.id || '');
+        const senderId = String(msg.sender?.id || msg.userId || '');
+        const isMine = currentUserId !== '' && senderId !== '' && currentUserId === senderId;
+        const prefix = isMine ? 'Tú: ' : '';
+        
         let iconName: any = null;
         let text = msg.content || '';
 
-        if (msg.audioUrl) {
+        if (msg.isDeletedForAll) {
+            iconName = 'ban-outline';
+            text = 'Este mensaje fue eliminado';
+        } else if (msg.audioUrl) {
             iconName = 'mic';
             text = `Mensaje de voz (${formatChatDuration(msg.audioDuration)})`;
         } else if (msg.videoUrl) {
@@ -265,12 +282,13 @@ export default function ChatListScreen() {
                         styles.lastMessage, 
                         { 
                             color: unreadCount > 0 ? colors.text : colors.textSecondary, 
-                            fontWeight: unreadCount > 0 ? '700' : '400' 
+                            fontWeight: unreadCount > 0 ? '700' : '400',
+                            fontStyle: msg.isDeletedForAll ? 'italic' : 'normal'
                         }
                     ]} 
                     numberOfLines={1}
                 >
-                    {text}
+                    {prefix}{text}
                 </Text>
             </View>
         );
@@ -392,13 +410,19 @@ export default function ChatListScreen() {
                         </Text>
                     </View>
                     <View style={styles.chatFooter}>
-                        {renderLastMessagePreview(lastMessage, item.unreadCount)}
-                        {/* Indicador de Unread */}
-                        {item.unreadCount > 0 && (
-                            <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
-                                <Text style={styles.unreadText}>{item.unreadCount}</Text>
-                            </View>
-                        )}
+                        <View style={{ flex: 1, marginRight: 8 }}>
+                            {renderLastMessagePreview(lastMessage, item.unreadCount)}
+                        </View>
+                        <View style={{ alignItems: 'flex-end' }}>
+                            {lastMessage?.userId === currentUser?.id && lastMessage?.isRead && (
+                                <Text style={[styles.seenStatus, { color: colors.primary }]}>Visto</Text>
+                            )}
+                            {item.unreadCount > 0 && (
+                                <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
+                                    <Text style={styles.unreadText}>{item.unreadCount}</Text>
+                                </View>
+                            )}
+                        </View>
                     </View>
                 </View>
             </TouchableOpacity>
@@ -694,6 +718,12 @@ const styles = StyleSheet.create({
     },
     chatDate: {
         fontSize: 12,
+    },
+    seenStatus: {
+        fontSize: 11,
+        fontWeight: '600',
+        textAlign: 'right',
+        marginRight: 4,
     },
     chatFooter: {
         flexDirection: 'row',

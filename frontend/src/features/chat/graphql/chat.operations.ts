@@ -27,6 +27,7 @@ export const GET_USER_CONVERSATIONS = gql`
     getUserConversations {
       id
       updatedAt
+      createdAt
       isBlocked
       participants {
         user {
@@ -48,6 +49,12 @@ export const GET_USER_CONVERSATIONS = gql`
         fileSize
         fileMimeType
         createdAt
+        isDeletedForAll
+        isRead
+        userId
+        sender {
+          id
+        }
       }
       unreadCount
     }
@@ -197,6 +204,18 @@ export const SEARCH_MESSAGES_IN_CHAT = gql`
   }
 `;
 
+export const DELETE_MESSAGES_BULK = gql`
+  mutation DeleteMessagesBulk($messageIds: [String!]!) {
+    deleteMessagesBulk(messageIds: $messageIds)
+  }
+`;
+
+export const DELETE_MESSAGES_BULK_FOR_ME = gql`
+  mutation DeleteMessagesBulkForMe($messageIds: [String!]!) {
+    deleteMessagesBulkForMe(messageIds: $messageIds)
+  }
+`;
+
 export const MARK_MESSAGES_AS_READ = gql`
   mutation MarkMessagesAsRead($conversationId: String!) {
     markMessagesAsRead(conversationId: $conversationId)
@@ -227,6 +246,9 @@ export const INBOX_UPDATE_SUBSCRIPTION = gql`
       fileSize
       fileMimeType
       createdAt
+      isDeletedForAll
+      isRead
+      userId
       conversationId
       storyId
       sender {
@@ -237,8 +259,8 @@ export const INBOX_UPDATE_SUBSCRIPTION = gql`
 `;
 
 export const GET_CHAT_MEDIA = gql`
-  query GetChatMedia($conversationId: String!) {
-    getChatMedia(conversationId: $conversationId) {
+  query GetChatMedia($conversationId: String!, $limit: Int, $offset: Int) {
+    getChatMedia(conversationId: $conversationId, limit: $limit, offset: $offset) {
       id
       imageUrl
       videoUrl

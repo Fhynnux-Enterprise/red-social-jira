@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-// Force restart to sync schema changes for ProfessionalProfile
+// Force restart to sync schema changes for bulk deletion
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GraphQLModule } from '@nestjs/graphql';

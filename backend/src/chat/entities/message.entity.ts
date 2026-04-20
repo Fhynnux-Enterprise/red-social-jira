@@ -50,6 +50,7 @@ export class Message {
     @Column({ name: 'file_mime_type', type: 'text', nullable: true })
     fileMimeType: string;
 
+    @Field()
     @Column({ name: 'user_id' })
     userId: string;
 

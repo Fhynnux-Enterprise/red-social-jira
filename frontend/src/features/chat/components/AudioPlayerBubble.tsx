@@ -13,6 +13,7 @@ interface AudioPlayerBubbleProps {
     messageTime?: string;
     isRead?: boolean;
     isEdited?: boolean;
+    onLongPress?: () => void;
 }
 
 export const AudioPlayerBubble: React.FC<AudioPlayerBubbleProps> = ({ 
@@ -21,7 +22,8 @@ export const AudioPlayerBubble: React.FC<AudioPlayerBubbleProps> = ({
     isMine,
     messageTime,
     isRead,
-    isEdited
+    isEdited,
+    onLongPress
 }) => {
     const { colors } = useTheme();
     const player = useAudioPlayer(audioUrl);
@@ -69,73 +71,79 @@ export const AudioPlayerBubble: React.FC<AudioPlayerBubbleProps> = ({
     const totalDuration = audioDuration > 0 ? audioDuration : player.duration;
 
     return (
-        <View style={styles.container}>
-            <View style={styles.playerRow}>
-                <TouchableOpacity onPress={handlePlayPause} style={styles.playButton}>
-                    <Ionicons 
-                        name={status.playing ? "pause" : "play"} 
-                        size={32} 
-                        color={isMine ? '#FFF' : colors.primary} 
-                    />
-                </TouchableOpacity>
+        <TouchableOpacity 
+            activeOpacity={1} 
+            onLongPress={onLongPress}
+            delayLongPress={200}
+        >
+            <View style={styles.container}>
+                <View style={styles.playerRow}>
+                    <TouchableOpacity onPress={handlePlayPause} style={styles.playButton}>
+                        <Ionicons 
+                            name={status.playing ? "pause" : "play"} 
+                            size={32} 
+                            color={isMine ? '#FFF' : colors.primary} 
+                        />
+                    </TouchableOpacity>
 
-                <View style={styles.sliderContainer}>
-                    {/* Frecuencia Visual (Ondas deterministas basadas en el URL) */}
-                    <View style={styles.waveformContainer}>
-                        {[...Array(22)].map((_, i) => {
-                            // Función determinista simple basada en el URL para que cada audio tenga su "huella" única
-                            const seed = audioUrl.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-                            const height = 6 + (Math.sin(i * 0.9 + seed) * 10) + (Math.cos(i * 0.4 + seed) * 4);
-                            return (
-                                <View 
-                                    key={i} 
-                                    style={[
-                                        styles.waveformBar, 
-                                        { 
-                                            height: Math.abs(height),
-                                            backgroundColor: isMine ? '#FFF' : colors.primary,
-                                            opacity: (player.currentTime / (totalDuration || 1)) > (i / 22) ? 1 : 0.25
-                                        }
-                                    ]} 
-                                />
-                            );
-                        })}
+                    <View style={styles.sliderContainer}>
+                        {/* Frecuencia Visual (Ondas deterministas basadas en el URL) */}
+                        <View style={styles.waveformContainer}>
+                            {[...Array(22)].map((_, i) => {
+                                // Función determinista simple basada en el URL para que cada audio tenga su "huella" única
+                                const seed = audioUrl.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                                const height = 6 + (Math.sin(i * 0.9 + seed) * 10) + (Math.cos(i * 0.4 + seed) * 4);
+                                return (
+                                    <View 
+                                        key={i} 
+                                        style={[
+                                            styles.waveformBar, 
+                                            { 
+                                                height: Math.abs(height),
+                                                backgroundColor: isMine ? '#FFF' : colors.primary,
+                                                opacity: (player.currentTime / (totalDuration || 1)) > (i / 22) ? 1 : 0.25
+                                            }
+                                        ]} 
+                                    />
+                                );
+                            })}
+                        </View>
+
+                        <Slider
+                            style={styles.slider}
+                            minimumValue={0}
+                            maximumValue={totalDuration || 1}
+                            value={player.currentTime}
+                            onSlidingComplete={(value) => {
+                                player.seekTo(value);
+                                if (isFinished) setIsFinished(false);
+                            }}
+                            minimumTrackTintColor="transparent"
+                            maximumTrackTintColor="transparent"
+                            thumbTintColor={isMine ? '#FFF' : colors.primary}
+                        />
                     </View>
-
-                    <Slider
-                        style={styles.slider}
-                        minimumValue={0}
-                        maximumValue={totalDuration || 1}
-                        value={player.currentTime}
-                        onSlidingComplete={(value) => {
-                            player.seekTo(value);
-                            if (isFinished) setIsFinished(false);
-                        }}
-                        minimumTrackTintColor="transparent"
-                        maximumTrackTintColor="transparent"
-                        thumbTintColor={isMine ? '#FFF' : colors.primary}
-                    />
                 </View>
-            </View>
 
-            {/* Footer integrado: Tiempo del audio y Hora del mensaje en la misma línea */}
-            <View style={styles.footerRow}>
-                <Text style={[styles.timeText, { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
-                    {formatTime(player.currentTime)} / {formatTime(totalDuration)}
-                </Text>
-                
-                <View style={styles.rightFooter}>
-                    {isEdited && (
-                        <Text style={[styles.metaText, { color: isMine ? 'rgba(255,255,255,0.5)' : colors.textSecondary, fontStyle: 'italic', marginRight: 4 }]}>
-                            Editado
-                        </Text>
-                    )}
-                    <Text style={[styles.metaText, { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
-                        {messageTime}
+                {/* Footer integrado: Tiempo del audio y Hora del mensaje en la misma línea */}
+                <View style={styles.footerRow}>
+                    <Text style={[styles.timeText, { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
+                        {formatTime(player.currentTime)} / {formatTime(totalDuration)}
                     </Text>
+                    
+                    <View style={styles.rightFooter}>
+                        {isEdited && (
+                            <Text style={[styles.metaText, { color: isMine ? 'rgba(255,255,255,0.5)' : colors.textSecondary, fontStyle: 'italic', marginRight: 4 }]}>
+                                Editado
+                            </Text>
+                        )}
+                        <Text style={[styles.metaText, { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
+                            {messageTime}
+                        </Text>
+                    </View>
                 </View>
             </View>
-        </View>
+        </TouchableOpacity>
     );
 };
 

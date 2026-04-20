@@ -248,7 +248,7 @@ export class ChatService {
         return true;
     }
 
-    async deleteMessageForAll(messageId: string, currentUserId: string): Promise<boolean> {
+    async deleteMessageForAll(messageId: string, currentUserId: string): Promise<Message> {
         const message = await this.messageRepository.findOne({
             where: { id: messageId },
             relations: ['sender']
@@ -264,9 +264,62 @@ export class ChatService {
 
         message.isDeletedForAll = true;
         message.content = ""; // Vaciamos el contenido original por privacidad
-        await this.messageRepository.save(message);
+        // También borramos referencias a archivos/imágenes si existen
+        (message as any).imageUrl = null;
+        (message as any).videoUrl = null;
+        (message as any).audioUrl = null;
+        (message as any).fileUrl = null;
+        
+        return this.messageRepository.save(message);
+    }
 
-        return true;
+    async deleteMessagesBulk(messageIds: string[], currentUserId: string): Promise<Message[]> {
+        const messages = await this.messageRepository.find({
+            where: { id: In(messageIds) },
+            relations: ['sender']
+        });
+
+        const messagesToSave: Message[] = [];
+
+        for (const message of messages) {
+            if (message.sender.id === currentUserId) {
+                message.isDeletedForAll = true;
+                message.content = "";
+                (message as any).imageUrl = null;
+                (message as any).videoUrl = null;
+                (message as any).audioUrl = null;
+                (message as any).fileUrl = null;
+                messagesToSave.push(message);
+            }
+        }
+
+        if (messagesToSave.length > 0) {
+            return this.messageRepository.save(messagesToSave);
+        }
+        return [];
+    }
+
+    async deleteMessagesBulkForMe(messageIds: string[], currentUserId: string): Promise<Message[]> {
+        const messages = await this.messageRepository.find({
+            where: { id: In(messageIds) },
+            relations: ['sender']
+        });
+
+        const messagesToSave: Message[] = [];
+
+        for (const message of messages) {
+            const currentDeletedFor = message.deletedFor || [];
+            if (!currentDeletedFor.includes(currentUserId)) {
+                message.deletedFor = [...currentDeletedFor, currentUserId];
+                messagesToSave.push(message);
+            }
+        }
+
+        if (messagesToSave.length > 0) {
+            return this.messageRepository.save(messagesToSave);
+        }
+        
+        return [];
     }
 
     async editMessage(messageId: string, currentUserId: string, newContent: string): Promise<Message> {
@@ -345,13 +398,15 @@ export class ChatService {
         return true;
     }
 
-    async getChatMedia(conversationId: string, currentUserId: string): Promise<Message[]> {
+    async getChatMedia(conversationId: string, currentUserId: string, limit = 20, offset = 0): Promise<Message[]> {
         return this.messageRepository.createQueryBuilder('message')
             .where('message.conversationId = :conversationId', { conversationId })
             .andWhere('(message.imageUrl IS NOT NULL OR message.videoUrl IS NOT NULL)')
             .andWhere('message.isDeletedForAll = false')
             .andWhere('(message.deletedFor IS NULL OR NOT (:currentUserId = ANY (message.deletedFor)))', { currentUserId })
             .orderBy('message.createdAt', 'DESC')
+            .take(limit)
+            .skip(offset)
             .getMany();
     }
 }

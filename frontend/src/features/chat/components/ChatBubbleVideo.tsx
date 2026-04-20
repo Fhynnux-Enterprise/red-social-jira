@@ -11,6 +11,7 @@ interface ChatBubbleVideoProps {
     width: number;
     height: number;
     onPressFullScreen?: () => void;
+    onLongPress?: () => void;
 }
 
 /**
@@ -22,7 +23,7 @@ interface ChatBubbleVideoProps {
  * - SIN AUTO-PLAY (requiere interacción inicial)
  * - Primer toque: Reproduce con Audio / Segundo toque: Pantalla completa
  */
-export const ChatBubbleVideo = ({ url, width, height, onPressFullScreen }: ChatBubbleVideoProps) => {
+export const ChatBubbleVideo = ({ url, width, height, onPressFullScreen, onLongPress }: ChatBubbleVideoProps) => {
     const { cachedSource } = useVideoCache(url);
     const [isMuted, setIsMuted] = useState(true);
     const [hasStartedPlaying, setHasStartedPlaying] = useState(false);
@@ -45,20 +46,11 @@ export const ChatBubbleVideo = ({ url, width, height, onPressFullScreen }: ChatB
     const handleInternalPress = () => {
         if (!player) return;
 
-        if (!hasStartedPlaying) {
-            // Desenmudecer al reproducir por primera vez
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            player.muted = false;
-            setIsMuted(false);
-            player.play();
-            setHasStartedPlaying(true);
-        } else {
-            // Si ya está reproduciendo, pausamos la miniatura y abrimos en pantalla completa
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            player.pause();
-            if (onPressFullScreen) {
-                onPressFullScreen();
-            }
+        // Abrir directamente en pantalla completa (immersive view) al primer toque
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        player.pause(); // Pausamos la miniatura antes de abrir el visor
+        if (onPressFullScreen) {
+            onPressFullScreen();
         }
     };
 
@@ -83,6 +75,7 @@ export const ChatBubbleVideo = ({ url, width, height, onPressFullScreen }: ChatB
             <TouchableOpacity
                 activeOpacity={0.7}
                 onPress={handleInternalPress}
+                onLongPress={onLongPress}
                 style={{ width, height }}
                 delayPressIn={0}
             >
@@ -93,6 +86,7 @@ export const ChatBubbleVideo = ({ url, width, height, onPressFullScreen }: ChatB
                             style={{ width, height }}
                             contentFit="cover"
                             nativeControls={false}
+                            surfaceType="textureView"
                         />
                     )}
                 </View>
@@ -103,20 +97,6 @@ export const ChatBubbleVideo = ({ url, width, height, onPressFullScreen }: ChatB
                         </View>
                     </View>
                 )}
-            </TouchableOpacity>
-            {/* Botón Mute/Unmute */}
-            <TouchableOpacity
-                style={styles.muteButton}
-                onPress={toggleMute}
-                activeOpacity={0.7}
-            >
-                <View style={styles.muteIconBg}>
-                    <Ionicons
-                        name={isMuted ? 'volume-mute' : 'volume-high'}
-                        size={14}
-                        color="#FFF"
-                    />
-                </View>
             </TouchableOpacity>
 
             {/* Indicador de video (play icon sutil) */}
