@@ -21,9 +21,9 @@ export const useMediaUpload = () => {
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
       allowsEditing,
       mediaTypes:
-        mediaTypes === 'Images' ? ImagePicker.MediaTypeOptions.Images :
-        mediaTypes === 'Videos' ? ImagePicker.MediaTypeOptions.Videos :
-        ImagePicker.MediaTypeOptions.All,
+        mediaTypes === 'Images' ? ['images'] :
+        mediaTypes === 'Videos' ? ['videos'] :
+        ['images', 'videos'],
       videoMaxDuration,
       quality,
     });
@@ -69,7 +69,13 @@ export const useMediaUpload = () => {
     });
   };
 
-  const uploadMedia = async (localUri: string, mimeType: string, folder: string) => {
+  const uploadMedia = async (
+    localUri: string,
+    mimeType: string,
+    folder: string,
+    onProgress?: (progress: number) => void,
+    onXhrCreated?: (xhr: XMLHttpRequest) => void
+  ) => {
     try {
       // 1. Derivar la extensión a partir del mimeType para garantizar consistencia.
       // Cuando el video se comprime pasa de .MOV a .mp4, pero el URI aún puede
@@ -128,11 +134,27 @@ export const useMediaUpload = () => {
         xhr.onerror = () => reject(new Error('Error de red al subir el archivo'));
         xhr.ontimeout = () => reject(new Error('Tiempo de espera agotado al subir el archivo'));
 
-        // Abrir el archivo local como Blob y enviarlo
-        fetch(localUri)
-          .then(res => res.blob())
-          .then(blob => xhr.send(blob))
-          .catch(reject);
+        if (xhr.upload && onProgress) {
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const progress = Math.round((event.loaded / event.total) * 100);
+              onProgress(progress);
+            }
+          };
+        }
+
+        if (onXhrCreated) {
+          onXhrCreated(xhr);
+        }
+
+        // IMPORTANTE: NO usar fetch(localUri).then(res.blob()) para videos.
+        // En Android, los videos resultan en Blobs vacíos (0 bytes) porque React Native
+        // no puede leer archivos de video grandes a memoria como Blob.
+        // La forma correcta es pasar el objeto { uri, name, type } directamente:
+        // el motor nativo de React Native sabe hacer streaming desde el filesystem.
+        const nativeFileName = localUri.split('/').pop() || 'upload';
+        const nativeFile = { uri: localUri, name: nativeFileName, type: mimeType } as unknown as Blob;
+        xhr.send(nativeFile);
       });
 
       // 4. Retornar la URL pública para guardarla en la base de datos

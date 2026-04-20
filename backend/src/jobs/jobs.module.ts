@@ -14,12 +14,14 @@ import { ProfessionalsResolver } from './professionals.resolver';
 import { ApplicationsResolver } from './applications.resolver';
 import { AuthModule } from '../auth/auth.module';
 import { StorageModule } from '../storage/storage.module';
+import { UserBlocksModule } from '../user-blocks/user-blocks.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([JobOffer, ProfessionalProfile, JobApplication, JobOfferMedia, ProfessionalProfileMedia]),
     AuthModule,
     StorageModule,
+    UserBlocksModule,
   ],
   providers: [
     JobsService,

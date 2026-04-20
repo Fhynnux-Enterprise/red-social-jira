@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
+// Force restart to sync schema changes for bulk deletion
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { GraphQLError } from 'graphql';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
 import { join } from 'path';
@@ -17,6 +19,12 @@ import { StorageModule } from './storage/storage.module';
 import { StoriesModule } from './stories/stories.module';
 import { JobsModule } from './jobs/jobs.module';
 import { FeedModule } from './feed/feed.module';
+import { StoreModule } from './store/store.module';
+import { ReportsModule } from './reports/reports.module';
+import { GqlAuthGuard } from './auth/guards/gql-auth.guard';
+import { NotificationsModule } from './notifications/notifications.module';
+import { AppealsModule } from './appeals/appeals.module';
+import { UserBlocksModule } from './user-blocks/user-blocks.module';
 
 @Module({
   imports: [
@@ -60,6 +68,17 @@ import { FeedModule } from './feed/feed.module';
           },
         },
       },
+      // Expone el mensaje real de las HTTP exceptions (ConflictException, etc.) al cliente
+      formatError: (error: GraphQLError) => {
+        const originalError = error.extensions?.originalError as any;
+        return {
+          message: originalError?.message ?? error.message,
+          extensions: {
+            code: error.extensions?.code,
+            statusCode: originalError?.statusCode,
+          },
+        };
+      },
     }),
 
     // 4. Módulos de nuestra aplicación
@@ -74,8 +93,13 @@ import { FeedModule } from './feed/feed.module';
     StoriesModule,
     JobsModule,
     FeedModule,
+    StoreModule,
+    ReportsModule,
+    NotificationsModule,
+    AppealsModule,
+    UserBlocksModule,
   ],
   controllers: [],
-  providers: [],
+  providers: [GqlAuthGuard],
 })
 export class AppModule { }

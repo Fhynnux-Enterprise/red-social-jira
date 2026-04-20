@@ -1,31 +1,192 @@
-import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, ScrollView, Alert, RefreshControl, Platform, FlatList } from 'react-native';
+import React, { useEffect, useState, useMemo, useRef, useCallback, memo } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, RefreshControl, Platform, FlatList, TextInput, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useFocusEffect, useRoute, useIsFocused } from '@react-navigation/native';
+import { useNavigation, useRoute, useIsFocused, useFocusEffect } from '@react-navigation/native';
+import { useRouter, router } from 'expo-router';
 import { useAuth } from '../../auth/context/AuthContext';
-import { ProfileService, UserProfile } from '../services/profile.service';
 import ThemeSelectorModal from '../../../components/ThemeSelectorModal';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import Toast from 'react-native-toast-message';
-import { useQuery, useMutation } from '@apollo/client/react';
-import { NetworkStatus } from '@apollo/client';
-import { GET_USER_PROFILE } from '../graphql/profile.operations';
+import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
+import { GET_USER_PROFILE, CREATE_REPORT, GET_MY_REPORT_STATUS } from '../graphql/profile.operations';
 import { DELETE_POST, GET_POSTS } from '../../feed/graphql/posts.operations';
 import { TOGGLE_FOLLOW, IS_FOLLOWING } from '../../follows/graphql/follows.operations';
+import { BLOCK_USER, UNBLOCK_USER } from '../../user-blocks/graphql/user-blocks.operations';
+import { GET_STORE_PRODUCTS_BY_USER, DELETE_STORE_PRODUCT } from '../../store/graphql/store.operations';
+import { GET_JOB_OFFERS_BY_USER, GET_PROFESSIONAL_PROFILES_BY_USER, DELETE_JOB_OFFER, DELETE_PROFESSIONAL_PROFILE } from '../../jobs/graphql/jobs.operations';
 import CreatePostModal from '../../feed/components/CreatePostModal';
 import PostOptionsModal from '../../feed/components/PostOptionsModal';
 import PostCard from '../../feed/components/PostCard';
+import StoreProductCard from '../../store/components/StoreProductCard';
+import JobOfferCard from '../../jobs/components/JobOfferCard';
+import ProfessionalCard from '../../jobs/components/ProfessionalCard';
+import ListFooter from '../../../components/ListFooter';
 import CommentsModal from '../../comments/components/CommentsModal';
+import CreateProductModal from '../../store/components/CreateProductModal';
 import ProfileStats from '../components/ProfileStats';
 import ProfileActions from '../components/ProfileActions';
 import ProfileBio from '../components/ProfileBio';
+import BanUserModal from '../../moderation/components/BanUserModal';
 import { GET_OR_CREATE_CHAT } from '../../chat/graphql/chat.operations';
+import BlockedUsersModal from '../../user-blocks/components/BlockedUsersModal';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ProfileHeader — Componente memoizado separado del screen principal.
+// CRÍTICO: Esto previene el bucle infinito de layout effects causado por pasar
+// una función `renderHeader` con nueva referencia en cada render al FlatList.
+// ─────────────────────────────────────────────────────────────────────────────
+interface ProfileHeaderProps {
+    userData: any;
+    isMyProfile: boolean;
+    isFollowing: boolean;
+    activeTab: 'all' | 'store' | 'jobs';
+    colors: ThemeColors;
+    currentUserRole?: string;
+    onToggleFollow: () => void;
+    onMessage: () => void;
+    onEditProfile: () => void;
+    onOpenMenu: () => void;
+    onGoBack: () => void;
+    onTabChange: (tab: 'all' | 'store' | 'jobs') => void;
+    onOpenContextMenu: () => void;
+}
+
+const ProfileHeader = memo(({
+    userData,
+    isMyProfile,
+    isFollowing,
+    activeTab,
+    colors,
+    currentUserRole,
+    onToggleFollow,
+    onMessage,
+    onEditProfile,
+    onOpenMenu,
+    onGoBack,
+    onTabChange,
+    onOpenContextMenu,
+}: ProfileHeaderProps) => {
+    const headerStyles = useMemo(() => getStyles(colors, false), [colors]);
+
+    return (
+        <>
+            {/* Banner */}
+            <View style={headerStyles.bannerContainer}>
+                {userData?.coverUrl ? (
+                    <Image source={{ uri: userData.coverUrl }} style={[headerStyles.bannerGradient, { position: 'absolute' }]} />
+                ) : (
+                    <LinearGradient
+                        colors={[colors.primary, '#FF9800']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={headerStyles.bannerGradient}
+                    />
+                )}
+                <View style={[headerStyles.floatingHeader, !isMyProfile && { justifyContent: 'space-between' }]}>
+                    {isMyProfile ? (
+                        <>
+                            <TouchableOpacity onPress={onEditProfile} style={[headerStyles.floatingMenuButton, { marginRight: 10 }]}>
+                                <Ionicons name="pencil" size={20} color="#FFF" />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={onOpenMenu} style={headerStyles.floatingMenuButton}>
+                                <Ionicons name="ellipsis-vertical" size={24} color="#FFF" />
+                            </TouchableOpacity>
+                        </>
+                    ) : (
+                        <>
+                            <TouchableOpacity onPress={onGoBack} style={headerStyles.floatingMenuButton}>
+                                <Ionicons name="arrow-back" size={24} color="#FFF" />
+                            </TouchableOpacity>
+                            {/* Menú contextual para perfiles ajenos */}
+                            <TouchableOpacity onPress={onOpenContextMenu} style={headerStyles.floatingMenuButton}>
+                                <Ionicons name="ellipsis-vertical" size={24} color="#FFF" />
+                            </TouchableOpacity>
+                        </>
+                    )}
+                </View>
+            </View>
+
+            {/* Info del usuario */}
+            <View style={headerStyles.content}>
+                <View style={headerStyles.avatarCenterContainer}>
+                    <View style={headerStyles.avatarWrapper}>
+                        {userData?.photoUrl ? (
+                            <Image source={{ uri: userData.photoUrl }} style={headerStyles.avatarImage} />
+                        ) : (
+                            <View style={headerStyles.avatarPlaceholder}>
+                                <Text style={headerStyles.avatarPlaceholderText}>
+                                    {userData?.firstName?.[0]}{userData?.lastName?.[0]}
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+                </View>
+                <Text style={headerStyles.fullName}>{userData?.firstName} {userData?.lastName}</Text>
+                <Text style={headerStyles.username}>@{userData?.username}</Text>
+                {userData?.badge?.title && (
+                    <View style={headerStyles.badgeContainer}>
+                        <Text style={headerStyles.badgeText}>{userData.badge.title}</Text>
+                    </View>
+                )}
+                <ProfileStats
+                    followersCount={userData?.followersCount || 0}
+                    followingCount={userData?.followingCount || 0}
+                    postsCount={userData?.posts?.length || 0}
+                />
+                {!isMyProfile && (
+                    <ProfileActions
+                        isFollowing={isFollowing}
+                        onToggleFollow={onToggleFollow}
+                        onMessage={onMessage}
+                    />
+                )}
+                <ProfileBio bio={userData?.bio} phone={userData?.phone} customFields={userData?.customFields} />
+            </View>
+
+            {/* Tab Bar */}
+            <View style={headerStyles.tabBar}>
+                <TouchableOpacity
+                    style={[headerStyles.tabItem, activeTab === 'all' && headerStyles.tabItemActive]}
+                    onPress={() => onTabChange('all')}
+                >
+                    <Ionicons name="grid-outline" size={20} color={activeTab === 'all' ? colors.primary : colors.textSecondary} />
+                    <Text style={[headerStyles.tabLabel, { color: activeTab === 'all' ? colors.primary : colors.textSecondary }]}>
+                        Todo
+                    </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={[headerStyles.tabItem, activeTab === 'store' && headerStyles.tabItemActive]}
+                    onPress={() => onTabChange('store')}
+                >
+                    <Ionicons name="storefront-outline" size={20} color={activeTab === 'store' ? colors.primary : colors.textSecondary} />
+                    <Text style={[headerStyles.tabLabel, { color: activeTab === 'store' ? colors.primary : colors.textSecondary }]}>
+                        Tienda
+                    </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={[headerStyles.tabItem, activeTab === 'jobs' && headerStyles.tabItemActive]}
+                    onPress={() => onTabChange('jobs')}
+                >
+                    <Ionicons name="briefcase-outline" size={20} color={activeTab === 'jobs' ? colors.primary : colors.textSecondary} />
+                    <Text style={[headerStyles.tabLabel, { color: activeTab === 'jobs' ? colors.primary : colors.textSecondary }]}>
+                        Empleos
+                    </Text>
+                </TouchableOpacity>
+            </View>
+        </>
+    );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ProfileScreen — Screen principal
+// ─────────────────────────────────────────────────────────────────────────────
 interface ProfileScreenProps {
     userId?: string;
 }
+
+const PROFILE_PAGE_SIZE = 5;
 
 export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProps) {
     const { signOut } = useAuth();
@@ -33,44 +194,71 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     const { colors, themeMode, setThemeMode, isDark } = useTheme();
     const authContext = useAuth() as any;
     const currentUserId = authContext.user?.id;
+
+    const [activeTab, setActiveTab] = useState<'all' | 'store' | 'jobs'>('all');
     const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [isMenuVisible, setIsMenuVisible] = useState(false);
     const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
-
-    // States para editar un post desde el perfil
     const [isCreatePostVisible, setIsCreatePostVisible] = useState(false);
     const [editingPostId, setEditingPostId] = useState<string | undefined>(undefined);
     const [editingPostContent, setEditingPostContent] = useState<string>('');
     const [editingPostTitle, setEditingPostTitle] = useState<string>('');
+    const [isCreateStoreVisible, setIsCreateStoreVisible] = useState(false);
+    const [editingProduct, setEditingProduct] = useState<any>(null);
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
+    const [isBlockedUsersVisible, setIsBlockedUsersVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<any>(null);
-    const [selectedPostForComments, setSelectedPostForComments] = useState<{ post: any, minimize: boolean, initialTab?: 'comments' | 'likes' } | null>(null);
+    const [selectedPostForComments, setSelectedPostForComments] = useState<{
+        post: any;
+        minimize: boolean;
+        initialTab?: 'comments' | 'likes';
+    } | null>(null);
+    const [hasMore, setHasMore] = useState(true);
+    const [isFetchingMore, setIsFetchingMore] = useState(false);
+    const resumeCommentsRef = useRef<any>(null);
+
+    // ── Menú contextual (perfil ajeno) ────────────────────────────────────────
+    const [isContextMenuVisible, setIsContextMenuVisible] = useState(false);
+    const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+    const [isBanModalVisible, setIsBanModalVisible] = useState(false);
+    const [reportReason, setReportReason] = useState('');
+    // Estado del reporte previo (null = nunca reportado, PENDING = pendiente, RESOLVED/DISMISSED = puede reportar de nuevo)
+    const [myReportStatus, setMyReportStatus] = useState<string | null>(null);
+
     const insets = useSafeAreaInsets();
     const isFocused = useIsFocused();
-
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
 
     const route = useRoute<any>();
     const profileUserId = propsUserId || route.params?.userId || currentUserId;
     const isMyProfile = profileUserId === currentUserId;
 
-    const PROFILE_PAGE_SIZE = 5;
-
-    const { data: gqlData, loading: gqlLoading, error: gqlError, refetch: refetchProfile, fetchMore, networkStatus } = useQuery<any>(GET_USER_PROFILE, {
+    // ── Queries ──────────────────────────────────────────────────────────────
+    const { data: gqlData, loading: gqlLoading, error: gqlError, refetch: refetchProfile, fetchMore } = useQuery<any>(GET_USER_PROFILE, {
         variables: { id: profileUserId, limit: PROFILE_PAGE_SIZE, offset: 0 },
         skip: !profileUserId,
         fetchPolicy: 'cache-and-network',
         notifyOnNetworkStatusChange: true,
     });
 
-    const [hasMore, setHasMore] = useState(true);
-    const [isFetchingMore, setIsFetchingMore] = useState(false);
+    const { data: storeData, refetch: refetchStore } = useQuery<any>(GET_STORE_PRODUCTS_BY_USER, {
+        variables: { userId: profileUserId },
+        skip: !profileUserId,
+        fetchPolicy: 'cache-and-network',
+    });
 
-    // Reset hasMore when switching profiles
-    useEffect(() => {
-        setHasMore(true);
-    }, [profileUserId]);
+    const { data: jobOffersData, refetch: refetchJobOffers } = useQuery<any>(GET_JOB_OFFERS_BY_USER, {
+        variables: { userId: profileUserId },
+        skip: !profileUserId,
+        fetchPolicy: 'cache-and-network',
+    });
+
+    const { data: profsData, refetch: refetchProfs } = useQuery<any>(GET_PROFESSIONAL_PROFILES_BY_USER, {
+        variables: { userId: profileUserId },
+        skip: !profileUserId,
+        fetchPolicy: 'cache-and-network',
+    });
 
     const { data: followData } = useQuery<any>(IS_FOLLOWING, {
         variables: { followingId: profileUserId },
@@ -78,8 +266,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         fetchPolicy: 'cache-and-network',
     });
 
-    const isFollowing = followData?.isFollowing || false;
-
+    // ── Mutations ─────────────────────────────────────────────────────────────
     const [toggleFollow] = useMutation<any>(TOGGLE_FOLLOW, {
         variables: { followingId: profileUserId },
         update(cache, { data: { toggleFollow: newValue } }) {
@@ -88,7 +275,6 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 variables: { followingId: profileUserId },
                 data: { isFollowing: newValue },
             });
-
             cache.modify({
                 id: cache.identify({ __typename: 'User', id: profileUserId }),
                 fields: {
@@ -97,7 +283,6 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                     }
                 }
             });
-
             if (currentUserId) {
                 cache.modify({
                     id: cache.identify({ __typename: 'User', id: currentUserId }),
@@ -111,30 +296,162 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         },
     });
 
-    const userData = gqlData?.getUserProfile || null;
+    const [deletePost] = useMutation(DELETE_POST, {
+        refetchQueries: [{ query: GET_POSTS }],
+    });
 
-    useFocusEffect(
-        useCallback(() => {
-            if (profileUserId) {
-                const timeout = setTimeout(() => {
-                    refetchProfile().catch(e => console.log('Error refetching profile on focus', e));
-                }, 500);
-                return () => clearTimeout(timeout);
+    const [deleteStoreProduct] = useMutation(DELETE_STORE_PRODUCT, {
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Producto eliminado' });
+            onRefresh();
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message })
+    });
+
+    const [deleteJobOffer] = useMutation(DELETE_JOB_OFFER, {
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Oferta eliminada' });
+            onRefresh();
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message })
+    });
+
+    const [deleteProfessional] = useMutation(DELETE_PROFESSIONAL_PROFILE, {
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Servicio eliminado' });
+            onRefresh();
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message })
+    });
+
+    const [blockUser] = useMutation(BLOCK_USER, {
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Usuario bloqueado' });
+            refetchProfile();
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error al bloquear', text2: err.message }),
+    });
+
+    const [unblockUser] = useMutation(UNBLOCK_USER, {
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Usuario desbloqueado' });
+            refetchProfile();
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error al desbloquear', text2: err.message }),
+    });
+
+    const [createReport, { loading: reporting }] = useMutation(CREATE_REPORT, {
+        onCompleted: () => {
+            setIsReportModalVisible(false);
+            setReportReason('');
+            setMyReportStatus('PENDING');
+            // El Toast se muestra DESPUÉS de cerrar el modal para que sea visible
+            setTimeout(() => {
+                Toast.show({ type: 'success', text1: 'Denuncia enviada', text2: 'Gracias por ayudarnos a mantener la comunidad segura.' });
+            }, 400);
+        },
+        onError: (err) => {
+            const msg = err.message || '';
+            if (msg.includes('ALREADY_REPORTED')) {
+                setIsReportModalVisible(false);
+                setReportReason('');
+                setTimeout(() => {
+                    Toast.show({ type: 'info', text1: 'Ya enviaste una denuncia', text2: 'Tu reporte anterior sigue en revisión.' });
+                }, 400);
+            } else {
+                Toast.show({ type: 'error', text1: 'Error al reportar', text2: err.message });
             }
-        }, [profileUserId, refetchProfile])
+        },
+    });
+
+    const [fetchMyReportStatus] = useLazyQuery(GET_MY_REPORT_STATUS, {
+        fetchPolicy: 'network-only',
+        onCompleted: (data: any) => {
+            setMyReportStatus(data?.getMyReportStatus?.status ?? null);
+        },
+    });
+
+    // Al abrir el modal de reporte, verificar si ya hay un reporte activo
+    const handleOpenReportModal = useCallback(() => {
+        setIsContextMenuVisible(false);
+        setTimeout(() => {
+            if (profileUserId) {
+                fetchMyReportStatus({ variables: { reportedItemId: profileUserId } });
+            }
+            setIsReportModalVisible(true);
+        }, 250);
+    }, [profileUserId, fetchMyReportStatus]);
+
+    const [getOrCreateChat] = useMutation<any>(GET_OR_CREATE_CHAT);
+
+    // ── Datos derivados ───────────────────────────────────────────────────────
+    const userData = gqlData?.getUserProfile || null;
+    const isFollowing = followData?.isFollowing || false;
+    const storeProducts = storeData?.storeProductsByUser || [];
+
+    const jobOffers = useMemo(
+        () => (jobOffersData?.jobOffersByUser || []).map((j: any) => ({ ...j, __itemType: 'job', __typename: j.__typename || 'JobOffer' })),
+        [jobOffersData]
+    );
+    const professionalProfiles = useMemo(
+        () => (profsData?.professionalProfilesByUser || []).map((p: any) => ({ ...p, __itemType: 'professional', __typename: p.__typename || 'ProfessionalProfile' })),
+        [profsData]
+    );
+    const jobsTabData = useMemo(
+        () => [...jobOffers, ...professionalProfiles].sort(
+            (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        ),
+        [jobOffers, professionalProfiles]
     );
 
+    // Tab "Todo": posts + productos de tienda + empleos, ordenados por fecha
+    const allTabData = useMemo(() => {
+        const posts = (userData?.posts || []).map((p: any) => ({ ...p, __itemType: 'post', __typename: p.__typename || 'Post', author: userData }));
+        const store = storeProducts.map((p: any) => ({ ...p, __itemType: 'store', __typename: p.__typename || 'StoreProduct' }));
+        const jobs = [...jobOffers, ...professionalProfiles];
+        return [...posts, ...store, ...jobs].sort(
+            (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+    }, [userData, storeProducts, jobOffers, professionalProfiles]);
+
+    // Reset hasMore when switching profiles
+    useEffect(() => {
+        setHasMore(true);
+    }, [profileUserId]);
+
+    // Restaurar CommentsModal al volver de una pantalla (ej. editar empleo)
+    useFocusEffect(
+        useCallback(() => {
+            if (resumeCommentsRef.current) {
+                // Pequeño delay para permitir que la animación de la pantalla termine
+                const timer = setTimeout(() => {
+                    setSelectedPostForComments(resumeCommentsRef.current);
+                    resumeCommentsRef.current = null;
+                }, 300);
+                return () => clearTimeout(timer);
+            }
+        }, [])
+    );
+
+    // ── Handlers ──────────────────────────────────────────────────────────────
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
         setHasMore(true);
         try {
-            await refetchProfile({ id: profileUserId, limit: PROFILE_PAGE_SIZE, offset: 0 });
+            await Promise.all([
+                refetchProfile({ id: profileUserId, limit: PROFILE_PAGE_SIZE, offset: 0 }),
+                refetchStore(),
+                refetchJobOffers(),
+                refetchProfs(),
+            ]);
         } catch (error) {
-            console.error('Error refreshing profile:', error);
+            if (!(error as any)?.message?.includes('Usuario no encontrado')) {
+                console.error('Error refreshing profile:', error);
+            }
         } finally {
             setRefreshing(false);
         }
-    }, [refetchProfile, profileUserId]);
+    }, [refetchProfile, refetchStore, refetchJobOffers, refetchProfs, profileUserId]);
 
     const loadMorePosts = useCallback(() => {
         const currentPosts = gqlData?.getUserProfile?.posts;
@@ -142,87 +459,296 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
 
         setIsFetchingMore(true);
         fetchMore({
-            variables: {
-                id: profileUserId,
-                limit: PROFILE_PAGE_SIZE,
-                offset: currentPosts.length,
-            },
+            variables: { id: profileUserId, limit: PROFILE_PAGE_SIZE, offset: currentPosts.length },
             updateQuery: (prev: any, { fetchMoreResult }: any) => {
                 if (!fetchMoreResult) return prev;
-                const newPosts = fetchMoreResult.getUserProfile?.posts ?? [];
-                if (newPosts.length < PROFILE_PAGE_SIZE) {
-                    setHasMore(false);
-                }
-                if (newPosts.length === 0) {
-                    setIsFetchingMore(false);
-                    return prev;
-                }
-                // Deduplicar
-                const existingIds = new Set((prev.getUserProfile?.posts ?? []).map((p: any) => p.id));
-                const uniqueNew = newPosts.filter((p: any) => !existingIds.has(p.id));
+                const newPosts = fetchMoreResult.getUserProfile?.posts || [];
+                const prevPosts = prev.getUserProfile?.posts || [];
+                if (newPosts.length === 0) return prev;
+                const uniqueNew = newPosts.filter((n: any) => !prevPosts.find((p: any) => p.id === n.id));
                 return {
-                    ...prev,
                     getUserProfile: {
                         ...prev.getUserProfile,
-                        posts: [...(prev.getUserProfile?.posts ?? []), ...uniqueNew],
+                        posts: [...prevPosts, ...uniqueNew],
                     },
                 };
             },
-        }).finally(() => setIsFetchingMore(false));
+        })
+        .then((res: any) => {
+            const fetched = res?.data?.getUserProfile?.posts || [];
+            if (fetched.length < PROFILE_PAGE_SIZE) setHasMore(false);
+        })
+        .finally(() => setIsFetchingMore(false));
     }, [isFetchingMore, hasMore, gqlData, profileUserId, fetchMore]);
 
-    const [deletePost] = useMutation(DELETE_POST, {
-        refetchQueries: [{ query: GET_POSTS }],
-    });
+    const handleMessagePress = useCallback(async () => {
+        if (!profileUserId) return;
+        try {
+            const { data } = await getOrCreateChat({ variables: { targetUserId: profileUserId } });
+            const conversationId = data.getOrCreateOneOnOneChat.id;
+            router.push({
+                pathname: '/chatRoom',
+                params: { conversationId }
+            });
+        } catch (error) {
+            Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir el chat' });
+        }
+    }, [profileUserId, getOrCreateChat, navigation]);
 
-    const [getOrCreateChat, { loading: creatingChat }] = useMutation<any>(GET_OR_CREATE_CHAT);
+    // Ref para handleEdit para que sea accesible desde callbacks estables
+    const handleEditRef = useRef<any>(null);
 
+    const handleEdit = useCallback((item: any) => {
+        setIsOptionsMenuVisible(false);
+        const type = item.__itemType;
+
+        if (type === 'store') {
+            setEditingProduct(item);
+            setIsCreateStoreVisible(true);
+        } else if (type === 'job' || type === 'professional') {
+            router.push({
+                pathname: '/jobs/create',
+                params: { 
+                    editId: item.id, 
+                    editData: JSON.stringify(item),
+                    initialTab: type === 'job' ? 'offer' : 'service'
+                }
+            });
+        } else if (type === 'post') {
+            setEditingPostId(item.id);
+            setEditingPostContent(item.content);
+            setEditingPostTitle(item.title || '');
+            setIsCreatePostVisible(true);
+        }
+    }, [router]);
+
+    handleEditRef.current = handleEdit;
+    const stableHandleEdit = useCallback((item: any) => handleEditRef.current?.(item), []);
+
+    // Handlers para renderItem que deben ser estables para no disparar re-renders del FlatList
+    const handleOptionsPressRef = useRef<any>(null);
+    handleOptionsPressRef.current = (p: any) => {
+        setSelectedPost(p);
+        setIsOptionsMenuVisible(true);
+    };
+    const stableHandleOptionsPress = useCallback((p: any) => handleOptionsPressRef.current?.(p), []);
+
+    const onOpenCommentsRef = useRef<any>(null);
+    onOpenCommentsRef.current = (item: any, initialTab?: any, minimize?: any) => {
+        setSelectedPostForComments({ post: item, minimize: !!minimize, initialTab });
+    };
+    const stableOnOpenComments = useCallback((item: any, tab?: any, min?: any) => onOpenCommentsRef.current?.(item, tab, min), []);
+
+    const handleEditProfile = useCallback(() => {
+        navigation.navigate('EditProfile' as never);
+    }, [navigation]);
+
+    const handleGoBack = useCallback(() => {
+        if (navigation.canGoBack()) {
+            navigation.goBack();
+        } else {
+            router.replace('/');
+        }
+    }, [navigation]);
+
+    const handleOpenMenu = useCallback(() => setIsMenuVisible(true), []);
+    const handleCloseMenu = useCallback(() => setIsMenuVisible(false), []);
+    const handleOpenContextMenu = useCallback(() => setIsContextMenuVisible(true), []);
+    const handleCloseContextMenu = useCallback(() => setIsContextMenuVisible(false), []);
+
+    const handleBlockToggle = useCallback(async () => {
+        if (!userData) return;
+        handleCloseContextMenu();
+        
+        const isBlocked = userData.isBlockedByMe;
+        if (isBlocked) {
+            await unblockUser({ variables: { userId: userData.id } });
+        } else {
+            // Confirmación antes de bloquear
+            Toast.show({
+                type: 'info',
+                text1: 'Bloqueando usuario...',
+                text2: 'Por favor espera',
+                visibilityTime: 2000,
+            });
+            await blockUser({ variables: { userId: userData.id } });
+        }
+    }, [userData, handleCloseContextMenu, blockUser, unblockUser]);
+
+    const handleSendReport = useCallback(() => {
+        if (!reportReason.trim()) {
+            Toast.show({ type: 'info', text1: 'El motivo es obligatorio' });
+            return;
+        }
+        createReport({
+            variables: {
+                reportedItemId: profileUserId,
+                reportedItemType: 'USER',
+                reason: reportReason.trim(),
+            },
+        });
+    }, [reportReason, profileUserId, createReport]);
+
+    // ── FlatList config ───────────────────────────────────────────────────────
+    // onViewableItemsChanged DEBE ser una ref estable — no puede cambiar entre renders
     const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
         if (viewableItems.length > 0) {
-            setVisiblePostId(viewableItems[0].item.id);
+            const firstId = viewableItems[0].item.id;
+            setVisiblePostId(prev => (prev === firstId ? prev : firstId));
         } else {
-            setVisiblePostId(null);
+            setVisiblePostId(prev => (prev === null ? prev : null));
         }
     }, []);
 
+    // Ref para el estado de comentarios, para usar en callbacks sin dependencias y evitar re-renders del FlatList
+    const selectedPostForCommentsRef = useRef(selectedPostForComments);
+    selectedPostForCommentsRef.current = selectedPostForComments;
+
+    // Ref estable para "isOverlayActive" — evita que renderItem dependa de estado
+    // y fuerce el re-render de todos los items cuando se abre un modal.
+    const overlayActiveRef = useRef(false);
+    overlayActiveRef.current = !!selectedPostForComments || isCreatePostVisible || isCreateStoreVisible || isOptionsMenuVisible || isMenuVisible || isReportModalVisible || isBanModalVisible || isContextMenuVisible;
+
+    // viewabilityConfig DEBE ser una ref estable, nunca recreada ni condicional
     const viewabilityConfig = useRef({
-        itemVisiblePercentThreshold: 50, // Bajado a 50 para mayor sensibilidad
+        itemVisiblePercentThreshold: 50,
+        minimumViewTime: 200,
     }).current;
 
-    const renderPostItem = useCallback(({ item: post }: any) => (
-        <PostCard
-            item={{ ...post, author: userData }}
-            currentUserId={currentUserId}
-            onOptionsPress={(p: any) => {
-                setSelectedPost(p);
-                setIsOptionsMenuVisible(true);
-            }}
-            onOpenComments={(_, initialTab, minimize) => setSelectedPostForComments({ post: { ...post, author: userData }, minimize: !!minimize, initialTab })}
-            isViewable={post.id === visiblePostId}
-            isFocused={isFocused}
-            isOverlayActive={!!selectedPostForComments || isCreatePostVisible}
-            isModalView={false}
+    // ListHeaderComponent DEBE ser una función estable, nunca JSX inline
+    // Si se pasa JSX inline, FlatList crea un nuevo elemento en cada render → bucle infinito
+    const renderListHeader = useCallback(() => (
+        <ProfileHeader
+            userData={userData}
+            isMyProfile={isMyProfile}
+            isFollowing={isFollowing}
+            activeTab={activeTab}
+            colors={colors}
+            currentUserRole={authContext.user?.role}
+            onToggleFollow={toggleFollow}
+            onMessage={handleMessagePress}
+            onEditProfile={handleEditProfile}
+            onOpenMenu={handleOpenMenu}
+            onGoBack={handleGoBack}
+            onTabChange={setActiveTab}
+            onOpenContextMenu={handleOpenContextMenu}
         />
-    ), [userData, currentUserId, visiblePostId, isFocused, selectedPostForComments, isCreatePostVisible]);
+    ), [userData, isMyProfile, isFollowing, activeTab, colors, toggleFollow, handleMessagePress, handleEditProfile, handleOpenMenu, handleGoBack, handleOpenContextMenu]);
 
-    const handleMessagePress = async () => {
-        if (!profileUserId) return;
-        try {
-            const { data } = await getOrCreateChat({
-                variables: { targetUserId: profileUserId }
-            });
-            const conversationId = data.getOrCreateOneOnOneChat.id;
-            (navigation as any).navigate('ChatRoom', { conversationId });
-        } catch (error) {
-            console.error("Error al crear el chat:", error);
-            Toast.show({
-                type: 'error',
-                text1: 'Error',
-                text2: 'No se pudo abrir el chat'
-            });
+    // Determinar qué datos para cada tab
+    // IMPORTANTE: siempre marcar __itemType para que renderItem sepa qué componente usar
+    const tabData = useMemo(() => {
+        if (activeTab === 'store') return storeProducts.map((p: any) => ({ ...p, __itemType: 'store', __typename: p.__typename || 'StoreProduct' }));
+        if (activeTab === 'jobs') return jobsTabData;
+        return allTabData;
+    }, [activeTab, storeProducts, jobsTabData, allTabData]);
+
+    // ── Memoized data for CommentsModal ───────────────────────────────────────
+    const commentsModalData = useMemo(() => {
+        if (!selectedPostForComments) return { post: null, nextPost: null, prevPost: null };
+        
+        const currentIndex = tabData.findIndex((p: any) => p.id === selectedPostForComments.post?.id);
+        const livePost = currentIndex !== -1 ? tabData[currentIndex] : selectedPostForComments.post;
+
+        let nextPost = null;
+        if (currentIndex !== -1 && currentIndex < tabData.length - 1) {
+            nextPost = { ...tabData[currentIndex + 1] };
+            if (!nextPost.author) nextPost.author = userData;
+        } else if (hasMore && activeTab === 'all') {
+            nextPost = {} as any;
         }
-    };
 
+        let prevPost = null;
+        if (currentIndex > 0) {
+            prevPost = { ...tabData[currentIndex - 1] };
+            if (!prevPost.author) prevPost.author = userData;
+        }
+
+        const postWithAuthor = livePost?.author ? livePost : { ...livePost, author: userData };
+
+        return {
+            post: postWithAuthor,
+            nextPost,
+            prevPost,
+        };
+    }, [selectedPostForComments, userData, hasMore, tabData, activeTab]);
+
+    // ── Render items ──────────────────────────────────────────────────────────
+    const renderItem = useCallback(({ item }: any) => {
+        const type = item.__itemType;
+
+        const openInModal = (isPost = false) => {
+            // Aseguramos que el item que llega al modal tenga un author si le falta
+            // En el perfil, si le falta el author, seguramente es el usuario dueño del perfil.
+            const itemWithAuthor = item.author ? item : { ...item, author: userData };
+            setSelectedPostForComments({ 
+                post: itemWithAuthor, 
+                minimize: !isPost, 
+                initialTab: 'comments' 
+            });
+        };
+
+        if (type === 'store') {
+            return <StoreProductCard 
+                item={item} 
+                onPress={() => openInModal(false)} 
+                onCommentPress={() => openInModal(true)}
+                onEdit={stableHandleEdit}
+            />;
+        }
+        if (type === 'job') {
+            return <JobOfferCard 
+                item={item} 
+                onPress={() => openInModal(false)} 
+                onEdit={stableHandleEdit}
+            />;
+        }
+        if (type === 'professional') {
+            return <ProfessionalCard 
+                item={item} 
+                onPress={() => openInModal(false)} 
+                onEdit={stableHandleEdit}
+            />;
+        }
+        if (type === 'post') {
+            // item ya viene con author inyectado desde allTabData
+            return (
+                <PostCard
+                    item={item}
+                    currentUserId={currentUserId}
+                    onOptionsPress={stableHandleOptionsPress}
+                    onOpenComments={(_, initialTab, minimize) =>
+                        stableOnOpenComments(item, initialTab, minimize)
+                    }
+                    isViewable={item.id === visiblePostId}
+                    isFocused={isFocused}
+                    isOverlayActive={overlayActiveRef.current}
+                    isModalView={false}
+                />
+            );
+        }
+        // Fallback seguro: no renderizar nada si el tipo es desconocido
+        return null;
+    }, [currentUserId, visiblePostId, isFocused, userData, stableHandleEdit, stableHandleOptionsPress, stableOnOpenComments]);
+
+    const keyExtractor = useCallback((item: any) => {
+        const type = item.__itemType;
+        if (type === 'store') return `store-${item.id}`;
+        if (type === 'job') return `job-${item.id}`;
+        if (type === 'professional') return `prof-${item.id}`;
+        return `post-${item.id}`;
+    }, []);
+
+    // ── Empty states ──────────────────────────────────────────────────────────
+    const emptyIcon = activeTab === 'store' ? 'storefront-outline' : activeTab === 'jobs' ? 'briefcase-outline' : 'grid-outline';
+    const emptyTitle = activeTab === 'store' ? 'Sin productos en tienda' : activeTab === 'jobs' ? 'Sin publicaciones de empleo' : 'Sin publicaciones aún';
+    const emptySub = activeTab === 'store'
+        ? 'Los productos publicados en la tienda aparecerán aquí.'
+        : activeTab === 'jobs'
+            ? 'Las ofertas de empleo y servicios aparecerán aquí.'
+            : 'Cuando compartas algo, aparecerá aquí.';
+
+    // ── Early returns (SIEMPRE después de todos los hooks) ────────────────────
     if (gqlLoading && !gqlData) {
         return (
             <SafeAreaView style={styles.centerContainer}>
@@ -231,101 +757,45 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         );
     }
 
-    if (!userData && !gqlLoading) {
+    const isNotFoundError = gqlError?.message?.includes('Usuario no encontrado');
+
+    if ((!userData || isNotFoundError) && !gqlLoading) {
         return (
-            <SafeAreaView style={styles.centerContainer}>
-                <Text style={styles.errorText}>
-                    {gqlError ? 'Error al cargar el perfil' : 'No se encontró el perfil'}
-                </Text>
+            <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <View style={styles.errorFullContainer}>
+                    <View style={styles.errorIconCircle}>
+                        <Ionicons name="person-remove-outline" size={60} color={colors.textSecondary} />
+                    </View>
+                    <Text style={[styles.errorFullTitle, { color: colors.text }]}>Usuario no encontrado</Text>
+                    <Text style={[styles.errorFullSub, { color: colors.textSecondary }]}>
+                        Este perfil no existe, ha sido desactivado o no tienes permiso para verlo en este momento.
+                    </Text>
+                    
+                    <TouchableOpacity 
+                        style={[styles.errorGoBackBtn, { backgroundColor: colors.primary }]}
+                        onPress={handleGoBack}
+                    >
+                        <Ionicons name="arrow-back" size={20} color="white" style={{ marginRight: 8 }} />
+                        <Text style={styles.errorGoBackText}>Volver atrás</Text>
+                    </TouchableOpacity>
+                </View>
             </SafeAreaView>
         );
     }
 
-    const renderHeader = () => (
-        <>
-            <View style={styles.bannerContainer}>
-                {userData.coverUrl ? (
-                    <Image source={{ uri: userData.coverUrl }} style={[styles.bannerGradient, { position: 'absolute' }]} />
-                ) : (
-                    <LinearGradient
-                        colors={[colors.primary, '#FF9800']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.bannerGradient}
-                    />
-                )}
-                <View style={[styles.floatingHeader, !isMyProfile && { justifyContent: 'flex-start' }]}>
-                    {isMyProfile ? (
-                        <>
-                            <TouchableOpacity
-                                onPress={() => navigation.navigate('EditProfile' as never)}
-                                style={[styles.floatingMenuButton, { marginRight: 10 }]}
-                            >
-                                <Ionicons name="pencil" size={20} color="#FFF" />
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => setIsMenuVisible(true)} style={styles.floatingMenuButton}>
-                                <Ionicons name="ellipsis-vertical" size={24} color="#FFF" />
-                            </TouchableOpacity>
-                        </>
-                    ) : (
-                        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.floatingMenuButton}>
-                            <Ionicons name="arrow-back" size={24} color="#FFF" />
-                        </TouchableOpacity>
-                    )}
-                </View>
-            </View>
-            <View style={styles.content}>
-                <View style={styles.avatarCenterContainer}>
-                    <View style={styles.avatarWrapper}>
-                        {userData.photoUrl ? (
-                            <Image source={{ uri: userData.photoUrl }} style={styles.avatarImage} />
-                        ) : (
-                            <View style={styles.avatarPlaceholder}>
-                                <Text style={styles.avatarPlaceholderText}>
-                                    {userData.firstName?.[0]}{userData.lastName?.[0]}
-                                </Text>
-                            </View>
-                        )}
-                    </View>
-                </View>
-                <Text style={styles.fullName}>{userData.firstName} {userData.lastName}</Text>
-                <Text style={styles.username}>@{userData.username}</Text>
-                {userData.badge?.title && (
-                    <View style={styles.badgeContainer}>
-                        <Text style={styles.badgeText}>{userData.badge.title}</Text>
-                    </View>
-                )}
-                <ProfileStats
-                    followersCount={userData.followersCount || 0}
-                    followingCount={userData.followingCount || 0}
-                    postsCount={userData.posts?.length || 0}
-                />
-                {!isMyProfile && (
-                    <ProfileActions
-                        isFollowing={isFollowing}
-                        onToggleFollow={() => toggleFollow()}
-                        onMessage={handleMessagePress}
-                    />
-                )}
-                <ProfileBio bio={userData.bio} phone={userData.phone} customFields={userData.customFields} />
-            </View>
-            <Text style={styles.postsSectionTitle}>Publicaciones</Text>
-        </>
-    );
-
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
             <FlatList
-                data={userData.posts || []}
+                data={tabData}
                 extraData={visiblePostId}
-                keyExtractor={(item) => item.id}
-                renderItem={renderPostItem}
-                ListHeaderComponent={renderHeader}
+                keyExtractor={keyExtractor}
+                renderItem={renderItem}
+                ListHeaderComponent={renderListHeader}
                 ListEmptyComponent={
                     <View style={styles.emptyPostsContainer}>
-                        <Ionicons name="images-outline" size={48} color={colors.textSecondary} style={{ opacity: 0.5 }} />
-                        <Text style={styles.emptyPostsText}>Aún no hay publicaciones</Text>
-                        <Text style={styles.emptyPostsSubText}>Cuando compartas fotos y videos, aparecerán aquí.</Text>
+                        <Ionicons name={emptyIcon} size={48} color={colors.textSecondary} style={{ opacity: 0.5 }} />
+                        <Text style={styles.emptyPostsText}>{emptyTitle}</Text>
+                        <Text style={styles.emptyPostsSubText}>{emptySub}</Text>
                     </View>
                 }
                 onViewableItemsChanged={onViewableItemsChanged}
@@ -333,50 +803,65 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 refreshControl={
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} tintColor={colors.primary} />
                 }
-                onEndReached={loadMorePosts}
+                onEndReached={activeTab === 'all' ? loadMorePosts : undefined}
                 onEndReachedThreshold={0.4}
                 ListFooterComponent={
-                    isFetchingMore ? (
-                        <ActivityIndicator
-                            size="small"
-                            color={colors.primary}
-                            style={{ paddingVertical: 20 }}
-                        />
-                    ) : !hasMore && (userData?.posts?.length ?? 0) > 0 ? (
-                        <Text style={{ textAlign: 'center', color: colors.textSecondary, paddingVertical: 20, fontSize: 13 }}>
-                            Has visto todas las publicaciones
-                        </Text>
+                    activeTab === 'all' && isFetchingMore ? (
+                        <ActivityIndicator size="small" color={colors.primary} style={{ paddingVertical: 20 }} />
+                    ) : (activeTab === 'all' && !hasMore && (userData?.posts?.length ?? 0) > 0) || (activeTab !== 'all' && tabData.length > 0) ? (
+                        <ListFooter />
                     ) : null
                 }
+                initialNumToRender={5}
+                maxToRenderPerBatch={5}
+                windowSize={10}
+                removeClippedSubviews={Platform.OS === 'android'}
             />
 
-            <Modal
-                visible={isMenuVisible}
-                animationType="fade"
-                transparent={true}
-                onRequestClose={() => setIsMenuVisible(false)}
-            >
-                <TouchableWithoutFeedback onPress={() => setIsMenuVisible(false)}>
+            {/* Menú lateral de configuración */}
+            <Modal visible={isMenuVisible} animationType="fade" transparent onRequestClose={handleCloseMenu}>
+                <TouchableWithoutFeedback onPress={handleCloseMenu}>
                     <View style={styles.modalOverlay}>
                         <TouchableWithoutFeedback>
                             <View style={[styles.modalContent, { paddingTop: Math.max(insets.top, 20) + 10, paddingBottom: Math.max(insets.bottom, 20) + 20 }]}>
                                 <View style={styles.drawerHeader}>
-                                    <TouchableOpacity onPress={() => setIsMenuVisible(false)} style={styles.drawerCloseBtn}>
+                                    <TouchableOpacity onPress={handleCloseMenu} style={styles.drawerCloseBtn}>
                                         <Ionicons name="close" size={28} color={colors.text} />
                                     </TouchableOpacity>
                                     <Text style={styles.modalTitle}>Configuración</Text>
                                     <View style={{ width: 28 }} />
                                 </View>
+                                {['ADMIN', 'MODERATOR'].includes(authContext.user?.role) && (
+                                    <TouchableOpacity
+                                        style={styles.settingButton}
+                                        onPress={() => { handleCloseMenu(); setTimeout(() => (navigation as any).navigate('Moderation'), 300); }}
+                                    >
+                                        <View style={styles.settingLeft}>
+                                            <View style={{ backgroundColor: 'rgba(255,101,36,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
+                                                <Ionicons name="shield-checkmark-outline" size={22} color="#FF6524" />
+                                            </View>
+                                            <Text style={[styles.settingText, { color: '#FF6524' }]}>Moderación</Text>
+                                        </View>
+                                        <Ionicons name="chevron-forward" size={20} color="#FF6524" />
+                                    </TouchableOpacity>
+                                )}
                                 <TouchableOpacity
                                     style={styles.settingButton}
-                                    onPress={() => {
-                                        setIsMenuVisible(false);
-                                        setTimeout(() => setIsThemeModalVisible(true), 300);
-                                    }}
+                                    onPress={() => { handleCloseMenu(); setTimeout(() => setIsThemeModalVisible(true), 400); }}
                                 >
                                     <View style={styles.settingLeft}>
                                         <Ionicons name="color-palette-outline" size={24} color={colors.text} />
                                         <Text style={styles.settingText}>Tema</Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.settingButton}
+                                    onPress={() => { handleCloseMenu(); setTimeout(() => setIsBlockedUsersVisible(true), 300); }}
+                                >
+                                    <View style={styles.settingLeft}>
+                                        <Ionicons name="lock-closed-outline" size={24} color={colors.text} />
+                                        <Text style={styles.settingText}>Bloqueados</Text>
                                     </View>
                                     <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                                 </TouchableOpacity>
@@ -398,93 +883,210 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 onSelectTheme={(theme) => setThemeMode(theme)}
             />
 
-            <CreatePostModal
-                visible={isCreatePostVisible}
-                onClose={() => {
-                    setIsCreatePostVisible(false);
-                    refetchProfile();
-                }}
-                postId={editingPostId}
-                initialContent={editingPostContent}
-                initialTitle={editingPostTitle}
+
+            {/* ─── Menú contextual para perfil ajeno ─── */}
+            <Modal visible={isContextMenuVisible} animationType="fade" transparent onRequestClose={handleCloseContextMenu}>
+                <TouchableWithoutFeedback onPress={handleCloseContextMenu}>
+                    <View style={styles.modalOverlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={[styles.contextMenu, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                <Text style={[styles.contextMenuTitle, { color: colors.textSecondary }]} numberOfLines={1}>
+                                    @{userData?.username}
+                                </Text>
+
+                                {/* Reportar — disponible para todos */}
+                                <TouchableOpacity
+                                    style={styles.contextMenuItem}
+                                    onPress={handleOpenReportModal}
+                                >
+                                    <View style={[styles.contextMenuIcon, { backgroundColor: 'rgba(244,67,54,0.1)' }]}>
+                                        <Ionicons name="flag-outline" size={20} color="#F44336" />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.contextMenuItemText, { color: colors.text }]}>Reportar usuario</Text>
+                                        <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>Notificar a moderación</Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                                
+                                {/* Bloquear / Desbloquear */}
+                                <TouchableOpacity
+                                    style={styles.contextMenuItem}
+                                    onPress={handleBlockToggle}
+                                >
+                                    <View style={[styles.contextMenuIcon, { backgroundColor: userData?.isBlockedByMe ? 'rgba(76,175,80,0.1)' : 'rgba(255,152,0,0.1)' }]}>
+                                        <Ionicons 
+                                            name={userData?.isBlockedByMe ? "lock-open-outline" : "lock-closed-outline"} 
+                                            size={20} 
+                                            color={userData?.isBlockedByMe ? "#4CAF50" : "#FF9800"} 
+                                        />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.contextMenuItemText, { color: colors.text }]}>
+                                            {userData?.isBlockedByMe ? 'Desbloquear usuario' : 'Bloquear usuario'}
+                                        </Text>
+                                        <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
+                                            {userData?.isBlockedByMe ? 'Permitir comunicación' : 'Impedir comunicación mutua'}
+                                        </Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                                </TouchableOpacity>
+
+                                {/* Banear — solo ADMIN y MODERATOR */}
+                                {['ADMIN', 'MODERATOR'].includes(authContext.user?.role) && (
+                                    <TouchableOpacity
+                                        style={styles.contextMenuItem}
+                                        onPress={() => { handleCloseContextMenu(); setTimeout(() => setIsBanModalVisible(true), 250); }}
+                                    >
+                                        <View style={[styles.contextMenuIcon, { backgroundColor: 'rgba(239,68,68,0.1)' }]}>
+                                            <Ionicons name="ban-outline" size={20} color="#EF4444" />
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={[styles.contextMenuItemText, { color: '#EF4444' }]}>Suspender usuario</Text>
+                                            <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>Aplicar sanción temporal o permanente</Text>
+                                        </View>
+                                        <Ionicons name="chevron-forward" size={16} color="#EF4444" />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+
+            {/* ─── Modal de Reporte ─── */}
+            {/* Usamos transparent + fondo manual para que el Toast quede por encima */}
+            <Modal
+                visible={isReportModalVisible}
+                animationType="slide"
+                transparent
+                onRequestClose={() => { setIsReportModalVisible(false); setReportReason(''); }}
+            >
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
+                    <SafeAreaView style={{ backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden', maxHeight: '90%' }} edges={['bottom']}>
+                        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                            <View style={[styles.reportHeader, { borderBottomColor: colors.border }]}>
+                                <TouchableOpacity onPress={() => { setIsReportModalVisible(false); setReportReason(''); }}>
+                                    <Ionicons name="close" size={24} color={colors.text} />
+                                </TouchableOpacity>
+                                <Text style={[styles.reportTitle, { color: colors.text }]}>Reportar a @{userData?.username}</Text>
+                                <View style={{ width: 24 }} />
+                            </View>
+
+                            <View style={{ padding: 20 }}>
+                                {/* Tarjeta del usuario */}
+                                <View style={[styles.reportUserCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                    <View style={[styles.reportAvatar, { backgroundColor: colors.surface }]}>
+                                        {userData?.photoUrl
+                                            ? <Image source={{ uri: userData.photoUrl }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                                            : <Text style={{ color: colors.textSecondary, fontSize: 18, fontWeight: '700' }}>{userData?.firstName?.[0]}{userData?.lastName?.[0]}</Text>
+                                        }
+                                    </View>
+                                    <View>
+                                        <Text style={[styles.reportUserName, { color: colors.text }]}>{userData?.firstName} {userData?.lastName}</Text>
+                                        <Text style={[styles.reportUsername, { color: colors.textSecondary }]}>@{userData?.username}</Text>
+                                    </View>
+                                </View>
+
+                                {/* Estado: ya reportado y pendiente */}
+                                {myReportStatus === 'PENDING' ? (
+                                    <View style={[styles.alreadyReportedBox, { backgroundColor: isDark ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.06)', borderColor: 'rgba(245,158,11,0.25)' }]}>
+                                        <Ionicons name="time-outline" size={28} color="#F59E0B" style={{ marginBottom: 10 }} />
+                                        <Text style={[styles.alreadyReportedTitle, { color: colors.text }]}>Denuncia en revisión</Text>
+                                        <Text style={[styles.alreadyReportedSub, { color: colors.textSecondary }]}>
+                                            Ya enviaste una denuncia sobre este usuario. Nuestro equipo de moderación está revisando el reporte.{`\n\n`}Si el usuario vuelve a cometer una infracción tras resolverse el reporte, podrás denunciarlo de nuevo.
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    /* Formulario de reporte */
+                                    <>
+                                        <Text style={[styles.reportLabel, { color: colors.text }]}>¿Por qué estás reportando este perfil?</Text>
+                                        <View style={[styles.reportInputBox, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', borderColor: colors.border }]}>
+                                            {['Contenido inapropiado', 'Acoso o bullying', 'Spam o publicidad', 'Información falsa', 'Otro motivo'].map((opt) => (
+                                                <TouchableOpacity
+                                                    key={opt}
+                                                    style={[styles.reportOption, { borderColor: colors.border }, reportReason === opt && { borderColor: colors.primary, backgroundColor: `${colors.primary}12` }]}
+                                                    onPress={() => setReportReason(opt)}
+                                                >
+                                                    <View style={[styles.reportRadio, { borderColor: reportReason === opt ? colors.primary : colors.border }]}>
+                                                        {reportReason === opt && <View style={[styles.reportRadioDot, { backgroundColor: colors.primary }]} />}
+                                                    </View>
+                                                    <Text style={[styles.reportOptionText, { color: reportReason === opt ? colors.primary : colors.text }]}>{opt}</Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    </>
+                                )}
+                            </View>
+
+                            {/* Footer — solo visible cuando puede reportar */}
+                            {myReportStatus !== 'PENDING' && (
+                                <View style={[styles.reportFooter, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
+                                    <TouchableOpacity
+                                        style={[styles.reportSendBtn, { backgroundColor: '#F44336', opacity: !reportReason.trim() || reporting ? 0.5 : 1 }]}
+                                        onPress={handleSendReport}
+                                        disabled={!reportReason.trim() || reporting}
+                                    >
+                                        {reporting
+                                            ? <ActivityIndicator color="#FFF" size="small" />
+                                            : <><Ionicons name="flag" size={16} color="#FFF" style={{ marginRight: 8 }} /><Text style={styles.reportSendText}>Enviar denuncia</Text></>
+                                        }
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+                        </KeyboardAvoidingView>
+                    </SafeAreaView>
+                </View>
+            </Modal>
+
+
+            {/* ─── Modal de Baneo ─── */}
+            <BanUserModal
+                visible={isBanModalVisible}
+                onClose={() => setIsBanModalVisible(false)}
+                targetUser={userData ? { id: userData.id, firstName: userData.firstName, lastName: userData.lastName, username: userData.username } : null}
+                onSuccess={() => refetchProfile()}
             />
 
-            <PostOptionsModal
-                visible={isOptionsMenuVisible}
-                onClose={() => setIsOptionsMenuVisible(false)}
-                onEdit={() => {
-                    if (selectedPost) {
-                        setEditingPostId(selectedPost.id);
-                        setEditingPostContent(selectedPost.content);
-                        setEditingPostTitle(selectedPost.title || '');
-                        setIsCreatePostVisible(true);
-                    }
-                }}
-                onDelete={() => {
-                    if (selectedPost) {
-                        deletePost({ variables: { id: selectedPost.id } })
-                    }
-                }}
-            />
 
+            {/* CommentsModal — siempre montado para mantener estado y UI fluida */}
             <CommentsModal
                 visible={!!selectedPostForComments}
-                post={
-                    selectedPostForComments
-                        ? (() => {
-                            const livePost = userData?.posts?.find((p: any) => p.id === selectedPostForComments.post?.id);
-                            return livePost
-                                ? { ...livePost, author: userData }
-                                : selectedPostForComments.post;
-                        })()
-                        : null
-                }
-                nextPost={(() => {
-                    const posts = userData?.posts || [];
-                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
-                    // Devolver el siguiente, o `true` si hay más en el server (para que el modal no bloquee)
-                    if (currentIndex !== -1 && currentIndex < posts.length - 1)
-                        return { ...posts[currentIndex + 1], author: userData };
-                    if (hasMore) return {} as any; // señal de que hay más
-                    return null;
-                })()}
+                post={commentsModalData.post}
+                nextPost={commentsModalData.nextPost}
                 hasMorePosts={hasMore}
-                prevPost={(() => {
-                    const posts = userData?.posts || [];
-                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
-                    return (currentIndex > 0)
-                        ? { ...posts[currentIndex - 1], author: userData }
-                        : null;
-                })()}
+                prevPost={commentsModalData.prevPost}
                 onClose={() => setSelectedPostForComments(null)}
                 initialMinimized={selectedPostForComments?.minimize}
                 initialTab={selectedPostForComments?.initialTab}
                 onNextPost={() => {
-                    const posts = userData?.posts || [];
-                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
-
+                    const currentIndex = tabData.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     if (currentIndex !== -1) {
-                        // Pre-fetch: si estamos en los últimos 3, cargar más
-                        if (currentIndex >= posts.length - 3 && hasMore && !isFetchingMore) {
+                        if (activeTab === 'all' && currentIndex >= tabData.length - 3 && hasMore && !isFetchingMore) {
                             loadMorePosts();
                         }
-                        if (currentIndex < posts.length - 1) {
+                        if (currentIndex < tabData.length - 1) {
+                            const nextItem = tabData[currentIndex + 1];
                             setSelectedPostForComments({
-                                post: { ...posts[currentIndex + 1], author: userData },
+                                post: nextItem.author ? nextItem : { ...nextItem, author: userData },
                                 minimize: !!selectedPostForComments?.minimize,
                                 initialTab: selectedPostForComments?.initialTab,
                             });
-                        } else if (hasMore) {
+                        } else if (hasMore && activeTab === 'all') {
                             Toast.show({ type: 'info', text1: 'Cargando más...', text2: 'Desliza de nuevo en un momento.' });
                             if (!isFetchingMore) loadMorePosts();
                         }
                     }
                 }}
                 onPrevPost={() => {
-                    const posts = userData?.posts || [];
-                    const currentIndex = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
+                    const currentIndex = tabData.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     if (currentIndex > 0) {
-                        setSelectedPostForComments({ post: { ...posts[currentIndex - 1], author: userData }, minimize: !!selectedPostForComments?.minimize, initialTab: selectedPostForComments?.initialTab });
+                        const prevItem = tabData[currentIndex - 1];
+                        setSelectedPostForComments({
+                            post: prevItem.author ? prevItem : { ...prevItem, author: userData },
+                            minimize: !!selectedPostForComments?.minimize,
+                            initialTab: selectedPostForComments?.initialTab,
+                        });
                     }
                 }}
                 onOptionsPress={(post) => {
@@ -492,283 +1094,386 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                     setIsOptionsMenuVisible(true);
                 }}
             />
+
+            {isCreatePostVisible && (
+            <CreatePostModal
+                visible={isCreatePostVisible}
+                onClose={() => {
+                    setIsCreatePostVisible(false);
+                    setEditingPostId(null);
+                    setEditingPostContent('');
+                    setEditingPostTitle('');
+                }}
+                postId={editingPostId}
+                initialContent={editingPostContent}
+                initialTitle={editingPostTitle}
+            />
+            )}
+
+            {isCreateStoreVisible && (
+            <CreateProductModal
+                visible={isCreateStoreVisible}
+                onClose={() => {
+                    setIsCreateStoreVisible(false);
+                    setEditingProduct(null);
+                    onRefresh();
+                }}
+                editItem={editingProduct}
+            />
+            )}
+
+            {isBlockedUsersVisible && (
+                <BlockedUsersModal
+                    visible={isBlockedUsersVisible}
+                    onClose={() => setIsBlockedUsersVisible(false)}
+                />
+            )}
+
+            {isOptionsMenuVisible && (
+            <PostOptionsModal
+                visible={isOptionsMenuVisible}
+                onClose={() => setIsOptionsMenuVisible(false)}
+                onEdit={() => {
+                    if (selectedPost) stableHandleEdit(selectedPost);
+                }}
+                onDelete={() => {
+                    if (selectedPost) {
+                        const type = selectedPost.__typename;
+                        setIsOptionsMenuVisible(false);
+
+                        // Determinar cuál será la siguiente publicación a mostrar
+                        const currentIndex = tabData.findIndex((p: any) => p.id === selectedPost.id);
+                        let targetPost = null;
+
+                        if (currentIndex !== -1) {
+                            if (currentIndex < tabData.length - 1) {
+                                targetPost = tabData[currentIndex + 1];
+                            } else if (currentIndex > 0) {
+                                targetPost = tabData[currentIndex - 1];
+                            }
+                        }
+
+                        const afterDelete = () => {
+                            Toast.show({ 
+                                type: 'success', 
+                                text1: 'Eliminado', 
+                                text2: `${type === 'StoreProduct' ? 'Producto' : type === 'JobOffer' ? 'Oferta' : type === 'ProfessionalProfile' ? 'Servicio' : 'Publicación'} borrada con éxito` 
+                            });
+                            
+                            if (targetPost) {
+                                // Navegar a la siguiente/anterior
+                                // Aseguramos que tenga author
+                                const itemWithAuthor = targetPost.author ? targetPost : { ...targetPost, author: userData };
+                                setSelectedPostForComments({
+                                    post: itemWithAuthor,
+                                    minimize: !!selectedPostForComments?.minimize,
+                                    initialTab: selectedPostForComments?.initialTab,
+                                    initialExpanded: false
+                                });
+                            } else {
+                                // Si no hay más, cerrar
+                                setSelectedPostForComments(null);
+                            }
+                            onRefresh();
+                        };
+
+                        const onError = (err: any) => Toast.show({ type: 'error', text1: 'Error', text2: err.message });
+                        
+                        if (!type || type === 'Post') {
+                            deletePost({ variables: { id: selectedPost.id } }).then(afterDelete).catch(onError);
+                        } else if (type === 'StoreProduct') {
+                            deleteStoreProduct({ variables: { id: selectedPost.id } }).then(afterDelete).catch(onError);
+                        } else if (type === 'JobOffer') {
+                            deleteJobOffer({ variables: { id: selectedPost.id } }).then(afterDelete).catch(onError);
+                        } else if (type === 'ProfessionalProfile') {
+                            deleteProfessional({ variables: { id: selectedPost.id } }).then(afterDelete).catch(onError);
+                        }
+                    }
+                }}
+            />
+            )}
         </SafeAreaView>
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
 const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: colors.background,
-    },
-    scrollView: {
-        flex: 1,
-    },
-    centerContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: colors.background,
-    },
-    bannerContainer: {
-        width: '100%',
-        height: 240,
-        position: 'relative',
-    },
-    bannerGradient: {
-        ...StyleSheet.absoluteFillObject,
-    },
+    container: { flex: 1, backgroundColor: colors.background },
+    centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+    bannerContainer: { width: '100%', height: 240, position: 'relative' },
+    bannerGradient: { ...StyleSheet.absoluteFillObject },
     floatingHeader: {
-        flexDirection: 'row',
-        justifyContent: 'flex-end',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingTop: 10,
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-    },
-    floatingEditButton: {
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 12,
-        marginRight: 10,
-    },
-    floatingEditButtonText: {
-        color: '#FFF',
-        fontWeight: '600',
-        fontSize: 13,
+        flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center',
+        paddingHorizontal: 16, paddingTop: 10,
+        position: 'absolute', top: 0, left: 0, right: 0,
     },
     floatingMenuButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 40, height: 40, borderRadius: 20,
         backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        justifyContent: 'center',
-        alignItems: 'center',
+        justifyContent: 'center', alignItems: 'center',
     },
-    content: {
-        paddingTop: 0,
-    },
-    avatarCenterContainer: {
-        alignItems: 'center',
-        marginTop: -48,
-        marginBottom: 12,
-    },
-    avatarWrapper: {
-        borderRadius: 50,
-        padding: 4,
-        backgroundColor: colors.background,
-    },
-    avatarImage: {
-        width: 96,
-        height: 96,
-        borderRadius: 48,
-    },
+    content: { paddingTop: 0 },
+    avatarCenterContainer: { alignItems: 'center', marginTop: -48, marginBottom: 12 },
+    avatarWrapper: { borderRadius: 50, padding: 4, backgroundColor: colors.background },
+    avatarImage: { width: 96, height: 96, borderRadius: 48 },
     avatarPlaceholder: {
-        width: 96,
-        height: 96,
-        borderRadius: 48,
-        backgroundColor: colors.surface,
+        width: 96, height: 96, borderRadius: 48,
+        backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center',
+        borderWidth: 1, borderColor: colors.border,
+    },
+    avatarPlaceholderText: { color: colors.textSecondary, fontSize: 38, fontWeight: '500', textTransform: 'uppercase' },
+    fullName: { fontSize: 22, fontWeight: '800', color: colors.text, marginBottom: 2, textAlign: 'center' },
+    username: { fontSize: 14, color: colors.textSecondary, marginBottom: 12, textAlign: 'center' },
+    badgeContainer: {
+        alignSelf: 'center', paddingVertical: 3, paddingHorizontal: 10,
+        backgroundColor: colors.surface, borderRadius: 4, borderWidth: 1, borderColor: colors.border, marginBottom: 12,
+    },
+    badgeText: { color: colors.text, fontWeight: '700', fontSize: 10, textTransform: 'uppercase', letterSpacing: 2 },
+    tabBar: {
+        flexDirection: 'row',
+        borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
+        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
+        marginTop: 8, backgroundColor: colors.surface,
+    },
+    tabItem: {
+        flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        gap: 6, paddingVertical: 12,
+        borderBottomWidth: 2, borderBottomColor: 'transparent',
+    },
+    tabItemActive: { borderBottomColor: colors.primary },
+    tabLabel: { fontSize: 13, fontWeight: '600' },
+    emptyPostsContainer: {
+        alignItems: 'center', justifyContent: 'center', paddingVertical: 40,
+        backgroundColor: colors.surface, borderRadius: 16,
+        borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed', marginHorizontal: 16,
+    },
+    emptyPostsText: { fontSize: 18, fontWeight: 'bold', color: colors.text, marginTop: 16, marginBottom: 8 },
+    emptyPostsSubText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 30, lineHeight: 20 },
+    spacer: { flex: 1 },
+    logoutButton: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        paddingVertical: 16, borderRadius: 16,
+        backgroundColor: isDark ? 'rgba(255, 82, 82, 0.1)' : 'rgba(255, 82, 82, 0.05)',
+        marginBottom: 20, marginTop: 10,
+    },
+    logoutText: { color: colors.error, fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
+    errorText: { color: colors.textSecondary, fontSize: 16 },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'flex-start', alignItems: 'flex-end' },
+    modalContent: {
+        backgroundColor: colors.background, width: '75%', height: '100%',
+        paddingHorizontal: 20, paddingBottom: 40,
+        borderLeftWidth: 1, borderLeftColor: colors.border,
+    },
+    drawerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+    modalTitle: { fontSize: 18, fontWeight: 'bold', color: colors.text },
+    drawerCloseBtn: { padding: 4 },
+    settingButton: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
+    settingLeft: { flexDirection: 'row', alignItems: 'center' },
+    settingText: { fontSize: 16, color: colors.text, marginLeft: 16 },
+    // ─── Menú contextual (perfil ajeno) ───────────────────────────────────────
+    contextMenu: {
+        position: 'absolute',
+        top: 60,
+        right: 16,
+        width: 260,
+        borderRadius: 16,
+        borderWidth: 1,
+        paddingVertical: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.18,
+        shadowRadius: 16,
+        elevation: 16,
+    },
+    contextMenuTitle: {
+        fontSize: 11,
+        fontWeight: '700',
+        letterSpacing: 0.5,
+        textTransform: 'uppercase',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+        marginBottom: 4,
+    },
+    contextMenuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+    },
+    contextMenuIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: colors.border,
     },
-    avatarPlaceholderText: {
-        color: colors.textSecondary,
-        fontSize: 38,
-        fontWeight: '500',
-        textTransform: 'uppercase',
-    },
-    fullName: {
-        fontSize: 22,
-        fontWeight: '800',
-        color: colors.text,
-        marginBottom: 2,
-        textAlign: 'center',
-    },
-    username: {
+    contextMenuItemText: {
         fontSize: 14,
-        color: colors.textSecondary,
-        marginBottom: 12,
-        textAlign: 'center',
-    },
-    badgeContainer: {
-        alignSelf: 'center',
-        paddingVertical: 3,
-        paddingHorizontal: 10,
-        backgroundColor: colors.surface,
-        borderRadius: 4,
-        borderWidth: 1,
-        borderColor: colors.border,
-        marginBottom: 12,
-    },
-    badgeText: {
-        color: colors.text,
         fontWeight: '700',
-        fontSize: 10,
-        textTransform: 'uppercase',
-        letterSpacing: 2,
     },
-    cardsContainer: {
-        marginBottom: 0,
+    contextMenuItemSub: {
+        fontSize: 11,
+        marginTop: 1,
     },
-    messageButton: {
+    // ─── Modal de reporte ─────────────────────────────────────────────────────
+    reportHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 16,
+        borderBottomWidth: 1,
+    },
+    reportTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    reportUserCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        padding: 14,
+        borderRadius: 14,
+        borderWidth: 1,
+        marginBottom: 20,
+    },
+    reportAvatar: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+    },
+    reportUserName: {
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    reportUsername: {
+        fontSize: 13,
+        marginTop: 2,
+    },
+    reportLabel: {
+        fontSize: 14,
+        fontWeight: '700',
+        marginBottom: 12,
+    },
+    reportInputBox: {
+        borderRadius: 14,
+        borderWidth: 1,
+        overflow: 'hidden',
+    },
+    reportOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        padding: 14,
+        borderBottomWidth: 1,
+    },
+    reportRadio: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        borderWidth: 2,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    reportRadioDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+    },
+    reportOptionText: {
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    reportFooter: {
+        padding: 16,
+        borderTopWidth: 1,
+    },
+    reportSendBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        marginHorizontal: 16,
-        marginTop: 12,
-        marginBottom: 8,
-        paddingVertical: 12,
-        borderRadius: 12,
-        borderWidth: 1,
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-            },
-            android: {
-                elevation: 3,
-            },
-        }),
+        paddingVertical: 14,
+        borderRadius: 14,
     },
-    messageButtonText: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        marginLeft: 8,
-    },
-    divider: {
-        height: 1,
-        backgroundColor: colors.border,
-        marginVertical: 12,
-    },
-    customFieldTitle: {
+    reportSendText: {
+        color: '#FFF',
         fontSize: 15,
-        fontWeight: 'bold',
-        color: colors.textSecondary,
-        minWidth: 90,
+        fontWeight: '700',
     },
-    customFieldValue: {
-        fontSize: 15,
-        color: colors.text,
-        flex: 1,
-    },
-    postsSection: {
-        marginTop: 10,
-    },
-    postsSectionTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: colors.text,
-        marginBottom: 16,
-        paddingHorizontal: 16,
-    },
-    emptyPostsContainer: {
+    // Panel de "ya reportado"
+    alreadyReportedBox: {
         alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 40,
-        backgroundColor: colors.surface,
         borderRadius: 16,
+        borderWidth: 1,
+        padding: 20,
+        marginTop: 4,
+    },
+    alreadyReportedTitle: {
+        fontSize: 16,
+        fontWeight: '800',
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    alreadyReportedSub: {
+        fontSize: 13.5,
+        lineHeight: 20,
+        textAlign: 'center',
+    },
+    // Error Full UI
+    errorFullContainer: {
+        alignItems: 'center',
+        paddingHorizontal: 40,
+    },
+    errorIconCircle: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+        backgroundColor: colors.surface,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 24,
         borderWidth: 1,
         borderColor: colors.border,
         borderStyle: 'dashed',
-        marginHorizontal: 16,
     },
-    emptyPostsText: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: colors.text,
-        marginTop: 16,
-        marginBottom: 8,
-    },
-    emptyPostsSubText: {
-        fontSize: 14,
-        color: colors.textSecondary,
+    errorFullTitle: {
+        fontSize: 22,
+        fontWeight: '900',
+        marginBottom: 12,
         textAlign: 'center',
-        paddingHorizontal: 30,
-        lineHeight: 20,
     },
-    spacer: {
-        flex: 1,
+    errorFullSub: {
+        fontSize: 15,
+        textAlign: 'center',
+        lineHeight: 22,
+        marginBottom: 32,
     },
-    logoutButton: {
+    errorGoBackBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 16,
-        borderRadius: 16,
-        backgroundColor: isDark ? 'rgba(255, 82, 82, 0.1)' : 'rgba(255, 82, 82, 0.05)',
-        marginBottom: 20,
-        marginTop: 10,
+        paddingHorizontal: 32,
+        paddingVertical: 14,
+        borderRadius: 25,
+        elevation: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 5,
     },
-    logoutText: {
-        color: colors.error,
+    errorGoBackText: {
+        color: '#FFF',
         fontSize: 16,
         fontWeight: 'bold',
-        marginLeft: 8,
     },
-    errorText: {
-        color: colors.textSecondary,
-        fontSize: 16,
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        justifyContent: 'flex-start',
-        alignItems: 'flex-end',
-    },
-    modalContent: {
-        backgroundColor: colors.background,
-        width: '75%',
-        height: '100%',
-        paddingHorizontal: 20,
-        paddingBottom: 40,
-        borderLeftWidth: 1,
-        borderLeftColor: colors.border,
-    },
-    drawerHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 24,
-    },
-    modalTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: colors.text,
-    },
-    drawerCloseBtn: {
-        padding: 4,
-    },
-    menuItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 18,
-        paddingHorizontal: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.border,
-    },
-    settingButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingVertical: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.border,
-    },
-    settingLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    settingText: {
-        fontSize: 16,
-        color: colors.text,
-        marginLeft: 16,
-    }
 });

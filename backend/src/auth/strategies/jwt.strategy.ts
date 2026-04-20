@@ -3,10 +3,16 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { passportJwtSecret } from 'jwks-rsa';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { User } from '../entities/user.entity';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-    constructor(private configService: ConfigService) {
+    constructor(
+        private configService: ConfigService,
+        @InjectRepository(User) private userRepository: Repository<User>,
+    ) {
         const supabaseUrl = configService.get<string>('SUPABASE_URL');
 
         if (!supabaseUrl) {
@@ -27,11 +33,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     async validate(payload: any) {
+        // Obtenemos el usuario de nuestra base de datos para cargar su verdadero rol (UserRole)
+        const dbUser = await this.userRepository.findOne({ where: { id: payload.sub } });
+        
         return {
             id: payload.sub,
             email: payload.email,
-            role: payload.role,
-            metadata: payload.user_metadata
+            // Supabase manda 'authenticated' en payload.role, mejor tomamos el de nuestra BD:
+            role: dbUser?.role || 'USER',
+            metadata: payload.user_metadata,
+            firstName: dbUser?.firstName || payload.user_metadata?.firstName,
+            lastName: dbUser?.lastName || payload.user_metadata?.lastName,
+            photoUrl: dbUser?.photoUrl,
         };
     }
 }

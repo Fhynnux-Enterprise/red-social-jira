@@ -82,6 +82,14 @@ export default function LoginScreen({ navigation }: any) {
             const response = await AuthService.login(data);
             await signIn(response.access_token);
         } catch (error: any) {
+            // Si el error es por ban, el interceptor Axios ya habrá notificado
+            // al AuthContext → no mostrar toast genérico de error
+            const raw = error?.response?.data?.message ?? error?.message ?? '';
+            try {
+                const parsed = JSON.parse(raw);
+                if (parsed?.code === 'USER_BANNED') return;
+            } catch (_) {}
+
             const errorMessage =
                 error.response?.data?.message ||
                 error.message ||

@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Conversation } from './entities/conversation.entity';
 import { Participant } from './entities/participant.entity';
 import { Message } from './entities/message.entity';
 import { User } from '../auth/entities/user.entity';
+import { UserBlocksService } from '../user-blocks/user-blocks.service';
 
 @Injectable()
 export class ChatService {
@@ -17,10 +18,21 @@ export class ChatService {
         private messageRepository: Repository<Message>,
         @InjectRepository(User)
         private userRepository: Repository<User>,
+        private userBlocksService: UserBlocksService,
     ) { }
 
     async getOrCreateOneOnOneChat(currentUserId: string, targetUserId: string): Promise<Conversation> {
         const isSelfChat = currentUserId === targetUserId;
+
+        if (!isSelfChat) {
+            const isBlocked = await this.userBlocksService.checkIfBlocked(currentUserId, targetUserId);
+            if (isBlocked) {
+                throw new ForbiddenException({
+                    code: 'CHAT_BLOCKED',
+                    message: 'No puedes comunicarte con este usuario.',
+                });
+            }
+        }
 
         // 1. Buscar si ya existe la conversación entre ambos (o consigo mismo)
         let existingQuery = this.conversationRepository
@@ -84,7 +96,20 @@ export class ChatService {
         return savedConversation;
     }
 
-    async sendMessage(senderId: string, conversationId: string, content: string, imageUrl?: string, videoUrl?: string, storyId?: string): Promise<Message> {
+    async sendMessage(
+        senderId: string, 
+        conversationId: string, 
+        content: string, 
+        imageUrl?: string, 
+        videoUrl?: string, 
+        storyId?: string, 
+        audioUrl?: string, 
+        audioDuration?: number,
+        fileUrl?: string,
+        fileName?: string,
+        fileSize?: number,
+        fileMimeType?: string
+    ): Promise<Message> {
         const conversation = await this.conversationRepository.findOne({
             where: { id: conversationId },
             relations: ['participants']
@@ -100,11 +125,36 @@ export class ChatService {
             throw new BadRequestException('No eres parte de esta conversación');
         }
 
+        // Si es un chat 1:1, verificar bloqueos
+        if (conversation.participants.length === 2) {
+            const otherParticipant = conversation.participants.find(p => p.userId !== senderId);
+            if (otherParticipant) {
+                const isBlocked = await this.userBlocksService.checkIfBlocked(senderId, otherParticipant.userId);
+                if (isBlocked) {
+                    throw new ForbiddenException({
+                        code: 'CHAT_BLOCKED',
+                        message: 'No puedes comunicarte con este usuario.',
+                    });
+                }
+            }
+        }
+
+        // Validación: El mensaje debe tener contenido o algún tipo de media
+        if (!content && !imageUrl && !videoUrl && !storyId && !audioUrl && !fileUrl) {
+            throw new BadRequestException('El mensaje no puede estar vacío');
+        }
+
         const newMessage = this.messageRepository.create({
             content: content || '',
             imageUrl: imageUrl || undefined,
             videoUrl: videoUrl || undefined,
             storyId: storyId || undefined,
+            audioUrl: audioUrl || undefined,
+            audioDuration: audioDuration || undefined,
+            fileUrl: fileUrl || undefined,
+            fileName: fileName || undefined,
+            fileSize: fileSize || undefined,
+            fileMimeType: fileMimeType || undefined,
             conversationId,
             userId: senderId,
             isRead: false,
@@ -198,7 +248,7 @@ export class ChatService {
         return true;
     }
 
-    async deleteMessageForAll(messageId: string, currentUserId: string): Promise<boolean> {
+    async deleteMessageForAll(messageId: string, currentUserId: string): Promise<Message> {
         const message = await this.messageRepository.findOne({
             where: { id: messageId },
             relations: ['sender']
@@ -214,9 +264,62 @@ export class ChatService {
 
         message.isDeletedForAll = true;
         message.content = ""; // Vaciamos el contenido original por privacidad
-        await this.messageRepository.save(message);
+        // También borramos referencias a archivos/imágenes si existen
+        (message as any).imageUrl = null;
+        (message as any).videoUrl = null;
+        (message as any).audioUrl = null;
+        (message as any).fileUrl = null;
+        
+        return this.messageRepository.save(message);
+    }
 
-        return true;
+    async deleteMessagesBulk(messageIds: string[], currentUserId: string): Promise<Message[]> {
+        const messages = await this.messageRepository.find({
+            where: { id: In(messageIds) },
+            relations: ['sender']
+        });
+
+        const messagesToSave: Message[] = [];
+
+        for (const message of messages) {
+            if (message.sender.id === currentUserId) {
+                message.isDeletedForAll = true;
+                message.content = "";
+                (message as any).imageUrl = null;
+                (message as any).videoUrl = null;
+                (message as any).audioUrl = null;
+                (message as any).fileUrl = null;
+                messagesToSave.push(message);
+            }
+        }
+
+        if (messagesToSave.length > 0) {
+            return this.messageRepository.save(messagesToSave);
+        }
+        return [];
+    }
+
+    async deleteMessagesBulkForMe(messageIds: string[], currentUserId: string): Promise<Message[]> {
+        const messages = await this.messageRepository.find({
+            where: { id: In(messageIds) },
+            relations: ['sender']
+        });
+
+        const messagesToSave: Message[] = [];
+
+        for (const message of messages) {
+            const currentDeletedFor = message.deletedFor || [];
+            if (!currentDeletedFor.includes(currentUserId)) {
+                message.deletedFor = [...currentDeletedFor, currentUserId];
+                messagesToSave.push(message);
+            }
+        }
+
+        if (messagesToSave.length > 0) {
+            return this.messageRepository.save(messagesToSave);
+        }
+        
+        return [];
     }
 
     async editMessage(messageId: string, currentUserId: string, newContent: string): Promise<Message> {
@@ -270,7 +373,10 @@ export class ChatService {
         // y que aún no están marcados como leídos.
         await this.messageRepository.createQueryBuilder()
             .update(Message)
-            .set({ isRead: true })
+            .set({ 
+                isRead: true,
+                readAt: new Date()
+            })
             .where('conversation_id = :conversationId', { conversationId })
             .andWhere('user_id != :userId', { userId })
             .andWhere('is_read = false')
@@ -292,13 +398,15 @@ export class ChatService {
         return true;
     }
 
-    async getChatMedia(conversationId: string, currentUserId: string): Promise<Message[]> {
+    async getChatMedia(conversationId: string, currentUserId: string, limit = 20, offset = 0): Promise<Message[]> {
         return this.messageRepository.createQueryBuilder('message')
             .where('message.conversationId = :conversationId', { conversationId })
             .andWhere('(message.imageUrl IS NOT NULL OR message.videoUrl IS NOT NULL)')
             .andWhere('message.isDeletedForAll = false')
             .andWhere('(message.deletedFor IS NULL OR NOT (:currentUserId = ANY (message.deletedFor)))', { currentUserId })
             .orderBy('message.createdAt', 'DESC')
+            .take(limit)
+            .skip(offset)
             .getMany();
     }
 }

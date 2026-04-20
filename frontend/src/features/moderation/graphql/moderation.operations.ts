@@ -1,0 +1,353 @@
+import { gql } from '@apollo/client';
+
+export const GET_ALL_REPORTS = gql`
+    query GetAllReports($limit: Int, $offset: Int, $filter: String) {
+        getAllReports(limit: $limit, offset: $offset, filter: $filter) {
+            id
+            reason
+            status
+            reportedItemId
+            reportedItemType
+            createdAt
+            moderatorNote
+            contentDeleted
+            reporter {
+                id
+                firstName
+                lastName
+                username
+                photoUrl
+            }
+        }
+    }
+`;
+
+export const GET_PENDING_REPORTS = gql`
+    query GetPendingReports($limit: Int, $offset: Int) {
+        getPendingReports(limit: $limit, offset: $offset) {
+            id
+            reason
+            status
+            reportedItemId
+            reportedItemType
+            createdAt
+            reporter {
+                id
+                firstName
+                lastName
+                username
+                photoUrl
+            }
+        }
+    }
+`;
+
+export const RESOLVE_REPORT = gql`
+    mutation ResolveReport($input: ResolveReportInput!) {
+        resolveReport(input: $input) {
+            id
+            status
+            moderatorNote
+        }
+    }
+`;
+
+export const DISMISS_REPORT = gql`
+    mutation DismissReport($reportId: ID!, $moderatorNote: String) {
+        dismissReport(reportId: $reportId, moderatorNote: $moderatorNote) {
+            id
+            status
+        }
+    }
+`;
+
+export const DIRECT_MODERATE_CONTENT = gql`
+    mutation DirectModerateContent($input: DirectModerateInput!) {
+        directModerateContent(input: $input) {
+            id
+            status
+            contentDeleted
+            moderatorNote
+        }
+    }
+`;
+
+export const GET_POST_BY_ID = gql`
+    query GetPostById($id: String!) {
+        getPostById(id: $id) {
+            id
+            content
+            title
+            createdAt
+            commentsCount
+            author {
+                id
+                username
+                firstName
+                lastName
+                photoUrl
+                badge {
+                    title
+                    theme
+                }
+            }
+            media {
+                url
+                type
+                order
+            }
+            likes {
+                user { id }
+            }
+        }
+    }
+`;
+
+export const GET_STORE_PRODUCT_BY_ID = gql`
+    query GetStoreProductById($id: ID!) {
+        getStoreProductById(id: $id) {
+            id
+            title
+            description
+            price
+            currency
+            location
+            contactPhone
+            condition
+            category
+            isAvailable
+            createdAt
+            seller {
+                id
+                username
+                firstName
+                lastName
+                photoUrl
+            }
+            media {
+                url
+                type
+                order
+            }
+            likes {
+                user { id }
+            }
+        }
+    }
+`;
+
+export const GET_JOB_OFFER_BY_ID = gql`
+    query GetJobOfferById($id: ID!) {
+        getJobOfferById(id: $id) {
+            id
+            title
+            description
+            location
+            salary
+            contactPhone
+            createdAt
+            author {
+                id
+                firstName
+                lastName
+                photoUrl
+            }
+        }
+    }
+`;
+
+export const GET_COMMENT_BY_ID = gql`
+    query GetCommentById($id: String!) {
+        getCommentById(id: $id) {
+            id
+            content
+            createdAt
+            user {
+                id
+                firstName
+                lastName
+                photoUrl
+            }
+            post {
+                id
+                content
+                title
+                createdAt
+                commentsCount
+                author {
+                    id
+                    username
+                    firstName
+                    lastName
+                    photoUrl
+                    badge {
+                        title
+                        theme
+                    }
+                }
+                media {
+                    url
+                    type
+                    order
+                }
+                likes {
+                    user { id }
+                }
+            }
+        }
+    }
+`;
+
+export const GET_STORE_PRODUCT_COMMENT_BY_ID = gql`
+    query GetStoreProductCommentById($id: ID!) {
+        getStoreProductCommentById(id: $id) {
+            id
+            content
+            createdAt
+            user {
+                id
+                firstName
+                lastName
+                photoUrl
+            }
+            product {
+                id
+                title
+                description
+                price
+                currency
+                location
+                contactPhone
+                condition
+                category
+                isAvailable
+                createdAt
+                seller {
+                    id
+                    username
+                    firstName
+                    lastName
+                    photoUrl
+                }
+                media {
+                    url
+                    type
+                    order
+                }
+                likes {
+                    user { id }
+                }
+            }
+        }
+    }
+`;
+
+export const GET_PROFESSIONAL_PROFILE_BY_ID = gql`
+    query GetProfessionalProfileById($id: String!) {
+        getProfessionalProfileById(id: $id) {
+            id
+            profession
+            description
+            experienceYears
+            contactPhone
+            createdAt
+            user {
+                id
+                firstName
+                lastName
+                photoUrl
+            }
+            media {
+                url
+                type
+                order
+            }
+        }
+    }
+`;
+
+export const BAN_USER = gql`
+    mutation BanUser($userId: String!, $durationInDays: Int!, $reason: String!, $wipeContent: Boolean) {
+        banUser(userId: $userId, durationInDays: $durationInDays, reason: $reason, wipeContent: $wipeContent) {
+            id
+            firstName
+            lastName
+            username
+            bannedUntil
+            banReason
+        }
+    }
+`;
+
+export const UNBAN_USER = gql`
+    mutation UnbanUser($userId: String!) {
+        unbanUser(userId: $userId) {
+            id
+            firstName
+            lastName
+            username
+            bannedUntil
+            banReason
+        }
+    }
+`;
+
+export const GET_BANNED_USERS = gql`
+    query GetBannedUsers($limit: Int, $offset: Int, $searchTerm: String) {
+        getBannedUsers(limit: $limit, offset: $offset, searchTerm: $searchTerm) {
+            id
+            firstName
+            lastName
+            username
+            email
+            photoUrl
+            bannedUntil
+            banReason
+            role
+        }
+    }
+`;
+export const GET_USER_MINIMAL_PROFILE = gql`
+    query GetUserMinimalProfile($id: String!) {
+        getUserProfile(id: $id) {
+            id
+            firstName
+            lastName
+            username
+            photoUrl
+            bio
+            role
+            bannedUntil
+            banReason
+        }
+    }
+`;
+
+export const GET_PENDING_APPEALS = gql`
+    query GetPendingAppeals($limit: Int, $offset: Int) {
+        getPendingAppeals(limit: $limit, offset: $offset) {
+            id
+            reason
+            status
+            type
+            referenceId
+            createdAt
+            user {
+                id
+                firstName
+                lastName
+                username
+                photoUrl
+            }
+        }
+    }
+`;
+
+export const RESOLVE_APPEAL = gql`
+    mutation ResolveAppeal($input: ResolveAppealInput!) {
+        resolveAppeal(input: $input) {
+            id
+            status
+        }
+    }
+`;

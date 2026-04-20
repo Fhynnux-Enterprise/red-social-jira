@@ -12,11 +12,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery } from '@apollo/client/react';
+import { gql } from '@apollo/client';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { Alert } from 'react-native';
 import { Video as Compressor } from 'react-native-compressor';
-import { CREATE_POST, UPDATE_POST, GET_POSTS } from '../graphql/posts.operations';
+import { CREATE_POST, UPDATE_POST, GET_POSTS, GET_FEED } from '../graphql/posts.operations';
 import { GET_ME } from '../../profile/graphql/profile.operations';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import { Image, ScrollView } from 'react-native';
@@ -24,6 +25,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { useAuth } from '../../auth/context/AuthContext';
+import ConfirmModal from '../../../components/ConfirmModal';
+import { customToastConfig } from '../../../components/CustomToast';
 
 interface CreatePostModalProps {
     visible: boolean;
@@ -31,11 +34,21 @@ interface CreatePostModalProps {
     initialContent?: string;
     initialTitle?: string;
     postId?: string;
+    initialMedia?: { url: string, type: string, order: number }[];
 }
 
 const MAX_TITLE_LENGTH = 100;
 
-export default function CreatePostModal({ visible, onClose, initialContent = '', initialTitle = '', postId }: CreatePostModalProps) {
+const DEFAULT_MEDIA: any[] = [];
+
+export default function CreatePostModal({ 
+    visible, 
+    onClose, 
+    initialContent = '', 
+    initialTitle = '', 
+    postId, 
+    initialMedia = DEFAULT_MEDIA 
+}: CreatePostModalProps) {
     const { colors } = useTheme();
     const [content, setContent] = React.useState(initialContent);
     const [title, setTitle] = React.useState(initialTitle);
@@ -58,30 +71,62 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
         }
     }, [userToken, visible]);
 
-    // Estado para alertas personalizadas
-    const [alertConfig, setAlertConfig] = React.useState<{
+    // Estado para alertas personalizadas (Uso de ConfirmModal)
+    const [confirmConfig, setConfirmConfig] = React.useState<{
         visible: boolean;
         title: string;
         message: string;
-        buttons: { text: string; onPress: () => void; style?: 'cancel' | 'default' }[];
+        confirmText: string;
+        cancelText: string;
+        onConfirm: () => void;
+        isDestructive?: boolean;
     }>({
         visible: false,
         title: '',
         message: '',
-        buttons: []
+        confirmText: '',
+        cancelText: '',
+        onConfirm: () => { }
     });
 
     const insets = useSafeAreaInsets();
     const { pickMultipleMedia, uploadMedia } = useMediaUpload();
 
     React.useEffect(() => {
-        if (visible) {
+        if (!visible) return;
+
+        // 1. Sincronizar texto (solo si cambió y es diferente al actual)
+        if (content !== initialContent) {
             setContent(initialContent);
-            setTitle(initialTitle);
-            setLocalMediaList([]);
-            setIsUploadingMedia(false);
         }
-    }, [visible, initialContent, initialTitle]);
+        if (title !== initialTitle) {
+            setTitle(initialTitle);
+        }
+        
+        // 2. Sincronizar medios (solo si hay un ID de post y los medios son diferentes)
+        if (postId && initialMedia.length > 0) {
+            const currentUris = localMediaList.map(m => m.uri).join('|');
+            const newUris = initialMedia.map(m => m.url).join('|');
+            
+            if (currentUris !== newUris) {
+                const mapped = initialMedia.map(m => ({
+                    uri: m.url,
+                    type: m.type.toLowerCase(),
+                    mimeType: m.type === 'video' ? 'video/mp4' : 'image/jpeg',
+                    isValid: true,
+                    uploadStatus: 'done' as const,
+                    progress: 100
+                }));
+                setLocalMediaList(mapped);
+            }
+        } else if (localMediaList.length > 0) {
+            // Si no hay medios iniciales pero el estado tiene algo, lo limpiamos
+            setLocalMediaList([]);
+        }
+        
+        if (isUploadingMedia) setIsUploadingMedia(false);
+        
+    }, [visible, initialContent, initialTitle, postId, JSON.stringify(initialMedia)]);
 
     // Generamos estilos dinámicos que reaccionan al tema
     const styles = useMemo(() => getStyles(colors), [colors]);
@@ -92,7 +137,33 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
     const currentUser = meData?.me;
 
     const [createPost, { loading: creating }] = useMutation(CREATE_POST, {
-        refetchQueries: [{ query: GET_POSTS, variables: { limit: 5, offset: 0 } }],
+        update(cache, { data }) {
+            const newPost = data?.createPost;
+            if (!newPost) return;
+            try {
+                // Write the normalized Post object into the cache
+                const newPostRef = cache.writeFragment({
+                    data: { ...newPost, __typename: 'Post' },
+                    fragment: gql`
+                        fragment NewFeedPost on Post {
+                            id __typename content title
+                            createdAt updatedAt editedAt commentsCount
+                            media { id url type order }
+                            likes { id user { id firstName lastName username photoUrl } }
+                            author { id firstName lastName username photoUrl }
+                        }
+                    `,
+                });
+                // Prepend to ALL cached variants of getFeed
+                cache.modify({
+                    fields: {
+                        getFeed(existingRefs = [], { toReference }) {
+                            return [newPostRef, ...existingRefs];
+                        },
+                    },
+                });
+            } catch {}
+        },
     });
 
     const [updatePost, { loading: updating }] = useMutation(UPDATE_POST, {
@@ -154,19 +225,16 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
         const hasInvalidItems = localMediaList.some(m => !m.isValid);
 
         if (hasInvalidItems) {
-            setAlertConfig({
+            setConfirmConfig({
                 visible: true,
                 title: "Contenido no permitido",
                 message: "Algunos de tus archivos exceden los límites de la plataforma y no serán incluidos en la publicación. ¿Deseas subir el contenido válido de todos modos?",
-                buttons: [
-                    { text: "Cancelar", style: "cancel", onPress: () => setAlertConfig(p => ({ ...p, visible: false })) },
-                    {
-                        text: "Publicar válidos", onPress: () => {
-                            setAlertConfig(p => ({ ...p, visible: false }));
-                            processUpload(true);
-                        }
-                    }
-                ]
+                confirmText: "Publicar válidos",
+                cancelText: "Cancelar",
+                onConfirm: () => {
+                    setConfirmConfig(p => ({ ...p, visible: false }));
+                    processUpload(true);
+                }
             });
         } else {
             processUpload(false);
@@ -179,13 +247,13 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
             : localMediaList;
 
         if (mediaToUpload.length === 0 && !content.trim()) {
-            setAlertConfig({
+            setConfirmConfig({
                 visible: true,
                 title: "Publicación sin contenido",
                 message: "No queda contenido válido para publicar. Por favor, asegúrate de añadir texto o archivos que cumplan con los límites de tiempo y cantidad.",
-                buttons: [
-                    { text: "Entendido", onPress: () => setAlertConfig(p => ({ ...p, visible: false })) }
-                ]
+                confirmText: "Entendido",
+                cancelText: "Cerrar",
+                onConfirm: () => setConfirmConfig(p => ({ ...p, visible: false }))
             });
             return;
         }
@@ -193,7 +261,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
         try {
             let mediaInput: { url: string, type: string, order: number }[] = [];
 
-            if (mediaToUpload.length > 0) {
+            if (mediaToUpload.length > 0 && !postId) {
                 setIsUploadingMedia(true);
                 const uploadPromises = mediaToUpload.map(async (media, index) => {
                     let finalUri = media.uri;
@@ -253,14 +321,14 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                 await updatePost({ variables: { id: postId, content, title: title.trim() || null } });
                 setContent('');
                 setTitle('');
-                Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'La publicación fue modificada' });
                 onClose();
+                setTimeout(() => Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'Tu publicación fue modificada exitosamente.' }), 350);
             } else {
                 await createPost({ variables: { content, title: title.trim() || null, media: mediaInput.length > 0 ? mediaInput : null } });
                 setContent('');
                 setTitle('');
-                Toast.show({ type: 'success', text1: '¡Publicado!', text2: 'Tu post está ahora en el Feed.' });
                 onClose();
+                setTimeout(() => Toast.show({ type: 'success', text1: '¡Publicado!', text2: '¡Tu publicación fue creada exitosamente!' }), 350);
             }
         } catch (error: any) {
             setIsUploadingMedia(false);
@@ -271,6 +339,29 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
     };
 
     const handleClose = () => {
+        const hasChanges = postId
+            ? (content !== initialContent || title !== initialTitle)
+            : (content.trim() !== '' || title.trim() !== '' || localMediaList.length > 0);
+
+        if (hasChanges) {
+            setConfirmConfig({
+                visible: true,
+                title: "¿Salir de la edición?",
+                message: "Tienes cambios sin guardar. Si sales ahora, se perderán.",
+                confirmText: "Salir",
+                cancelText: "Continuar editando",
+                isDestructive: true,
+                onConfirm: () => {
+                    setConfirmConfig(p => ({ ...p, visible: false }));
+                    resetAndClose();
+                }
+            });
+        } else {
+            resetAndClose();
+        }
+    };
+
+    const resetAndClose = () => {
         setContent('');
         setTitle('');
         setLocalMediaList([]);
@@ -357,7 +448,11 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                             editable={!isLoading}
                             textAlignVertical="top"
                             scrollEnabled={false}
+                            maxLength={3000}
                         />
+                        <Text style={[styles.charCounter, { color: colors.textSecondary, textAlign: 'right', marginTop: 8 }]}>
+                            {content.length} / 3000
+                        </Text>
 
                         {localMediaList.length > 0 && (
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaPreviewListContainer}>
@@ -380,7 +475,7 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                                             </View>
                                         )}
 
-                                        {(!mediaItem.uploadStatus || mediaItem.uploadStatus === 'idle') && (
+                                        {(!mediaItem.uploadStatus || mediaItem.uploadStatus === 'idle') && !postId && (
                                             <TouchableOpacity
                                                 style={styles.removeMediaButton}
                                                 onPress={() => setLocalMediaList(prev => prev.filter((_, i) => i !== index))}
@@ -424,48 +519,45 @@ export default function CreatePostModal({ visible, onClose, initialContent = '',
                         )}
                     </ScrollView>
 
-                    <Modal visible={alertConfig.visible} transparent animationType="fade">
-                        <View style={styles.alertOverlay}>
-                            <View style={styles.alertContent}>
-                                <Text style={styles.alertTitle}>{alertConfig.title}</Text>
-                                <Text style={styles.alertMessage}>{alertConfig.message}</Text>
-                                <View style={styles.alertButtonsContainer}>
-                                    {alertConfig.buttons.map((btn, i) => (
-                                        <TouchableOpacity
-                                            key={i}
-                                            style={[styles.alertButton, btn.style === 'cancel' ? styles.alertCancelButton : styles.alertConfirmButton]}
-                                            onPress={btn.onPress}
-                                        >
-                                            <Text style={[styles.alertButtonText, btn.style === 'cancel' && { color: colors.textSecondary }]}>
-                                                {btn.text}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            </View>
-                        </View>
-                    </Modal>
+                    <ConfirmModal
+                        visible={confirmConfig.visible}
+                        title={confirmConfig.title}
+                        message={confirmConfig.message}
+                        confirmText={confirmConfig.confirmText}
+                        cancelText={confirmConfig.cancelText}
+                        onConfirm={confirmConfig.onConfirm}
+                        onCancel={() => setConfirmConfig(p => ({ ...p, visible: false }))}
+                        isDestructive={confirmConfig.isDestructive}
+                    />
 
                     <View style={styles.toolbar}>
-                        <TouchableOpacity style={styles.mediaButton} activeOpacity={0.7} onPress={handlePickMedia}>
-                            <View style={styles.mediaButtonIconGradientWrapper}>
-                                <MaskedView
-                                    style={{ width: 24, height: 24 }}
-                                    maskElement={<Ionicons name="image" size={24} color="black" />}
-                                >
-                                    <LinearGradient
-                                        colors={[colors.primary, colors.secondary]}
-                                        start={{ x: 0, y: 0 }}
-                                        end={{ x: 1, y: 1 }}
-                                        style={{ flex: 1 }}
-                                    />
-                                </MaskedView>
+                        {!postId ? (
+                            <TouchableOpacity style={styles.mediaButton} activeOpacity={0.7} onPress={handlePickMedia}>
+                                <View style={styles.mediaButtonIconGradientWrapper}>
+                                    <MaskedView
+                                        style={{ width: 24, height: 24 }}
+                                        maskElement={<Ionicons name="image" size={24} color="black" />}
+                                    >
+                                        <LinearGradient
+                                            colors={[colors.primary, colors.secondary]}
+                                            start={{ x: 0, y: 0 }}
+                                            end={{ x: 1, y: 1 }}
+                                            style={{ flex: 1 }}
+                                        />
+                                    </MaskedView>
+                                </View>
+                                <Text style={styles.mediaButtonText}>Añadir foto o video</Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <View style={[styles.mediaButton, { borderStyle: 'solid', backgroundColor: colors.surface, opacity: 0.8 }]}>
+                                <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} style={{ marginRight: 8 }} />
+                                <Text style={[styles.mediaButtonText, { color: colors.textSecondary }]}>Las fotos o videos no se pueden cambiar al editar</Text>
                             </View>
-                            <Text style={styles.mediaButtonText}>Añadir foto o video</Text>
-                        </TouchableOpacity>
+                        )}
                     </View>
                 </KeyboardAvoidingView>
             </View >
+            <Toast config={customToastConfig} position="top" topOffset={60} />
         </Modal >
     );
 }
@@ -616,67 +708,6 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         padding: 10,
-    },
-    invalidText: {
-        color: '#FFF',
-        fontSize: 12,
-        fontWeight: 'bold',
-        textAlign: 'center',
-        marginTop: 4,
-    },
-    alertOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.4)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 32,
-    },
-    alertContent: {
-        width: '100%',
-        backgroundColor: colors.surface,
-        borderRadius: 24,
-        padding: 24,
-        alignItems: 'center',
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 12,
-        elevation: 10,
-    },
-    alertTitle: {
-        color: colors.text,
-        fontSize: 18,
-        fontWeight: 'bold',
-        marginBottom: 12,
-        textAlign: 'center',
-    },
-    alertMessage: {
-        color: colors.textSecondary,
-        fontSize: 14,
-        lineHeight: 20,
-        textAlign: 'center',
-        marginBottom: 24,
-    },
-    alertButtonsContainer: {
-        width: '100%',
-        gap: 12,
-    },
-    alertButton: {
-        width: '100%',
-        paddingVertical: 14,
-        borderRadius: 16,
-        alignItems: 'center',
-    },
-    alertConfirmButton: {
-        backgroundColor: colors.primary,
-    },
-    alertCancelButton: {
-        backgroundColor: colors.border,
-    },
-    alertButtonText: {
-        color: '#FFF',
-        fontWeight: 'bold',
-        fontSize: 15,
     },
     uploadOverlay: {
         ...StyleSheet.absoluteFillObject,

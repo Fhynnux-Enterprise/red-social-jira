@@ -8,7 +8,9 @@ export const GET_JOB_OFFERS = gql`
       description
       location
       salary
+      contactPhone
       createdAt
+      editedAt
       author {
         id
         username
@@ -32,7 +34,9 @@ export const GET_PROFESSIONALS = gql`
       profession
       description
       experienceYears
+      contactPhone
       createdAt
+      editedAt
       user {
         id
         username
@@ -57,10 +61,14 @@ export const CREATE_JOB_OFFER = gql`
       description
       location
       salary
+      contactPhone
       createdAt
+      editedAt
       author {
         id
         username
+        firstName
+        lastName
         photoUrl
       }
       media {
@@ -79,10 +87,14 @@ export const UPSERT_PROFESSIONAL_PROFILE = gql`
       profession
       description
       experienceYears
+      contactPhone
       createdAt
+      editedAt
       user {
         id
         username
+        firstName
+        lastName
         photoUrl
       }
       media {
@@ -212,6 +224,59 @@ export const UPDATE_APPLICATION_STATUS = gql`
   }
 `;
 
+export const GET_JOB_OFFERS_BY_USER = gql`
+  query GetJobOffersByUser($userId: ID!) {
+    jobOffersByUser(userId: $userId) {
+      id
+      title
+      description
+      location
+      salary
+      contactPhone
+      createdAt
+      editedAt
+      author {
+        id
+        username
+        firstName
+        lastName
+        photoUrl
+      }
+      media {
+        url
+        type
+        order
+      }
+    }
+  }
+`;
+
+export const GET_PROFESSIONAL_PROFILES_BY_USER = gql`
+  query GetProfessionalProfilesByUser($userId: String!) {
+    professionalProfilesByUser(userId: $userId) {
+      id
+      profession
+      description
+      experienceYears
+      contactPhone
+      createdAt
+      editedAt
+      user {
+        id
+        username
+        firstName
+        lastName
+        photoUrl
+      }
+      media {
+        url
+        type
+        order
+      }
+    }
+  }
+`;
+
 export const GET_MY_JOB_OFFERS = gql`
   query GetMyJobOffers {
     myJobOffers {
@@ -222,6 +287,7 @@ export const GET_MY_JOB_OFFERS = gql`
       salary
       contactPhone
       createdAt
+      editedAt
       author {
         id
         username
@@ -245,7 +311,9 @@ export const GET_MY_PROFESSIONAL_PROFILE = gql`
       profession
       description
       experienceYears
+      contactPhone
       createdAt
+      editedAt
       user {
         id
         username
@@ -272,6 +340,7 @@ export const UPDATE_JOB_OFFER = gql`
       salary
       contactPhone
       createdAt
+      editedAt
       author {
         id
         username
@@ -309,6 +378,7 @@ export const UPDATE_PROFESSIONAL_PROFILE = gql`
       experienceYears
       contactPhone
       createdAt
+      editedAt
       user {
         id
         username

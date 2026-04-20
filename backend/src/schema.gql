@@ -39,6 +39,7 @@ type Comment {
   createdAt: DateTime!
   updatedAt: DateTime!
   deletedAt: DateTime
+  editedAt: DateTime
   likesCount: Float!
   isLikedByMe: Boolean!
 }
@@ -63,6 +64,7 @@ type Post {
   createdAt: DateTime!
   updatedAt: DateTime!
   deletedAt: DateTime
+  editedAt: DateTime
   comments: [Comment!]
   commentsCount: Float!
 }
@@ -86,6 +88,13 @@ type Message {
   imageUrl: String
   videoUrl: String
   storyId: String
+  audioUrl: String
+  audioDuration: Int
+  fileUrl: String
+  fileName: String
+  fileSize: Int
+  fileMimeType: String
+  userId: String!
   conversationId: String!
   isRead: Boolean!
   createdAt: DateTime!
@@ -93,6 +102,7 @@ type Message {
   deletedFor: [String!]
   isDeletedForAll: Boolean!
   editedAt: DateTime
+  readAt: DateTime
   sender: User!
   conversation: Conversation!
 }
@@ -105,6 +115,7 @@ type Conversation {
   messages: [Message!]
   lastMessage: Message
   unreadCount: Float
+  isBlocked: Boolean!
 }
 
 type Participant {
@@ -151,6 +162,9 @@ type JobOffer {
   salary: String
   contactPhone: String!
   createdAt: DateTime!
+  updatedAt: DateTime!
+  deletedAt: DateTime
+  editedAt: DateTime
   author: User!
   media: [JobOfferMedia!]
 }
@@ -171,6 +185,9 @@ type ProfessionalProfile {
   experienceYears: Int
   contactPhone: String!
   createdAt: DateTime!
+  updatedAt: DateTime!
+  editedAt: DateTime
+  deletedAt: DateTime
   user: User!
   media: [ProfessionalProfileMedia!]
 }
@@ -204,7 +221,10 @@ type User {
   bio: String
   photoUrl: String
   coverUrl: String
+  role: UserRole!
   lastActiveAt: DateTime
+  bannedUntil: DateTime
+  banReason: String
   posts(limit: Int = 5, offset: Int = 0): [Post!]
   customFields: [UserCustomField!]
   badge: UserBadge
@@ -219,6 +239,25 @@ type User {
   jobApplications: [JobApplication!]
   followersCount: Int!
   followingCount: Int!
+  isBlockedByMe: Boolean!
+  theyBlockedMe: Boolean!
+}
+
+"""Roles disponibles en la plataforma"""
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+  VERIFIED_BUSINESS
+}
+
+type UserBlock {
+  id: ID!
+  blockerId: String!
+  blockedId: String!
+  blocker: User!
+  blocked: User!
+  createdAt: DateTime!
 }
 
 type UploadUrlResponse {
@@ -226,9 +265,118 @@ type UploadUrlResponse {
   publicUrl: String!
 }
 
+type StoreProductMedia {
+  id: ID!
+  url: String!
+  type: String!
+  order: Int!
+  createdAt: DateTime!
+}
+
+type StoreProductLike {
+  id: ID!
+  product: StoreProduct!
+  user: User!
+  createdAt: DateTime!
+}
+
+type StoreProductCommentLike {
+  id: ID!
+  user: User
+  userId: String!
+  commentId: String!
+  createdAt: DateTime!
+}
+
+type StoreProductComment {
+  id: ID!
+  content: String!
+  product: StoreProduct!
+  user: User!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  likes: [StoreProductCommentLike!]
+  likesCount: Int!
+  isLikedByMe: Boolean!
+  parent: StoreProductComment
+  parentId: String
+  replies: [StoreProductComment!]
+  editedAt: DateTime
+  deletedAt: DateTime
+}
+
+type StoreProduct {
+  id: ID!
+  title: String!
+  description: String!
+  price: Float!
+  currency: String
+  location: String
+  contactPhone: String
+  condition: String
+  category: String
+  isAvailable: Boolean!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  deletedAt: DateTime
+  editedAt: DateTime
+  seller: User!
+  media: [StoreProductMedia!]
+  likes: [StoreProductLike!]
+  comments: [StoreProductComment!]
+  commentsCount: Float!
+}
+
+type Report {
+  id: ID!
+  reason: String!
+  status: ReportStatus!
+  reportedItemType: ReportedItemType!
+  reportedItemId: ID!
+  moderatorNote: String
+  contentDeleted: Boolean
+  reporter: User!
+  createdAt: DateTime!
+}
+
+"""Estado de una denuncia"""
+enum ReportStatus {
+  PENDING
+  RESOLVED
+  DISMISSED
+}
+
+"""Tipo de contenido denunciado"""
+enum ReportedItemType {
+  POST
+  JOB_OFFER
+  SERVICE
+  PRODUCT
+  COMMENT
+  USER
+}
+
+type Notification {
+  id: ID!
+  title: String!
+  message: String!
+  type: NotificationType!
+  isRead: Boolean!
+  user: User!
+  createdAt: DateTime!
+}
+
+"""Tipo de notificación"""
+enum NotificationType {
+  SYSTEM
+  MODERATION
+  SOCIAL
+}
+
 type ReadMessagesPayload {
   conversationId: String!
   readerId: String!
+  readAt: DateTime
 }
 
 type ApplyToJobResponse {
@@ -237,37 +385,82 @@ type ApplyToJobResponse {
   cvPublicUrl: String!
 }
 
+type Appeal {
+  id: ID!
+  reason: String!
+  status: AppealStatus!
+  type: AppealType!
+  referenceId: ID
+  user: User!
+  createdAt: DateTime!
+}
+
+"""Estado de la apelación"""
+enum AppealStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+"""Tipo de apelación"""
+enum AppealType {
+  ACCOUNT_BAN
+  CONTENT_DELETION
+}
+
 type Query {
   """Verifica si el servidor GraphQL está funcionando"""
   ping: String!
   getPosts(limit: Int! = 5, offset: Int! = 0): [Post!]!
+  getPostById(id: String!): Post
   searchPosts(query: String!, limit: Int! = 5, offset: Int! = 0): [Post!]!
+  getMyBlockedUsers(limit: Float, offset: Float): [User!]!
   getUserProfile(id: String!): User!
   me: User!
   searchUsers(searchTerm: String!, limit: Int = 5, offset: Int = 0): [User!]!
+
+  """Lista todos los usuarios actualmente baneados."""
+  getBannedUsers(limit: Int = 15, offset: Int = 0, searchTerm: String): [User!]!
   isFollowing(followingId: String!): Boolean!
   getFollowers(userId: String!): [User!]!
   getFollowing(userId: String!): [User!]!
   getOnlineFollowing: [User!]!
   getOnlineFollowingCount: Int!
+  getMyNotifications(limit: Int! = 20, offset: Int! = 0): [Notification!]!
+  getUnreadNotificationsCount: Int!
   getCommentsByPost(postId: String!, limit: Int = 10, offset: Int = 0): [Comment!]!
+  getCommentById(id: String!): Comment
   getUserConversations: [Conversation!]!
   getChatMessages(conversationId: String!, limit: Float, offset: Float): [Message!]!
   searchMessagesInChat(conversationId: String!, searchTerm: String!): [Message!]!
   getConversation(conversationId: String!): Conversation
-  getChatMedia(conversationId: String!): [Message!]!
+  getChatMedia(conversationId: String!, limit: Int, offset: Int): [Message!]!
   getActiveStories(limit: Int! = 20, offset: Int! = 0): [Story!]!
   getViewedStoryIds: [String!]!
   jobOffers(limit: Int! = 20, offset: Int! = 0): [JobOffer!]!
+  getJobOfferById(id: ID!): JobOffer
   myJobOffers: [JobOffer!]!
+  jobOffersByUser(userId: ID!): [JobOffer!]!
   professionalProfiles(limit: Int! = 20, offset: Int! = 0): [ProfessionalProfile!]!
+  getProfessionalProfileById(id: String!): ProfessionalProfile
+  professionalProfilesByUser(userId: String!): [ProfessionalProfile!]!
   myProfessionalProfile: [ProfessionalProfile!]!
   jobApplications(jobOfferId: ID!): [JobApplication!]!
   myApplications: [JobApplication!]!
   getFeed(limit: Int! = 10, offset: Int! = 0): [FeedItem!]!
+  storeProducts(limit: Int! = 20, offset: Int! = 0): [StoreProduct!]!
+  myStoreProducts: [StoreProduct!]!
+  storeProductsByUser(userId: ID!): [StoreProduct!]!
+  getStoreProductById(id: ID!): StoreProduct
+  getStoreProductComments(productId: ID!, limit: Int! = 20, offset: Int! = 0): [StoreProductComment!]!
+  getStoreProductCommentById(id: ID!): StoreProductComment
+  getPendingReports(limit: Int! = 20, offset: Int! = 0): [Report!]!
+  getAllReports(limit: Int! = 20, offset: Int! = 0, filter: String): [Report!]!
+  getMyReportStatus(reportedItemId: ID!): Report
+  getPendingAppeals(limit: Int! = 20, offset: Int! = 0): [Appeal!]!
 }
 
-union FeedItem = Post | JobOffer | ProfessionalProfile
+union FeedItem = Post | JobOffer | ProfessionalProfile | StoreProduct
 
 type Mutation {
   createPost(content: String!, title: String, media: [PostMediaInput!]): Post!
@@ -275,6 +468,8 @@ type Mutation {
   deletePost(id: String!): Boolean!
   toggleLike(postId: String!): Post!
   generateUploadUrl(fileName: String!, fileType: String!, folder: String!): UploadUrlResponse!
+  blockUser(userId: String!): UserBlock!
+  unblockUser(userId: String!): Boolean!
   addCustomField(title: String!, value: String!): UserCustomField!
   updateCustomField(id: String!, title: String!, value: String!): UserCustomField!
   deleteCustomField(id: String!): Boolean!
@@ -282,17 +477,29 @@ type Mutation {
   updateProfile(firstName: String, lastName: String, bio: String, username: String, phone: String): User!
   updateProfileMedia(photoUrl: String, coverUrl: String): User!
   pingPresence: Boolean!
+
+  """
+  Suspende o banea a un usuario por X días. Si durationInDays=999 se considera permanente. wipeContent permite borrar todo su contenido.
+  """
+  banUser(userId: String!, durationInDays: Int!, reason: String!, wipeContent: Boolean = false): User!
+
+  """Levanta la suspensión de un usuario."""
+  unbanUser(userId: String!): User!
   toggleFollow(followingId: String!): Boolean!
+  markNotificationAsRead(id: ID!): Notification
+  markAllNotificationsAsRead: Boolean!
   createComment(postId: String!, content: String!, parentId: String): Comment!
   deleteComment(id: String!): Boolean!
   updateComment(id: String!, content: String!): Comment!
   toggleCommentLike(commentId: String!): Comment!
   deleteMessageForMe(messageId: String!): Boolean!
   deleteMessageForAll(messageId: String!): Boolean!
+  deleteMessagesBulk(messageIds: [String!]!): Boolean!
+  deleteMessagesBulkForMe(messageIds: [String!]!): Boolean!
   deleteConversationForMe(conversationId: String!): Boolean!
   editMessage(messageId: String!, newContent: String!): Message!
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
-  sendMessage(conversationId: String!, content: String = "", imageUrl: String, videoUrl: String, storyId: String): Message!
+  sendMessage(conversationId: String!, content: String = "", imageUrl: String, videoUrl: String, storyId: String, audioUrl: String, audioDuration: Int, fileUrl: String, fileName: String, fileSize: Int, fileMimeType: String): Message!
   markMessagesAsRead(conversationId: String!): Boolean!
   createStory(mediaUrl: String!, mediaType: String!, content: String): Story!
   markStoryAsViewed(storyId: String!): Boolean!
@@ -307,6 +514,19 @@ type Mutation {
   updateApplicationStatus(input: UpdateApplicationStatusInput!): JobApplication!
   deleteApplication(applicationId: ID!): Boolean!
   updateApplication(input: UpdateApplicationInput!): ApplyToJobResponse!
+  createStoreProduct(input: CreateStoreProductInput!): StoreProduct!
+  updateStoreProduct(input: UpdateStoreProductInput!): StoreProduct!
+  deleteStoreProduct(id: ID!): Boolean!
+  toggleStoreProductLike(productId: ID!): StoreProduct!
+  createStoreProductComment(productId: ID!, content: String!, parentId: ID): StoreProductComment!
+  deleteStoreProductComment(commentId: ID!): Boolean!
+  toggleStoreProductCommentLike(commentId: ID!): StoreProductComment!
+  createReport(input: CreateReportInput!): Report!
+  resolveReport(input: ResolveReportInput!): Report!
+  dismissReport(reportId: ID!, moderatorNote: String): Report!
+  directModerateContent(input: DirectModerateInput!): Report!
+  createAppeal(input: CreateAppealInput!): Appeal!
+  resolveAppeal(input: ResolveAppealInput!): Appeal!
 }
 
 input PostMediaInput {
@@ -369,6 +589,67 @@ input UpdateApplicationInput {
   message: String
   contactPhone: String
   requestNewCv: Boolean
+}
+
+input CreateStoreProductInput {
+  title: String!
+  description: String!
+  price: Float!
+  currency: String
+  location: String
+  contactPhone: String
+  condition: String
+  category: String
+  media: [StoreProductMediaInput!]
+}
+
+input StoreProductMediaInput {
+  url: String!
+  type: String!
+  order: Int!
+}
+
+input UpdateStoreProductInput {
+  id: ID!
+  title: String
+  description: String
+  price: Float
+  currency: String
+  location: String
+  contactPhone: String
+  condition: String
+  category: String
+  isAvailable: Boolean
+  media: [StoreProductMediaInput!]
+}
+
+input CreateReportInput {
+  reportedItemId: ID!
+  reportedItemType: ReportedItemType!
+  reason: String!
+}
+
+input ResolveReportInput {
+  reportId: ID!
+  deleteContent: Boolean = false
+  moderatorNote: String
+}
+
+input DirectModerateInput {
+  reportedItemId: ID!
+  reportedItemType: ReportedItemType!
+  moderatorNote: String
+}
+
+input CreateAppealInput {
+  reason: String!
+  type: AppealType!
+  referenceId: ID
+}
+
+input ResolveAppealInput {
+  appealId: ID!
+  approve: Boolean!
 }
 
 type Subscription {

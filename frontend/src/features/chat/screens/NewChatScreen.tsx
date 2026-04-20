@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { router } from 'expo-router';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppStackParamList } from '../../../navigation/AppNavigator';
@@ -65,8 +66,9 @@ export default function NewChatScreen() {
 
             if (data?.getOrCreateOneOnOneChat?.id) {
                 // Navegar al chat y resetear el stack para que al volver vaya a la lista
-                navigation.replace('ChatRoom', { 
-                    conversationId: data.getOrCreateOneOnOneChat.id 
+                router.replace({
+                    pathname: '/chatRoom',
+                    params: { conversationId: data.getOrCreateOneOnOneChat.id }
                 });
             }
         } catch (error) {

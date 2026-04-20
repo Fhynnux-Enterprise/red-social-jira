@@ -5,8 +5,18 @@ import { getMainDefinition } from '@apollo/client/utilities';
 import { onError } from '@apollo/client/link/error';
 import { setContext } from '@apollo/client/link/context';
 import * as SecureStore from 'expo-secure-store';
-import { DeviceEventEmitter } from 'react-native';
+import { notifySessionExpired } from './session.manager';
 import Toast from 'react-native-toast-message';
+
+// ─── Ban event emitter (singleton) ───────────────────────────────────────────
+type BanHandler = (info: { bannedUntil: string; banReason: string }) => void;
+let _banHandler: BanHandler | null = null;
+
+export const registerBanHandler = (handler: BanHandler) => { _banHandler = handler; };
+export const unregisterBanHandler = () => { _banHandler = null; };
+const notifyBanned = (info: { bannedUntil: string; banReason: string }) => {
+    _banHandler?.(info);
+};
 
 // Define the GraphQL endpoint connecting securely to the local NestJS server
 const httpLink = createHttpLink({
@@ -34,16 +44,28 @@ const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
     if (graphQLErrors) {
         graphQLErrors.forEach(({ extensions, message, path }) => {
             // Ignoramos errores 401 que vengan de suscripciones WebSocket (messageAdded).
-            // Esos son esperados y no indican sesión expirada del usuario.
             const isFromSubscription = path && path.includes('messageAdded');
             if (isFromSubscription) return;
 
+            // ── Detectar USER_BANNED ──────────────────────────────────────────
             if (
                 extensions?.code === 'UNAUTHENTICATED' ||
                 extensions?.code === '401' ||
                 message.includes('Unauthorized') ||
                 message.includes('not authenticated')
             ) {
+                // Intentar parsear si es un ban estructurado
+                try {
+                    const parsed = JSON.parse(message);
+                    if (parsed?.code === 'USER_BANNED' && parsed?.bannedUntil) {
+                        notifyBanned({
+                            bannedUntil: parsed.bannedUntil,
+                            banReason: parsed.banReason || 'Violación de las normas de la comunidad',
+                        });
+                        return; // No tratar como session expired
+                    }
+                } catch (_) { /* no era JSON de ban */ }
+
                 isUnauthorized = true;
             }
         });
@@ -67,7 +89,8 @@ const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
         // Limpiamos la caché de Apollo inmediatamente para mayor seguridad
         apolloClient.clearStore().catch(e => console.error('Error clearing store:', e));
 
-        DeviceEventEmitter.emit('session_expired');
+        // Notificamos via el session manager (sin riesgo de race condition)
+        notifySessionExpired();
         Toast.show({
             type: 'error',
             text1: 'Sesión expirada',
@@ -108,7 +131,7 @@ export const apolloClient = new ApolloClient({
     cache: new InMemoryCache({
         // Permite al cache entender qué tipos concretos puede devolver el union FeedItem
         possibleTypes: {
-            FeedItem: ['Post', 'JobOffer', 'ProfessionalProfile'],
+            FeedItem: ['Post', 'JobOffer', 'ProfessionalProfile', 'StoreProduct'],
         },
         typePolicies: {
             Query: {
@@ -149,6 +172,17 @@ export const apolloClient = new ApolloClient({
                     },
                     getUserProfile: {
                         keyArgs: ['id'],
+                    },
+                    getMyBlockedUsers: {
+                        keyArgs: false,
+                        merge(existing = [], incoming, { args }) {
+                            const offset = args?.offset || 0;
+                            if (offset === 0) return incoming; // Si es la primera página o refetch, reemplazamos
+
+                            const existingRefs = new Set(existing.map((ref: any) => ref.__ref));
+                            const uniqueIncoming = incoming.filter((ref: any) => !existingRefs.has(ref.__ref));
+                            return [...existing, ...uniqueIncoming];
+                        },
                     },
                 },
             },

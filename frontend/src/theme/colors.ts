@@ -18,7 +18,7 @@ export const colors = {
     },
     dark: {
         background: '#000000',
-        surface: '#080808',
+        surface: '#070707f8',
         text: '#FFFFFF',
         textSecondary: '#808080',
         border: '#121212',

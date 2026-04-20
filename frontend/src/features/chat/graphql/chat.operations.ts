@@ -4,6 +4,7 @@ export const GET_CONVERSATION = gql`
   query GetConversation($conversationId: String!) {
     getConversation(conversationId: $conversationId) {
       id
+      isBlocked
       participants {
         user {
           id
@@ -26,6 +27,8 @@ export const GET_USER_CONVERSATIONS = gql`
     getUserConversations {
       id
       updatedAt
+      createdAt
+      isBlocked
       participants {
         user {
           id
@@ -39,7 +42,19 @@ export const GET_USER_CONVERSATIONS = gql`
         content
         imageUrl
         videoUrl
+        audioUrl
+        audioDuration
+        fileUrl
+        fileName
+        fileSize
+        fileMimeType
         createdAt
+        isDeletedForAll
+        isRead
+        userId
+        sender {
+          id
+        }
       }
       unreadCount
     }
@@ -53,13 +68,22 @@ export const GET_CHAT_MESSAGES = gql`
       content
       imageUrl
       videoUrl
+      audioUrl
+      audioDuration
+      fileUrl
+      fileName
+      fileSize
+      fileMimeType
       createdAt
       isRead
       isDeletedForAll
       editedAt
+      readAt
       storyId
       sender {
         id
+        username
+        photoUrl
       }
     }
   }
@@ -72,13 +96,22 @@ export const MESSAGE_ADDED_SUBSCRIPTION = gql`
       content
       imageUrl
       videoUrl
+      audioUrl
+      audioDuration
+      fileUrl
+      fileName
+      fileSize
+      fileMimeType
       createdAt
       isRead
       isDeletedForAll
       editedAt
+      readAt
       storyId
       sender {
         id
+        username
+        photoUrl
       }
     }
   }
@@ -121,19 +154,28 @@ export const EDIT_MESSAGE = gql`
 `;
 
 export const SEND_MESSAGE = gql`
-  mutation SendMessage($conversationId: String!, $content: String, $imageUrl: String, $videoUrl: String, $storyId: String) {
-    sendMessage(conversationId: $conversationId, content: $content, imageUrl: $imageUrl, videoUrl: $videoUrl, storyId: $storyId) {
+  mutation SendMessage($conversationId: String!, $content: String, $imageUrl: String, $videoUrl: String, $storyId: String, $audioUrl: String, $audioDuration: Int, $fileUrl: String, $fileName: String, $fileSize: Int, $fileMimeType: String) {
+    sendMessage(conversationId: $conversationId, content: $content, imageUrl: $imageUrl, videoUrl: $videoUrl, storyId: $storyId, audioUrl: $audioUrl, audioDuration: $audioDuration, fileUrl: $fileUrl, fileName: $fileName, fileSize: $fileSize, fileMimeType: $fileMimeType) {
       id
       content
       imageUrl
       videoUrl
+      audioUrl
+      audioDuration
+      fileUrl
+      fileName
+      fileSize
+      fileMimeType
       createdAt
       isRead
       isDeletedForAll
       editedAt
+      readAt
       storyId
       sender {
         id
+        username
+        photoUrl
       }
     }
   }
@@ -162,6 +204,18 @@ export const SEARCH_MESSAGES_IN_CHAT = gql`
   }
 `;
 
+export const DELETE_MESSAGES_BULK = gql`
+  mutation DeleteMessagesBulk($messageIds: [String!]!) {
+    deleteMessagesBulk(messageIds: $messageIds)
+  }
+`;
+
+export const DELETE_MESSAGES_BULK_FOR_ME = gql`
+  mutation DeleteMessagesBulkForMe($messageIds: [String!]!) {
+    deleteMessagesBulkForMe(messageIds: $messageIds)
+  }
+`;
+
 export const MARK_MESSAGES_AS_READ = gql`
   mutation MarkMessagesAsRead($conversationId: String!) {
     markMessagesAsRead(conversationId: $conversationId)
@@ -173,6 +227,7 @@ export const MESSAGES_READ_SUBSCRIPTION = gql`
     messagesRead(conversationId: $conversationId) {
       conversationId
       readerId
+      readAt
     }
   }
 `;
@@ -184,7 +239,16 @@ export const INBOX_UPDATE_SUBSCRIPTION = gql`
       content
       imageUrl
       videoUrl
+      audioUrl
+      audioDuration
+      fileUrl
+      fileName
+      fileSize
+      fileMimeType
       createdAt
+      isDeletedForAll
+      isRead
+      userId
       conversationId
       storyId
       sender {
@@ -195,8 +259,8 @@ export const INBOX_UPDATE_SUBSCRIPTION = gql`
 `;
 
 export const GET_CHAT_MEDIA = gql`
-  query GetChatMedia($conversationId: String!) {
-    getChatMedia(conversationId: $conversationId) {
+  query GetChatMedia($conversationId: String!, $limit: Int, $offset: Int) {
+    getChatMedia(conversationId: $conversationId, limit: $limit, offset: $offset) {
       id
       imageUrl
       videoUrl

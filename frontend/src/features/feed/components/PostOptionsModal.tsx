@@ -41,6 +41,7 @@ export default function PostOptionsModal({ visible, onClose, onEdit, onDelete }:
                 animationType="slide"
                 transparent={true}
                 onRequestClose={onClose}
+                statusBarTranslucent
             >
                 <TouchableWithoutFeedback onPress={onClose}>
                     <View style={styles.overlay}>
@@ -62,6 +63,13 @@ export default function PostOptionsModal({ visible, onClose, onEdit, onDelete }:
                                         <Ionicons name="trash" size={20} color="#FF3B30" />
                                     </View>
                                     <Text style={[styles.optionText, { color: '#FF3B30' }]}>Eliminar publicación</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity style={[styles.optionButton, { marginTop: 10 }]} onPress={onClose}>
+                                    <View style={[styles.iconContainer, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>
+                                        <Ionicons name="close" size={20} color={colors.textSecondary} />
+                                    </View>
+                                    <Text style={[styles.optionText, { color: colors.textSecondary }]}>Cancelar</Text>
                                 </TouchableOpacity>
                             </View>
                         </TouchableWithoutFeedback>

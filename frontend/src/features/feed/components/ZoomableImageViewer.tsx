@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, Dimensions, Alert, Image as RNImage, Modal, View, Text, TouchableOpacity, TouchableWithoutFeedback } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, Dimensions, Alert, Image as RNImage, Modal, View, Text, TouchableOpacity, TouchableWithoutFeedback, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import Animated, {
@@ -34,16 +34,27 @@ interface ZoomableImageViewerProps {
 export default function ZoomableImageViewer({ url, mediaType = 'image', onClose, onZoomChange }: ZoomableImageViewerProps) {
     const [isMenuVisible, setIsMenuVisible] = useState(false);
     const scale = useSharedValue(1);
-    const focalX = useSharedValue(0);
-    const focalY = useSharedValue(0);
+    const focalX = useSharedValue(SCREEN_WIDTH / 2);
+    const focalY = useSharedValue(SCREEN_HEIGHT / 2);
     const savedScale = useSharedValue(1);
 
     const translationX = useSharedValue(0);
     const translationY = useSharedValue(0);
     const savedTranslationX = useSharedValue(0);
     const savedTranslationY = useSharedValue(0);
-
     const isZoomedState = useSharedValue(false);
+    
+    const aspectRatio = useSharedValue(SCREEN_WIDTH / SCREEN_HEIGHT);
+
+    useEffect(() => {
+        if (mediaType === 'image') {
+            RNImage.getSize(url, (width, height) => {
+                if (height > 0) {
+                    aspectRatio.value = width / height;
+                }
+            }, () => {});
+        }
+    }, [url, mediaType]);
 
     const updateZoomState = (currentScale: number) => {
         'worklet';
@@ -63,21 +74,23 @@ export default function ZoomableImageViewer({ url, mediaType = 'image', onClose,
             focalY.value = e.focalY;
         })
         .onUpdate((e) => {
-            const clamp = (val: number, min: number, max: number) => { 'worklet'; return Math.min(Math.max(val, min), max); };
-            // Tarea 1: Limitar la escala entre 1 y 3.5
-            scale.value = clamp(savedScale.value * e.scale, 1, 3.5);
+            scale.value = Math.min(Math.max(savedScale.value * e.scale, 1), 3.5);
             updateZoomState(scale.value);
         })
         .onEnd(() => {
-            if (scale.value <= 1) {
-                scale.value = withSpring(1);
+            if (scale.value <= 1 || mediaType === 'video') {
+                scale.value = withTiming(1, { duration: 250 });
                 savedScale.value = 1;
-                translationX.value = withSpring(0);
-                translationY.value = withSpring(0);
+                translationX.value = withTiming(0, { duration: 250 });
+                translationY.value = withTiming(0, { duration: 250 });
+                focalX.value = SCREEN_WIDTH / 2;
+                focalY.value = SCREEN_HEIGHT / 2;
                 savedTranslationX.value = 0;
                 savedTranslationY.value = 0;
             } else {
                 savedScale.value = scale.value;
+                savedTranslationX.value = translationX.value;
+                savedTranslationY.value = translationY.value;
             }
             updateZoomState(scale.value);
         });
@@ -86,21 +99,26 @@ export default function ZoomableImageViewer({ url, mediaType = 'image', onClose,
     const panGesture = Gesture.Pan()
         .onUpdate((e) => {
             if (scale.value > 1) {
-                const clamp = (val: number, min: number, max: number) => { 'worklet'; return Math.min(Math.max(val, min), max); };
-                const maxTranslateX = (SCREEN_WIDTH * scale.value - SCREEN_WIDTH) / 2;
-                const maxTranslateY = (SCREEN_HEIGHT * scale.value - SCREEN_HEIGHT) / 2;
-                translationX.value = clamp(savedTranslationX.value + e.translationX, -maxTranslateX, maxTranslateX);
-                translationY.value = clamp(savedTranslationY.value + e.translationY, -maxTranslateY, maxTranslateY);
+                // Calcular tamaño visual real de la imagen contenida en la pantalla
+                const visualWidth = Math.min(SCREEN_WIDTH, SCREEN_HEIGHT * aspectRatio.value);
+                const visualHeight = Math.min(SCREEN_HEIGHT, SCREEN_WIDTH / aspectRatio.value);
+                
+                // Los límites de traducción se basan en si la imagen supera la pantalla después del zoom
+                const maxTranslateX = Math.max(0, (visualWidth * scale.value - SCREEN_WIDTH) / 2);
+                const maxTranslateY = Math.max(0, (visualHeight * scale.value - SCREEN_HEIGHT) / 2);
+
+                translationX.value = Math.min(Math.max(savedTranslationX.value + e.translationX, -maxTranslateX), maxTranslateX);
+                translationY.value = Math.min(Math.max(savedTranslationY.value + e.translationY, -maxTranslateY), maxTranslateY);
             } else {
                 // Arrastrar hacia arriba o abajo solo si no hay zoom
                 translationY.value = e.translationY;
             }
         })
         .onEnd((e) => {
-            if (scale.value > 1) {
+            if (scale.value > 1 && mediaType !== 'video') {
                 savedTranslationX.value = translationX.value;
                 savedTranslationY.value = translationY.value;
-            } else {
+            } else if (scale.value <= 1) {
                 // Cerrar si el arrastre vertical supera el umbral
                 if (Math.abs(e.translationY) > 100 || Math.abs(e.velocityY) > 800) {
                     const toValue = e.translationY > 0 ? SCREEN_HEIGHT : -SCREEN_HEIGHT;
@@ -113,21 +131,56 @@ export default function ZoomableImageViewer({ url, mediaType = 'image', onClose,
             }
         });
 
-    // Double Tap to Reset/Zoom
+    // Double Tap to Reset/Zoom (Solo para imágenes)
     const doubleTap = Gesture.Tap()
         .numberOfTaps(2)
-        .onEnd(() => {
+        .onEnd((e) => {
+            if (mediaType === 'video') return; // Los videos no hacen zoom con doble toque
+
             if (scale.value !== 1) {
-                scale.value = withSpring(1);
-                translationX.value = withSpring(0);
-                translationY.value = withSpring(0);
+                // Reset a estado original con animación suave sin rebote
+                scale.value = withTiming(1, { duration: 250 });
+                translationX.value = withTiming(0, { duration: 250 });
+                translationY.value = withTiming(0, { duration: 250 });
+                focalX.value = SCREEN_WIDTH / 2;
+                focalY.value = SCREEN_HEIGHT / 2;
                 savedScale.value = 1;
                 savedTranslationX.value = 0;
                 savedTranslationY.value = 0;
+                updateZoomState(1);
             } else {
-                scale.value = withSpring(2);
-                savedScale.value = 2;
-                updateZoomState(2);
+                // Hacer zoom en el punto exacto del toque (doble toque en ese lugar)
+                const targetScale = 2.5; // Zoom para mayor inmersión
+                
+                // Neutralizar el focal point para que las matemáticas de traslación funcionen exacto
+                focalX.value = SCREEN_WIDTH / 2;
+                focalY.value = SCREEN_HEIGHT / 2;
+
+                // Calcular cuánto debemos mover la imagen para centrar el toque original
+                let targetX = -(e.x - SCREEN_WIDTH / 2) * (targetScale - 1);
+                let targetY = -(e.y - SCREEN_HEIGHT / 2) * (targetScale - 1);
+
+                // Calcular tamaño visual real de la imagen para respetar márgenes
+                const visualWidth = Math.min(SCREEN_WIDTH, SCREEN_HEIGHT * aspectRatio.value);
+                const visualHeight = Math.min(SCREEN_HEIGHT, SCREEN_WIDTH / aspectRatio.value);
+                
+                // Límites exactos
+                const maxTranslateX = Math.max(0, (visualWidth * targetScale - SCREEN_WIDTH) / 2);
+                const maxTranslateY = Math.max(0, (visualHeight * targetScale - SCREEN_HEIGHT) / 2);
+
+                // Asegurar que el punto de toque no nos empuje fuera de los bordes reales (fondo negro)
+                targetX = Math.min(Math.max(targetX, -maxTranslateX), maxTranslateX);
+                targetY = Math.min(Math.max(targetY, -maxTranslateY), maxTranslateY);
+
+                // Animar suavemente
+                scale.value = withTiming(targetScale, { duration: 300 });
+                translationX.value = withTiming(targetX, { duration: 300 });
+                translationY.value = withTiming(targetY, { duration: 300 });
+
+                savedScale.value = targetScale;
+                savedTranslationX.value = targetX;
+                savedTranslationY.value = targetY;
+                updateZoomState(targetScale);
             }
         });
 
@@ -207,22 +260,37 @@ export default function ZoomableImageViewer({ url, mediaType = 'image', onClose,
     return (
         <GestureHandlerRootView style={styles.container}>
             <GestureDetector gesture={composedGestures}>
-                <Animated.View style={[styles.image, animatedStyle]}>
-                    {mediaType === 'image' ? (
-                        <Animated.Image
+                <View style={styles.container}>
+                    {/* Fondo con desenfoque dinámico para eliminar barras negras */}
+                    {mediaType === 'image' && (
+                        <RNImage
                             source={{ uri: url }}
-                            style={styles.image}
-                            resizeMode="contain"
-                        />
-                    ) : (
-                        <AnimatedVideoView
-                            player={player}
-                            style={styles.image}
-                            contentFit="contain"
-                            nativeControls={true}
+                            style={StyleSheet.absoluteFill}
+                            blurRadius={Platform.OS === 'ios' ? 40 : 15}
+                            resizeMode="cover"
                         />
                     )}
-                </Animated.View>
+                    {mediaType === 'image' && (
+                        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+                    )}
+
+                    <Animated.View style={[styles.image, animatedStyle]}>
+                        {mediaType === 'image' ? (
+                            <Animated.Image
+                                source={{ uri: url }}
+                                style={styles.image}
+                                resizeMode="contain"
+                            />
+                        ) : (
+                            <AnimatedVideoView
+                                player={player}
+                                style={styles.image}
+                                contentFit="contain"
+                                nativeControls={false}
+                            />
+                        )}
+                    </Animated.View>
+                </View>
             </GestureDetector>
 
             {/* Modal de Opciones (Bottom Sheet) */}
@@ -255,9 +323,11 @@ export default function ZoomableImageViewer({ url, mediaType = 'image', onClose,
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: 'black',
+        backgroundColor: '#000',
         justifyContent: 'center',
         alignItems: 'center',
+        width: SCREEN_WIDTH,
+        height: SCREEN_HEIGHT,
     },
     image: {
         width: SCREEN_WIDTH,

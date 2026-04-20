@@ -39,6 +39,15 @@ export class CommentsService {
         return comments.map(comment => this.mapComment(comment, userId));
     }
 
+    async getCommentById(id: string, userId?: string): Promise<Comment | null> {
+        const comment = await this.commentRepository.findOne({
+            where: { id },
+            relations: ['user', 'likes', 'post', 'post.author', 'post.author.badge', 'post.media', 'post.likes'],
+        });
+        if (!comment) return null;
+        return this.mapComment(comment, userId);
+    }
+
     async getReplies(commentId: string, userId?: string): Promise<Comment[]> {
         const replies = await this.commentRepository.find({
             where: { parentId: commentId },
@@ -66,6 +75,7 @@ export class CommentsService {
             throw new UnauthorizedException('No tienes permiso para editar este comentario');
         }
         comment.content = content;
+        comment.editedAt = new Date(); // Marca de edición real del usuario
         const saved = await this.commentRepository.save(comment);
         return this.mapComment(saved, userId);
     }

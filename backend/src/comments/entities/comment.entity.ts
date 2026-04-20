@@ -62,6 +62,10 @@ export class Comment {
     @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
     deletedAt?: Date;
 
+    @Field({ nullable: true })
+    @Column({ name: 'edited_at', type: 'timestamptz', nullable: true })
+    editedAt?: Date;
+
     @Field(() => Number, { defaultValue: 0 })
     likesCount?: number;
 

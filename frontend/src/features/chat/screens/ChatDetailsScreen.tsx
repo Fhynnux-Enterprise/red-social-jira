@@ -8,10 +8,12 @@ import {
     ScrollView,
     Platform,
     Modal,
+    ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { AppStackParamList } from '../../../navigation/AppNavigator';
@@ -22,6 +24,7 @@ import Toast from 'react-native-toast-message';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import ZoomableImageViewer from '../../feed/components/ZoomableImageViewer';
 import { InteractiveVideoPlayer } from '../../feed/components/ImageCarousel';
+import { BLOCK_USER, UNBLOCK_USER } from '../../user-blocks/graphql/user-blocks.operations';
 import { Dimensions, FlatList, Animated } from 'react-native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -30,29 +33,116 @@ export default function ChatDetailsScreen() {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
     const route = useRoute<any>();
+    const localParams = useLocalSearchParams();
     const insets = useSafeAreaInsets();
-    const { conversationId } = route.params || {};
+    const params = route.params || localParams || {};
+    const { conversationId } = params;
     const { user: currentUser } = useAuth() as any;
     const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
+    const [isBlockConfirmVisible, setIsBlockConfirmVisible] = useState(false);
     
     // Estados para el visor multimedia
     const [viewerVisible, setViewerVisible] = useState(false);
     const [viewerActiveIndex, setViewerActiveIndex] = useState(0);
-    const viewerTranslateY = React.useRef(new Animated.Value(0)).current;
-    const viewerBgOpacity = viewerTranslateY.interpolate({
+    const [isMuted, setIsMuted] = useState(true);
+    
+    // Gesto de Arrastrar para Cerrar (Swipe-to-close)
+    const viewerTranslateY = useRef(new Animated.Value(0)).current;
+    const viewerScale = viewerTranslateY.interpolate({
         inputRange: [-SCREEN_HEIGHT, 0, SCREEN_HEIGHT],
-        outputRange: [0, 1, 0]
+        outputRange: [0.9, 1, 0.9],
+        extrapolate: 'clamp'
+    });
+    const viewerBgOpacity = viewerTranslateY.interpolate({
+        inputRange: [-SCREEN_HEIGHT / 2, 0, SCREEN_HEIGHT / 2],
+        outputRange: [0, 1, 0],
+        extrapolate: 'clamp'
     });
 
-    const { data, loading } = useQuery<any>(GET_CONVERSATION, {
+    const viewerPanResponder = useRef(
+        PanResponder.create({
+            onMoveShouldSetPanResponder: (_, gestureState) => {
+                return Math.abs(gestureState.dy) > 20 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+            },
+            onPanResponderMove: (_, gestureState) => {
+                viewerTranslateY.setValue(gestureState.dy);
+            },
+            onPanResponderRelease: (_, gestureState) => {
+                if (Math.abs(gestureState.dy) > 120 || Math.abs(gestureState.vy) > 0.5) {
+                    Animated.timing(viewerTranslateY, {
+                        toValue: gestureState.dy > 0 ? SCREEN_HEIGHT : -SCREEN_HEIGHT,
+                        duration: 250,
+                        useNativeDriver: true,
+                    }).start(() => {
+                        setViewerVisible(false);
+                        viewerTranslateY.setValue(0);
+                    });
+                } else {
+                    Animated.spring(viewerTranslateY, {
+                        toValue: 0,
+                        useNativeDriver: true,
+                        bounciness: 8
+                    }).start();
+                }
+            },
+        })
+    ).current;
+
+    const { data, loading, refetch } = useQuery<any>(GET_CONVERSATION, {
         variables: { conversationId },
         skip: !conversationId,
     });
 
-    const { data: mediaData, loading: loadingMedia } = useQuery<any>(GET_CHAT_MEDIA, {
-        variables: { conversationId },
+    const MEDIA_LIMIT = 24; // Múltiplo de 3
+    const [localMedia, setLocalMedia] = useState<any[]>([]);
+    const [hasMoreMedia, setHasMoreMedia] = useState(true);
+    const [isFetchingMoreMedia, setIsFetchingMoreMedia] = useState(false);
+
+    const { data: mediaData, loading: loadingMedia, fetchMore: fetchMoreMedia } = useQuery<any>(GET_CHAT_MEDIA, {
+        variables: { conversationId, limit: MEDIA_LIMIT, offset: 0 },
         skip: !conversationId,
+        onCompleted: (newData) => {
+            if (newData?.getChatMedia) {
+                setLocalMedia(newData.getChatMedia);
+                if (newData.getChatMedia.length < MEDIA_LIMIT) {
+                    setHasMoreMedia(false);
+                }
+            }
+        },
+        notifyOnNetworkStatusChange: true,
     });
+
+    const loadMoreMedia = async () => {
+        if (!hasMoreMedia || isFetchingMoreMedia || loadingMedia) return;
+        
+        setIsFetchingMoreMedia(true);
+        try {
+            const { data: moreData } = await fetchMoreMedia({
+                variables: {
+                    offset: localMedia.length
+                }
+            });
+
+            if (moreData?.getChatMedia) {
+                const newItems = moreData.getChatMedia;
+                if (newItems.length < MEDIA_LIMIT) {
+                    setHasMoreMedia(false);
+                }
+                setLocalMedia(prev => {
+                    // Evitar duplicados
+                    const existingIds = new Set(prev.map(i => i.id));
+                    const uniqueNew = newItems.filter((i: any) => !existingIds.has(i.id));
+                    return [...prev, ...uniqueNew];
+                });
+            }
+        } catch (err) {
+            console.error("Error fetching more media:", err);
+        } finally {
+            setIsFetchingMoreMedia(false);
+        }
+    };
+
+    const isBlocked = useMemo(() => data?.getConversation?.isBlocked, [data]);
 
     const otherUser = useMemo(() => {
         const participants = data?.getConversation?.participants;
@@ -66,6 +156,35 @@ export default function ChatDetailsScreen() {
         setIsConfirmModalVisible(true);
     };
 
+    const [blockUser, { loading: blocking }] = useMutation(BLOCK_USER, {
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Usuario bloqueado' });
+            refetch();
+            setIsBlockConfirmVisible(false);
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message }),
+    });
+
+    const [unblockUser, { loading: unblocking }] = useMutation(UNBLOCK_USER, {
+        onCompleted: () => {
+            Toast.show({ type: 'success', text1: 'Usuario desbloqueado' });
+            refetch();
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message }),
+    });
+
+    const handleBlockAction = () => {
+        if (isBlocked) {
+            unblockUser({ variables: { userId: otherUser.id } });
+        } else {
+            setIsBlockConfirmVisible(true);
+        }
+    };
+
+    const confirmBlockUser = () => {
+        blockUser({ variables: { userId: otherUser.id } });
+    };
+
     const handleConfirmDelete = async () => {
         setIsConfirmModalVisible(false);
         try {
@@ -75,12 +194,132 @@ export default function ChatDetailsScreen() {
             });
             client.cache.evict({ id: `Conversation:${conversationId}` });
             client.cache.gc();
-            navigation.navigate('MainTabs', { screen: 'Messages' });
+            router.push({
+                pathname: '/(tabs)/chatList'
+            });
         } catch (err) {
             console.error("Error al eliminar conversación:", err);
             Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo eliminar la conversación.' });
         }
     };
+
+
+    const renderHeader = () => (
+        <>
+            {/* Profile Section */}
+            <View style={styles.profileSection}>
+                <View style={styles.avatarContainer}>
+                    {otherUser?.photoUrl ? (
+                        <Image source={{ uri: otherUser.photoUrl }} style={styles.avatar} />
+                    ) : (
+                        <View style={[styles.avatarPlaceholder, { backgroundColor: colors.primary + '20' }]}>
+                            <Text style={[styles.avatarText, { color: colors.primary }]}>
+                                {otherUser?.firstName?.[0]}{otherUser?.lastName?.[0]}
+                            </Text>
+                        </View>
+                    )}
+                </View>
+                <Text style={[styles.name, { color: colors.text }]}>
+                    {otherUser?.firstName} {otherUser?.lastName}
+                </Text>
+                <Text style={[styles.username, { color: colors.textSecondary }]}>
+                    @{otherUser?.username}
+                </Text>
+            </View>
+
+            {/* Quick Actions */}
+            <View style={styles.actionsGrid}>
+                <TouchableOpacity 
+                    style={[styles.actionBtn, { backgroundColor: colors.surface, opacity: isBlocked ? 0.5 : 1 }]}
+                    onPress={() => {
+                        if (isBlocked) {
+                            Toast.show({
+                                type: 'info',
+                                text1: 'Acceso restringido',
+                                text2: 'No puedes ver este perfil.'
+                            });
+                            return;
+                        }
+                        router.push({
+                            pathname: '/profile',
+                            params: { userId: otherUser.id }
+                        });
+                    }}
+                >
+                    <Ionicons name="person" size={24} color={isBlocked ? colors.textSecondary : colors.primary} />
+                    <Text style={[styles.actionLabel, { color: isBlocked ? colors.textSecondary : colors.text }]}>Perfil</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.surface }]}>
+                    <Ionicons name="notifications" size={24} color={colors.primary} />
+                    <Text style={[styles.actionLabel, { color: colors.text }]}>Silenciar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                    style={[styles.actionBtn, { backgroundColor: colors.surface }]}
+                    onPress={() => router.push({
+                        pathname: '/chatRoom',
+                        params: { conversationId, activateSearch: true }
+                    })}
+                >
+                    <Ionicons name="search" size={24} color={colors.primary} />
+                    <Text style={[styles.actionLabel, { color: colors.text }]}>Buscar</Text>
+                </TouchableOpacity>
+            </View>
+
+            <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                    Multimedia
+                </Text>
+            </View>
+        </>
+    );
+
+    const renderFooter = () => (
+        <>
+            {isFetchingMoreMedia && (
+                <View style={{ paddingVertical: 20 }}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+            )}
+            
+            {localMedia.length === 0 && !loadingMedia && (
+                <View style={styles.emptyMediaContainer}>
+                    <Ionicons name="image-outline" size={32} color={colors.textSecondary} style={{ marginBottom: 8, opacity: 0.5 }} />
+                    <Text style={[styles.emptyMediaText, { color: colors.textSecondary }]}>
+                        Aún no existen archivos multimedia compartidos.
+                    </Text>
+                </View>
+            )}
+
+            {/* Options List */}
+            <View style={[styles.optionsList, { backgroundColor: colors.surface, marginTop: 20 }]}>
+                <TouchableOpacity 
+                    style={styles.optionItem}
+                    onPress={handleDeleteChat}
+                >
+                    <Ionicons name="trash-outline" size={22} color="#FF3B30" />
+                    <Text style={[styles.optionText, { color: '#FF3B30' }]}>Eliminar conversación</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                    style={[styles.optionItem, { borderBottomWidth: 0 }]}
+                    onPress={handleBlockAction}
+                    disabled={blocking || unblocking}
+                >
+                    <Ionicons 
+                        name={isBlocked ? "shield-checkmark-outline" : "shield-outline"} 
+                        size={22} 
+                        color={isBlocked ? colors.primary : "#FF3B30"} 
+                    />
+                    <Text style={[styles.optionText, { color: isBlocked ? colors.primary : "#FF3B30" }]}>
+                        {isBlocked ? 'Desbloquear usuario' : 'Bloquear usuario'}
+                    </Text>
+                </TouchableOpacity>
+            </View>
+            <View style={{ height: 40 + insets.bottom }} />
+        </>
+    );
 
     if (loading) {
         return (
@@ -93,6 +332,8 @@ export default function ChatDetailsScreen() {
         );
     }
 
+    const ITEM_WIDTH = (SCREEN_WIDTH - 40) / 3;
+
     return (
         <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
             {/* Header */}
@@ -104,111 +345,40 @@ export default function ChatDetailsScreen() {
                 <View style={{ width: 40 }} />
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContent}>
-                {/* Profile Section */}
-                <View style={styles.profileSection}>
-                    <View style={styles.avatarContainer}>
-                        {otherUser?.photoUrl ? (
-                            <Image source={{ uri: otherUser.photoUrl }} style={styles.avatar} />
-                        ) : (
-                            <View style={[styles.avatarPlaceholder, { backgroundColor: colors.primary + '20' }]}>
-                                <Text style={[styles.avatarText, { color: colors.primary }]}>
-                                    {otherUser?.firstName?.[0]}{otherUser?.lastName?.[0]}
-                                </Text>
+            <FlatList
+                data={localMedia}
+                keyExtractor={(item) => item.id}
+                numColumns={3}
+                columnWrapperStyle={styles.mediaGridRow}
+                contentContainerStyle={styles.flatListContent}
+                ListHeaderComponent={renderHeader}
+                ListFooterComponent={renderFooter}
+                onEndReached={loadMoreMedia}
+                onEndReachedThreshold={0.5}
+                renderItem={({ item: msg, index }) => (
+                    <TouchableOpacity 
+                        style={[styles.mediaItem, { width: ITEM_WIDTH, height: ITEM_WIDTH }]}
+                        onPress={() => {
+                            setViewerActiveIndex(index);
+                            setViewerVisible(true);
+                        }}
+                    >
+                        {msg.videoUrl ? (
+                            <View style={styles.videoThumbnailContainer}>
+                                <Image source={{ uri: msg.thumbnailUrl }} style={styles.mediaThumbnail} />
+                                <View style={styles.videoPlayOverlay}>
+                                    <Ionicons name="play" size={20} color="white" />
+                                </View>
                             </View>
+                        ) : (
+                            <Image 
+                                source={{ uri: msg.imageUrl }} 
+                                style={styles.mediaThumbnail} 
+                            />
                         )}
-                    </View>
-                    <Text style={[styles.name, { color: colors.text }]}>
-                        {otherUser?.firstName} {otherUser?.lastName}
-                    </Text>
-                    <Text style={[styles.username, { color: colors.textSecondary }]}>
-                        @{otherUser?.username}
-                    </Text>
-                </View>
-
-                {/* Quick Actions */}
-                <View style={styles.actionsGrid}>
-                    <TouchableOpacity 
-                        style={[styles.actionBtn, { backgroundColor: colors.surface }]}
-                        onPress={() => navigation.navigate('Profile', { userId: otherUser.id })}
-                    >
-                        <Ionicons name="person" size={24} color={colors.primary} />
-                        <Text style={[styles.actionLabel, { color: colors.text }]}>Perfil</Text>
                     </TouchableOpacity>
-                    
-                    <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.surface }]}>
-                        <Ionicons name="notifications" size={24} color={colors.primary} />
-                        <Text style={[styles.actionLabel, { color: colors.text }]}>Silenciar</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity 
-                        style={[styles.actionBtn, { backgroundColor: colors.surface }]}
-                        onPress={() => navigation.navigate('ChatRoom', { conversationId, activateSearch: true })}
-                    >
-                        <Ionicons name="search" size={24} color={colors.primary} />
-                        <Text style={[styles.actionLabel, { color: colors.text }]}>Buscar</Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* Multimedia */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                                Multimedia ({mediaData?.getChatMedia?.length || 0})
-                            </Text>
-                        </View>
-                    </View>
-                    
-                    {mediaData?.getChatMedia?.length > 0 ? (
-                        <FlatList 
-                            data={mediaData.getChatMedia}
-                            horizontal 
-                            showsHorizontalScrollIndicator={false}
-                            contentContainerStyle={styles.mediaScroll}
-                            keyExtractor={(item) => item.id}
-                            renderItem={({ item: msg, index }) => (
-                                <TouchableOpacity 
-                                    style={styles.mediaItem}
-                                    onPress={() => {
-                                        setViewerActiveIndex(index);
-                                        setViewerVisible(true);
-                                    }}
-                                >
-                                    {msg.videoUrl ? (
-                                        <ChatMediaThumbnail url={msg.videoUrl} />
-                                    ) : (
-                                        <Image 
-                                            source={{ uri: msg.imageUrl }} 
-                                            style={styles.mediaThumbnail} 
-                                        />
-                                    )}
-                                </TouchableOpacity>
-                            )}
-                        />
-                    ) : (
-                        <View style={styles.emptyMediaContainer}>
-                            <Ionicons name="image-outline" size={32} color={colors.textSecondary} style={{ marginBottom: 8, opacity: 0.5 }} />
-                            <Text style={[styles.emptyMediaText, { color: colors.textSecondary }]}>
-                                {loadingMedia ? 'Cargando multimedia...' : 'Aún no existen archivos multimedia compartidos.'}
-                            </Text>
-                        </View>
-                    )}
-                </View>
-
-                {/* Options List */}
-                <View style={[styles.optionsList, { backgroundColor: colors.surface }]}>
-                    <TouchableOpacity 
-                        style={styles.optionItem}
-                        onPress={handleDeleteChat}
-                    >
-                        <Ionicons name="trash-outline" size={22} color="#FF3B30" />
-                        <Text style={[styles.optionText, { color: '#FF3B30' }]}>Eliminar conversación</Text>
-                    </TouchableOpacity>
-                </View>
-
-                <View style={{ height: 40 }} />
-            </ScrollView>
+                )}
+            />
 
             {/* Modal de Confirmación Estilizado */}
             <Modal
@@ -243,15 +413,55 @@ export default function ChatDetailsScreen() {
                     </View>
                 </View>
             </Modal>
+            
+            <Modal
+                visible={isBlockConfirmVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setIsBlockConfirmVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.confirmModalContainer, { backgroundColor: colors.surface }]}>
+                        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#FF3B3015', justifyContent: 'center', alignItems: 'center', marginBottom: 15, marginTop: 10 }}>
+                            <Ionicons name="shield-outline" size={40} color="#FF3B30" />
+                        </View>
+                        <Text style={[styles.confirmModalTitle, { color: colors.text }]}>¿Bloquear a {otherUser?.firstName}?</Text>
+                        <Text style={[styles.confirmModalMessage, { color: colors.textSecondary }]}>
+                            No podrán enviarse mensajes ni ver sus perfiles mutuamente. Podrás desbloquearlo después desde Configuración.
+                        </Text>
+                        
+                        <View style={[styles.confirmModalActions, { borderTopColor: colors.border }]}>
+                            <TouchableOpacity 
+                                style={[styles.confirmModalBtn, { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: colors.border }]}
+                                onPress={() => setIsBlockConfirmVisible(false)}
+                            >
+                                <Text style={[styles.confirmModalBtnText, { color: colors.text }]}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={styles.confirmModalBtn}
+                                onPress={confirmBlockUser}
+                                disabled={blocking}
+                            >
+                                {blocking ? (
+                                    <ActivityIndicator size="small" color="#FF3B30" />
+                                ) : (
+                                    <Text style={[styles.confirmModalBtnText, { color: '#FF3B30', fontWeight: 'bold' }]}>
+                                        Bloquear
+                                    </Text>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
 
-            {/* Visor Multimedia a Pantalla Completa */}
             <Modal 
                 visible={viewerVisible} 
                 transparent 
-                animationType="fade"
+                animationType="none" // Usamos nuestra propia animación de arrastre
                 onRequestClose={() => setViewerVisible(false)}
             >
-                <Animated.View style={[styles.viewerContainer, { opacity: viewerBgOpacity }]}>
+                <Animated.View style={[styles.viewerContainer, { opacity: viewerBgOpacity, backgroundColor: 'black' }]}>
                     <TouchableOpacity
                         style={[styles.closeViewerButton, { top: insets.top + 20 }]}
                         onPress={() => setViewerVisible(false)}
@@ -260,23 +470,44 @@ export default function ChatDetailsScreen() {
                         <Ionicons name="close" size={24} color="#FFF" />
                     </TouchableOpacity>
 
-                    <FlatList
-                        data={mediaData?.getChatMedia || []}
-                        horizontal
-                        pagingEnabled
-                        initialScrollIndex={viewerActiveIndex}
-                        getItemLayout={(_, index) => ({
-                            length: SCREEN_WIDTH,
-                            offset: SCREEN_WIDTH * index,
-                            index,
-                        })}
-                        showsHorizontalScrollIndicator={false}
-                        keyExtractor={(item) => item.id}
-                        onMomentumScrollEnd={(event) => {
-                            const xOffset = event.nativeEvent.contentOffset.x;
-                            const index = Math.round(xOffset / SCREEN_WIDTH);
-                            setViewerActiveIndex(index);
+                    <TouchableOpacity
+                        style={[styles.muteViewerButton, { top: insets.top + 60 }]}
+                        onPress={() => setIsMuted(!isMuted)}
+                    >
+                        <Ionicons 
+                            name={isMuted ? "volume-mute" : "volume-high"} 
+                            size={24} 
+                            color="#FFF" 
+                        />
+                    </TouchableOpacity>
+
+                    <Animated.View 
+                        style={{ 
+                            flex: 1, 
+                            transform: [
+                                { translateY: viewerTranslateY },
+                                { scale: viewerScale }
+                            ] 
                         }}
+                        {...viewerPanResponder.panHandlers}
+                    >
+                        <FlatList
+                            data={localMedia}
+                            horizontal
+                            pagingEnabled
+                            initialScrollIndex={viewerActiveIndex}
+                            getItemLayout={(_, index) => ({
+                                length: SCREEN_WIDTH,
+                                offset: SCREEN_WIDTH * index,
+                                index,
+                            })}
+                            showsHorizontalScrollIndicator={false}
+                            keyExtractor={(item) => item.id}
+                            onMomentumScrollEnd={(event) => {
+                                const xOffset = event.nativeEvent.contentOffset.x;
+                                const index = Math.round(xOffset / SCREEN_WIDTH);
+                                setViewerActiveIndex(index);
+                            }}
                         renderItem={({ item, index }) => (
                             <View style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, justifyContent: 'center', backgroundColor: 'transparent' }}>
                                 {item.videoUrl ? (
@@ -284,9 +515,9 @@ export default function ChatDetailsScreen() {
                                         url={item.videoUrl}
                                         width={SCREEN_WIDTH}
                                         height={SCREEN_HEIGHT}
-                                        isMuted={false}
+                                        isMuted={isMuted}
                                         shouldPlay={viewerActiveIndex === index && viewerVisible}
-                                        toggleMute={() => {}}
+                                        toggleMute={() => setIsMuted(!isMuted)}
                                         isInteractive={true}
                                         hideExpand={true}
                                         contentFit="contain"
@@ -300,7 +531,8 @@ export default function ChatDetailsScreen() {
                                 )}
                             </View>
                         )}
-                    />
+                        />
+                    </Animated.View>
                 </Animated.View>
             </Modal>
         </View>
@@ -408,15 +640,17 @@ const styles = StyleSheet.create({
         fontSize: 14,
         textAlign: 'center',
     },
-    mediaScroll: {
-        paddingLeft: 20,
-        paddingRight: 10,
+    flatListContent: {
+        paddingBottom: 20,
+    },
+    mediaGridRow: {
+        justifyContent: 'flex-start',
+        paddingHorizontal: 20,
+        gap: 2,
+        marginBottom: 2,
     },
     mediaItem: {
-        width: 100,
-        height: 100,
-        marginRight: 10,
-        borderRadius: 12,
+        borderRadius: 8,
         overflow: 'hidden',
         backgroundColor: '#000',
     },

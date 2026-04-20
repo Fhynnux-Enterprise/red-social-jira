@@ -2,16 +2,13 @@ import React from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import AuthNavigator from '../src/navigation/AuthNavigator';
 import AppNavigator from '../src/navigation/AppNavigator';
-import { AuthProvider, useAuth } from '../src/features/auth/context/AuthContext';
-import { ApolloProvider } from '@apollo/client/react';
-import { apolloClient } from '../src/api/apollo.client';
+import { useAuth } from '../src/features/auth/context/AuthContext';
 import { useTheme } from '../src/theme/ThemeContext';
 import { colors as baseColors } from '../src/theme/colors';
 import { StatusBar } from 'expo-status-bar';
-
 import { usePresencePing } from '../src/hooks/usePresencePing';
 
-function RootNavigator() {
+export default function RootNavigator() {
     const { userToken, isLoading } = useAuth();
     const { colors, isDark } = useTheme();
 
@@ -33,8 +30,3 @@ function RootNavigator() {
     );
 }
 
-export default function App() {
-    return (
-        <RootNavigator />
-    );
-}

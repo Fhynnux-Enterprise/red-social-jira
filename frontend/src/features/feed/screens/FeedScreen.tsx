@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, Image, Platform, Alert, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQuery, useMutation } from '@apollo/client/react';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { useFocusEffect, useNavigation, useIsFocused } from '@react-navigation/native';
-import { GET_POSTS, DELETE_POST, GET_FEED } from '../graphql/posts.operations';
+import { DELETE_POST, GET_FEED } from '../graphql/posts.operations';
+import { DELETE_STORE_PRODUCT } from '../../store/graphql/store.operations';
+import { DELETE_JOB_OFFER, DELETE_PROFESSIONAL_PROFILE } from '../../jobs/graphql/jobs.operations';
 import JobOfferCard from '../../jobs/components/JobOfferCard';
 import ProfessionalCard from '../../jobs/components/ProfessionalCard';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +22,10 @@ import PostOptionsModal from '../components/PostOptionsModal';
 import CommentsModal from '../../comments/components/CommentsModal';
 import { StoriesBar } from '../../stories/components/StoriesBar';
 import FeedItemDetailModal from '../components/FeedItemDetailModal';
+import StoreProductCard from '../../store/components/StoreProductCard';
+import ListFooter from '../../../components/ListFooter';
+import NotificationBell from '../../notifications/components/NotificationBell';
+import CreateProductModal from '../../store/components/CreateProductModal';
 
 export interface PostAuthor {
     id: string;
@@ -77,10 +83,15 @@ export default function FeedScreen() {
     const [editingPostId, setEditingPostId] = useState<string | undefined>(undefined);
     const [editingPostContent, setEditingPostContent] = useState<string>('');
     const [editingPostTitle, setEditingPostTitle] = useState<string>('');
+    const [editingPostMedia, setEditingPostMedia] = useState<any[]>([]);
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<Post | null>(null);
     const [selectedPostForComments, setSelectedPostForComments] = useState<SelectedPostForComments | null>(null);
     const [selectedFeedItem, setSelectedFeedItem] = useState<any | null>(null);
+    const [isStoreModalVisible, setIsStoreModalVisible] = useState(false);
+    const [editingProduct, setEditingProduct] = useState<any | null>(null);
+    const resumeCommentsRef = useRef<any>(null);
+    const apolloClient = useApolloClient();
 
     const isFocused = useIsFocused();
     // Estado para trackear qué post está visible en pantalla (para autoplay)
@@ -110,6 +121,10 @@ export default function FeedScreen() {
         refetchQueries: [{ query: GET_FEED, variables: { limit: 10, offset: 0 } }],
     });
 
+    const [deleteStoreProduct] = useMutation(DELETE_STORE_PRODUCT);
+    const [deleteJobOffer] = useMutation(DELETE_JOB_OFFER);
+    const [deleteProfessionalProfile] = useMutation(DELETE_PROFESSIONAL_PROFILE);
+
     const isFetchingMore = networkStatus === 3;
 
     const loadMorePosts = useCallback(() => {
@@ -132,6 +147,9 @@ export default function FeedScreen() {
         await refetch();
     }, [refetch]);
 
+    // Sincronización de post eliminada: 
+    // CommentsModal ya busca la versión más reciente del post en data?.getFeed en la prop "post".
+
     // Lógica para el botón de Home (Scroll + Refresh)
     useEffect(() => {
         const unsubscribe = (navigation as any).addListener('tabPress', (e: any) => {
@@ -149,17 +167,35 @@ export default function FeedScreen() {
         return unsubscribe;
     }, [navigation, isFocused, scrollOffset, handleRefresh]);
 
-    const renderFooter = useCallback(() => {
-        if (!hasMore) return null;
-        if (!isFetchingMore) return null;
-        return (
-            <View style={{ paddingVertical: 20 }}>
-                <ActivityIndicator size="small" color={colors.primary} />
-            </View>
-        );
-    }, [isFetchingMore, colors.primary, hasMore]);
+    useFocusEffect(
+        useCallback(() => {
+            if (resumeCommentsRef.current) {
+                const timer = setTimeout(() => {
+                    setSelectedPostForComments(resumeCommentsRef.current);
+                    resumeCommentsRef.current = null;
+                }, 300);
+                return () => clearTimeout(timer);
+            }
+        }, [])
+    );
 
-    const handleOptionsPress = useCallback((item: Post) => {
+    const renderFooter = useCallback(() => {
+        if (isFetchingMore) {
+            return (
+                <View style={{ paddingVertical: 20 }}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+            );
+        }
+        
+        if (!hasMore && data?.getFeed?.length > 0) {
+            return <ListFooter />;
+        }
+        
+        return null;
+    }, [isFetchingMore, colors.primary, hasMore, data?.getFeed?.length]);
+
+    const handleOptionsPress = useCallback((item: any) => {
         setSelectedPost(item);
         setIsOptionsMenuVisible(true);
     }, []);
@@ -211,9 +247,6 @@ export default function FeedScreen() {
     }).current;
 
     const renderFeedItem = useCallback(({ item }: { item: any }) => {
-        // Para Posts: abre expandido con comentarios. Para Ofertas/Servicios: solo muestra la tarjeta (minimizado = sin burbuja de comentarios)
-        const openInModal = (isPost = false) =>
-            setSelectedPostForComments({ post: item, minimize: !isPost, initialTab: 'comments', initialExpanded: false });
 
         if (item.__typename === 'JobOffer') {
             const mappedItem = { 
@@ -221,14 +254,58 @@ export default function FeedScreen() {
                 title: item.jobTitle ?? item.title, 
                 media: item.jobMedia ?? [] 
             };
-            return <JobOfferCard item={mappedItem} onPress={() => openInModal(false)} />;
+            return <JobOfferCard 
+                item={mappedItem} 
+                onPress={() => setSelectedPostForComments({ post: mappedItem, minimize: true, initialTab: 'comments', initialExpanded: false })}
+                onEdit={(itemToEdit) => {
+                    router.push({
+                        pathname: '/jobs/create',
+                        params: { 
+                            editId: itemToEdit.id, 
+                            editData: JSON.stringify(itemToEdit),
+                            initialTab: 'job'
+                        }
+                    });
+                }}
+            />;
         }
         if (item.__typename === 'ProfessionalProfile') {
             const mappedItem = { 
                 ...item, 
                 media: item.profMedia ?? [] 
             };
-            return <ProfessionalCard item={mappedItem} onPress={() => openInModal(false)} />;
+            return <ProfessionalCard 
+                item={mappedItem} 
+                onPress={() => setSelectedPostForComments({ post: mappedItem, minimize: true, initialTab: 'comments', initialExpanded: false })}
+                onEdit={(itemToEdit) => {
+                    router.push({
+                        pathname: '/jobs/create',
+                        params: { 
+                            editId: itemToEdit.id, 
+                            editData: JSON.stringify(itemToEdit),
+                            initialTab: 'service'
+                        }
+                    });
+                }}
+            />;
+        }
+        if (item.__typename === 'StoreProduct') {
+            const mappedItem = {
+                ...item,
+                title: item.storeTitle ?? item.title,
+                media: item.storeMedia ?? [],
+                location: item.storeLocation,
+                contactPhone: item.storeContactPhone,
+            };
+            return <StoreProductCard 
+                item={mappedItem} 
+                onPress={() => setSelectedPostForComments({ post: mappedItem, minimize: true, initialTab: 'comments', initialExpanded: false })}
+                onCommentPress={() => setSelectedPostForComments({ post: mappedItem, minimize: false, initialTab: 'comments', initialExpanded: false })}
+                onEdit={(itemToEdit) => {
+                    setEditingProduct(itemToEdit);
+                    setIsStoreModalVisible(true);
+                }}
+            />;
         }
         
         // Default: Post
@@ -242,7 +319,7 @@ export default function FeedScreen() {
                 item={mappedPost}
                 currentUserId={currentUser?.id}
                 onOptionsPress={handleOptionsPress}
-                onOpenComments={(_: any, initialTab?: 'comments' | 'likes', minimize?: boolean, initialExpanded?: boolean) =>
+                onOpenComments={(_, initialTab, minimize, initialExpanded) =>
                     setSelectedPostForComments({ post: mappedPost, minimize: !!minimize, initialTab, initialExpanded })
                 }
                 isViewable={item.id === visiblePostId}
@@ -258,8 +335,13 @@ export default function FeedScreen() {
             {/* Cabecera Tipo Facebook */}
             <View style={styles.topHeader}>
                 <View style={styles.brandContainer}>
+                    <Image
+                        source={require('../../../../assets/images/icon-transparent.png')}
+                        style={styles.brandLogo}
+                        resizeMode="contain"
+                    />
                     <MaskedView
-                        style={{ flexDirection: 'row' }}
+                        style={{ flex: 1, flexDirection: 'row' }}
                         maskElement={
                             <View style={{ backgroundColor: 'transparent', flex: 1, justifyContent: 'center' }}>
                                 <Text style={styles.brandTitle}>Chunchi City App</Text>
@@ -283,6 +365,7 @@ export default function FeedScreen() {
                     >
                         <Ionicons name="search-outline" size={22} color={colors.text} />
                     </TouchableOpacity>
+                    <NotificationBell />
                 </View>
             </View>
 
@@ -371,10 +454,13 @@ export default function FeedScreen() {
             {/* Modal para Crear/Editar Publicación */}
             <CreatePostModal
                 visible={isModalVisible}
-                onClose={() => setIsModalVisible(false)}
+                onClose={() => {
+                    setIsModalVisible(false);
+                }}
                 postId={editingPostId}
                 initialContent={editingPostContent}
                 initialTitle={editingPostTitle}
+                initialMedia={editingPostMedia}
             />
 
             {/* Modal Menú de Opciones de la Publicación Inferior */}
@@ -383,22 +469,104 @@ export default function FeedScreen() {
                 onClose={() => setIsOptionsMenuVisible(false)}
                 onEdit={() => {
                     if (selectedPost) {
-                        setEditingPostId(selectedPost.id);
-                        setEditingPostContent(selectedPost.content);
-                        setEditingPostTitle(selectedPost.title || '');
-                        setIsModalVisible(true);
+                        const type = selectedPost.__typename;
+                        setIsOptionsMenuVisible(false);
+                        // Ya no cerramos el CommentsModal aquí para que permanezca abierto al terminar de editar
+
+                        if (type === 'StoreProduct') {
+                            setEditingProduct(selectedPost);
+                            setIsStoreModalVisible(true);
+                        } else if (type === 'JobOffer' || type === 'ProfessionalProfile') {
+                            router.push({
+                                pathname: '/jobs/create',
+                                params: { 
+                                    editId: selectedPost.id, 
+                                    editData: JSON.stringify(selectedPost),
+                                    initialTab: type === 'ProfessionalProfile' ? 'service' : 'offer'
+                                }
+                            });
+                        } else {
+                            // Default: Post
+                            setEditingPostId(selectedPost.id);
+                            setEditingPostContent(selectedPost.content);
+                            setEditingPostTitle(selectedPost.title || '');
+                            setEditingPostMedia(selectedPost.media || []);
+                            setIsModalVisible(true);
+                        }
                     }
                 }}
                 onDelete={() => {
                     if (selectedPost) {
-                        deletePost({ variables: { id: selectedPost.id } })
-                            .then(() => Toast.show({ type: 'success', text1: 'Eliminado', text2: 'Publicación borrada con éxito' }))
-                            .catch((err: any) => Toast.show({ type: 'error', text1: 'Error', text2: err.message }));
+                        const type = selectedPost.__typename;
+                        setIsOptionsMenuVisible(false);
+
+                        // Determinar cuál será la siguiente publicación a mostrar
+                        const feed = data?.getFeed || [];
+                        const currentIndex = feed.findIndex((p: any) => p.id === selectedPost.id);
+                        let targetPost = null;
+
+                        if (currentIndex !== -1) {
+                            if (currentIndex < feed.length - 1) {
+                                targetPost = feed[currentIndex + 1];
+                            } else if (currentIndex > 0) {
+                                targetPost = feed[currentIndex - 1];
+                            }
+                        }
+
+                        const afterDelete = (deletedId: string, typename: string) => {
+                            // Evict from Apollo cache — removes item from ALL cached queries instantly
+                            apolloClient.cache.evict({ id: apolloClient.cache.identify({ __typename: typename, id: deletedId }) });
+                            apolloClient.cache.gc();
+
+                            const label = type === 'StoreProduct' ? 'Producto' : type === 'JobOffer' ? 'Oferta' : type === 'ProfessionalProfile' ? 'Servicio' : 'Publicación';
+                            setTimeout(() => Toast.show({ 
+                                type: 'success', 
+                                text1: 'Eliminado', 
+                                text2: `${label} borrada con éxito`,
+                            }), 350);
+                            
+                            // Solo navegar si el CommentsModal estaba abierto al momento de eliminar
+                            if (selectedPostForComments) {
+                                if (targetPost) {
+                                    setSelectedPostForComments({
+                                        post: targetPost,
+                                        minimize: !!selectedPostForComments?.minimize,
+                                        initialTab: selectedPostForComments?.initialTab,
+                                        initialExpanded: false
+                                    });
+                                } else {
+                                    setSelectedPostForComments(null);
+                                }
+                            }
+                        };
+
+                        const onError = (err: any) => Toast.show({ type: 'error', text1: 'Error', text2: err.message });
+                        
+                        if (!type || type === 'Post') {
+                            deletePost({ variables: { id: selectedPost.id } }).then(() => afterDelete(selectedPost.id, 'Post')).catch(onError);
+                        } else if (type === 'StoreProduct') {
+                            deleteStoreProduct({ variables: { id: selectedPost.id } }).then(() => afterDelete(selectedPost.id, 'StoreProduct')).catch(onError);
+                        } else if (type === 'JobOffer') {
+                            deleteJobOffer({ variables: { id: selectedPost.id } }).then(() => afterDelete(selectedPost.id, 'JobOffer')).catch(onError);
+                        } else if (type === 'ProfessionalProfile') {
+                            deleteProfessionalProfile({ variables: { id: selectedPost.id } }).then(() => afterDelete(selectedPost.id, 'ProfessionalProfile')).catch(onError);
+                        }
                     }
                 }}
             />
 
-            {/* Modal de Comentarios — maneja Posts, Ofertas y Perfiles con swipe TikTok */}
+            {/* Modal para Editar Producto desde el Feed */}
+            <CreateProductModal
+                visible={isStoreModalVisible}
+                onClose={() => {
+                    setIsStoreModalVisible(false);
+                    setEditingProduct(null);
+                    handleRefresh();
+                }}
+                editItem={editingProduct}
+            />
+
+            {/* CommentsModal — siempre montado para mantener estado y UI fluida */}
             <CommentsModal
                 visible={!!selectedPostForComments}
                 post={
@@ -485,9 +653,10 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         alignItems: 'center',
     },
     brandLogo: {
-        width: 34,
-        height: 34,
-        marginRight: 10,
+        width: 50,
+        height: 50,
+        marginRight: 4,
+        marginTop: 2,
         borderRadius: 8,
     },
     brandTitle: {
@@ -500,6 +669,8 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
+        marginLeft: -35,
+        marginTop: 10,
     },
     iconButton: {
         width: 40,
@@ -510,7 +681,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         alignItems: 'center',
     },
     createPostContainer: {
-        padding: 16,
+        padding: 10,
         borderBottomWidth: 6,
         backgroundColor: colors.background,
         borderBottomColor: colors.surface,

@@ -5,6 +5,8 @@ import { Post } from './entities/post.entity';
 import { PostLike } from './entities/post-like.entity';
 import { PostMedia } from './entities/post-media.entity';
 import { PostMediaInput } from './dto/post-media.input';
+import { UserBlocksService } from '../user-blocks/user-blocks.service';
+import { UserBlock } from '../user-blocks/entities/user-block.entity';
 
 @Injectable()
 export class PostsService {
@@ -16,6 +18,7 @@ export class PostsService {
         @InjectRepository(PostMedia)
         private readonly postMediaRepository: Repository<PostMedia>,
         private readonly dataSource: DataSource,
+        private readonly userBlocksService: UserBlocksService,
     ) { }
 
     async createPost(content: string, authorId: string, media?: PostMediaInput[], title?: string): Promise<Post> {
@@ -61,12 +64,28 @@ export class PostsService {
         }
     }
 
-    async findAll(limit: number = 5, offset: number = 0): Promise<Post[]> {
-        const posts = await this.postsRepository.createQueryBuilder('post')
+    async findAll(limit: number = 5, offset: number = 0, viewerId?: string): Promise<Post[]> {
+        const query = this.postsRepository.createQueryBuilder('post')
             .leftJoinAndSelect('post.author', 'author')
             .leftJoinAndSelect('post.likes', 'likes')
             .leftJoinAndSelect('likes.user', 'likeUser')
             .leftJoinAndSelect('post.media', 'media')
+            .where('post.deletedAt IS NULL');
+
+        if (viewerId) {
+            query.andWhere(qb => {
+                const subQuery = qb.subQuery()
+                    .select('1')
+                    .from(UserBlock, 'ub')
+                    .where('ub.blockerId = :viewerId AND ub.blockedId = post.authorId')
+                    .orWhere('ub.blockerId = post.authorId AND ub.blockedId = :viewerId')
+                    .getQuery();
+                return 'NOT EXISTS ' + subQuery;
+            });
+            query.setParameter('viewerId', viewerId);
+        }
+
+        const posts = await query
             .orderBy('post.createdAt', 'DESC')
             .addOrderBy('post.id', 'DESC')
             .take(limit)
@@ -84,10 +103,12 @@ export class PostsService {
             const postIds = posts.map(p => p.id);
             const rows: { postId: string; count: string }[] = await this.postsRepository.manager
                 .query(
-                    `SELECT post_id as "postId", COUNT(id) as "count"
-                     FROM comments
-                     WHERE post_id = ANY($1) AND deleted_at IS NULL
-                     GROUP BY post_id`,
+                    `SELECT c.post_id as "postId", COUNT(c.id) as "count"
+                     FROM comments c
+                     LEFT JOIN comments p ON c.parent_id = p.id AND p.deleted_at IS NULL
+                     WHERE c.post_id = ANY($1) AND c.deleted_at IS NULL
+                       AND (c.parent_id IS NULL OR p.id IS NOT NULL)
+                     GROUP BY c.post_id`,
                     [postIds],
                 );
             const countMap = new Map(rows.map(r => [r.postId, parseInt(r.count, 10)]));
@@ -97,6 +118,21 @@ export class PostsService {
         }
 
         return posts;
+    }
+
+    async findById(id: string): Promise<Post> {
+        const post = await this.postsRepository.createQueryBuilder('post')
+            .leftJoinAndSelect('post.author', 'author')
+            .leftJoinAndSelect('post.likes', 'likes')
+            .leftJoinAndSelect('likes.user', 'likeUser')
+            .leftJoinAndSelect('post.media', 'media')
+            .where('post.id = :id', { id })
+            .getOne();
+        if (!post) throw new NotFoundException('Publicación no encontrada');
+        if (post.media && post.media.length > 1) {
+            post.media.sort((a, b) => a.order - b.order);
+        }
+        return post;
     }
 
     async searchPosts(query: string, limit: number = 5, offset: number = 0): Promise<Post[]> {
@@ -123,10 +159,12 @@ export class PostsService {
             const postIds = posts.map(p => p.id);
             const rows: { postId: string; count: string }[] = await this.postsRepository.manager
                 .query(
-                    `SELECT post_id as "postId", COUNT(id) as "count"
-                     FROM comments
-                     WHERE post_id = ANY($1) AND deleted_at IS NULL
-                     GROUP BY post_id`,
+                    `SELECT c.post_id as "postId", COUNT(c.id) as "count"
+                     FROM comments c
+                     LEFT JOIN comments p ON c.parent_id = p.id AND p.deleted_at IS NULL
+                     WHERE c.post_id = ANY($1) AND c.deleted_at IS NULL
+                       AND (c.parent_id IS NULL OR p.id IS NOT NULL)
+                     GROUP BY c.post_id`,
                     [postIds],
                 );
             const countMap = new Map(rows.map(r => [r.postId, parseInt(r.count, 10)]));
@@ -141,6 +179,7 @@ export class PostsService {
     async findByUser(authorId: string, limit: number = 5, offset: number = 0): Promise<Post[]> {
         const posts = await this.postsRepository.createQueryBuilder('post')
             .where('post.authorId = :authorId', { authorId })
+            .andWhere('post.deletedAt IS NULL')
             .leftJoinAndSelect('post.author', 'author')
             .leftJoinAndSelect('post.likes', 'likes')
             .leftJoinAndSelect('likes.user', 'likeUser')
@@ -161,10 +200,12 @@ export class PostsService {
             const postIds = posts.map(p => p.id);
             const rows: { postId: string; count: string }[] = await this.postsRepository.manager
                 .query(
-                    `SELECT post_id as "postId", COUNT(id) as "count"
-                     FROM comments
-                     WHERE post_id = ANY($1) AND deleted_at IS NULL
-                     GROUP BY post_id`,
+                    `SELECT c.post_id as "postId", COUNT(c.id) as "count"
+                     FROM comments c
+                     LEFT JOIN comments p ON c.parent_id = p.id AND p.deleted_at IS NULL
+                     WHERE c.post_id = ANY($1) AND c.deleted_at IS NULL
+                       AND (c.parent_id IS NULL OR p.id IS NOT NULL)
+                     GROUP BY c.post_id`,
                     [postIds],
                 );
             const countMap = new Map(rows.map(r => [r.postId, parseInt(r.count, 10)]));
@@ -187,6 +228,7 @@ export class PostsService {
 
         post.content = content;
         if (title !== undefined) post.title = title;
+        post.editedAt = new Date(); // Marca de edición real del usuario (distinto a updatedAt del sistema)
         await this.postsRepository.save(post);
         return post;
     }

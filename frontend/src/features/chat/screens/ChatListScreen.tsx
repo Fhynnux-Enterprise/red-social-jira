@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
 import { GET_USER_CONVERSATIONS, DELETE_CONVERSATION_FOR_ME, INBOX_UPDATE_SUBSCRIPTION, GET_OR_CREATE_CHAT } from '../graphql/chat.operations';
 import { GET_ONLINE_FOLLOWING, GET_ONLINE_FOLLOWING_COUNT } from '../../follows/graphql/follows.operations';
 import { useQuery, useMutation, useSubscription, useApolloClient } from '@apollo/client/react';
@@ -142,17 +143,26 @@ export default function ChatListScreen() {
     }, [currentUser?.id]);
 
     const filteredConversations = React.useMemo(() => {
-        if (!searchQuery.trim()) return conversations;
+        let result = conversations;
         
-        const query = searchQuery.toLowerCase();
-        return conversations.filter(conv => {
-            const otherUser = getOtherParticipant(conv.participants);
-            if (!otherUser) return false;
-            
-            const fullName = `${otherUser.firstName} ${otherUser.lastName}`.toLowerCase();
-            const username = (otherUser.username || '').toLowerCase();
-            
-            return fullName.includes(query) || username.includes(query);
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase();
+            result = conversations.filter(conv => {
+                const otherUser = getOtherParticipant(conv.participants);
+                if (!otherUser) return false;
+                
+                const fullName = `${otherUser.firstName} ${otherUser.lastName}`.toLowerCase();
+                const username = (otherUser.username || '').toLowerCase();
+                
+                return fullName.includes(query) || username.includes(query);
+            });
+        }
+
+        // Ordenar siempre por la fecha de la última actividad real (mensaje)
+        return [...result].sort((a, b) => {
+            const timeA = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : new Date(a.createdAt).getTime();
+            const timeB = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : new Date(b.createdAt).getTime();
+            return timeB - timeA;
         });
     }, [conversations, searchQuery, getOtherParticipant]);
 
@@ -174,6 +184,13 @@ export default function ChatListScreen() {
         }
     };
 
+    const formatChatDuration = (seconds?: number) => {
+        if (!seconds) return '0:00';
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    };
+
     const [createChatMutation] = useMutation(GET_OR_CREATE_CHAT);
 
     const handleOpenSelfChat = async () => {
@@ -183,7 +200,10 @@ export default function ChatListScreen() {
                 variables: { targetUserId: currentUser.id }
             });
             const conversationId = (result.data as any).getOrCreateOneOnOneChat.id;
-            (navigation as any).navigate('ChatRoom', { conversationId });
+            router.push({
+                pathname: '/chatRoom',
+                params: { conversationId }
+            });
         } catch (err) {
             console.error("Error al abrir chat propio:", err);
             Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo crear el chat personal' });
@@ -192,7 +212,10 @@ export default function ChatListScreen() {
 
     const handleOpenDirectChat = async (userId: string, existingConversationId?: string) => {
         if (existingConversationId) {
-            (navigation as any).navigate('ChatRoom', { conversationId: existingConversationId });
+            router.push({
+                pathname: '/chatRoom',
+                params: { conversationId: existingConversationId }
+            });
             return;
         }
         try {
@@ -200,11 +223,75 @@ export default function ChatListScreen() {
                 variables: { targetUserId: userId }
             });
             const conversationId = (result.data as any).getOrCreateOneOnOneChat.id;
-            (navigation as any).navigate('ChatRoom', { conversationId });
+            router.push({
+                pathname: '/chatRoom',
+                params: { conversationId }
+            });
         } catch (err) {
             console.error("Error al abrir chat:", err);
             Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir el chat' });
         }
+    };
+
+    const renderLastMessagePreview = (msg: any, unreadCount: number) => {
+        if (!msg) {
+            return (
+                <Text style={[styles.lastMessage, { color: colors.textSecondary }]}>
+                    Iniciaste una conversación
+                </Text>
+            );
+        }
+
+        const currentUserId = String(currentUser?.id || '');
+        const senderId = String(msg.sender?.id || msg.userId || '');
+        const isMine = currentUserId !== '' && senderId !== '' && currentUserId === senderId;
+        const prefix = isMine ? 'Tú: ' : '';
+        
+        let iconName: any = null;
+        let text = msg.content || '';
+
+        if (msg.isDeletedForAll) {
+            iconName = 'ban-outline';
+            text = 'Este mensaje fue eliminado';
+        } else if (msg.audioUrl) {
+            iconName = 'mic';
+            text = `Mensaje de voz (${formatChatDuration(msg.audioDuration)})`;
+        } else if (msg.videoUrl) {
+            iconName = 'videocam';
+            if (!text) text = 'Video';
+        } else if (msg.imageUrl) {
+            iconName = 'camera';
+            if (!text) text = 'Imagen';
+        } else if (msg.fileUrl) {
+            iconName = 'document-attach-outline';
+            text = msg.fileName || 'Archivo';
+        }
+
+        return (
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                {iconName && (
+                    <Ionicons 
+                        name={iconName} 
+                        size={16} 
+                        color={unreadCount > 0 ? colors.primary : colors.textSecondary} 
+                        style={{ marginRight: 5 }} 
+                    />
+                )}
+                <Text 
+                    style={[
+                        styles.lastMessage, 
+                        { 
+                            color: unreadCount > 0 ? colors.text : colors.textSecondary, 
+                            fontWeight: unreadCount > 0 ? '700' : '400',
+                            fontStyle: msg.isDeletedForAll ? 'italic' : 'normal'
+                        }
+                    ]} 
+                    numberOfLines={1}
+                >
+                    {prefix}{text}
+                </Text>
+            </View>
+        );
     };
 
     const renderActiveUsers = () => {
@@ -283,7 +370,10 @@ export default function ChatListScreen() {
         return (
             <TouchableOpacity
                 style={[styles.chatRow, { borderBottomColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }]}
-                onPress={() => (navigation as any).navigate('ChatRoom', { conversationId: item.id })}
+                onPress={() => router.push({
+                    pathname: '/chatRoom',
+                    params: { conversationId: item.id }
+                })}
                 onLongPress={() => {
                     setSelectedConversation(item);
                     setIsMenuVisible(true);
@@ -301,10 +391,12 @@ export default function ChatListScreen() {
                             </Text>
                         </View>
                     )}
-                    <OnlineStatusIndicator 
-                        lastActiveAt={otherUser.lastActiveAt} 
-                        style={styles.onlineStatusDot} 
-                    />
+                    {!item.isBlocked && (
+                        <OnlineStatusIndicator 
+                            lastActiveAt={otherUser.lastActiveAt} 
+                            style={styles.onlineStatusDot} 
+                        />
+                    )}
                 </View>
 
                 {/* Info */}
@@ -318,29 +410,19 @@ export default function ChatListScreen() {
                         </Text>
                     </View>
                     <View style={styles.chatFooter}>
-                        <Text 
-                            style={[
-                                styles.lastMessage, 
-                                { color: item.unreadCount > 0 ? colors.text : colors.textSecondary, fontWeight: item.unreadCount > 0 ? '700' : '400' }
-                            ]} 
-                            numberOfLines={1}
-                        >
-                            {lastMessage?.videoUrl && !lastMessage?.content 
-                                ? '📹 Video' 
-                                : lastMessage?.videoUrl && lastMessage?.content 
-                                    ? `📹 ${lastMessage.content}` 
-                                    : lastMessage?.imageUrl && !lastMessage?.content 
-                                        ? '📷 Imagen' 
-                                        : lastMessage?.imageUrl && lastMessage?.content 
-                                            ? `📷 ${lastMessage.content}` 
-                                            : lastMessage?.content || 'Iniciaste una conversación'}
-                        </Text>
-                        {/* Indicador de Unread */}
-                        {item.unreadCount > 0 && (
-                            <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
-                                <Text style={styles.unreadText}>{item.unreadCount}</Text>
-                            </View>
-                        )}
+                        <View style={{ flex: 1, marginRight: 8 }}>
+                            {renderLastMessagePreview(lastMessage, item.unreadCount)}
+                        </View>
+                        <View style={{ alignItems: 'flex-end' }}>
+                            {lastMessage?.userId === currentUser?.id && lastMessage?.isRead && (
+                                <Text style={[styles.seenStatus, { color: colors.primary }]}>Visto</Text>
+                            )}
+                            {item.unreadCount > 0 && (
+                                <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
+                                    <Text style={styles.unreadText}>{item.unreadCount}</Text>
+                                </View>
+                            )}
+                        </View>
                     </View>
                 </View>
             </TouchableOpacity>
@@ -636,6 +718,12 @@ const styles = StyleSheet.create({
     },
     chatDate: {
         fontSize: 12,
+    },
+    seenStatus: {
+        fontSize: 11,
+        fontWeight: '600',
+        textAlign: 'right',
+        marginRight: 4,
     },
     chatFooter: {
         flexDirection: 'row',

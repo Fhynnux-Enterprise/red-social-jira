@@ -1,8 +1,7 @@
 
 import React, { useState } from 'react';
 import {
-    View, Text, StyleSheet, TouchableOpacity, Image, Platform,
-    Dimensions, Modal, ActivityIndicator
+    View, Text, StyleSheet, TouchableOpacity, Image, Platform, Dimensions, Modal, ActivityIndicator, KeyboardAvoidingView, TextInput, Alert, TouchableWithoutFeedback
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -13,21 +12,27 @@ import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
 import ApplyJobModal from './ApplyJobModal';
 import ImageCarousel from '../../feed/components/ImageCarousel';
+import ReportModal from '../../reports/components/ReportModal';
+import CopyTextModal from '../../../components/CopyTextModal';
 import {
     DELETE_JOB_OFFER,
     GET_JOB_OFFERS,
     GET_MY_JOB_OFFERS,
     GET_MY_APPLICATIONS,
 } from '../graphql/jobs.operations';
+import { DIRECT_MODERATE_CONTENT } from '../../moderation/graphql/moderation.operations';
+import { useApolloClient } from '@apollo/client/react';
+import Toast from 'react-native-toast-message';
 
 interface JobOfferCardProps {
     item: any;
-    onPress: () => void;
+    onPress?: () => void;
     /** Llama a este callback para pasar el item al padre cuando el usuario quiere editar */
     onEdit?: (item: any) => void;
+    isModalView?: boolean;
 }
 
-export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: JobOfferCardProps & { hideAuthorRow?: boolean }) {
+export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isModalView }: JobOfferCardProps & { hideAuthorRow?: boolean }) {
     const { colors, isDark } = useTheme();
     const router = useRouter();
     const navigation = useNavigation();
@@ -36,6 +41,12 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
     const [applyVisible, setApplyVisible] = useState(false);
     const [menuVisible, setMenuVisible] = useState(false);
     const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
+    const [reportVisible, setReportVisible] = useState(false);
+    const [isDescExpanded, setIsDescExpanded] = useState(false);
+    const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
+
+    const isModeratorOrAdmin = authContext?.user?.role === 'ADMIN' || authContext?.user?.role === 'MODERATOR';
+    const client = useApolloClient();
 
     const isOwner = authContext?.user?.id === item.author?.id;
 
@@ -59,13 +70,22 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
     };
 
     const [deleteJobOffer, { loading: deleting }] = useMutation(DELETE_JOB_OFFER, {
-        refetchQueries: [
-            { query: GET_JOB_OFFERS, variables: { limit: 20, offset: 0 } },
-            { query: GET_MY_JOB_OFFERS },
-        ],
-        onCompleted: () => setMenuVisible(false),
+        onCompleted: (_, clientOptions) => {
+            // Evict the deleted item from all Apollo caches instantly
+            const deletedId = clientOptions?.variables?.id;
+            if (deletedId) {
+                client.cache.evict({ id: client.cache.identify({ __typename: 'JobOffer', id: deletedId }) });
+                client.cache.gc();
+            }
+            setConfirmDeleteVisible(false);
+            setTimeout(() => Toast.show({
+                type: 'success',
+                text1: 'Oferta eliminada',
+                text2: 'La oferta fue eliminada exitosamente.',
+            }), 400);
+        },
         onError: (err) => {
-            setMenuVisible(false);
+            setConfirmDeleteVisible(false);
             Alert.alert('Error', err.message || 'No se pudo eliminar la oferta.');
         },
     });
@@ -104,6 +124,15 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
         }
     };
 
+    const getFullCopyText = () => {
+        let text = `${item.title}\n\n`;
+        text += `Descripción: ${item.description}\n`;
+        text += `Ubicación: ${item.location}\n`;
+        if (item.salary) text += `Salario: $${item.salary.replace(/\$/g, '')}\n`;
+        if (item.contactPhone) text += `Teléfono: ${item.contactPhone}\n`;
+        return text;
+    };
+
     const [cardWidth, setCardWidth] = useState(Dimensions.get('window').width - 32);
 
     return (
@@ -111,54 +140,71 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
             <TouchableOpacity
                 style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 onPress={onPress}
+                onLongPress={() => setIsCopyModalVisible(true)}
+                delayLongPress={250}
                 activeOpacity={0.7}
                 onLayout={(e) => setCardWidth(e.nativeEvent.layout.width)}
             >
                 {/* ── Header estilo Post ── */}
                 {!hideAuthorRow && (
-                <View style={[styles.postHeader, { borderBottomColor: colors.border }]}>
-                    <TouchableOpacity style={styles.postAuthorRow} onPress={goToProfile} activeOpacity={0.7}>
-                        {/* Avatar */}
-                        <View style={styles.postAvatar}>
-                            {item.author?.photoUrl ? (
-                                <Image source={{ uri: item.author.photoUrl }} style={styles.postAvatarImg} />
-                            ) : (
-                                <Text style={styles.postAvatarInitials}>
-                                    {item.author?.firstName?.[0] || ''}{item.author?.lastName?.[0] || ''}
-                                </Text>
-                            )}
-                        </View>
-                        {/* Nombre + badge + fecha */}
-                        <View style={{ flex: 1 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <View style={[styles.postHeader, { borderBottomColor: colors.border, flexDirection: 'column', alignItems: 'flex-start' }]}>
+                    {/* Badge de tipo arriba */}
+                    <View style={[styles.typeBadge, { marginBottom: 10 }]}>
+                        <Ionicons name="briefcase-outline" size={12} color="#FF6524" style={{ marginRight: 6 }} />
+                        <Text style={styles.typeBadgeText}>OFERTA DE EMPLEO</Text>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}>
+                        <TouchableOpacity style={styles.postAuthorRow} onPress={goToProfile} activeOpacity={0.7}>
+                            {/* Avatar */}
+                            <View style={styles.postAvatar}>
+                                {item.author?.photoUrl ? (
+                                    <Image source={{ uri: item.author.photoUrl }} style={styles.postAvatarImg} />
+                                ) : (
+                                    <Text style={styles.postAvatarInitials}>
+                                        {item.author?.firstName?.[0] || ''}{item.author?.lastName?.[0] || ''}
+                                    </Text>
+                                )}
+                            </View>
+                            {/* Nombre + fecha */}
+                            <View style={{ flex: 1 }}>
                                 <Text style={[styles.postAuthorName, { color: colors.text }]} numberOfLines={1}>
                                     {`${item.author?.firstName ?? ''} ${item.author?.lastName ?? ''}`.trim()}
                                 </Text>
-                                <View style={styles.typeBadge}>
-                                    <Ionicons name="briefcase-outline" size={10} color="#FF6524" style={{ marginRight: 6 }} />
-                                    <Text style={styles.typeBadgeText}>Oferta de Empleo</Text>
-                                </View>
+                                <Text style={[styles.postDate, { color: colors.textSecondary }]}>
+                                    {formatDate(item.createdAt)}
+                                    {!!item.editedAt && " • Editado"}
+                                </Text>
                             </View>
-                            <Text style={[styles.postDate, { color: colors.textSecondary }]}>
-                                {formatDate(item.createdAt)}
-                            </Text>
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* Ellipsis opciones (solo owner) */}
-                    {isOwner && (
-                        <TouchableOpacity
-                            onPress={() => setMenuVisible(true)}
-                            style={styles.postEllipsis}
-                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                        >
-                            <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
                         </TouchableOpacity>
-                    )}
+
+                        {/* Ellipsis opciones (solo owner) */}
+                        {isOwner && (
+                            <TouchableOpacity
+                                onPress={() => setMenuVisible(true)}
+                                style={styles.postEllipsis}
+                                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                            >
+                                <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        )}
+                        {/* Botón denuncia para no-propietarios */}
+                        {!isOwner && (
+                            <TouchableOpacity
+                                onPress={() => setReportVisible(true)}
+                                style={styles.postEllipsis}
+                                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                            >
+                                <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        )}
+                    </View>
                 </View>
                 )}
 
-                <View style={[styles.contentPadding, { paddingBottom: 4, paddingTop: 1 }]}>
+                <View 
+                    style={[styles.contentPadding, { paddingBottom: 4, paddingTop: 1 }]}
+                >
                     {/* Título */}
                     <Text style={[styles.title, { color: colors.text }]} numberOfLines={hideAuthorRow ? 2 : 1}>
                         {item.title}
@@ -173,9 +219,19 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
                     </View>
 
                     {/* Descripción */}
-                    <Text style={[styles.description, { color: colors.textSecondary }]} numberOfLines={2}>
-                        {item.description}
-                    </Text>
+                    {item.description.length > 150 && !isDescExpanded ? (
+                        <Text style={[styles.description, { color: colors.textSecondary }]}>
+                            {item.description.slice(0, 150)}
+                            <Text style={{ color: colors.primary, fontWeight: 'bold' }} onPress={() => setIsDescExpanded(true)}> ...más</Text>
+                        </Text>
+                    ) : (
+                        <Text style={[styles.description, { color: colors.textSecondary }]}>
+                            {item.description}
+                            {item.description.length > 150 && isDescExpanded && (
+                                <Text style={{ color: colors.primary, fontWeight: 'bold' }} onPress={() => setIsDescExpanded(false)}> Ver menos.</Text>
+                            )}
+                        </Text>
+                    )}
 
                     {/* Salario */}
                     {!!item.salary && (
@@ -195,7 +251,7 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
                             media={item.media}
                             containerWidth={cardWidth}
                             customAspectRatio={1}
-                            disableFullscreen={true}
+                            disableFullscreen={!!onPress && !isModalView}
                             onPress={onPress}
                         />
                     </View>
@@ -243,70 +299,38 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
             />
 
             {/* ── Menú de opciones (owner) ── */}
-            <Modal
-                visible={menuVisible}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setMenuVisible(false)}
-            >
-                <TouchableOpacity
-                    style={styles.menuOverlay}
-                    activeOpacity={1}
-                    onPress={() => setMenuVisible(false)}
-                >
-                    <View style={[styles.menuSheet, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
-                        {/* Handle */}
-                        <View style={[styles.menuHandle, { backgroundColor: colors.border }]} />
-
-                        <Text style={[styles.menuTitle, { color: colors.textSecondary }]}>
-                            Opciones de la oferta
-                        </Text>
-
-                        {/* Editar */}
-                        <TouchableOpacity
-                            style={[styles.menuItem, { borderBottomColor: colors.border }]}
-                            onPress={handleEdit}
-                            activeOpacity={0.7}
-                        >
-                            <View style={[styles.menuItemIcon, { backgroundColor: 'rgba(255,101,36,0.1)' }]}>
-                                <Ionicons name="create-outline" size={20} color="#FF6524" />
+            <Modal visible={menuVisible} transparent animationType="slide" onRequestClose={() => setMenuVisible(false)} statusBarTranslucent>
+                <TouchableWithoutFeedback onPress={() => setMenuVisible(false)}>
+                    <View style={styles.menuOverlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={[styles.menuSheet, { backgroundColor: colors.surface, paddingBottom: insets.bottom + 20 }]}>
+                                <View style={[styles.menuHandle, { backgroundColor: isDark ? '#444' : '#DDD' }]} />
+                                <Text style={[styles.menuTitle, { color: colors.text }]}>Opciones</Text>
+                                
+                                <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={handleEdit}>
+                                    <View style={[styles.menuItemIcon, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
+                                        <Ionicons name="pencil" size={20} color={colors.text} />
+                                    </View>
+                                    <Text style={[styles.menuItemTitle, { color: colors.text }]}>Editar oferta</Text>
+                                </TouchableOpacity>
+                                
+                                <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={handleDelete} disabled={deleting}>
+                                    <View style={[styles.menuItemIcon, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
+                                        {deleting ? <ActivityIndicator size="small" color="#FF3B30" /> : <Ionicons name="trash" size={20} color="#FF3B30" />}
+                                    </View>
+                                    <Text style={[styles.menuItemTitle, { color: '#FF3B30' }]}>Eliminar oferta</Text>
+                                </TouchableOpacity>
+                                
+                                <TouchableOpacity style={[styles.menuItem, { marginTop: 10, borderBottomWidth: 0 }]} onPress={() => setMenuVisible(false)}>
+                                    <View style={[styles.menuItemIcon, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>
+                                        <Ionicons name="close" size={20} color={colors.textSecondary} />
+                                    </View>
+                                    <Text style={[styles.menuItemTitle, { color: colors.textSecondary }]}>Cancelar</Text>
+                                </TouchableOpacity>
                             </View>
-                            <View style={styles.menuItemText}>
-                                <Text style={[styles.menuItemTitle, { color: colors.text }]}>Editar oferta</Text>
-                                <Text style={[styles.menuItemSub, { color: colors.textSecondary }]}>Modifica los datos de tu publicación</Text>
-                            </View>
-                            <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-                        </TouchableOpacity>
-
-                        {/* Eliminar */}
-                        <TouchableOpacity
-                            style={styles.menuItem}
-                            onPress={handleDelete}
-                            activeOpacity={0.7}
-                            disabled={deleting}
-                        >
-                            <View style={[styles.menuItemIcon, { backgroundColor: 'rgba(244,67,54,0.1)' }]}>
-                                {deleting
-                                    ? <ActivityIndicator size="small" color="#F44336" />
-                                    : <Ionicons name="trash-outline" size={20} color="#F44336" />
-                                }
-                            </View>
-                            <View style={styles.menuItemText}>
-                                <Text style={[styles.menuItemTitle, { color: '#F44336' }]}>Eliminar oferta</Text>
-                                <Text style={[styles.menuItemSub, { color: colors.textSecondary }]}>Esta acción no se puede deshacer</Text>
-                            </View>
-                        </TouchableOpacity>
-
-                        {/* Cancelar */}
-                        <TouchableOpacity
-                            style={[styles.cancelBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)' }]}
-                            onPress={() => setMenuVisible(false)}
-                            activeOpacity={0.7}
-                        >
-                            <Text style={[styles.cancelText, { color: colors.text }]}>Cancelar</Text>
-                        </TouchableOpacity>
+                        </TouchableWithoutFeedback>
                     </View>
-                </TouchableOpacity>
+                </TouchableWithoutFeedback>
             </Modal>
 
             {/* ── Modal de confirmación de eliminación ── */}
@@ -315,6 +339,7 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
                 transparent
                 animationType="fade"
                 onRequestClose={() => setConfirmDeleteVisible(false)}
+                statusBarTranslucent
             >
                 <View style={styles.confirmOverlay}>
                     <View style={[styles.confirmCard, { backgroundColor: colors.surface }]}>
@@ -365,6 +390,22 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow }: J
                     </View>
                 </View>
             </Modal>
+            <ReportModal
+                visible={reportVisible}
+                onClose={() => setReportVisible(false)}
+                reportedItemId={item.id}
+                reportedItemType="JOB_OFFER"
+                onContentDeleted={() => {
+                    client.cache.evict({ id: client.cache.identify({ __typename: 'JobOffer', id: item.id }) });
+                    client.cache.gc();
+                    setReportVisible(false);
+                }}
+            />
+            <CopyTextModal
+                visible={isCopyModalVisible}
+                textToCopy={getFullCopyText()}
+                onClose={() => setIsCopyModalVisible(false)}
+            />
         </>
     );
 }
@@ -534,17 +575,21 @@ const styles = StyleSheet.create({
     typeBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255,101,36,0.10)',
-        borderRadius: 6,
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        borderWidth: 1,
-        borderColor: 'rgba(255,101,36,0.30)',
+        backgroundColor: 'rgba(255,101,36,0.08)',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        marginBottom: 8,
+        alignSelf: 'flex-start',
+        borderLeftWidth: 4,
+        borderLeftColor: '#FF6524',
+        borderTopRightRadius: 8,
+        borderBottomRightRadius: 8,
     },
     typeBadgeText: {
         color: '#FF6524',
         fontSize: 10,
-        fontWeight: '700',
+        fontWeight: '800',
+        letterSpacing: 1,
     },
     postEllipsis: {
         padding: 4,
@@ -583,51 +628,53 @@ const styles = StyleSheet.create({
     // ── Menú de opciones ──
     menuOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
         justifyContent: 'flex-end',
     },
     menuSheet: {
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        paddingHorizontal: 16,
-        paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingHorizontal: 20,
         paddingTop: 12,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
     },
     menuHandle: {
         width: 40,
-        height: 4,
-        borderRadius: 2,
+        height: 5,
+        borderRadius: 3,
         alignSelf: 'center',
         marginBottom: 16,
     },
     menuTitle: {
-        fontSize: 12,
-        fontWeight: '600',
-        textTransform: 'uppercase',
-        letterSpacing: 0.8,
-        marginBottom: 12,
-        paddingHorizontal: 4,
+        fontSize: 18,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        marginBottom: 16,
     },
     menuItem: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 14,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        gap: 14,
+        borderBottomWidth: 1,
     },
     menuItemIcon: {
-        width: 42,
-        height: 42,
-        borderRadius: 12,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
+        marginRight: 12,
     },
     menuItemText: {
         flex: 1,
     },
     menuItemTitle: {
         fontSize: 16,
-        fontWeight: '600',
+        fontWeight: '500',
     },
     menuItemSub: {
         fontSize: 12,

@@ -13,20 +13,29 @@ export const getUserOnlineStatus = (lastActiveAt: string | Date | undefined | nu
         return { isOnline: true, text: 'En línea' };
     }
 
-    // Si pasó más tiempo, formateamos relativamente
-    if (diffMinutes < 60) {
-        return { isOnline: false, text: `Activo hace ${diffMinutes} m` };
-    }
+    // Formatear la hora (ej: 4:05 pm)
+    const hours = lastActive.getHours();
+    const minutes = lastActive.getMinutes();
+    const ampm = hours >= 12 ? 'pm' : 'am';
+    const displayHours = hours % 12 || 12;
+    const displayMinutes = minutes < 10 ? `0${minutes}` : minutes;
+    const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
 
-    const diffHours = Math.floor(diffMinutes / 60);
-    if (diffHours < 24) {
-        return { isOnline: false, text: `Activo hace ${diffHours} h` };
-    }
+    // Verificar si es hoy o ayer
+    const isToday = lastActive.toDateString() === now.toDateString();
+    
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const isYesterday = lastActive.toDateString() === yesterday.toDateString();
 
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) {
-        return { isOnline: false, text: 'Activo ayer' };
+    if (isToday) {
+        return { isOnline: false, text: `Últ. vez hoy a las ${timeString}` };
+    } else if (isYesterday) {
+        return { isOnline: false, text: `Últ. vez ayer a las ${timeString}` };
+    } else {
+        const day = lastActive.getDate().toString().padStart(2, '0');
+        const month = (lastActive.getMonth() + 1).toString().padStart(2, '0');
+        const year = lastActive.getFullYear();
+        return { isOnline: false, text: `Últ. vez el ${day}/${month}/${year} a las ${timeString}` };
     }
-
-    return { isOnline: false, text: `Activo hace ${diffDays} d` };
 };

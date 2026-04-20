@@ -6,6 +6,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AuthResolver } from './auth.resolver';
+import { GqlAuthGuard } from './guards/gql-auth.guard';
 
 @Module({
     imports: [
@@ -13,7 +14,7 @@ import { AuthResolver } from './auth.resolver';
         TypeOrmModule.forFeature([User]),
     ],
     controllers: [AuthController],
-    providers: [JwtStrategy, AuthService, AuthResolver],
-    exports: [PassportModule, JwtStrategy, AuthService],
+    providers: [JwtStrategy, AuthService, AuthResolver, GqlAuthGuard],
+    exports: [PassportModule, JwtStrategy, AuthService, GqlAuthGuard, TypeOrmModule],
 })
 export class AuthModule { }

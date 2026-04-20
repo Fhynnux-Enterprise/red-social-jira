@@ -5,17 +5,19 @@ import { useNavigation } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import { useMutation } from '@apollo/client/react';
+import { useMutation, useApolloClient } from '@apollo/client/react';
 import { TOGGLE_LIKE } from '../graphql/posts.operations';
 import CopyTextModal from '../../../components/CopyTextModal';
 import ImageCarousel from './ImageCarousel';
 import { Dimensions } from 'react-native';
+import ReportModal from '../../reports/components/ReportModal';
+import Toast from 'react-native-toast-message';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_MARGIN = 4;
 const CARD_WIDTH = SCREEN_WIDTH - (CARD_MARGIN * 2);
 
-const MAX_CHARS = 125;
+const MAX_CHARS = 150;
 
 export interface PostCardProps {
     item: any;
@@ -51,7 +53,7 @@ export default function PostCard({
     const authContext = useAuth() as any;
     const userId = authContext.user?.id || currentUserId;
 
-    const isEdited = item.updatedAt && new Date(item.updatedAt).getTime() > new Date(item.createdAt).getTime() + 2000;
+    const isEdited = !!item.editedAt;
 
     const displayCount = item.likes?.length || 0;
     const commentsCount = item.commentsCount ?? item.comments?.length ?? 0;
@@ -61,10 +63,11 @@ export default function PostCard({
     const [localLiked, setLocalLiked] = useState<boolean>(displayLiked);
     const [isExpanded, setIsExpanded] = useState(false);
     const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
+    const [reportVisible, setReportVisible] = useState(false);
 
     const isTruncatable = !isModalView && (item.content?.length ?? 0) > MAX_CHARS;
     const displayContent = isTruncatable && !isExpanded
-        ? item.content.slice(0, MAX_CHARS).trimEnd() + '...'
+        ? item.content.slice(0, MAX_CHARS).trimEnd() 
         : (item.content ?? '');
 
     useEffect(() => {
@@ -164,7 +167,7 @@ export default function PostCard({
                         </Text>
                         <View style={styles.dateRow}>
                             <Text style={styles.dateText}>{formatDate(item.createdAt)}</Text>
-                            {isEdited && <Text style={styles.editedBadge}> · editado</Text>}
+                            {isEdited && <Text style={styles.editedBadge}> · Editado</Text>}
                         </View>
                     </View>
                 </TouchableOpacity>
@@ -177,6 +180,16 @@ export default function PostCard({
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
                         <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                )}
+                {/* Botones para no-dueños */}
+                {item.author.id !== userId && (
+                    <TouchableOpacity
+                        onPress={() => setReportVisible(true)}
+                        style={styles.moreBtn}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                        <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
                     </TouchableOpacity>
                 )}
             </View>
@@ -268,6 +281,18 @@ export default function PostCard({
                 visible={isCopyModalVisible}
                 textToCopy={displayContent}
                 onClose={() => setIsCopyModalVisible(false)}
+            />
+            <ReportModal
+                visible={reportVisible}
+                onClose={() => setReportVisible(false)}
+                reportedItemId={item.id}
+                reportedItemType="POST"
+                onContentDeleted={() => {
+                    // Evictar el post del caché de Apollo para que desaparezca del feed al instante
+                    client.cache.evict({ id: client.cache.identify({ __typename: 'Post', id: item.id }) });
+                    client.cache.gc();
+                    setReportVisible(false);
+                }}
             />
         </View>
     );

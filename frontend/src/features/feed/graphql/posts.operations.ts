@@ -14,6 +14,7 @@ export const GET_POSTS = gql`
             }
             createdAt
             updatedAt
+            editedAt
             commentsCount
             likes {
                 id
@@ -49,8 +50,18 @@ export const CREATE_POST = gql`
                 order
             }
             createdAt
-            comments {
+            updatedAt
+            editedAt
+            commentsCount
+            likes {
                 id
+                user {
+                    id
+                    firstName
+                    lastName
+                    username
+                    photoUrl
+                }
             }
             author {
                 id
@@ -76,6 +87,7 @@ export const UPDATE_POST = gql`
                 order
             }
             createdAt
+            editedAt
             comments {
                 id
             }
@@ -124,6 +136,7 @@ export const GET_FEED = gql`
                 title
                 createdAt
                 updatedAt
+                editedAt
                 commentsCount
                 postMedia: media {
                     id
@@ -157,6 +170,7 @@ export const GET_FEED = gql`
                 salary
                 contactPhone
                 createdAt
+                editedAt
                 jobMedia: media {
                     id
                     url
@@ -178,6 +192,7 @@ export const GET_FEED = gql`
                 experienceYears
                 contactPhone
                 createdAt
+                editedAt
                 profMedia: media {
                     id
                     url
@@ -185,6 +200,44 @@ export const GET_FEED = gql`
                     order
                 }
                 user {
+                    id
+                    firstName
+                    lastName
+                    username
+                    photoUrl
+                }
+            }
+            ... on StoreProduct {
+                id
+                storeTitle: title
+                description
+                price
+                currency
+                storeLocation: location
+                storeContactPhone: contactPhone
+                condition
+                category
+                isAvailable
+                createdAt
+                editedAt
+                commentsCount
+                storeMedia: media {
+                    id
+                    url
+                    type
+                    order
+                }
+                likes {
+                    id
+                    user {
+                        id
+                        firstName
+                        lastName
+                        username
+                        photoUrl
+                    }
+                }
+                seller {
                     id
                     firstName
                     lastName

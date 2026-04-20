@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableWithoutFeedback, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity } from 'react-native';
 import { useTheme, ThemeColors } from '../theme/ThemeContext';
 
 interface ConfirmModalProps {
@@ -32,31 +32,29 @@ export default function ConfirmModal({
             animationType="fade"
             transparent={true}
             onRequestClose={onCancel}
+            statusBarTranslucent
         >
-            <TouchableWithoutFeedback onPress={onCancel}>
-                <View style={styles.overlay}>
-                    <TouchableWithoutFeedback>
-                        <View style={styles.modalContent}>
-                            <Text style={styles.title}>{title}</Text>
-                            <Text style={styles.message}>{message}</Text>
+            <View style={styles.overlay}>
+                <View style={styles.modalContent}>
+                    <Text style={styles.title}>{title}</Text>
+                    <Text style={styles.message}>{message}</Text>
 
-                            <View style={styles.buttonContainer}>
-                                <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={onCancel}>
-                                    <Text style={styles.cancelButtonText}>{cancelText}</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[styles.button, isDestructive ? styles.destructiveButton : styles.confirmButton]}
-                                    onPress={onConfirm}
-                                >
-                                    <Text style={[styles.buttonText, isDestructive ? styles.destructiveButtonText : styles.confirmButtonText]}>
-                                        {confirmText}
-                                    </Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    </TouchableWithoutFeedback>
+                    <View style={styles.buttonContainer}>
+                        <TouchableOpacity
+                            style={[styles.button, isDestructive ? styles.destructiveButton : styles.confirmButton]}
+                            onPress={onConfirm}
+                        >
+                            <Text style={styles.confirmButtonText}>
+                                {confirmText}
+                            </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={onCancel}>
+                            <Text style={styles.cancelButtonText}>{cancelText}</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
-            </TouchableWithoutFeedback>
+            </View>
         </Modal>
     );
 }
@@ -64,77 +62,66 @@ export default function ConfirmModal({
 const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     overlay: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
         justifyContent: 'center',
         alignItems: 'center',
-        padding: 24,
+        padding: 32,
     },
     modalContent: {
         backgroundColor: colors.surface,
-        borderRadius: 20,
+        borderRadius: 24,
         padding: 24,
         width: '100%',
-        maxWidth: 380,
+        maxWidth: 340,
+        alignItems: 'center',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
-        elevation: 8,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.2,
+        shadowRadius: 16,
+        elevation: 12,
     },
     title: {
-        fontSize: 20,
+        fontSize: 19,
         fontWeight: 'bold',
         color: colors.text,
         marginBottom: 12,
         textAlign: 'center',
     },
     message: {
-        fontSize: 16,
+        fontSize: 15,
         color: colors.textSecondary,
         textAlign: 'center',
-        marginBottom: 24,
+        marginBottom: 28,
         lineHeight: 22,
     },
     buttonContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
+        width: '100%',
         gap: 12,
     },
     button: {
-        flex: 1,
+        width: '100%',
         paddingVertical: 14,
-        borderRadius: 14,
+        borderRadius: 16,
         alignItems: 'center',
         justifyContent: 'center',
-    },
-    cancelButton: {
-        backgroundColor: isDark ? '#333' : '#F0F0F0',
-    },
-    cancelButtonText: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: colors.text,
     },
     confirmButton: {
         backgroundColor: colors.primary,
     },
-    confirmButtonText: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#FFF',
-    },
     destructiveButton: {
-        backgroundColor: 'rgba(255, 59, 48, 0.1)',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 59, 48, 0.3)',
+        backgroundColor: '#FF3B30',
     },
-    destructiveButtonText: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#FF3B30',
+    cancelButton: {
+        backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
     },
-    buttonText: {
-        fontSize: 16,
+    confirmButtonText: {
+        color: '#FFF',
+        fontWeight: 'bold',
+        fontSize: 15,
+    },
+    cancelButtonText: {
+        color: colors.textSecondary,
         fontWeight: '600',
-    }
+        fontSize: 15,
+    },
 });

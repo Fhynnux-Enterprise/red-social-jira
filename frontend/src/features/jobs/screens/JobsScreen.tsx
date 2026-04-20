@@ -1,18 +1,24 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     Platform, FlatList, ActivityIndicator, Animated, ScrollView, Pressable, Modal
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery, useMutation } from '@apollo/client/react';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../../theme/ThemeContext';
 import { GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS, GET_MY_APPLICATIONS, GET_MY_PROFESSIONAL_PROFILE, DELETE_APPLICATION } from '../graphql/jobs.operations';
 import JobOfferCard from '../components/JobOfferCard';
 import ProfessionalCard from '../components/ProfessionalCard';
 import ApplyJobModal from '../components/ApplyJobModal';
+import PostOptionsModal from '../../feed/components/PostOptionsModal';
+import { DELETE_JOB_OFFER, DELETE_PROFESSIONAL_PROFILE } from '../graphql/jobs.operations';
+import Toast from 'react-native-toast-message';
 import { LinearGradient } from 'expo-linear-gradient';
+import CommentsModal from '../../comments/components/CommentsModal';
+import ListFooter from '../../../components/ListFooter';
+import { useFocusEffect } from '@react-navigation/native';
 
 type TabKey = 'offers' | 'services' | 'results';
 type ResultsTabKey = 'my_applications' | 'my_offers' | 'my_services';
@@ -34,6 +40,7 @@ export default function JobsScreen() {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const router = useRouter();
+    const apolloClient = useApolloClient();
     const [activeTab, setActiveTab] = useState<TabKey>('offers');
     const [resultsTab, setResultsTab] = useState<ResultsTabKey>('my_applications');
     const [fabOpen, setFabOpen] = useState(false);
@@ -44,6 +51,10 @@ export default function JobsScreen() {
     const indicatorWidth = useRef(new Animated.Value(0)).current;
 
     const [selectedApplication, setSelectedApplication] = useState<any>(null);
+    const [selectedPostForComments, setSelectedPostForComments] = useState<any>(null);
+    const [isOptionsVisible, setIsOptionsVisible] = useState(false);
+    const [selectedItemForOptions, setSelectedItemForOptions] = useState<any>(null);
+    const resumeCommentsRef = useRef<any>(null);
 
     const { data: offersData, loading: loadingOffers, refetch: refetchOffers } = useQuery<{jobOffers: any[]}>(GET_JOB_OFFERS, {
         variables: { limit: 20, offset: 0 },
@@ -76,13 +87,120 @@ export default function JobsScreen() {
         onCompleted: () => {
             setDeleteAppId(null);
             setAppMenuVisible(null);
-            import('react-native-toast-message').then(m => m.default.show({ type: 'success', text1: 'Postulación eliminada' }));
+            Toast.show({ type: 'success', text1: 'Postulación eliminada' });
         },
         onError: (err) => {
             setDeleteAppId(null);
-            import('react-native-toast-message').then(m => m.default.show({ type: 'error', text1: 'Error', text2: err.message }));
+            Toast.show({ type: 'error', text1: 'Error', text2: err.message });
         }
     });
+
+    const [deleteJobOffer] = useMutation(DELETE_JOB_OFFER, {
+        onCompleted: (_, clientOptions) => {
+            // Evict the deleted item from all Apollo caches instantly
+            const deletedId = clientOptions?.variables?.id;
+            if (deletedId) {
+                apolloClient.cache.evict({ id: apolloClient.cache.identify({ __typename: 'JobOffer', id: deletedId }) });
+                apolloClient.cache.gc();
+            }
+            setIsOptionsVisible(false);
+            setTimeout(() => Toast.show({
+                type: 'success',
+                text1: 'Oferta eliminada',
+                text2: 'La oferta fue eliminada exitosamente.',
+            }), 400);
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message })
+    });
+
+    const [deleteProfessional] = useMutation(DELETE_PROFESSIONAL_PROFILE, {
+        onCompleted: (_, clientOptions) => {
+            // Evict the deleted item from all Apollo caches instantly
+            const deletedId = clientOptions?.variables?.id;
+            if (deletedId) {
+                apolloClient.cache.evict({ id: apolloClient.cache.identify({ __typename: 'ProfessionalProfile', id: deletedId }) });
+                apolloClient.cache.gc();
+            }
+            setIsOptionsVisible(false);
+            setTimeout(() => Toast.show({
+                type: 'success',
+                text1: 'Servicio eliminado',
+                text2: 'El servicio fue eliminado exitosamente.',
+            }), 400);
+        },
+        onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message })
+    });
+
+    const handleOptionsPress = (item: any) => {
+        setSelectedItemForOptions(item);
+        setIsOptionsVisible(true);
+    };
+
+    const handleDelete = () => {
+        if (!selectedItemForOptions?.id) return;
+        setIsOptionsVisible(false);
+
+        const dataList = getListData();
+        const currentIndex = dataList.findIndex((p: any) => p.id === selectedItemForOptions.id);
+        let targetPost = null;
+
+        if (currentIndex !== -1) {
+            if (currentIndex < dataList.length - 1) {
+                targetPost = dataList[currentIndex + 1];
+            } else if (currentIndex > 0) {
+                targetPost = dataList[currentIndex - 1];
+            }
+        }
+
+        const afterDelete = () => {
+            // Solo navegar dentro del CommentsModal si ya estaba abierto al momento de eliminar
+            if (selectedPostForComments) {
+                if (targetPost) {
+                    setSelectedPostForComments({
+                        post: targetPost,
+                        minimize: !!selectedPostForComments?.minimize,
+                        initialTab: selectedPostForComments?.initialTab
+                    });
+                } else {
+                    setSelectedPostForComments(null);
+                }
+            }
+        };
+
+        if (selectedItemForOptions.__typename === 'JobOffer') {
+            deleteJobOffer({ variables: { id: selectedItemForOptions.id } }).then(afterDelete);
+        } else if (selectedItemForOptions.__typename === 'ProfessionalProfile') {
+            deleteProfessional({ variables: { id: selectedItemForOptions.id } }).then(afterDelete);
+        }
+    };
+
+    const handleEdit = (item: any) => {
+        setIsOptionsVisible(false);
+        if (selectedPostForComments) {
+            resumeCommentsRef.current = selectedPostForComments;
+            setSelectedPostForComments(null);
+        }
+        setTimeout(() => {
+            if (item.__typename === 'JobOffer') {
+                router.push({ pathname: '/jobs/create', params: { initialTab: 'offer', editId: item.id, editData: JSON.stringify(item) } });
+            } else {
+                router.push({ pathname: '/jobs/create', params: { initialTab: 'service', editId: item.id, editData: JSON.stringify(item) } });
+            }
+        }, 150);
+    };
+
+    useFocusEffect(
+        useCallback(() => {
+            if (resumeCommentsRef.current) {
+                const timer = setTimeout(() => {
+                    setSelectedPostForComments(resumeCommentsRef.current);
+                    resumeCommentsRef.current = null;
+                }, 300);
+                return () => clearTimeout(timer);
+            }
+        }, [])
+    );
+
 
     const handleTabPress = (key: TabKey, index: number) => {
         setActiveTab(key);
@@ -196,6 +314,35 @@ export default function JobsScreen() {
         return [];
     };
 
+    const commentsModalData = React.useMemo(() => {
+        if (!selectedPostForComments) return { post: null, nextPost: null, prevPost: null };
+        
+        const currentData = getListData();
+        const currentIndex = currentData.findIndex((p: any) => p.id === selectedPostForComments.post?.id);
+        const livePost = currentIndex !== -1 ? currentData[currentIndex] : selectedPostForComments.post;
+
+        let nextPost = null;
+        if (currentIndex !== -1 && currentIndex < currentData.length - 1) {
+            nextPost = { ...currentData[currentIndex + 1] };
+        }
+
+        let prevPost = null;
+        if (currentIndex > 0) {
+            prevPost = { ...currentData[currentIndex - 1] };
+        }
+
+        let defaultTypeName = 'JobOffer';
+        if (activeTab === 'services' || (activeTab === 'results' && resultsTab === 'my_services')) {
+            defaultTypeName = 'ProfessionalProfile';
+        }
+
+        return {
+            post: { ...livePost, __typename: livePost.__typename || defaultTypeName },
+            nextPost,
+            prevPost,
+        };
+    }, [selectedPostForComments, activeTab, resultsTab, offersData, profsData, myOffersData, myAppsData, myServicesData]);
+
     const handleRefresh = () => {
         if (activeTab === 'offers') refetchOffers();
         else if (activeTab === 'services') refetchProfs();
@@ -256,8 +403,10 @@ export default function JobsScreen() {
     };
 
     const renderItem = ({ item }: { item: any }) => {
-        if (activeTab === 'offers') return <JobOfferCard item={item} onPress={() => {}} />;
-        if (activeTab === 'services') return <ProfessionalCard item={item} onPress={() => {}} />;
+        const openInModal = () => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' });
+
+        if (activeTab === 'offers') return <JobOfferCard item={item} onPress={openInModal} onEdit={handleEdit} />;
+        if (activeTab === 'services') return <ProfessionalCard item={item} onPress={openInModal} onEdit={handleEdit} />;
         if (activeTab === 'results') {
             if (resultsTab === 'my_applications') {
                 const getStatusColor = (status: string) => {
@@ -323,13 +472,14 @@ export default function JobsScreen() {
                 return (
                     <JobOfferCard
                         item={item}
-                        onPress={() => router.push(`/jobs/${item.id}/applicants`)}
+                        onPress={openInModal}
+                        onEdit={handleEdit}
                     />
                 );
             }
 
             if (resultsTab === 'my_services') {
-                return <ProfessionalCard item={item} onPress={() => {}} />;
+                return <ProfessionalCard item={item} onPress={openInModal} onEdit={handleEdit} />;
             }
         }
         return null;
@@ -408,6 +558,7 @@ export default function JobsScreen() {
                         styles.listContent,
                         getListData().length === 0 ? { flex: 1 } : null,
                     ]}
+                    ListFooterComponent={getListData().length > 0 ? <ListFooter /> : null}
                     ListEmptyComponent={renderEmpty}
                     refreshing={isRefreshing}
                     onRefresh={handleRefresh}
@@ -689,9 +840,38 @@ export default function JobsScreen() {
                 onClose={() => setEditAppVisible(null)}
             />
 
+            {/* ── Comments Modal ── */}
+            <CommentsModal
+                visible={!!selectedPostForComments}
+                post={commentsModalData.post}
+                onClose={() => setSelectedPostForComments(null)}
+                initialMinimized={selectedPostForComments?.minimize ?? false}
+                initialTab={selectedPostForComments?.initialTab ?? 'comments'}
+                onNextPost={() => {
+                    if (commentsModalData.nextPost) {
+                        setSelectedPostForComments((prev: any) => ({ ...prev, post: commentsModalData.nextPost }));
+                    }
+                }}
+                onPrevPost={() => {
+                    if (commentsModalData.prevPost) {
+                        setSelectedPostForComments((prev: any) => ({ ...prev, post: commentsModalData.prevPost }));
+                    }
+                }}
+                onOptionsPress={handleOptionsPress}
+                nextPost={commentsModalData.nextPost}
+                prevPost={commentsModalData.prevPost}
+            />
+
+            <PostOptionsModal
+                visible={isOptionsVisible}
+                onClose={() => setIsOptionsVisible(false)}
+                onEdit={() => handleEdit(selectedItemForOptions)}
+                onDelete={handleDelete}
+            />
         </View>
     );
 }
+
 
 const styles = StyleSheet.create({
     screen: {

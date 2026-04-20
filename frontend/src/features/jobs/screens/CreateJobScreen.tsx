@@ -1,20 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     TextInput, ScrollView, Platform, KeyboardAvoidingView,
-    ActivityIndicator, Image, Modal, FlatList
+    ActivityIndicator, Image, Modal, FlatList, Alert, BackHandler
 } from 'react-native';
+import ConfirmModal from '../../../components/ConfirmModal';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMutation } from '@apollo/client/react';
+import { useMutation, useApolloClient } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { Video as Compressor } from 'react-native-compressor';
 import Toast from 'react-native-toast-message';
-import { CREATE_JOB_OFFER, UPDATE_JOB_OFFER, UPSERT_PROFESSIONAL_PROFILE, GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS } from '../graphql/jobs.operations';
+import { customToastConfig } from '../../../components/CustomToast';
+import { CREATE_JOB_OFFER, UPDATE_JOB_OFFER, UPSERT_PROFESSIONAL_PROFILE, UPDATE_PROFESSIONAL_PROFILE, GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS } from '../graphql/jobs.operations';
 import { useLocalSearchParams } from 'expo-router';
 
 const COUNTRY_CODES = [
@@ -44,6 +46,7 @@ export default function CreateJobScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const params = useLocalSearchParams<{ editId?: string; editData?: string; initialTab?: string }>();
+    const apolloClient = useApolloClient();
     const isEditing = !!params.editId;
     const editData = params.editData ? JSON.parse(params.editData as string) : null;
 
@@ -51,6 +54,8 @@ export default function CreateJobScreen() {
     const defaultTab: 'offer' | 'profile' = params.initialTab === 'service' ? 'profile' : 'offer';
     const [activeTab, setActiveTab] = useState<'offer' | 'profile'>(defaultTab);
     const [loading, setLoading] = useState(false);
+    const [showExitConfirm, setShowExitConfirm] = useState(false);
+    const pendingAction = useRef<any>(null);
 
     const [localMediaList, setLocalMediaList] = useState<{
         uri: string,
@@ -73,24 +78,123 @@ export default function CreateJobScreen() {
         return { code: '+593', number: fullPhone };
     };
 
-    const initialPhoneParts = extractPhoneParts(editData?.contactPhone);
+    const initialPhoneParts = extractPhoneParts(editData?.contactPhone || editData?.jobContactPhone || editData?.profContactPhone);
 
     // Form states - Offer
-    const [offerTitle, setOfferTitle] = useState(editData?.title || '');
-    const [offerDescription, setOfferDescription] = useState(editData?.description || '');
-    const [offerLocation, setOfferLocation] = useState(editData?.location || '');
-    const [offerSalary, setOfferSalary] = useState(editData?.salary || '');
+    const [offerTitle, setOfferTitle] = useState(editData?.title || editData?.jobTitle || '');
+    const [offerDescription, setOfferDescription] = useState(editData?.description || editData?.jobDescription || '');
+    const [offerLocation, setOfferLocation] = useState(editData?.location || editData?.jobLocation || '');
+    const [offerSalary, setOfferSalary] = useState(editData?.salary || editData?.jobSalary || '');
     const [offerCountryCode, setOfferCountryCode] = useState(initialPhoneParts.code);
     const [offerPhone, setOfferPhone] = useState(initialPhoneParts.number);
     const [showOfferCountryPicker, setShowOfferCountryPicker] = useState(false);
 
     // Form states - Profile
     const [profProfession, setProfProfession] = useState(editData?.profession || '');
-    const [profDescription, setProfDescription] = useState(editData?.description || '');
+    const [profDescription, setProfDescription] = useState(editData?.description || editData?.profDescription || '');
     const [profExperience, setProfExperience] = useState(editData?.experienceYears?.toString() || '');
     const [profCountryCode, setProfCountryCode] = useState(initialPhoneParts.code);
     const [profPhone, setProfPhone] = useState(initialPhoneParts.number);
     const [showProfCountryPicker, setShowProfCountryPicker] = useState(false);
+
+    // En Expo Router los params llegan de forma asíncrona: el primer render puede
+    // tener editData vacío. Este efecto re-aplica los valores del teléfono en cuanto
+    // los params estén disponibles.
+    useEffect(() => {
+        if (!editData) return;
+        const parts = extractPhoneParts(editData.contactPhone || editData.jobContactPhone || editData.profContactPhone);
+        
+        // Offer fields
+        setOfferTitle(editData.title || editData.jobTitle || '');
+        setOfferDescription(editData.description || editData.jobDescription || '');
+        setOfferLocation(editData.location || editData.jobLocation || '');
+        setOfferSalary(editData.salary || editData.jobSalary || '');
+        setOfferCountryCode(parts.code);
+        setOfferPhone(parts.number);
+
+        // Profile fields
+        setProfProfession(editData.profession || '');
+        setProfDescription(editData.description || editData.profDescription || '');
+        setProfExperience(editData.experienceYears?.toString() || '');
+        setProfCountryCode(parts.code);
+        setProfPhone(parts.number);
+
+        const rawMedia = editData.media || editData.jobMedia || editData.profMedia || [];
+        if (rawMedia && Array.isArray(rawMedia)) {
+            const mapped = rawMedia.map((m: any) => ({
+                uri: m.url,
+                type: m.type?.toLowerCase() || 'image',
+                mimeType: m.type === 'VIDEO' ? 'video/mp4' : 'image/jpeg',
+                isValid: true,
+                uploadStatus: 'done' as const,
+                progress: 100
+            }));
+            setLocalMediaList(mapped);
+        }
+    }, [params.editData]); // Se dispara cuando el string JSON de editData cambie
+
+    const handleBack = useCallback(() => {
+        const hasOfferChanges = activeTab === 'offer' && (
+            offerTitle !== (editData?.title || editData?.jobTitle || '') ||
+            offerDescription !== (editData?.description || editData?.jobDescription || '') ||
+            offerLocation !== (editData?.location || editData?.jobLocation || '') ||
+            offerSalary !== (editData?.salary || editData?.jobSalary || '') ||
+            offerPhone !== (editData?.contactPhone || editData?.jobContactPhone || '').replace(offerCountryCode, '').trim()
+        );
+
+        const hasProfileChanges = activeTab === 'profile' && (
+            profProfession !== (editData?.profession || '') ||
+            profDescription !== (editData?.description || editData?.profDescription || '') ||
+            profExperience !== (editData?.experienceYears?.toString() || '') ||
+            profPhone !== (editData?.contactPhone || editData?.profContactPhone || '').replace(profCountryCode, '').trim()
+        );
+
+        const hasNewMedia = localMediaList.length > 0 && localMediaList.some(m => m.uploadStatus !== 'done');
+        const isActuallyNew = !isEditing && (offerTitle.trim() || offerDescription.trim() || profProfession.trim() || profDescription.trim() || localMediaList.length > 0);
+
+        // Ya no mostramos la alerta aquí, dejamos que el listener 'beforeRemove' se encargue
+        // de interceptar la navegación de router.back() si hay cambios.
+        router.back();
+    }, [activeTab, offerTitle, offerDescription, offerLocation, offerSalary, offerPhone, profProfession, profDescription, profExperience, profPhone, localMediaList, editData, isEditing, offerCountryCode, profCountryCode, router]);
+
+    const navigation = useNavigation();
+    const isReadyToLeave = useRef(false);
+
+    useEffect(() => {
+        const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+            if (isReadyToLeave.current) return;
+
+            // Si ya estamos manejando el cierre o no hay cambios, no bloqueamos
+            const hasOfferChanges = activeTab === 'offer' && (
+                offerTitle !== (editData?.title || editData?.jobTitle || '') ||
+                offerDescription !== (editData?.description || editData?.jobDescription || '') ||
+                offerLocation !== (editData?.location || editData?.jobLocation || '') ||
+                offerSalary !== (editData?.salary || editData?.jobSalary || '') ||
+                offerPhone !== (editData?.contactPhone || editData?.jobContactPhone || '').replace(offerCountryCode, '').trim()
+            );
+    
+            const hasProfileChanges = activeTab === 'profile' && (
+                profProfession !== (editData?.profession || '') ||
+                profDescription !== (editData?.description || editData?.profDescription || '') ||
+                profExperience !== (editData?.experienceYears?.toString() || '') ||
+                profPhone !== (editData?.contactPhone || editData?.profContactPhone || '').replace(profCountryCode, '').trim()
+            );
+
+            const hasNewMedia = localMediaList.length > 0 && localMediaList.some(m => m.uploadStatus !== 'done');
+            const isActuallyNew = !isEditing && (offerTitle.trim() || offerDescription.trim() || profProfession.trim() || profDescription.trim() || localMediaList.length > 0);
+
+            if (!hasOfferChanges && !hasProfileChanges && !hasNewMedia && !isActuallyNew) {
+                return;
+            }
+
+            // Evitamos el comportamiento por defecto
+            e.preventDefault();
+            pendingAction.current = e.data.action;
+            setShowExitConfirm(true);
+        });
+
+        return unsubscribe;
+    }, [navigation, activeTab, offerTitle, offerDescription, offerLocation, offerSalary, offerPhone, profProfession, profDescription, profExperience, profPhone, localMediaList, editData, isEditing, offerCountryCode, profCountryCode]);
 
     // Helper: renderiza el modal picker de país
     const renderCountryPicker = (
@@ -124,8 +228,42 @@ export default function CreateJobScreen() {
     );
 
     const [createJobOffer] = useMutation(CREATE_JOB_OFFER, {
-        refetchQueries: [{ query: GET_JOB_OFFERS, variables: { limit: 20, offset: 0 } }],
-        onCompleted: () => { setLoading(false); router.back(); },
+        update(cache, { data }) {
+            const newOffer = data?.createJobOffer;
+            if (!newOffer) return;
+            // Prepend to public list
+            try {
+                const existing = cache.readQuery<{ jobOffers: any[] }>({
+                    query: GET_JOB_OFFERS,
+                    variables: { limit: 20, offset: 0 },
+                });
+                if (existing) {
+                    cache.writeQuery({
+                        query: GET_JOB_OFFERS,
+                        variables: { limit: 20, offset: 0 },
+                        data: { jobOffers: [newOffer, ...existing.jobOffers] },
+                    });
+                }
+            } catch {}
+            // Prepend to my offers list
+            try {
+                const existingMine = cache.readQuery<{ myJobOffers: any[] }>({
+                    query: GET_MY_JOB_OFFERS,
+                });
+                if (existingMine) {
+                    cache.writeQuery({
+                        query: GET_MY_JOB_OFFERS,
+                        data: { myJobOffers: [newOffer, ...existingMine.myJobOffers] },
+                    });
+                }
+            } catch {}
+        },
+        onCompleted: () => {
+            isReadyToLeave.current = true;
+            setLoading(false);
+            router.back();
+            setTimeout(() => Toast.show({ type: 'success', text1: '¡Publicado!', text2: '¡Tu oferta fue creada exitosamente!' }), 350);
+        },
         onError: (error) => { setLoading(false); Toast.show({ type: 'error', text1: 'Error al publicar', text2: error.message || 'No se pudo crear la oferta.' }); }
     });
 
@@ -134,19 +272,56 @@ export default function CreateJobScreen() {
             { query: GET_JOB_OFFERS, variables: { limit: 20, offset: 0 } },
             { query: GET_MY_JOB_OFFERS },
         ],
-        onCompleted: () => { setLoading(false); router.back(); },
+        onCompleted: () => {
+            isReadyToLeave.current = true;
+            setLoading(false);
+            router.back();
+            setTimeout(() => Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'Tu oferta fue modificada exitosamente.' }), 350);
+        },
         onError: (error) => { setLoading(false); Toast.show({ type: 'error', text1: 'Error al guardar', text2: error.message || 'No se pudo actualizar la oferta.' }); }
     });
 
     const [upsertProfessionalProfile] = useMutation(UPSERT_PROFESSIONAL_PROFILE, {
-        refetchQueries: [{ query: GET_PROFESSIONALS, variables: { limit: 20, offset: 0 } }],
+        update(cache, { data }) {
+            const newProfile = data?.upsertProfessionalProfile;
+            if (!newProfile) return;
+            try {
+                const existing = cache.readQuery<{ professionalProfiles: any[] }>({
+                    query: GET_PROFESSIONALS,
+                    variables: { limit: 20, offset: 0 },
+                });
+                if (existing) {
+                    cache.writeQuery({
+                        query: GET_PROFESSIONALS,
+                        variables: { limit: 20, offset: 0 },
+                        data: { professionalProfiles: [newProfile, ...existing.professionalProfiles] },
+                    });
+                }
+            } catch {}
+        },
         onCompleted: () => {
+            isReadyToLeave.current = true;
             setLoading(false);
             router.back();
+            setTimeout(() => Toast.show({ type: 'success', text1: '¡Publicado!', text2: '¡Tu servicio fue creado exitosamente!' }), 350);
         },
         onError: (error) => {
             setLoading(false);
             Toast.show({ type: 'error', text1: 'Error al guardar', text2: error.message || 'No se pudo guardar el perfil.' });
+        }
+    });
+
+    const [updateProfessionalProfile] = useMutation(UPDATE_PROFESSIONAL_PROFILE, {
+        refetchQueries: [{ query: GET_PROFESSIONALS, variables: { limit: 20, offset: 0 } }],
+        onCompleted: () => {
+            isReadyToLeave.current = true;
+            setLoading(false);
+            router.back();
+            setTimeout(() => Toast.show({ type: 'success', text1: '¡Actualizado!', text2: 'Tu servicio fue actualizado exitosamente.' }), 350);
+        },
+        onError: (error) => {
+            setLoading(false);
+            Toast.show({ type: 'error', text1: 'Error al actualizar', text2: error.message || 'No se pudo actualizar el perfil.' });
         }
     });
 
@@ -218,7 +393,8 @@ export default function CreateJobScreen() {
             }
         }
 
-        const mediaToUpload = localMediaList.filter(m => m.isValid);
+        const needsMediaUpload = localMediaList.length > 0 && !isEditing;
+        const mediaToUpload = needsMediaUpload ? localMediaList.filter(m => m.isValid) : [];
         let mediaInput: { url: string, type: string, order: number }[] = [];
 
         if (mediaToUpload.length > 0) {
@@ -226,6 +402,8 @@ export default function CreateJobScreen() {
             try {
                 const uploadPromises = mediaToUpload.map(async (media, index) => {
                     let finalUri = media.uri;
+                    // El mimeType puede mutar si comprimimos (el compresor siempre produce MP4)
+                    let finalMimeType = media.mimeType;
 
                     const startProgress = (status: any) => {
                         let currentProgress = 0;
@@ -248,6 +426,13 @@ export default function CreateJobScreen() {
                                 bitrate: 3000000,
                                 maxSize: 720
                             });
+                            // El compresor siempre produce un MP4 — forzamos el tipo
+                            // para que el PUT a R2 use el Content-Type correcto y el
+                            // objeto sea reproducible en todos los dispositivos.
+                            finalMimeType = 'video/mp4';
+                        } catch (compError) {
+                            console.warn('Compresión falló, usando video original:', compError);
+                            // Si la compresión falla, usar el video original sin comprimir
                         } finally {
                             clearInterval(compInterval);
                         }
@@ -256,7 +441,7 @@ export default function CreateJobScreen() {
                     const uploadInterval = startProgress('uploading');
                     try {
                         let uploadFolder = activeTab === 'offer' ? 'job-offers' : 'professional-profiles';
-                        const uploadedUrl = await uploadMedia(finalUri, media.mimeType, uploadFolder);
+                        const uploadedUrl = await uploadMedia(finalUri, finalMimeType, uploadFolder);
                         clearInterval(uploadInterval);
                         setLocalMediaList(prev => prev.map(m => m.uri === media.uri ? { ...m, uploadStatus: 'done' as const, progress: 100 } : m));
                         return {
@@ -290,7 +475,7 @@ export default function CreateJobScreen() {
                             description: offerDescription,
                             location: offerLocation,
                             salary: offerSalary || undefined,
-                            contactPhone: offerPhone,
+                            contactPhone: offerCountryCode + offerPhone, // ← incluir código de país en edición
                         }
                     }
                 });
@@ -309,17 +494,31 @@ export default function CreateJobScreen() {
                 });
             }
         } else {
-            upsertProfessionalProfile({
-                variables: {
-                    input: {
-                        profession: profProfession,
-                        description: profDescription,
-                        experienceYears: profExperience ? parseInt(profExperience, 10) : undefined,
-                        contactPhone: profCountryCode + profPhone,
-                        media: mediaInput.length > 0 ? mediaInput : undefined,
+            if (isEditing) {
+                updateProfessionalProfile({
+                    variables: {
+                        id: params.editId,
+                        input: {
+                            profession: profProfession,
+                            description: profDescription,
+                            experienceYears: profExperience ? parseInt(profExperience, 10) : undefined,
+                            contactPhone: profCountryCode + profPhone,
+                        }
                     }
-                }
-            });
+                });
+            } else {
+                upsertProfessionalProfile({
+                    variables: {
+                        input: {
+                            profession: profProfession,
+                            description: profDescription,
+                            experienceYears: profExperience ? parseInt(profExperience, 10) : undefined,
+                            contactPhone: profCountryCode + profPhone,
+                            media: mediaInput.length > 0 ? mediaInput : undefined,
+                        }
+                    }
+                });
+            }
         }
     };
 
@@ -331,7 +530,7 @@ export default function CreateJobScreen() {
         >
             {/* Header */}
             <View style={[styles.header, { paddingTop: insets.top + 10, borderBottomColor: colors.border }]}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
+                <TouchableOpacity onPress={handleBack} style={styles.closeBtn}>
                     <Ionicons name="close" size={24} color={colors.text} />
                 </TouchableOpacity>
                 <Text style={[styles.headerTitle, { color: colors.text }]}>
@@ -393,7 +592,9 @@ export default function CreateJobScreen() {
                             placeholderTextColor={isDark ? '#555' : '#BBB'}
                             value={offerTitle}
                             onChangeText={setOfferTitle}
+                            maxLength={100}
                         />
+                        <Text style={[styles.counter, { color: colors.textSecondary }]}>{offerTitle.length}/100</Text>
 
                         <Text style={[styles.label, { color: colors.textSecondary }]}>Descripción detallada *</Text>
                         <TextInput
@@ -404,7 +605,9 @@ export default function CreateJobScreen() {
                             numberOfLines={4}
                             value={offerDescription}
                             onChangeText={setOfferDescription}
+                            maxLength={3000}
                         />
+                        <Text style={[styles.counter, { color: colors.textSecondary }]}>{offerDescription.length}/3000</Text>
 
                         <Text style={[styles.label, { color: colors.textSecondary }]}>Ubicación *</Text>
                         <TextInput
@@ -413,7 +616,9 @@ export default function CreateJobScreen() {
                             placeholderTextColor={isDark ? '#555' : '#BBB'}
                             value={offerLocation}
                             onChangeText={setOfferLocation}
+                            maxLength={50}
                         />
+                        <Text style={[styles.counter, { color: colors.textSecondary }]}>{offerLocation.length}/50</Text>
 
                         <View style={styles.row}>
                             <View style={{ flex: 0.75, marginRight: 8 }}>
@@ -424,6 +629,7 @@ export default function CreateJobScreen() {
                                     placeholderTextColor={isDark ? '#555' : '#BBB'}
                                     value={offerSalary}
                                     onChangeText={setOfferSalary}
+                                    maxLength={25}
                                 />
                             </View>
                             <View style={{ flex: 1.1, marginLeft: 8 }}>
@@ -443,6 +649,7 @@ export default function CreateJobScreen() {
                                         keyboardType="phone-pad"
                                         value={offerPhone}
                                         onChangeText={setOfferPhone}
+                                        maxLength={25}
                                     />
                                 </View>
                             </View>
@@ -450,14 +657,21 @@ export default function CreateJobScreen() {
                         {renderCountryPicker(showOfferCountryPicker, () => setShowOfferCountryPicker(false), setOfferCountryCode, offerCountryCode)}
 
                         <Text style={[styles.label, { color: colors.textSecondary }]}>Multimedia (Opcional)</Text>
-                        <TouchableOpacity style={styles.mediaButton} activeOpacity={0.7} onPress={handlePickMedia}>
-                            <View style={styles.mediaButtonIconGradientWrapper}>
-                                <MaskedView style={{ width: 20, height: 20 }} maskElement={<Ionicons name="image" size={20} color="black" />}>
-                                    <LinearGradient colors={[colors.primary, colors.secondary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }} />
-                                </MaskedView>
+                        {!isEditing ? (
+                            <TouchableOpacity style={styles.mediaButton} activeOpacity={0.7} onPress={handlePickMedia}>
+                                <View style={styles.mediaButtonIconGradientWrapper}>
+                                    <MaskedView style={{ width: 20, height: 20 }} maskElement={<Ionicons name="image" size={20} color="black" />}>
+                                        <LinearGradient colors={[colors.primary, colors.secondary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }} />
+                                    </MaskedView>
+                                </View>
+                                <Text style={styles.mediaButtonText}>Añadir foto o video</Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <View style={[styles.mediaButton, { borderStyle: 'solid', backgroundColor: colors.surface, opacity: 0.8 }]}>
+                                <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} style={{ marginRight: 8 }} />
+                                <Text style={[styles.mediaButtonText, { color: colors.textSecondary }]}>Las fotos o videos no se pueden cambiar al editar</Text>
                             </View>
-                            <Text style={styles.mediaButtonText}>Añadir foto o video</Text>
-                        </TouchableOpacity>
+                        )}
 
                         {localMediaList.length > 0 && (
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
@@ -527,7 +741,9 @@ export default function CreateJobScreen() {
                             placeholderTextColor={isDark ? '#555' : '#BBB'}
                             value={profProfession}
                             onChangeText={setProfProfession}
+                            maxLength={100}
                         />
+                        <Text style={[styles.counter, { color: colors.textSecondary }]}>{profProfession.length}/100</Text>
 
                         <Text style={[styles.label, { color: colors.textSecondary }]}>Resumen de experiencia y servicios *</Text>
                         <TextInput
@@ -538,7 +754,9 @@ export default function CreateJobScreen() {
                             numberOfLines={4}
                             value={profDescription}
                             onChangeText={setProfDescription}
+                            maxLength={3000}
                         />
+                        <Text style={[styles.counter, { color: colors.textSecondary }]}>{profDescription.length}/3000</Text>
 
                         <View style={styles.row}>
                             <View style={{ flex: 0.75, marginRight: 8 }}>
@@ -569,6 +787,7 @@ export default function CreateJobScreen() {
                                         keyboardType="phone-pad"
                                         value={profPhone}
                                         onChangeText={setProfPhone}
+                                        maxLength={25}
                                     />
                                 </View>
                             </View>
@@ -576,14 +795,21 @@ export default function CreateJobScreen() {
                         {renderCountryPicker(showProfCountryPicker, () => setShowProfCountryPicker(false), setProfCountryCode, profCountryCode)}
                         
                         <Text style={[styles.label, { color: colors.textSecondary }]}>Multimedia (Opcional)</Text>
-                        <TouchableOpacity style={styles.mediaButton} activeOpacity={0.7} onPress={handlePickMedia}>
-                            <View style={styles.mediaButtonIconGradientWrapper}>
-                                <MaskedView style={{ width: 20, height: 20 }} maskElement={<Ionicons name="image" size={20} color="black" />}>
-                                    <LinearGradient colors={[colors.primary, colors.secondary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }} />
-                                </MaskedView>
+                        {!isEditing ? (
+                            <TouchableOpacity style={styles.mediaButton} activeOpacity={0.7} onPress={handlePickMedia}>
+                                <View style={styles.mediaButtonIconGradientWrapper}>
+                                    <MaskedView style={{ width: 20, height: 20 }} maskElement={<Ionicons name="image" size={20} color="black" />}>
+                                        <LinearGradient colors={[colors.primary, colors.secondary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }} />
+                                    </MaskedView>
+                                </View>
+                                <Text style={styles.mediaButtonText}>Añadir foto o video</Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <View style={[styles.mediaButton, { borderStyle: 'solid', backgroundColor: colors.surface, opacity: 0.8 }]}>
+                                <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} style={{ marginRight: 8 }} />
+                                <Text style={[styles.mediaButtonText, { color: colors.textSecondary }]}>Las fotos o videos no se pueden cambiar al editar</Text>
                             </View>
-                            <Text style={styles.mediaButtonText}>Añadir foto o video</Text>
-                        </TouchableOpacity>
+                        )}
 
                         {localMediaList.length > 0 && (
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
@@ -644,12 +870,29 @@ export default function CreateJobScreen() {
                             </ScrollView>
                         )}
 
-                        <Text style={[styles.infoText, { color: colors.textSecondary, marginTop: 16 }]}>
-                            * Nota: Solo puedes tener un perfil profesional activo. Si ya tienes uno, se actualizará automáticamente.
-                        </Text>
                     </View>
                 )}
             </ScrollView>
+
+            <ConfirmModal
+                visible={showExitConfirm}
+                title="¿Salir de la edición?"
+                message="Tienes cambios sin guardar. Si sales ahora, se perderán."
+                confirmText="Salir"
+                cancelText="Continuar editando"
+                onConfirm={() => {
+                    setShowExitConfirm(false);
+                    isReadyToLeave.current = true;
+                    if (pendingAction.current) {
+                        navigation.dispatch(pendingAction.current);
+                    } else {
+                        router.back();
+                    }
+                }}
+                onCancel={() => setShowExitConfirm(false)}
+                isDestructive={true}
+            />
+            <Toast config={customToastConfig} position="top" topOffset={60} />
         </KeyboardAvoidingView>
     );
 }
@@ -863,6 +1106,13 @@ const styles = StyleSheet.create({
     },
     phoneInput: {
         flex: 1,
+    },
+    counter: {
+        fontSize: 10,
+        textAlign: 'right',
+        marginTop: -14,
+        marginBottom: 10,
+        fontWeight: '600',
     },
 });
 

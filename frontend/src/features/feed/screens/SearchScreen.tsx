@@ -184,6 +184,8 @@ export default function SearchScreen() {
         setHasMorePosts(true);
     }, [debouncedQuery]);
 
+    // Sincronización eliminada: SearchScreen pasa el post más reciente directamente al modal.
+
     const handleLoadMore = useCallback(async () => {
         if (isFetchingMore || isLoading || !debouncedQuery) return;
 
@@ -356,7 +358,11 @@ export default function SearchScreen() {
             {/* Modal de Comentarios */}
             <CommentsModal 
                 visible={!!selectedPostForComments} 
-                post={selectedPostForComments?.post}
+                post={
+                    selectedPostForComments
+                        ? (postsData?.searchPosts?.find((p: any) => p.id === selectedPostForComments.post?.id) ?? selectedPostForComments.post)
+                        : null
+                }
                 nextPost={(() => {
                     const idx = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     return (idx !== -1 && idx < posts.length - 1) ? posts[idx + 1] : null;

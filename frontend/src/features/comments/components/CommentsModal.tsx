@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import Toast from 'react-native-toast-message';
+import { customToastConfig } from '../../../components/CustomToast';
 import {
     View, Text, TouchableOpacity, Platform, StyleSheet,
     Image, ActivityIndicator, TouchableWithoutFeedback,
@@ -7,11 +9,17 @@ import {
     LayoutAnimation, BackHandler
 } from 'react-native';
 
-import { useNavigation } from '@react-navigation/native';
-import { useQuery, useMutation } from '@apollo/client/react';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { Ionicons } from '@expo/vector-icons';
 import { GET_COMMENTS, CREATE_COMMENT, DELETE_COMMENT, UPDATE_COMMENT } from '../graphql/comments.operations';
 import { TOGGLE_LIKE } from '../../feed/graphql/posts.operations';
+import { 
+    TOGGLE_STORE_PRODUCT_LIKE, 
+    CREATE_STORE_PRODUCT_COMMENT, 
+    GET_STORE_PRODUCT_COMMENTS, 
+    DELETE_STORE_PRODUCT_COMMENT 
+} from '../../store/graphql/store.operations';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../auth/context/AuthContext';
@@ -19,9 +27,11 @@ import CommentOptionsModal from './CommentOptionsModal';
 import ConfirmationModal from './ConfirmationModal';
 import CommentItem from './CommentItem';
 import CopyTextModal from '../../../components/CopyTextModal';
+import ReportModal from '../../reports/components/ReportModal';
 import ImageCarousel from '../../feed/components/ImageCarousel';
 import JobOfferCard from '../../jobs/components/JobOfferCard';
 import ProfessionalCard from '../../jobs/components/ProfessionalCard';
+import StoreProductCard from '../../store/components/StoreProductCard';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -38,6 +48,7 @@ const formatTimeAgo = (date: Date) => {
 };
 
 const formatDate = (isoString: string) => {
+    if (!isoString) return '';
     const utcString = isoString.endsWith('Z') ? isoString : `${isoString}Z`;
     const date = new Date(utcString);
     const hoy = new Date();
@@ -71,11 +82,13 @@ export default function CommentsModal({
     onNextPost, onPrevPost, nextPost, prevPost, hasMorePosts = false,
     onOptionsPress, initialExpanded = false
 }: CommentsModalProps) {
+    const isFocused = useIsFocused();
     const { colors, isDark } = useTheme();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const insets = useSafeAreaInsets();
     const { user: currentUser } = useAuth();
     const navigation = useNavigation();
+    const apolloClient = useApolloClient();
     const [content, setContent] = useState('');
     const [selectedCommentData, setSelectedCommentData] = useState<{ id: string, isMine: boolean, isReply: boolean } | null>(null);
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
@@ -86,6 +99,8 @@ export default function CommentsModal({
     const [activeTab, setActiveTab] = useState<'comments' | 'likes'>(initialTab);
     const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
+    const [reportVisible, setReportVisible] = useState(false);
+    const [postReportVisible, setPostReportVisible] = useState(false);
     const inputRef = useRef<TextInput>(null);
     const scrollViewRef = useRef<ScrollView>(null);
     // postScrollEnabled: state para re-renderizar el ScrollView, ref para el PanResponder (closure-safe)
@@ -101,7 +116,10 @@ export default function CommentsModal({
     const postId = post?.id;
     // El item puede ser un Post, JobOffer o ProfessionalProfile
     const isPost = !post?.__typename || post.__typename === 'Post';
-    const effectiveIsMinimized = isMinimized || !isPost;
+    const isStore = post?.__typename === 'StoreProduct';
+    const isCommentable = isPost || isStore;
+    const isEdited = !!post?.editedAt;
+    const effectiveIsMinimized = isMinimized || !isCommentable;
     // Para todos los tipos de publicación, remap los aliases de Apollo al campo 'media' estándar
     const normalizedItem = React.useMemo(() => {
         if (!post) return post;
@@ -110,6 +128,15 @@ export default function CommentsModal({
         }
         if (post.__typename === 'ProfessionalProfile') {
             return { ...post, media: post.profMedia ?? post.media ?? [] };
+        }
+        if (post.__typename === 'StoreProduct') {
+            return {
+                ...post,
+                title: post.storeTitle ?? post.title,
+                media: post.storeMedia ?? post.media ?? [],
+                location: post.storeLocation ?? post.location,
+                contactPhone: post.storeContactPhone ?? post.contactPhone,
+            };
         }
         // Post: remap postMedia alias
         return { ...post, media: post.postMedia ?? post.media ?? [] };
@@ -169,9 +196,8 @@ export default function CommentsModal({
     }, [onNextPost, onPrevPost, nextPost, prevPost, hasMorePosts]);
 
     const toggleMinimize = () => {
-        // Para no-Posts (Ofertas/Servicios) no hay sección de comentarios,
-        // el toggle causaría que la tarjeta ocupe solo la mitad superior → bloqueamos
-        if (!isPost) return;
+        // Para no-Posts (Ofertas/Servicios) temporalmente bloqueamos, excepto Store
+        if (!isCommentable) return;
         if (!isMinimized) {
             Keyboard.dismiss();
         }
@@ -429,29 +455,35 @@ export default function CommentsModal({
         }
     }, [visible, initialMinimized, initialTab]);
 
-    // ── Cuando se navega entre ítems (swipe), forzar minimizado si el nuevo ítem no es Post ──
+    // ── Cuando se navega entre ítems (swipe), forzar minimizado si el nuevo ítem no permite comentarios ──
+    const currentIsCommentable = !post?.__typename || post.__typename === 'Post' || post.__typename === 'StoreProduct';
     useEffect(() => {
         if (!visible || !post?.id) return;
-        const currentIsPost = !post?.__typename || post.__typename === 'Post';
-        if (!currentIsPost) {
+        if (!currentIsCommentable) {
             // Oferta o Servicio: siempre mostrar solo la tarjeta (sin burbuja de comentarios)
             setIsMinimized(true);
         }
-    }, [post?.id, visible]);
+    }, [post?.id, visible, currentIsCommentable]);
 
     // ── Manejo del botón físico Back (Android) ────────────────────────────────
     useEffect(() => {
         if (!visible) return;
         const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+            // Si la pantalla no está enfocada (ej. hay un fullScreenModal encima),
+            // no consumimos el evento y dejamos que pase a la siguiente pantalla.
+            if (!isFocused) {
+                return false;
+            }
+
             if (!isMinimized) {
                 toggleMinimize();
             } else {
                 closeWithAnimation();
             }
-            return true; // consume el evento para que no cierre la pantalla anterior
+            return true;
         });
         return () => sub.remove();
-    }, [visible, isMinimized]);
+    }, [visible, isMinimized, isFocused]);
 
     // ── Teclado ────────────────────────────────────────────────────────────
     const keyboardOffset = useRef(new Animated.Value(Math.max(insets.bottom, 16))).current;
@@ -704,16 +736,19 @@ export default function CommentsModal({
 
 
     // ── Likes ──────────────────────────────────────────────────────────────
-    const displayLiked = (isPost && post?.likes?.some((l: any) => l.user?.id === currentUser?.id)) || false;
+    const displayLiked = (isCommentable && post?.likes?.some((l: any) => l.user?.id === currentUser?.id)) || false;
     const [localLiked, setLocalLiked] = useState(displayLiked);
-    const [localCount, setLocalCount] = useState<number>(isPost ? (post?.likes?.length || 0) : 0);
-    const [toggleLikeMutation] = useMutation(TOGGLE_LIKE);
+    const [localCount, setLocalCount] = useState<number>(isCommentable ? (post?.likes?.length || 0) : 0);
+    
+    const [togglePostLikeMutation] = useMutation(TOGGLE_LIKE);
+    const [toggleStoreLikeMutation] = useMutation(TOGGLE_STORE_PRODUCT_LIKE);
+    const toggleLikeMutation = isStore ? toggleStoreLikeMutation : togglePostLikeMutation;
 
     useEffect(() => {
-        if (!isPost) return;
+        if (!isCommentable) return;
         setLocalLiked(post?.likes?.some((l: any) => l.user?.id === currentUser?.id) || false);
         setLocalCount(post?.likes?.length || 0);
-    }, [post?.likes]);
+    }, [post?.likes, isCommentable]);
 
     const handleLike = () => {
         if (!currentUser?.id || !postId) return;
@@ -726,7 +761,7 @@ export default function CommentsModal({
             optimisticLikes = optimisticLikes.filter((l: any) => l.user?.id !== currentUser.id);
         } else {
             optimisticLikes.push({
-                __typename: 'PostLike',
+                __typename: isStore ? 'StoreProductLike' : 'PostLike',
                 id: `temp-${Date.now()}`,
                 user: {
                     __typename: 'User',
@@ -738,16 +773,12 @@ export default function CommentsModal({
             });
         }
 
+        const variables = isStore ? { productId: postId } : { postId };
+        const opResponseFields = isStore ? { toggleStoreProductLike: { __typename: 'StoreProduct', id: postId, commentsCount: post?.commentsCount ?? post?.comments?.length ?? 0, likes: optimisticLikes }} : { toggleLike: { __typename: 'Post', id: postId, commentsCount: post?.commentsCount ?? post?.comments?.length ?? 0, likes: optimisticLikes } };
+
         toggleLikeMutation({
-            variables: { postId },
-            optimisticResponse: {
-                toggleLike: {
-                    __typename: 'Post',
-                    id: postId,
-                    commentsCount: post?.commentsCount ?? post?.comments?.length ?? 0,
-                    likes: optimisticLikes,
-                },
-            },
+            variables: variables,
+            optimisticResponse: opResponseFields as any,
         }).catch(() => {
             setLocalLiked(!next);
             setLocalCount((c) => !next ? c + 1 : Math.max(0, c - 1));
@@ -756,11 +787,21 @@ export default function CommentsModal({
 
     // ── Comments query ─────────────────────────────────────────────────────
     const COMMENTS_PAGE_SIZE = 10;
-    const { data, loading, error, refetch, fetchMore: fetchMoreComments } = useQuery(GET_COMMENTS, {
-        variables: { postId, limit: COMMENTS_PAGE_SIZE, offset: 0 },
+    const postQuery = useQuery(GET_COMMENTS, {
+        variables: { postId: postId || '', limit: COMMENTS_PAGE_SIZE, offset: 0 },
         skip: !postId || !isPost,
         fetchPolicy: 'cache-and-network',
     });
+    
+    const storeQuery = useQuery(GET_STORE_PRODUCT_COMMENTS, {
+        variables: { productId: postId || '', limit: COMMENTS_PAGE_SIZE, offset: 0 },
+        skip: !postId || !isStore,
+        fetchPolicy: 'cache-and-network',
+    });
+
+    const currentQuery = isStore ? storeQuery : postQuery;
+    const { data, loading, error, refetch } = currentQuery;
+    const currentDataList = isStore ? data?.getStoreProductComments : data?.getCommentsByPost;
 
     const [hasMoreComments, setHasMoreComments] = useState(true);
     const [isFetchingMoreComments, setIsFetchingMoreComments] = useState(false);
@@ -771,61 +812,80 @@ export default function CommentsModal({
     }, [postId]);
 
     const loadMoreComments = useCallback(() => {
-        const currentComments = data?.getCommentsByPost;
+        const currentComments = currentDataList;
         if (isFetchingMoreComments || !hasMoreComments || !currentComments) return;
 
         setIsFetchingMoreComments(true);
-        fetchMoreComments({
-            variables: {
-                postId,
-                limit: COMMENTS_PAGE_SIZE,
-                offset: currentComments.length,
-            },
+        const fetchVars = isStore ? { productId: postId, limit: COMMENTS_PAGE_SIZE, offset: currentComments.length } : { postId, limit: COMMENTS_PAGE_SIZE, offset: currentComments.length };
+        
+        currentQuery.fetchMore({
+            variables: fetchVars,
         }).then((result: any) => {
-            const newComments = result?.data?.getCommentsByPost ?? [];
-            if (newComments.length < COMMENTS_PAGE_SIZE) {
+            const newComments = isStore ? result?.data?.getStoreProductComments : result?.data?.getCommentsByPost;
+            if (!newComments || newComments.length < COMMENTS_PAGE_SIZE) {
                 setHasMoreComments(false);
             }
         }).finally(() => setIsFetchingMoreComments(false));
-    }, [data?.getCommentsByPost, isFetchingMoreComments, hasMoreComments, postId, fetchMoreComments]);
+    }, [currentDataList, isFetchingMoreComments, hasMoreComments, postId, currentQuery, isStore]); 
 
     // Preferimos post.commentsCount (total con respuestas, viene del feed)
     // Si no está disponible, contamos los comentarios raíz de la query local
-    const commentsCount = post?.commentsCount ?? data?.getCommentsByPost?.length ?? 0;
+    const commentsCount = post?.commentsCount ?? currentDataList?.length ?? 0;
 
-    const [createComment, { loading: creating }] = useMutation(CREATE_COMMENT, {
-        refetchQueries: [{ query: GET_COMMENTS, variables: { postId, limit: COMMENTS_PAGE_SIZE, offset: 0 } }],
-        update(cache, { data: { createComment: newComment } }) {
+    const [createPostCommentMutation, { loading: creatingPost }] = useMutation(CREATE_COMMENT, {
+        refetchQueries: [{ query: GET_COMMENTS, variables: { postId: postId || '', limit: COMMENTS_PAGE_SIZE, offset: 0 } }],
+        update(cache) {
             if (!postId) return;
             cache.modify({
                 id: cache.identify({ __typename: 'Post', id: postId }),
                 fields: {
-                    commentsCount(current = 0) {
-                        return current + 1;
-                    },
+                    commentsCount(current = 0) { return current + 1; },
                 }
             });
         },
     });
 
-    const [deleteComment] = useMutation(DELETE_COMMENT, {
+    const [createStoreCommentMutation, { loading: creatingStore }] = useMutation(CREATE_STORE_PRODUCT_COMMENT, {
+        refetchQueries: [{ query: GET_STORE_PRODUCT_COMMENTS, variables: { productId: postId || '', limit: COMMENTS_PAGE_SIZE, offset: 0 } }],
+        update(cache) {
+            if (!postId) return;
+            cache.modify({
+                id: cache.identify({ __typename: 'StoreProduct', id: postId }),
+                fields: {
+                    commentsCount(current = 0) { return current + 1; },
+                }
+            });
+        },
+    });
+
+    const creating = creatingPost || creatingStore;
+    const createComment = isStore ? createStoreCommentMutation : createPostCommentMutation;
+
+    const [deletePostCommentMutation] = useMutation(DELETE_COMMENT, {
         update(cache, { data: { deleteComment: success } }, { variables }) {
             if (!success) return;
             const commentId = variables?.id;
-
-            // Eliminamos el objeto del caché globalmente (funciona para raíz y respuestas)
             cache.evict({ id: cache.identify({ __typename: 'Comment', id: commentId }) });
             cache.gc();
-
-            // Decrementamos commentsCount en el Post
             if (postId) {
                 cache.modify({
                     id: cache.identify({ __typename: 'Post', id: postId }),
-                    fields: {
-                        commentsCount(current = 0) {
-                            return Math.max(0, current - 1);
-                        },
-                    }
+                    fields: { commentsCount(current = 0) { return Math.max(0, current - 1); } }
+                });
+            }
+        }
+    });
+
+    const [deleteStoreCommentMutation] = useMutation(DELETE_STORE_PRODUCT_COMMENT, {
+        update(cache, { data: { deleteStoreProductComment: success } }, { variables }) {
+            if (!success) return;
+            const commentId = variables?.commentId;
+            cache.evict({ id: cache.identify({ __typename: 'StoreProductComment', id: commentId }) });
+            cache.gc();
+            if (postId) {
+                cache.modify({
+                    id: cache.identify({ __typename: 'StoreProduct', id: postId }),
+                    fields: { commentsCount(current = 0) { return Math.max(0, current - 1); } }
                 });
             }
         }
@@ -840,7 +900,11 @@ export default function CommentsModal({
         if (!selectedCommentData?.id) return;
         try {
             setIsDeleteConfirmVisible(false);
-            await deleteComment({ variables: { id: selectedCommentData.id } });
+            if (isStore) {
+                await deleteStoreCommentMutation({ variables: { commentId: selectedCommentData.id } });
+            } else {
+                await deletePostCommentMutation({ variables: { id: selectedCommentData.id } });
+            }
         } catch (e) {
             console.error('Error al eliminar comentario:', e);
             Alert.alert('Error', 'No se pudo eliminar el comentario');
@@ -848,7 +912,7 @@ export default function CommentsModal({
     };
 
     const handleReport = (id: string) => {
-        Alert.alert('Reportar', 'Gracias por tu reporte. Lo revisaremos pronto.');
+        setReportVisible(true);
     };
 
     const [updateComment, { loading: updating }] = useMutation(UPDATE_COMMENT);
@@ -869,9 +933,9 @@ export default function CommentsModal({
         try {
             const commentText = content.trim();
 
-            if (editingCommentId) {
-                // Buscamos el comentario original para mantener su createdAt en el optimisticResponse
-                const originalComment = data?.getCommentsByPost?.find((c: any) => c.id === editingCommentId);
+            if (editingCommentId && !isStore) {
+                // Store comments do not support editing currently.
+                const originalComment = currentDataList?.find((c: any) => c.id === editingCommentId);
 
                 await updateComment({
                     variables: { id: editingCommentId, content: commentText },
@@ -910,18 +974,44 @@ export default function CommentsModal({
                 });
             } else {
                 await createComment({
-                    variables: {
+                    variables: isStore ? {
+                        productId: postId,
+                        content: commentText,
+                        parentId: replyingTo?.id
+                    } : {
                         postId,
                         content: commentText,
                         parentId: replyingTo?.id
                     },
-                    optimisticResponse: {
+                    optimisticResponse: isStore ? {
+                        createStoreProductComment: {
+                            __typename: 'StoreProductComment',
+                            id: `temp-${Date.now()}`,
+                            content: commentText,
+                            createdAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString(),
+                            likesCount: 0,
+                            isLikedByMe: false,
+                            parentId: replyingTo?.id || null,
+                            parent: replyingTo?.id ? { __typename: 'StoreProductComment', id: replyingTo.id } : null,
+                            editedAt: null,
+                            user: {
+                                __typename: 'User',
+                                id: currentUser.id,
+                                username: currentUser.username || '',
+                                firstName: currentUser.firstName,
+                                lastName: currentUser.lastName,
+                                photoUrl: currentUser.photoUrl || null,
+                            },
+                        }
+                    } : {
                         createComment: {
                             __typename: 'Comment',
                             id: `temp-${Date.now()}`,
                             content: commentText,
                             createdAt: new Date().toISOString(),
                             updatedAt: new Date().toISOString(),
+                            editedAt: null,
                             parentId: replyingTo?.id || null,
                             likesCount: 0,
                             isLikedByMe: false,
@@ -965,26 +1055,18 @@ export default function CommentsModal({
                 setReplyingTo({ id, name });
                 setTimeout(() => inputRef.current?.focus(), 100);
             }}
+            isStore={isStore}
         />
     );
 
     if (!visible) return null;
 
-    const isEdited = post?.updatedAt &&
-        new Date(post.updatedAt).getTime() > new Date(post.createdAt).getTime() + 2000;
 
     return (
         <Modal
             visible={visible}
             transparent
             animationType="none"
-            onRequestClose={() => {
-                if (!isMinimized) {
-                    toggleMinimize();
-                } else {
-                    closeWithAnimation();
-                }
-            }}
             statusBarTranslucent
         >
 
@@ -1027,12 +1109,39 @@ export default function CommentsModal({
                         >
                             <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
                                 <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
+                                
+                                {!isPost && (
+                                    <View style={{ width: '100%', marginBottom: 6, paddingLeft: 0 }}>
+                                        <View style={{
+                                            flexDirection: 'row',
+                                            alignItems: 'center',
+                                            backgroundColor: 'rgba(255,101,36,0.08)',
+                                            paddingHorizontal: 10,
+                                            paddingVertical: 6,
+                                            alignSelf: 'flex-start',
+                                            borderLeftWidth: 4,
+                                            borderLeftColor: '#FF6524',
+                                            borderTopRightRadius: 8,
+                                            borderBottomRightRadius: 8,
+                                        }}>
+                                            <Text style={{ 
+                                                color: '#FF6524', 
+                                                fontSize: 10, 
+                                                fontWeight: '800',
+                                                letterSpacing: 1,
+                                            }}>
+                                                {post.__typename === 'JobOffer' ? 'OFERTA DE EMPLEO' : (post.__typename === 'StoreProduct' ? 'TIENDA' : 'SERVICIO PROFESIONAL')}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                )}
+
                                 <TouchableOpacity
                                     style={styles.postAuthorRow}
                                     onPress={() => {
                                         const profileId = isPost
                                             ? post.author?.id
-                                            : (post.author?.id ?? post.user?.id);
+                                            : (post.author?.id ?? post.user?.id ?? post.seller?.id);
                                         if (profileId) navigateToProfile(profileId);
                                     }}
                                     activeOpacity={0.7}
@@ -1042,10 +1151,11 @@ export default function CommentsModal({
                                         {(() => {
                                             const photoUrl = isPost
                                                 ? post.author?.photoUrl
-                                                : (post.author?.photoUrl ?? post.user?.photoUrl);
-                                            const initials = isPost
-                                                ? `${post.author?.firstName?.[0] || ''}${post.author?.lastName?.[0] || ''}`
-                                                : `${(post.author?.firstName ?? post.user?.firstName)?.[0] || ''}${(post.author?.lastName ?? post.user?.lastName)?.[0] || ''}`;
+                                                : (post.author?.photoUrl ?? post.user?.photoUrl ?? post.seller?.photoUrl);
+                                            const firstName = isPost ? post.author?.firstName : (post.author?.firstName ?? post.user?.firstName ?? post.seller?.firstName);
+                                            const lastName = isPost ? post.author?.lastName : (post.author?.lastName ?? post.user?.lastName ?? post.seller?.lastName);
+
+                                            const initials = `${firstName?.[0] || ''}${lastName?.[0] || ''}`;
                                             return photoUrl
                                                 ? <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
                                                 : <Text style={styles.avatarText}>{initials}</Text>;
@@ -1057,23 +1167,9 @@ export default function CommentsModal({
                                             <Text style={[styles.postAuthorName, { color: colors.text }]}>
                                                 {isPost
                                                     ? `${post.author?.firstName ?? ''} ${post.author?.lastName ?? ''}`
-                                                    : `${(post.author?.firstName ?? post.user?.firstName) ?? ''} ${(post.author?.lastName ?? post.user?.lastName) ?? ''}`
+                                                    : `${(post.author?.firstName ?? post.user?.firstName ?? post.seller?.firstName) ?? ''} ${(post.author?.lastName ?? post.user?.lastName ?? post.seller?.lastName) ?? ''}`
                                                 }
                                             </Text>
-                                            {!isPost && (
-                                                <View style={{
-                                                    backgroundColor: 'rgba(255,101,36,0.12)',
-                                                    borderRadius: 6,
-                                                    paddingHorizontal: 7,
-                                                    paddingVertical: 2,
-                                                    borderWidth: 1,
-                                                    borderColor: 'rgba(255,101,36,0.35)',
-                                                }}>
-                                                    <Text style={{ color: '#FF6524', fontSize: 10, fontWeight: '700' }}>
-                                                        {post.__typename === 'JobOffer' ? 'Oferta de Empleo' : 'Servicio Profesional'}
-                                                    </Text>
-                                                </View>
-                                            )}
                                         </View>
                                         <Text style={[styles.postDate, { color: colors.textSecondary }]}>
                                             {formatDate(post.createdAt)}{isPost && isEdited ? ' · Editado' : ''}
@@ -1082,15 +1178,35 @@ export default function CommentsModal({
                                 </TouchableOpacity>
 
                                 <View style={{ flexDirection: 'row', alignItems: 'center', position: 'absolute', right: 14, top: 14, zIndex: 10 }}>
-                                    {post.author?.id === currentUser?.id && (
-                                        <TouchableOpacity
-                                            onPress={() => onOptionsPress?.(post)}
-                                            style={{ marginRight: 16 }}
-                                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                                        >
-                                            <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-                                        </TouchableOpacity>
-                                    )}
+                                    {(() => {
+                                        const profileId = isPost
+                                            ? post.author?.id
+                                            : (post.author?.id ?? post.user?.id ?? post.seller?.id);
+                                        const isOwner = profileId === currentUser?.id;
+                                        
+                                        return (
+                                            <>
+                                                {isOwner && (
+                                                    <TouchableOpacity
+                                                        onPress={() => onOptionsPress?.(post)}
+                                                        style={{ marginRight: 16 }}
+                                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                                                    >
+                                                        <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                                                    </TouchableOpacity>
+                                                )}
+                                                {!isOwner && (
+                                                    <TouchableOpacity
+                                                        onPress={() => setPostReportVisible(true)}
+                                                        style={{ marginRight: 16 }}
+                                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                                                    >
+                                                        <Ionicons name="flag-outline" size={20} color={colors.textSecondary} />
+                                                    </TouchableOpacity>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
 
                                     <TouchableOpacity onPress={closeWithAnimation}
                                         hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
@@ -1170,10 +1286,13 @@ export default function CommentsModal({
                                         style={{ flex: 1 }}
                                     >
                                         {post.__typename === 'JobOffer' && (
-                                            <JobOfferCard item={normalizedItem} onPress={() => {}} hideAuthorRow />
+                                            <JobOfferCard item={normalizedItem} onPress={undefined} hideAuthorRow isModalView={true} />
                                         )}
                                         {post.__typename === 'ProfessionalProfile' && (
-                                            <ProfessionalCard item={normalizedItem} onPress={() => {}} hideAuthorRow />
+                                            <ProfessionalCard item={normalizedItem} onPress={undefined} hideAuthorRow isModalView={true} />
+                                        )}
+                                        {post.__typename === 'StoreProduct' && (
+                                            <StoreProductCard item={normalizedItem} onPress={undefined} hideSellerRow isModalView={true} />
                                         )}
                                     </Animated.View>
                                 ) : (
@@ -1237,8 +1356,8 @@ export default function CommentsModal({
                                 )}
                             </ScrollView>
 
-                            {/* Footer con Like/Comentar — solo para Posts */}
-                            {isPost && (
+                            {/* Footer con Like/Comentar */}
+                            {isCommentable && (
                             <Animated.View {...footerSwipePan.panHandlers} style={[styles.postFooterFixed, { borderTopColor: colors.border }]}>
                                 {(localCount > 0 || commentsCount > 0) && (
                                     <TouchableOpacity activeOpacity={1} style={styles.statsRow}>
@@ -1268,7 +1387,7 @@ export default function CommentsModal({
                                         <Ionicons name={localLiked ? 'heart' : 'heart-outline'} size={20}
                                             color={localLiked ? '#FF3B30' : colors.textSecondary} />
                                         <Text style={[styles.actionText, { color: localLiked ? '#FF3B30' : colors.textSecondary },
-                                        localLiked && { fontWeight: 'bold' }]}>Me gusta</Text>
+                                        localLiked && { fontWeight: 'bold' }]}>Like</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity style={styles.actionBtn} onPress={() => {
                                         setActiveTab('comments');
@@ -1283,8 +1402,8 @@ export default function CommentsModal({
                         </Animated.View>
                     )}
 
-                    {/* ── BUBBLE COMENTARIOS — solo para Posts ── */}
-                    {!effectiveIsMinimized && isPost && (
+                    {/* ── BUBBLE COMENTARIOS ── */}
+                    {!effectiveIsMinimized && isCommentable && (
                         <Animated.View style={[styles.commentsBubble, { flex: 1 }, { opacity: postTransition, transform: [{ translateY: slideY }] }]} {...tabSwipePan.panHandlers}>
 
                             <View style={[styles.commentsHeader, { borderBottomColor: colors.border }]} {...commentsHeaderPan.panHandlers}>
@@ -1376,13 +1495,24 @@ export default function CommentsModal({
                                                 <ActivityIndicator size="large" color={colors.primary} />
                                             </View>
                                         ) : error ? (
-                                            <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
-                                                <Text style={{ color: colors.error }}>Error cargando comentarios</Text>
-                                                <TouchableOpacity onPress={() => refetch()} style={{ marginTop: 10 }}>
-                                                    <Text style={{ color: colors.primary }}>Reintentar</Text>
+                                            <View style={styles.errorContainer} {...emptyAreaPan.panHandlers}>
+                                                <View style={[styles.errorIconCircle, { backgroundColor: colors.error + '15' }]}>
+                                                    <Ionicons name="cloud-offline-outline" size={40} color={colors.error} />
+                                                </View>
+                                                <Text style={[styles.errorTitle, { color: colors.text }]}>No hay conexión</Text>
+                                                <Text style={[styles.errorSubTitle, { color: colors.textSecondary }]}>
+                                                    Verifica tu internet e inténtalo de nuevo.
+                                                </Text>
+                                                <TouchableOpacity 
+                                                    onPress={() => refetch()} 
+                                                    style={[styles.retryButton, { backgroundColor: colors.primary }]}
+                                                    activeOpacity={0.8}
+                                                >
+                                                    <Ionicons name="refresh-outline" size={20} color="white" />
+                                                    <Text style={styles.retryButtonText}>Reintentar</Text>
                                                 </TouchableOpacity>
                                             </View>
-                                        ) : (!data?.getCommentsByPost || data.getCommentsByPost.length === 0) ? (
+                                        ) : (!currentDataList || currentDataList.length === 0) ? (
                                             <View style={[styles.center, { flex: 1 }]} {...emptyAreaPan.panHandlers}>
                                                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
                                                     No hay comentarios aún. ¡Sé el primero!
@@ -1390,13 +1520,13 @@ export default function CommentsModal({
                                             </View>
                                         ) : (
                                             <>
-                                                {[...(data?.getCommentsByPost || [])]
+                                                {[...(currentDataList || [])]
                                                     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                                                     .map((item: any) => renderComment(item))}
                                                 {/* Spinner o mensaje de fin */}
                                                 {isFetchingMoreComments ? (
                                                     <ActivityIndicator size="small" color={colors.primary} style={{ paddingVertical: 16 }} />
-                                                ) : !hasMoreComments && (data?.getCommentsByPost?.length ?? 0) > 0 ? (
+                                                ) : !hasMoreComments && (currentDataList?.length ?? 0) > 0 ? (
                                                     <Text style={{ textAlign: 'center', color: colors.textSecondary, paddingVertical: 12, fontSize: 12 }}>
                                                         No hay más comentarios
                                                     </Text>
@@ -1460,8 +1590,8 @@ export default function CommentsModal({
 
                 </Animated.View>
 
-                {/* ── NAV BAR INFERIOR NEGRA (Minimizado) – solo para Posts ── */}
-                {isMinimized && isPost && (
+                {/* ── NAV BAR INFERIOR NEGRA (Minimizado) ── */}
+                {isMinimized && isCommentable && (
                     <View style={{
                         position: 'absolute',
                         left: -4,
@@ -1492,7 +1622,7 @@ export default function CommentsModal({
                 commentData={selectedCommentData}
                 onClose={() => setIsOptionsModalVisible(false)}
                 onEdit={(id) => {
-                    const commentToEdit = data?.getCommentsByPost?.find((c: any) => c.id === id);
+                    const commentToEdit = currentDataList?.find((c: any) => c.id === id);
                     if (commentToEdit) {
                         setContent(commentToEdit.content);
                         setEditingCommentId(id);
@@ -1520,6 +1650,55 @@ export default function CommentsModal({
                 textToCopy={post?.content || ''}
                 onClose={() => setIsCopyModalVisible(false)}
             />
+
+            {reportVisible && selectedCommentData && (
+                <ReportModal
+                    visible={reportVisible}
+                    onClose={() => setReportVisible(false)}
+                    reportedItemId={selectedCommentData.id}
+                    reportedItemType="COMMENT"
+                    onContentDeleted={() => {
+                        // 1. Evictar el comentario del caché Apollo → desaparece al instante
+                        apolloClient.cache.evict({
+                            id: apolloClient.cache.identify({
+                                __typename: 'Comment',
+                                id: selectedCommentData.id,
+                            }),
+                        });
+                        apolloClient.cache.gc();
+                        // 2. Cerrar el modal de denuncia
+                        setReportVisible(false);
+                        // 3. Refetch para sincronizar con el servidor
+                        refetch();
+                    }}
+                />
+            )}
+
+            {postReportVisible && post && (
+                <ReportModal
+                    visible={postReportVisible}
+                    onClose={() => setPostReportVisible(false)}
+                    reportedItemId={post.id}
+                    reportedItemType={{
+                        'StoreProduct': 'STORE_PRODUCT',
+                        'JobOffer': 'JOB_OFFER',
+                        'ProfessionalProfile': 'SERVICE',
+                        'Post': 'POST',
+                    }[post?.__typename || 'Post'] || 'POST'}
+                    onContentDeleted={() => {
+                        apolloClient.cache.evict({
+                            id: apolloClient.cache.identify({
+                                __typename: post.__typename || 'Post',
+                                id: post.id,
+                            }),
+                        });
+                        apolloClient.cache.gc();
+                        setPostReportVisible(false);
+                        closeWithAnimation();
+                    }}
+                />
+            )}
+            <Toast config={customToastConfig} position="top" topOffset={60} />
         </Modal>
     );
 }
@@ -1720,5 +1899,50 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     likeUserName: {
         fontSize: 16,
         fontWeight: '600',
+    },
+    errorContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 40,
+        paddingVertical: 60,
+    },
+    errorIconCircle: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    errorTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    errorSubTitle: {
+        fontSize: 14,
+        textAlign: 'center',
+        marginBottom: 24,
+        lineHeight: 20,
+    },
+    retryButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        borderRadius: 25,
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 3,
+    },
+    retryButtonText: {
+        color: 'white',
+        fontSize: 15,
+        fontWeight: 'bold',
+        marginLeft: 8,
     },
 });
