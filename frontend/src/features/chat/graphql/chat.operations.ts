@@ -43,6 +43,10 @@ export const GET_USER_CONVERSATIONS = gql`
         videoUrl
         audioUrl
         audioDuration
+        fileUrl
+        fileName
+        fileSize
+        fileMimeType
         createdAt
       }
       unreadCount
@@ -59,10 +63,15 @@ export const GET_CHAT_MESSAGES = gql`
       videoUrl
       audioUrl
       audioDuration
+      fileUrl
+      fileName
+      fileSize
+      fileMimeType
       createdAt
       isRead
       isDeletedForAll
       editedAt
+      readAt
       storyId
       sender {
         id
@@ -82,10 +91,15 @@ export const MESSAGE_ADDED_SUBSCRIPTION = gql`
       videoUrl
       audioUrl
       audioDuration
+      fileUrl
+      fileName
+      fileSize
+      fileMimeType
       createdAt
       isRead
       isDeletedForAll
       editedAt
+      readAt
       storyId
       sender {
         id
@@ -133,18 +147,23 @@ export const EDIT_MESSAGE = gql`
 `;
 
 export const SEND_MESSAGE = gql`
-  mutation SendMessage($conversationId: String!, $content: String, $imageUrl: String, $videoUrl: String, $storyId: String, $audioUrl: String, $audioDuration: Int) {
-    sendMessage(conversationId: $conversationId, content: $content, imageUrl: $imageUrl, videoUrl: $videoUrl, storyId: $storyId, audioUrl: $audioUrl, audioDuration: $audioDuration) {
+  mutation SendMessage($conversationId: String!, $content: String, $imageUrl: String, $videoUrl: String, $storyId: String, $audioUrl: String, $audioDuration: Int, $fileUrl: String, $fileName: String, $fileSize: Int, $fileMimeType: String) {
+    sendMessage(conversationId: $conversationId, content: $content, imageUrl: $imageUrl, videoUrl: $videoUrl, storyId: $storyId, audioUrl: $audioUrl, audioDuration: $audioDuration, fileUrl: $fileUrl, fileName: $fileName, fileSize: $fileSize, fileMimeType: $fileMimeType) {
       id
       content
       imageUrl
       videoUrl
       audioUrl
       audioDuration
+      fileUrl
+      fileName
+      fileSize
+      fileMimeType
       createdAt
       isRead
       isDeletedForAll
       editedAt
+      readAt
       storyId
       sender {
         id
@@ -189,6 +208,7 @@ export const MESSAGES_READ_SUBSCRIPTION = gql`
     messagesRead(conversationId: $conversationId) {
       conversationId
       readerId
+      readAt
     }
   }
 `;
@@ -202,6 +222,10 @@ export const INBOX_UPDATE_SUBSCRIPTION = gql`
       videoUrl
       audioUrl
       audioDuration
+      fileUrl
+      fileName
+      fileSize
+      fileMimeType
       createdAt
       conversationId
       storyId

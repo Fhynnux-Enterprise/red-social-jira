@@ -45,4 +45,24 @@ export class SendMessageArgs {
     @IsInt()
     @IsOptional()
     audioDuration?: number;
+
+    @Field({ nullable: true })
+    @IsString()
+    @IsOptional()
+    fileUrl?: string;
+
+    @Field({ nullable: true })
+    @IsString()
+    @IsOptional()
+    fileName?: string;
+
+    @Field(() => Int, { nullable: true })
+    @IsInt()
+    @IsOptional()
+    fileSize?: number;
+
+    @Field({ nullable: true })
+    @IsString()
+    @IsOptional()
+    fileMimeType?: string;
 }

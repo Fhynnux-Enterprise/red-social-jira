@@ -34,6 +34,22 @@ export class Message {
     @Column({ name: 'audio_duration', type: 'int', nullable: true })
     audioDuration: number;
 
+    @Field({ nullable: true })
+    @Column({ name: 'file_url', type: 'text', nullable: true })
+    fileUrl: string;
+
+    @Field({ nullable: true })
+    @Column({ name: 'file_name', type: 'text', nullable: true })
+    fileName: string;
+
+    @Field(() => Int, { nullable: true })
+    @Column({ name: 'file_size', type: 'int', nullable: true })
+    fileSize: number;
+
+    @Field({ nullable: true })
+    @Column({ name: 'file_mime_type', type: 'text', nullable: true })
+    fileMimeType: string;
+
     @Column({ name: 'user_id' })
     userId: string;
 
@@ -64,6 +80,10 @@ export class Message {
     @Field(() => Date, { nullable: true })
     @Column({ name: 'edited_at', type: 'timestamptz', nullable: true })
     editedAt: Date;
+
+    @Field(() => Date, { nullable: true })
+    @Column({ name: 'read_at', type: 'timestamptz', nullable: true })
+    readAt: Date;
 
     @Field(() => User)
     @ManyToOne(() => User, (user) => user.sentMessages)

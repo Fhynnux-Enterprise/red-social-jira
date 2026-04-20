@@ -35,13 +35,16 @@ import { Video as VideoCompressor } from 'react-native-compressor';
 import { OnlineStatusIndicator } from '../components/OnlineStatusIndicator';
 import { ChatBubbleVideo } from '../components/ChatBubbleVideo';
 import { AudioPlayerBubble } from '../components/AudioPlayerBubble';
+import { FileBubble } from '../components/FileBubble';
 import ZoomableImageViewer from '../../feed/components/ZoomableImageViewer';
 import { InteractiveVideoPlayer } from '../../feed/components/ImageCarousel';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { useAudioRecorder, RecordingPresets, requestRecordingPermissionsAsync, getRecordingPermissionsAsync, useAudioRecorderState, useAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import { useAudioRecorder, RecordingPresets, requestRecordingPermissionsAsync, getRecordingPermissionsAsync, useAudioRecorderState, useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio';
 import { useAudioUpload } from '../../storage/hooks/useAudioUpload';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
+import Slider from '@react-native-community/slider';
+import * as DocumentPicker from 'expo-document-picker';
 
 // Componente para manejar la miniatura de respuesta a historia (especialmente para videos)
 const StoryReplyThumbnail = ({ uri, isVideo, style }: { uri: string; isVideo: boolean; style: any }) => {
@@ -60,10 +63,10 @@ const StoryReplyThumbnail = ({ uri, isVideo, style }: { uri: string; isVideo: bo
 
     return (
         <View style={[style, { overflow: 'hidden', backgroundColor: '#000' }]}>
-            <VideoView 
-                player={player} 
-                style={StyleSheet.absoluteFill} 
-                contentFit="cover" 
+            <VideoView
+                player={player}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
                 nativeControls={false}
             />
         </View>
@@ -83,15 +86,16 @@ export default function ChatRoomScreen() {
     const [messageText, setMessageText] = useState('');
     const [selectedMessage, setSelectedMessage] = useState<any>(null);
     const [isActionModalVisible, setIsActionModalVisible] = useState(false);
+    const [showStatusId, setShowStatusId] = useState<string | null>(null);
     const [editingMessage, setEditingMessage] = useState<any>(null);
     const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
     const [confirmModalData, setConfirmModalData] = useState({
         title: '',
         message: '',
         confirmText: '',
-        onConfirm: () => {}
+        onConfirm: () => { }
     });
-    
+
     // Estados de búsqueda
     const [isSearchMode, setIsSearchMode] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -103,22 +107,27 @@ export default function ChatRoomScreen() {
     const { pickImage, uploadMedia } = useMediaUpload();
     const [isUploadingMedia, setIsUploadingMedia] = useState(false);
     const [uploadStatusText, setUploadStatusText] = useState('');
+    const currentUploadXhr = useRef<XMLHttpRequest | null>(null);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [videoPreview, setVideoPreview] = useState<string | null>(null);
+    const [documentPreview, setDocumentPreview] = useState<{ uri: string; name: string; size: number; mimeType: string } | null>(null);
     const [isMuted, setIsMuted] = useState(true);
-    
+
     // Grabación de Audio
     const { uploadAudio, isUploading: isUploadingAudio } = useAudioUpload();
-    const recorder = useAudioRecorder({ 
-        ...RecordingPresets.HIGH_QUALITY, 
-        isMeteringEnabled: true 
+    const recorder = useAudioRecorder({
+        ...RecordingPresets.HIGH_QUALITY,
+        isMeteringEnabled: true
     });
     const recorderState = useAudioRecorderState(recorder, 500); // Forzar actualización cada 500ms
     const [isRecording, setIsRecording] = useState(false);
     const [meteringHistory, setMeteringHistory] = useState<number[]>([]);
-    
+    const [isPreviewMode, setIsPreviewMode] = useState(false);
+    const [previewSnapshotUri, setPreviewSnapshotUri] = useState<string | null>(null);
+
     // Reproductor de previsualización (para cuando se pausa la grabación)
     const previewPlayer = useAudioPlayer(recorder.uri);
+    const previewStatus = useAudioPlayerStatus(previewPlayer);
 
     // Efecto para capturar los niveles de audio (waveform)
     useEffect(() => {
@@ -129,13 +138,6 @@ export default function ChatRoomScreen() {
         }
     }, [recorderState.metering, isRecording, recorderState.isRecording]);
 
-    // Asegurar que el preview player tiene el audio cargado cuando se pausa
-    useEffect(() => {
-        if (recorderState.isPaused && recorder.uri) {
-            previewPlayer.replace(recorder.uri);
-        }
-    }, [recorderState.isPaused, recorder.uri]);
-    
     // Visor de Galería Unificado
     const [viewerVisible, setViewerVisible] = useState(false);
     const [viewerActiveIndex, setViewerActiveIndex] = useState(0);
@@ -145,15 +147,15 @@ export default function ChatRoomScreen() {
     const MESSAGES_LIMIT = 20;
     const [hasMore, setHasMore] = useState(true);
     const [isFetchingMore, setIsFetchingMore] = useState(false);
-    
+
     // Estado local de mensajes — fuente única de verdad para la UI
     const [localMessages, setLocalMessages] = useState<any[]>([]);
 
     const { loading, data: queryData, fetchMore } = useQuery(GET_CHAT_MESSAGES, {
         variables: { conversationId, limit: MESSAGES_LIMIT, offset: 0 },
         skip: !conversationId,
-        fetchPolicy: 'cache-and-network', 
-        nextFetchPolicy: 'cache-first',   
+        fetchPolicy: 'cache-and-network',
+        nextFetchPolicy: 'cache-first',
         notifyOnNetworkStatusChange: false,
     });
 
@@ -168,10 +170,10 @@ export default function ChatRoomScreen() {
         // Obtenemos multimedia de los mensajes locales cargados actualmente
         const localMedia = localMessages
             .filter((m: any) => (m.imageUrl || m.videoUrl) && !m.isDeletedForAll);
-            
+
         // Si hay datos del backend (historial completo), los usamos como base
         const backendMedia = mediaData?.getChatMedia || [];
-        
+
         // Combinamos ambos evitando duplicados por ID o URL
         const combined = [...localMedia];
         backendMedia.forEach((bm: any) => {
@@ -184,34 +186,62 @@ export default function ChatRoomScreen() {
         // Ordenamos cronológicamente (más antiguos primero para el swipe natural)
         return combined.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     }, [mediaData, localMessages]);
+
+    // Calcular el ID del último mensaje enviado por mí que ha sido leído
+    const lastReadMessage = useMemo(() => {
+        return localMessages.find(m => m.sender?.id === currentUser?.id && m.isRead);
+    }, [localMessages, currentUser?.id]);
+
+    const formatReadAt = (dateStr?: string, isRead?: boolean) => {
+        if (!isRead) return 'No leído. ';
+        if (!dateStr) return 'Visto';
+        const date = new Date(dateStr);
+        const now = new Date();
+        const isToday = date.toDateString() === now.toDateString();
+        const yesterday = new Date(now);
+        yesterday.setDate(now.getDate() - 1);
+        const isYesterday = date.toDateString() === yesterday.toDateString();
+
+        const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+
+        if (isToday) {
+            return `Visto a las ${timeString}`;
+        } else if (isYesterday) {
+            return `Visto ayer a las ${timeString}`;
+        } else {
+            const dateString = date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            return `Visto el ${dateString} a las ${timeString}`;
+        }
+    };
+
     useEffect(() => {
         const serverMsgs: any[] = (queryData as any)?.getChatMessages || [];
         if (serverMsgs.length === 0) return;
 
         setLocalMessages(prev => {
-            const isFirstLoad = prev.length === 0;
-
-            if (isFirstLoad) {
-                // Primera carga: simplemente usar los mensajes del servidor
-                if (serverMsgs.length < MESSAGES_LIMIT) setHasMore(false);
-                return serverMsgs;
-            }
-
-            // Re-carga (al volver al chat): MERGE inteligente
-            // Construimos un Map preservando todos los mensajes locales Y los nuevos del servidor
             const msgMap = new Map<string, any>();
-            // Primero los mensajes locales (incluyen los enviados y recibidos por WS)
+            
+            // Primero llenamos con los mensajes actuales (tiempo real)
             prev.forEach((m: any) => msgMap.set(m.id, m));
-            // Luego los del servidor (sobrescriben si hay actualizaciones de contenido, ej: mensajes editados)
-            serverMsgs.forEach((m: any) => msgMap.set(m.id, m));
 
-            // Ordenamos DESC por fecha (el más nuevo primero, como necesita el FlatList invertido)
-            const merged = Array.from(msgMap.values()).sort(
+            // Luego mezclamos con los del servidor
+            serverMsgs.forEach((sm: any) => {
+                const local = msgMap.get(sm.id);
+                // REGLA DE ORO: Si ya sabemos que está leído localmente (por WS), 
+                // mantenemos ese estado aunque el servidor (caché lenta) diga lo contrario.
+                if (local && local.isRead && !sm.isRead) {
+                    msgMap.set(sm.id, { ...sm, isRead: true, readAt: local.readAt || sm.readAt });
+                } else {
+                    msgMap.set(sm.id, sm);
+                }
+            });
+
+            if (serverMsgs.length < MESSAGES_LIMIT && prev.length === 0) setHasMore(false);
+
+            return Array.from(msgMap.values()).sort(
                 (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
             );
-            return merged;
         });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [queryData]);
 
 
@@ -240,7 +270,7 @@ export default function ChatRoomScreen() {
         onData: ({ data: subResult }: any) => {
             const newMsg = subResult?.data?.messageAdded;
             if (!newMsg) return;
-            
+
             setLocalMessages(prev => {
                 if (prev.some((m: any) => m.id === newMsg.id)) return prev;
                 return [newMsg, ...prev];
@@ -264,10 +294,10 @@ export default function ChatRoomScreen() {
             const payload = subResult?.data?.messagesRead;
             if (!payload) return;
 
-            // Si ALGUIEN MÁS leyó mis mensajes, actualizamos isRead a true para todos mis mensajes
+            // Si ALGUIEN MÁS leyó mis mensajes, actualizamos isRead y readAt
             if (payload.readerId !== currentUser?.id) {
-                setLocalMessages((prev: any[]) => 
-                    prev.map((m: any) => m.sender?.id === currentUser?.id ? { ...m, isRead: true } : m)
+                setLocalMessages((prev: any[]) =>
+                    prev.map((m: any) => m.sender?.id === currentUser?.id ? { ...m, isRead: true, readAt: payload.readAt } : m)
                 );
             }
         }
@@ -429,15 +459,18 @@ export default function ChatRoomScreen() {
 
     const handleSend = async () => {
         const hasText = messageText.trim().length > 0;
-        const hasMedia = !!imagePreview || !!videoPreview;
+        const hasMedia = !!imagePreview || !!videoPreview || !!documentPreview;
         if ((!hasText && !hasMedia) || !conversationId) return;
 
         const content = messageText.trim();
         const pendingImage = imagePreview;
         const pendingVideo = videoPreview;
+        const pendingDocument = documentPreview;
+
         setMessageText('');
         setImagePreview(null);
         setVideoPreview(null);
+        setDocumentPreview(null);
 
         try {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -460,7 +493,13 @@ export default function ChatRoomScreen() {
                 try {
                     const ext = pendingImage.split('.').pop() || 'jpg';
                     const mimeType = `image/${ext === 'png' ? 'png' : 'jpeg'}`;
-                    uploadedImageUrl = await uploadMedia(pendingImage, mimeType, 'chat-images');
+                    uploadedImageUrl = await uploadMedia(
+                        pendingImage, 
+                        mimeType, 
+                        'chat-images',
+                        (p) => setUploadStatusText(`Subiendo imagen... ${p}%`),
+                        (xhr) => currentUploadXhr.current = xhr
+                    );
                 } catch (uploadErr) {
                     console.error('Error uploading image:', uploadErr);
                     Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo subir la imagen' });
@@ -480,10 +519,37 @@ export default function ChatRoomScreen() {
                         maxSize: 720,
                     });
                     setUploadStatusText('Subiendo video...');
-                    uploadedVideoUrl = await uploadMedia(compressedUri, 'video/mp4', 'chat-videos');
+                    uploadedVideoUrl = await uploadMedia(
+                        compressedUri, 
+                        'video/mp4', 
+                        'chat-videos',
+                        (p) => setUploadStatusText(`Subiendo video... ${p}%`),
+                        (xhr) => currentUploadXhr.current = xhr
+                    );
                 } catch (uploadErr) {
                     console.error('Error uploading video:', uploadErr);
                     Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo subir el video' });
+                    setIsUploadingMedia(false);
+                    setUploadStatusText('');
+                    return;
+                }
+            }
+            
+            let uploadedFileUrl: string | undefined;
+            if (pendingDocument) {
+                setIsUploadingMedia(true);
+                setUploadStatusText('Subiendo documento...');
+                try {
+                    uploadedFileUrl = await uploadMedia(
+                        pendingDocument.uri,
+                        pendingDocument.mimeType,
+                        'chat-documents',
+                        (p) => setUploadStatusText(`Subiendo documento... ${p}%`),
+                        (xhr) => currentUploadXhr.current = xhr
+                    );
+                } catch (err) {
+                    console.error('Error uploading document:', err);
+                    Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo enviar el documento' });
                     setIsUploadingMedia(false);
                     setUploadStatusText('');
                     return;
@@ -499,6 +565,10 @@ export default function ChatRoomScreen() {
                     content: content || '',
                     imageUrl: uploadedImageUrl || undefined,
                     videoUrl: uploadedVideoUrl || undefined,
+                    fileUrl: uploadedFileUrl || undefined,
+                    fileName: pendingDocument?.name || undefined,
+                    fileSize: pendingDocument?.size || undefined,
+                    fileMimeType: pendingDocument?.mimeType || undefined,
                 },
             });
         } catch (err) {
@@ -519,7 +589,7 @@ export default function ChatRoomScreen() {
     const handleDownloadAudio = async () => {
         if (!selectedMessage?.audioUrl) return;
         setIsActionModalVisible(false);
-        
+
         try {
             // Pedir permisos si no los tenemos
             const { status } = await MediaLibrary.requestPermissionsAsync();
@@ -530,7 +600,7 @@ export default function ChatRoomScreen() {
 
             const fileUri = FileSystem.documentDirectory + `audio_${selectedMessage.id}.m4a`;
             const download = await FileSystem.downloadAsync(selectedMessage.audioUrl, fileUri);
-            
+
             if (download.status === 200) {
                 await MediaLibrary.createAssetAsync(download.uri);
                 Toast.show({ type: 'success', text1: 'Audio descargado', text2: 'Se guardó en tu galería/archivos.' });
@@ -549,29 +619,30 @@ export default function ChatRoomScreen() {
     const startRecording = async () => {
         try {
             const permission = await getRecordingPermissionsAsync();
-            
+
             if (permission.status !== 'granted') {
                 const request = await requestRecordingPermissionsAsync();
                 if (request.status !== 'granted') {
-                    Toast.show({ 
-                        type: 'error', 
-                        text1: 'Permisos de Micrófono', 
-                        text2: 'Necesitamos acceso al micrófono para grabar audios.' 
+                    Toast.show({
+                        type: 'error',
+                        text1: 'Permisos de Micrófono',
+                        text2: 'Necesitamos acceso al micrófono para grabar audios.'
                     });
                     return;
                 }
             }
 
-            // Aseguramos el modo de audio para grabación
-            await setAudioModeAsync({
-                allowsRecording: true,
-                playsInSilentMode: true,
-            });
-
+            // Limpiar estados previos antes de iniciar
             setMeteringHistory([]);
+            setIsPreviewMode(false);
             setIsRecording(true);
-            
-            await recorder.prepareToRecordAsync();
+
+            try {
+                // Solo preparamos si no está ya listo para grabar
+                await recorder.prepareToRecordAsync();
+            } catch (err) {
+                // Si ya estaba preparado, podemos continuar
+            }
             await recorder.record();
         } catch (err) {
             setIsRecording(false);
@@ -580,8 +651,51 @@ export default function ChatRoomScreen() {
 
     const togglePauseRecording = async () => {
         if (recorder.isRecording) {
-            await recorder.pause();
+            try {
+                // Capturamos el URI ANTES de stop() porque después puede limpiarse
+                const uriBeforeStop = recorder.uri;
+                
+                // 1. STOP (no pause): finaliza y vacía el buffer al disco completamente
+                await recorder.stop();
+                setIsPreviewMode(true);
+                
+                // 2. Liberamos micrófono para que suene el altavoz
+                await setAudioModeAsync({
+                    allowsRecording: false,
+                    playsInSilentMode: true,
+                });
+
+                if (uriBeforeStop) {
+                    // 3. Ahora el archivo está cerrado y completo, podemos copiarlo sin problemas
+                    const tempUri = FileSystem.cacheDirectory + 'preview_snapshot.m4a';
+                    
+                    try {
+                        const info = await FileSystem.getInfoAsync(tempUri);
+                        if (info.exists) await FileSystem.deleteAsync(tempUri);
+                    } catch (e) {}
+
+                    await FileSystem.copyAsync({
+                        from: uriBeforeStop,
+                        to: tempUri
+                    });
+
+                    setPreviewSnapshotUri(uriBeforeStop); // Guardamos el original para enviar
+                    console.log('[PREVIEW] Copia exitosa. URI original:', uriBeforeStop);
+                    previewPlayer.replace(tempUri);
+                }
+            } catch (err) {
+                console.error("Error creating preview snapshot:", err);
+            }
         } else {
+            // Usuario quiere seguir grabando: iniciamos NUEVA sesión
+            setIsPreviewMode(false);
+            await setAudioModeAsync({
+                allowsRecording: true,
+                playsInSilentMode: true,
+            });
+            try {
+                await recorder.prepareToRecordAsync();
+            } catch (e) {}
             await recorder.record();
         }
     };
@@ -592,21 +706,36 @@ export default function ChatRoomScreen() {
         } catch (err) { }
         setIsRecording(false);
         setMeteringHistory([]);
+        setIsPreviewMode(false);
+        // Asegurar que liberamos el audio
+        await setAudioModeAsync({
+            allowsRecording: false,
+            playsInSilentMode: true,
+        });
     };
 
     const stopRecording = async () => {
         try {
-            // Usamos recorderState.durationMillis que es más fiable y está en ms
-            const durationMs = recorderState.durationMillis;
-            const durationSeconds = Math.floor(durationMs / 1000);
-            const uri = recorder.uri;
-            
-            await recorder.stop();
+            let uri: string | null = null;
+            let durationSeconds: number = 0;
+
+            if (isPreviewMode) {
+                // En modo preview: el grabador ya se detuvo, usamos el URI original guardado
+                uri = previewSnapshotUri;
+                durationSeconds = Math.floor(previewStatus.duration || 0);
+            } else {
+                // Aún grabando: capturar URI y duración ANTES del stop()
+                uri = recorder.uri;
+                durationSeconds = Math.floor(recorderState.durationMillis / 1000);
+                await recorder.stop();
+            }
+
             setIsRecording(false);
+            setIsPreviewMode(false);
+            previewPlayer.pause();
 
             // Permitir audios de al menos 1 segundo
             if (!uri || durationSeconds < 1) {
-                if (uri) await recorder.stop(); // Asegurar parada
                 return;
             }
 
@@ -620,10 +749,21 @@ export default function ChatRoomScreen() {
                     audioDuration: durationSeconds
                 }
             });
+
+            // Resetear el modo de audio para permitir reproducción
+            await setAudioModeAsync({
+                allowsRecording: false,
+                playsInSilentMode: true,
+            });
         } catch (err) {
             console.error('Failed to upload recording', err);
             Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo enviar el audio.' });
             setIsRecording(false);
+            setIsPreviewMode(false);
+            await setAudioModeAsync({
+                allowsRecording: false,
+                playsInSilentMode: true,
+            });
         }
     };
 
@@ -636,7 +776,7 @@ export default function ChatRoomScreen() {
                     // Validar duración (máx 60 segundos)
                     // expo-image-picker entrega la duración en milisegundos en versiones recientes
                     const durationInSeconds = result.duration ? (result.duration > 1000 ? result.duration / 1000 : result.duration) : 0;
-                    
+
                     if (durationInSeconds > 60.5) {
                         Toast.show({
                             type: 'error',
@@ -645,7 +785,7 @@ export default function ChatRoomScreen() {
                         });
                         return;
                     }
-                    
+
                     setVideoPreview(result.localUri);
                     setImagePreview(null);
                 } else {
@@ -658,6 +798,41 @@ export default function ChatRoomScreen() {
                 Toast.show({ type: 'error', text1: 'Permisos', text2: 'Permite el acceso a tu galería' });
             }
         }
+    };
+
+    const handlePickDocument = async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: '*/*',
+                copyToCacheDirectory: true,
+            });
+
+            if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+            const asset = result.assets[0];
+            setDocumentPreview({
+                uri: asset.uri,
+                name: asset.name,
+                size: asset.size || 0,
+                mimeType: asset.mimeType || 'application/octet-stream'
+            });
+            
+            // Limpiar otros para evitar enviar múltiples tipos a la vez (lógica de la app)
+            setImagePreview(null);
+            setVideoPreview(null);
+        } catch (error) {
+            console.error('Error picking document:', error);
+        }
+    };
+
+    const handleCancelUpload = () => {
+        if (currentUploadXhr.current) {
+            currentUploadXhr.current.abort();
+            currentUploadXhr.current = null;
+        }
+        setIsUploadingMedia(false);
+        setUploadStatusText('');
+        Toast.show({ type: 'info', text1: 'Subida cancelada' });
     };
 
     // Lógica de Búsqueda
@@ -695,10 +870,10 @@ export default function ChatRoomScreen() {
     const jumpToMatch = (index: number, idsOverride?: string[]) => {
         const targetIds = idsOverride || searchResults;
         if (targetIds.length === 0) return;
-        
+
         const messageId = targetIds[index];
         const flatListIndex = messages.findIndex(m => m.id === messageId);
-        
+
         if (flatListIndex !== -1) {
             flatListRef.current?.scrollToIndex({
                 index: flatListIndex,
@@ -724,7 +899,7 @@ export default function ChatRoomScreen() {
         const parts = text.split(new RegExp(`(${sub})`, 'gi'));
         return (
             <Text style={[styles.messageText, { color: mine ? '#FFF' : colors.text }]}>
-                {parts.map((part, i) => 
+                {parts.map((part, i) =>
                     part.toLowerCase() === sub.toLowerCase() ? (
                         <Text key={i} style={{ backgroundColor: '#FFF59D', color: '#000' }}>{part}</Text>
                     ) : (
@@ -764,7 +939,7 @@ export default function ChatRoomScreen() {
                 const msgId = selectedMessage.id;
                 handleHideMessageFromUI(msgId);
                 setIsConfirmModalVisible(false);
-                
+
                 try {
                     await deleteMessageForMeMutation({ variables: { messageId: msgId } });
                 } catch (err) {
@@ -827,7 +1002,7 @@ export default function ChatRoomScreen() {
     useEffect(() => {
         const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
         const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-        
+
         const showSub = Keyboard.addListener(showEvent, (e) => {
             Animated.timing(keyboardOffset, {
                 // Sumamos 65px extra según tu feedback para que la barra suba completamente.
@@ -857,9 +1032,9 @@ export default function ChatRoomScreen() {
         return (
             <View style={styles.profileSummary}>
                 <View style={styles.summaryAvatarContainer}>
-                    <Image 
-                        source={{ uri: resolveMediaUrl(otherUser?.photoUrl || otherUser?.avatarUrl, 'avatar', otherUser?.username) }} 
-                        style={styles.summaryAvatar} 
+                    <Image
+                        source={{ uri: resolveMediaUrl(otherUser?.photoUrl || otherUser?.avatarUrl, 'avatar', otherUser?.username) }}
+                        style={styles.summaryAvatar}
                     />
                 </View>
                 <Text style={[styles.summaryName, { color: colors.text }]}>
@@ -894,9 +1069,9 @@ export default function ChatRoomScreen() {
                 dateLabel = 'Ayer';
             } else {
                 const isThisYear = dateObj.getFullYear() === today.getFullYear();
-                const options: Intl.DateTimeFormatOptions = { 
-                    weekday: 'long', 
-                    day: 'numeric', 
+                const options: Intl.DateTimeFormatOptions = {
+                    weekday: 'long',
+                    day: 'numeric',
                     month: 'long',
                     ...(isThisYear ? {} : { year: 'numeric' })
                 };
@@ -916,7 +1091,7 @@ export default function ChatRoomScreen() {
         }
 
         const isMine = item.sender?.id === currentUser?.id;
-        
+
         // Logical check for grouping (Inverted list: index-1 is logically NEWER, index+1 is logically OLDER)
         const isNextSame = messages[index - 1]?.sender?.id === item.sender?.id;
         const isPrevSame = messages[index + 1]?.sender?.id === item.sender?.id;
@@ -931,233 +1106,244 @@ export default function ChatRoomScreen() {
             }
         ];
 
+        const isStatusVisible = (lastReadMessage?.id === item.id || showStatusId === item.id) && isMine;
+
         if (item.isDeletedForAll) {
             return (
-                <View style={[
-                    styles.messageRow,
-                    isMine ? styles.myMessageRow : styles.theirMessageRow,
-                    { marginBottom: isNextSame ? 2 : 12 }
-                ]}>
-                    {!isMine && (
-                        <View style={styles.bubbleAvatarContainer}>
-                            <Image 
-                                source={{ uri: resolveMediaUrl(item.sender?.photoUrl || item.sender?.avatarUrl, 'avatar', item.sender?.username) }} 
-                                style={styles.bubbleAvatar} 
-                            />
+                <View style={{ flexDirection: 'column', width: '100%', alignItems: isMine ? 'flex-end' : 'flex-start' }}>
+                    <View style={[
+                        styles.messageRow,
+                        isMine ? styles.myMessageRow : styles.theirMessageRow,
+                        { marginBottom: isStatusVisible ? 0 : (isNextSame ? 2 : 10) }
+                    ]}>
+                        {!isMine && (
+                            <View style={styles.bubbleAvatarContainer}>
+                                <Image
+                                    source={{ uri: resolveMediaUrl(item.sender?.photoUrl || item.sender?.avatarUrl, 'avatar', item.sender?.username) }}
+                                    style={styles.bubbleAvatar}
+                                />
+                            </View>
+                        )}
+                        <View style={[bubbleStyles, { backgroundColor: isDark ? '#2C2C2E' : '#E5E5EA', borderWidth: 1, borderColor: isDark ? '#3C3C3E' : '#D1D1D6' }]}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Ionicons name="ban-outline" size={16} color={colors.textSecondary} style={{ marginRight: 6 }} />
+                                <Text style={[
+                                    styles.messageText,
+                                    { color: colors.textSecondary, fontStyle: 'italic', fontSize: 13 }
+                                ]}>
+                                    Este mensaje fue eliminado
+                                </Text>
+                            </View>
                         </View>
-                    )}
-                    <View style={[bubbleStyles, { backgroundColor: isDark ? '#2C2C2E' : '#E5E5EA', borderWidth: 1, borderColor: isDark ? '#3C3C3E' : '#D1D1D6' }]}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <Ionicons name="ban-outline" size={16} color={colors.textSecondary} style={{ marginRight: 6 }} />
-                            <Text style={[
-                                styles.messageText,
-                                { color: colors.textSecondary, fontStyle: 'italic', fontSize: 13 }
-                            ]}>
-                                Este mensaje fue eliminado
-                            </Text>
-                        </View>
+                        {isMine && (
+                            <View style={styles.bubbleAvatarContainerRight}>
+                                <Image
+                                    source={{ uri: resolveMediaUrl(currentUser?.photoUrl || currentUser?.avatarUrl, 'avatar', currentUser?.username) }}
+                                    style={styles.bubbleAvatar}
+                                />
+                            </View>
+                        )}
                     </View>
-                    {isMine && (
-                        <View style={styles.bubbleAvatarContainerRight}>
-                            <Image 
-                                source={{ uri: resolveMediaUrl(currentUser?.photoUrl || currentUser?.avatarUrl, 'avatar', currentUser?.username) }} 
-                                style={styles.bubbleAvatar} 
-                            />
-                        </View>
-                    )}
                 </View>
             );
         }
 
         return (
-            <View style={[
-                styles.messageRow,
-                isMine ? styles.myMessageRow : styles.theirMessageRow,
-                { marginBottom: isNextSame ? 4 : 16 }
-            ]}>
-                {/* Avatar izquierdo (para otros) */}
-                {!isMine && (
-                    <View style={styles.bubbleAvatarContainer}>
-                        <Image 
-                            source={{ uri: resolveMediaUrl(item.sender?.photoUrl || item.sender?.avatarUrl, 'avatar', item.sender?.username) }} 
-                            style={styles.bubbleAvatar} 
-                        />
-                    </View>
-                )}
-
-                <View style={[styles.bubbleWrapper, { alignItems: isMine ? 'flex-end' : 'flex-start' }]}>
-                    <TouchableOpacity 
-                        activeOpacity={0.8}
-                        onLongPress={() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                            setSelectedMessage(item);
-                            setIsActionModalVisible(true);
-                        }}
-                        delayLongPress={200}
-                        style={bubbleStyles}
-                    >
-                    {item.storyId && (
-                        <TouchableOpacity 
-                            style={[
-                                styles.storyReplyContainer, 
-                                { 
-                                    backgroundColor: isMine ? 'rgba(0,0,0,0.15)' : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'),
-                                    borderColor: isMine ? 'rgba(255,255,255,0.2)' : colors.border,
-                                    borderWidth: isMine ? 0 : 0.5
-                                }
-                            ]}
-                            onPress={() => {
-                                navigation.navigate('StoryViewer', { 
-                                    userId: item.sender?.id, 
-                                    initialStoryId: item.storyId 
-                                });
-                            }}
-                        >
-                            <View style={[styles.storyReplyIndicator, { backgroundColor: isMine ? '#FFF' : colors.primary }]} />
-                            <View style={{ flex: 1, paddingVertical: 4 }}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
-                                    <Ionicons name="flash-outline" size={12} color={isMine ? 'rgba(255,255,255,0.9)' : colors.primary} style={{ marginRight: 4 }} />
-                                    <Text style={[styles.storyReplyLabel, { color: isMine ? 'rgba(255,255,255,0.9)' : colors.primary, marginBottom: 0 }]}>Historia</Text>
-                                </View>
-                                <Text style={[styles.storyReplyText, { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]} numberOfLines={1}>
-                                    Ver historia original
-                                </Text>
-                            </View>
-                            {(item.imageUrl || item.videoUrl) ? (
-                                <StoryReplyThumbnail 
-                                    uri={resolveMediaUrl((item.imageUrl || item.videoUrl) as string)} 
-                                    isVideo={!!item.videoUrl} 
-                                    style={styles.storyReplyThumb} 
-                                />
-                            ) : (
-                                <View style={[styles.storyReplyThumb, { justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#333' : '#EEE' }]}>
-                                    <Ionicons name="alert-circle-outline" size={20} color={colors.textSecondary} />
-                                </View>
-                            )}
-                        </TouchableOpacity>
-                    )}
-                    {item.imageUrl && !item.storyId && (
-                        <TouchableOpacity
-                            activeOpacity={0.9}
-                            onPress={() => {
-                                const mIdx = chatMediaList.findIndex(m => 
-                                    m.id === item.id || 
-                                    (item.imageUrl && m.imageUrl === item.imageUrl)
-                                );
-                                if (mIdx !== -1) {
-                                    setViewerActiveIndex(mIdx);
-                                    setViewerVisible(true);
-                                }
-                            }}
-                        >
+            <View style={{ flexDirection: 'column', width: '100%', alignItems: isMine ? 'flex-end' : 'flex-start' }}>
+                <View style={[
+                    styles.messageRow,
+                    isMine ? styles.myMessageRow : styles.theirMessageRow,
+                    { 
+                        marginBottom: isStatusVisible ? 0 : (isNextSame ? 2 : 10), 
+                        paddingHorizontal: 16 
+                    }
+                ]}>
+                    {/* Avatar izquierdo (para otros) */}
+                    {!isMine && (
+                        <View style={styles.bubbleAvatarContainer}>
                             <Image
-                                source={{ uri: resolveMediaUrl(item.imageUrl) }}
-                                style={{
-                                    width: screenWidth * 0.55,
-                                    height: screenWidth * 0.55 * 0.75,
-                                    borderRadius: 12,
-                                    marginBottom: item.content ? 6 : 0,
-                                }}
-                                resizeMode="cover"
-                            />
-                        </TouchableOpacity>
-                    )}
-                    {item.videoUrl && !item.storyId && (
-                        <View style={{ width: screenWidth * 0.55, borderRadius: 12, overflow: 'hidden', marginBottom: item.content ? 6 : 0 }}>
-                            <ChatBubbleVideo
-                                url={resolveMediaUrl(item.videoUrl)}
-                                width={screenWidth * 0.55}
-                                height={screenWidth * 0.55 * 0.75}
-                                onPressFullScreen={() => {
-                                    setIsMuted(false);
-                                    const mIdx = chatMediaList.findIndex(m => 
-                                        m.id === item.id || 
-                                        (item.videoUrl && m.videoUrl === item.videoUrl)
-                                    );
-                                    if (mIdx !== -1) {
-                                        setViewerActiveIndex(mIdx);
-                                        setViewerVisible(true);
-                                    }
-                                }}
+                                source={{ uri: resolveMediaUrl(item.sender?.photoUrl || item.sender?.avatarUrl, 'avatar', item.sender?.username) }}
+                                style={styles.bubbleAvatar}
                             />
                         </View>
                     )}
-                    {item.audioUrl && (
-                        <AudioPlayerBubble 
-                            audioUrl={resolveMediaUrl(item.audioUrl)} 
-                            audioDuration={item.audioDuration} 
-                            isMine={isMine}
-                            messageTime={new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
-                            isRead={item.isRead}
-                            isEdited={!!item.editedAt}
-                        />
-                    )}
-                    {item.content ? (
-                        <>
-                            <HighlightedText text={item.content} sub={searchTerm} mine={isMine} />
-                            <View style={styles.messageFooter}>
-                                {item.editedAt && (
-                                    <Text style={[
-                                        styles.messageTime,
-                                        { color: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary, fontStyle: 'italic', marginRight: 4 }
-                                    ]}>
-                                        Editado
-                                    </Text>
-                                )}
-                                <Text style={[
-                                    styles.messageTime,
-                                    { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }
-                                ]}>
-                                    {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
-                                </Text>
-                                {isMine && (
-                                    <Ionicons 
-                                        name="checkmark-done" 
-                                        size={16} 
-                                        color={item.isRead ? "#00E5FF" : "rgba(255,255,255,0.4)"} 
-                                        style={{ marginLeft: 4, marginBottom: -1 }}
-                                    />
-                                )}
-                            </View>
-                        </>
-                    ) : (
-                        !item.audioUrl && (
-                            <View style={styles.messageFooter}>
-                                {item.editedAt && (
-                                    <Text style={[
-                                        styles.messageTime,
-                                        { color: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary, fontStyle: 'italic', marginRight: 4 }
-                                    ]}>
-                                        Editado
-                                    </Text>
-                                )}
-                                <Text style={[
-                                    styles.messageTime,
-                                    { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }
-                                ]}>
-                                    {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
-                                </Text>
-                                {isMine && (
-                                    <Ionicons 
-                                        name="checkmark-done" 
-                                        size={16} 
-                                        color={item.isRead ? "#00E5FF" : "rgba(255,255,255,0.4)"} 
-                                        style={{ marginLeft: 4, marginBottom: -1 }}
-                                    />
-                                )}
-                            </View>
-                        )
-                    )}
-                    </TouchableOpacity>
-                </View>
 
-                {/* Avatar derecho (para mí) */}
-                {isMine && (
-                    <View style={styles.bubbleAvatarContainerRight}>
-                        <Image 
-                            source={{ uri: resolveMediaUrl(currentUser?.photoUrl || currentUser?.avatarUrl, 'avatar', currentUser?.username) }} 
-                            style={styles.bubbleAvatar} 
-                        />
+                    <View style={[styles.bubbleWrapper, { alignItems: isMine ? 'flex-end' : 'flex-start' }]}>
+                        <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={() => setShowStatusId(showStatusId === item.id ? null : item.id)}
+                            onLongPress={() => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                setSelectedMessage(item);
+                                setIsActionModalVisible(true);
+                            }}
+                            delayLongPress={200}
+                            style={bubbleStyles}
+                        >
+                            {item.storyId && (
+                                <TouchableOpacity
+                                    style={[
+                                        styles.storyReplyContainer,
+                                        {
+                                            backgroundColor: isMine ? 'rgba(0,0,0,0.15)' : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'),
+                                            borderColor: isMine ? 'rgba(255,255,255,0.2)' : colors.border,
+                                            borderWidth: isMine ? 0 : 0.5
+                                        }
+                                    ]}
+                                    onPress={() => {
+                                        navigation.navigate('StoryViewer', {
+                                            userId: item.sender?.id,
+                                            initialStoryId: item.storyId
+                                        });
+                                    }}
+                                >
+                                    <View style={[styles.storyReplyIndicator, { backgroundColor: isMine ? '#FFF' : colors.primary }]} />
+                                    <View style={{ flex: 1, paddingVertical: 4 }}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                                            <Ionicons name="flash-outline" size={12} color={isMine ? 'rgba(255,255,255,0.9)' : colors.primary} style={{ marginRight: 4 }} />
+                                            <Text style={[styles.storyReplyLabel, { color: isMine ? 'rgba(255,255,255,0.9)' : colors.primary, marginBottom: 0 }]}>Historia</Text>
+                                        </View>
+                                        <Text style={[styles.storyReplyText, { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]} numberOfLines={1}>
+                                            Ver historia original
+                                        </Text>
+                                    </View>
+                                    {(item.imageUrl || item.videoUrl) ? (
+                                        <StoryReplyThumbnail
+                                            uri={resolveMediaUrl((item.imageUrl || item.videoUrl) as string)}
+                                            isVideo={!!item.videoUrl}
+                                            style={styles.storyReplyThumb}
+                                        />
+                                    ) : (
+                                        <View style={[styles.storyReplyThumb, { justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#333' : '#EEE' }]}>
+                                            <Ionicons name="alert-circle-outline" size={20} color={colors.textSecondary} />
+                                        </View>
+                                    )}
+                                </TouchableOpacity>
+                            )}
+                            {item.imageUrl && !item.storyId && (
+                                <TouchableOpacity
+                                    activeOpacity={0.9}
+                                    onPress={() => {
+                                        const mIdx = chatMediaList.findIndex(m =>
+                                            m.id === item.id ||
+                                            (item.imageUrl && m.imageUrl === item.imageUrl)
+                                        );
+                                        if (mIdx !== -1) {
+                                            setViewerActiveIndex(mIdx);
+                                            setViewerVisible(true);
+                                        }
+                                    }}
+                                >
+                                    <Image
+                                        source={{ uri: resolveMediaUrl(item.imageUrl) }}
+                                        style={{
+                                            width: screenWidth * 0.55,
+                                            height: screenWidth * 0.55 * 0.75,
+                                            borderRadius: 12,
+                                            marginBottom: item.content ? 6 : 0,
+                                        }}
+                                        resizeMode="cover"
+                                    />
+                                </TouchableOpacity>
+                            )}
+                            {item.videoUrl && !item.storyId && (
+                                <View style={{ width: screenWidth * 0.55, borderRadius: 12, overflow: 'hidden', marginBottom: item.content ? 6 : 0 }}>
+                                    <ChatBubbleVideo
+                                        url={resolveMediaUrl(item.videoUrl)}
+                                        width={screenWidth * 0.55}
+                                        height={screenWidth * 0.55 * 0.75}
+                                        onPressFullScreen={() => {
+                                            setIsMuted(false);
+                                            const mIdx = chatMediaList.findIndex(m =>
+                                                m.id === item.id ||
+                                                (item.videoUrl && m.videoUrl === item.videoUrl)
+                                            );
+                                            if (mIdx !== -1) {
+                                                setViewerActiveIndex(mIdx);
+                                                setViewerVisible(true);
+                                            }
+                                        }}
+                                    />
+                                </View>
+                            )}
+                            {item.audioUrl && (
+                                <AudioPlayerBubble
+                                    audioUrl={resolveMediaUrl(item.audioUrl)}
+                                    audioDuration={item.audioDuration}
+                                    isMine={isMine}
+                                    messageTime={new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                                    isEdited={!!item.editedAt}
+                                />
+                            )}
+                            {item.fileUrl && (
+                                <FileBubble
+                                    fileUrl={resolveMediaUrl(item.fileUrl)}
+                                    fileName={item.fileName || 'Archivo'}
+                                    fileSize={item.fileSize}
+                                    fileMimeType={item.fileMimeType}
+                                    isMine={isMine}
+                                />
+                            )}
+                            {item.content ? (
+                                <>
+                                    <HighlightedText text={item.content} sub={searchTerm} mine={isMine} />
+                                    <View style={styles.messageFooter}>
+                                        {item.editedAt && (
+                                            <Text style={[
+                                                styles.messageTime,
+                                                { color: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary, fontStyle: 'italic', marginRight: 4 }
+                                            ]}>
+                                                Editado
+                                            </Text>
+                                        )}
+                                        <Text style={[
+                                            styles.messageTime,
+                                            { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }
+                                        ]}>
+                                            {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                                        </Text>
+                                    </View>
+                                </>
+                            ) : (
+                                !item.audioUrl && (
+                                    <View style={styles.messageFooter}>
+                                        {item.editedAt && (
+                                            <Text style={[
+                                                styles.messageTime,
+                                                { color: isMine ? 'rgba(255,255,255,0.6)' : colors.textSecondary, fontStyle: 'italic', marginRight: 4 }
+                                            ]}>
+                                                Editado
+                                            </Text>
+                                        )}
+                                        <Text style={[
+                                            styles.messageTime,
+                                            { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }
+                                        ]}>
+                                            {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                                        </Text>
+                                    </View>
+                                )
+                            )}
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Avatar derecho (para mí) */}
+                    {isMine && (
+                        <View style={styles.bubbleAvatarContainerRight}>
+                            <Image
+                                source={{ uri: resolveMediaUrl(currentUser?.photoUrl || currentUser?.avatarUrl, 'avatar', currentUser?.username) }}
+                                style={styles.bubbleAvatar}
+                            />
+                        </View>
+                    )}
+                </View>
+                
+                {/* Etiqueta de "Visto" o "No leído" (automático para el último o manual al tocar) */}
+                {(lastReadMessage?.id === item.id || showStatusId === item.id) && isMine && (
+                    <View style={{ width: '100%', alignItems: 'flex-end', paddingRight: isMine ? 50 : 20, marginTop: 2, marginBottom: 10 }}>
+                        <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '600' }}>
+                            {formatReadAt(item.readAt, item.isRead)}
+                        </Text>
                     </View>
                 )}
             </View>
@@ -1172,8 +1358,8 @@ export default function ChatRoomScreen() {
                     <TouchableOpacity onPress={() => setIsSearchMode(false)} style={styles.backButton}>
                         <Ionicons name="close" size={24} color={colors.text} />
                     </TouchableOpacity>
-                    
-                    <TextInput 
+
+                    <TextInput
                         placeholder="Buscar en el chat..."
                         placeholderTextColor={colors.textSecondary}
                         style={[styles.searchInput, { color: colors.text }]}
@@ -1187,7 +1373,7 @@ export default function ChatRoomScreen() {
                             <Text style={[styles.searchCounter, { color: colors.textSecondary }]}>
                                 {currentSearchIndex + 1} de {searchResults.length}
                             </Text>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 onPress={() => {
                                     const next = (currentSearchIndex + 1) % searchResults.length;
                                     setCurrentSearchIndex(next);
@@ -1196,7 +1382,7 @@ export default function ChatRoomScreen() {
                             >
                                 <Ionicons name="chevron-up" size={24} color={colors.text} />
                             </TouchableOpacity>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 onPress={() => {
                                     const prev = (currentSearchIndex - 1 + searchResults.length) % searchResults.length;
                                     setCurrentSearchIndex(prev);
@@ -1213,18 +1399,18 @@ export default function ChatRoomScreen() {
                     <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={24} color={colors.text} />
                     </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                        style={styles.headerInfoContainer} 
+
+                    <TouchableOpacity
+                        style={styles.headerInfoContainer}
                         onPress={() => router.push({
                             pathname: '/chatDetails',
                             params: { conversationId }
                         })}
                         activeOpacity={0.7}
                     >
-                        <Image 
-                            source={{ uri: resolveMediaUrl(otherUser?.photoUrl || otherUser?.avatarUrl, 'avatar', otherUser?.username) }} 
-                            style={styles.headerAvatar} 
+                        <Image
+                            source={{ uri: resolveMediaUrl(otherUser?.photoUrl || otherUser?.avatarUrl, 'avatar', otherUser?.username) }}
+                            style={styles.headerAvatar}
                         />
                         <View style={styles.headerTextContainer}>
                             <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
@@ -1232,16 +1418,16 @@ export default function ChatRoomScreen() {
                             </Text>
                             {!isBlocked && (
                                 <View style={styles.onlineStatus}>
-                                    <OnlineStatusIndicator 
-                                        lastActiveAt={otherUser?.lastActiveAt} 
-                                        showText={true} 
+                                    <OnlineStatusIndicator
+                                        lastActiveAt={otherUser?.lastActiveAt}
+                                        showText={true}
                                     />
                                 </View>
                             )}
                         </View>
                     </TouchableOpacity>
 
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.headerAction}
                         onPress={() => setIsSearchMode(true)}
                     >
@@ -1259,55 +1445,55 @@ export default function ChatRoomScreen() {
                             <ActivityIndicator color={colors.primary} />
                         </View>
                     ) : (
-                            <FlatList
-                                ref={flatListRef}
-                                data={messages}
-                                renderItem={renderMessage}
-                                keyExtractor={(item) => item.id}
-                                inverted={true} // Los mensajes nuevos se mantienen al fondo
-                                contentContainerStyle={styles.listContent}
-                                showsVerticalScrollIndicator={false}
-                                // Optimización de rendimiento para Android y Videos
-                                initialNumToRender={10}
-                                maxToRenderPerBatch={5}
-                                windowSize={5}
-                                removeClippedSubviews={Platform.OS === 'android'}
-                                
-                                // Indicador de carga (el Footer aparece VISUALMENTE ARRIBA cuando inverted=true)
-                                ListFooterComponent={() => {
-                                    if (isFetchingMore) {
-                                        return (
-                                            <View style={{ paddingVertical: 20, alignItems: 'center' }}>
-                                                <ActivityIndicator color={colors.primary} />
-                                            </View>
-                                        );
-                                    }
-                                    if (!hasMore) {
-                                        return (
-                                            <View style={{ paddingVertical: 20, alignItems: 'center' }}>
-                                                {renderProfileSummary()}
-                                            </View>
-                                        );
-                                    }
-                                    // hasMore=true y no estamos cargando: no mostrar nada
-                                    return null;
-                                }}
-                                
-                                // Configuración de Infinite Scroll
-                                onEndReached={loadOlderMessages}
-                                onEndReachedThreshold={0.5} // Carga cuando falte un 50% para ver el tope
-                                onScrollToIndexFailed={handleScrollToIndexFailed}
-                            />
+                        <FlatList
+                            ref={flatListRef}
+                            data={messages}
+                            renderItem={renderMessage}
+                            keyExtractor={(item) => item.id}
+                            inverted={true} // Los mensajes nuevos se mantienen al fondo
+                            contentContainerStyle={styles.listContent}
+                            showsVerticalScrollIndicator={false}
+                            // Optimización de rendimiento para Android y Videos
+                            initialNumToRender={10}
+                            maxToRenderPerBatch={5}
+                            windowSize={5}
+                            removeClippedSubviews={Platform.OS === 'android'}
+
+                            // Indicador de carga (el Footer aparece VISUALMENTE ARRIBA cuando inverted=true)
+                            ListFooterComponent={() => {
+                                if (isFetchingMore) {
+                                    return (
+                                        <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                                            <ActivityIndicator color={colors.primary} />
+                                        </View>
+                                    );
+                                }
+                                if (!hasMore) {
+                                    return (
+                                        <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                                            {renderProfileSummary()}
+                                        </View>
+                                    );
+                                }
+                                // hasMore=true y no estamos cargando: no mostrar nada
+                                return null;
+                            }}
+
+                            // Configuración de Infinite Scroll
+                            onEndReached={loadOlderMessages}
+                            onEndReachedThreshold={0.5} // Carga cuando falte un 50% para ver el tope
+                            onScrollToIndexFailed={handleScrollToIndexFailed}
+                        />
                     )}
                 </View>
 
                 {/* Input de Mensajes o Mensaje de Bloqueo */}
-                <View style={[styles.inputWrapper, 
-                    { 
-                        borderTopColor: colors.border, 
-                        backgroundColor: colors.background,
-                        paddingBottom: 10
-                    }
+                <View style={[styles.inputWrapper,
+                {
+                    borderTopColor: colors.border,
+                    backgroundColor: colors.background,
+                    paddingBottom: 10
+                }
                 ]}>
                     {isBlocked ? (
                         <View style={[styles.blockedInfoContainer, { backgroundColor: isDark ? 'rgba(255,101,36,0.08)' : 'rgba(255,101,36,0.05)' }]}>
@@ -1336,11 +1522,29 @@ export default function ChatRoomScreen() {
                                 </View>
                             )}
 
+                            {/* Preview de documento seleccionado */}
+                            {documentPreview && (
+                                <View style={[styles.imagePreviewBar, { backgroundColor: isDark ? '#1C1C1E' : '#F0F0F0' }]}>
+                                    <View style={[styles.imagePreviewThumb, { backgroundColor: colors.primary + '20', justifyContent: 'center', alignItems: 'center' }]}>
+                                        <Ionicons name="document-text" size={20} color={colors.primary} />
+                                    </View>
+                                    <Text style={[styles.imagePreviewText, { color: colors.textSecondary }]} numberOfLines={1}>
+                                        {documentPreview.name}
+                                    </Text>
+                                    <TouchableOpacity onPress={() => setDocumentPreview(null)} style={styles.imagePreviewClose}>
+                                        <Ionicons name="close-circle" size={22} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+
                             {/* Status de subida */}
                             {isUploadingMedia && uploadStatusText ? (
                                 <View style={[styles.uploadStatusBar, { backgroundColor: isDark ? '#1C1C1E' : '#F0F0F0' }]}>
                                     <ActivityIndicator size="small" color={colors.primary} />
-                                    <Text style={[styles.uploadStatusText, { color: colors.textSecondary }]}>{uploadStatusText}</Text>
+                                    <Text style={[styles.uploadStatusText, { color: colors.textSecondary, flex: 1 }]}>{uploadStatusText}</Text>
+                                    <TouchableOpacity onPress={handleCancelUpload} style={{ padding: 5 }}>
+                                        <Ionicons name="close-circle" size={22} color={colors.textSecondary} />
+                                    </TouchableOpacity>
                                 </View>
                             ) : null}
 
@@ -1351,73 +1555,84 @@ export default function ChatRoomScreen() {
                                         <TouchableOpacity onPress={cancelRecording} style={{ padding: 8 }}>
                                             <Ionicons name="trash-outline" size={22} color="#FF3B30" />
                                         </TouchableOpacity>
-                                        
-                                        {/* Área central: Waveform o Reproductor de Preview */}
+
+                                        {/* Área central */}
                                         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', marginHorizontal: 10 }}>
-                                            {(!recorder.isRecording || recorderState.isPaused) && recorderState.durationMillis > 0 ? (
-                                                <TouchableOpacity 
+                                            {isPreviewMode ? (
+                                                // --- MODO PREVIEW: Play/Pausa del audio grabado ---
+                                                <TouchableOpacity
                                                     onPress={() => {
-                                                        if (previewPlayer.playing) {
+                                                        if (previewStatus.playing) {
                                                             previewPlayer.pause();
                                                         } else {
-                                                            if (recorder.uri) {
-                                                                // Asegurar que el player tiene el URI correcto antes de sonar
-                                                                previewPlayer.replace(recorder.uri);
-                                                                previewPlayer.play();
-                                                            } else {
-                                                                console.log("No recorder URI available yet");
-                                                            }
+                                                            previewPlayer.play();
                                                         }
                                                     }}
                                                     style={{ marginRight: 10 }}
                                                 >
-                                                    <Ionicons name={previewPlayer.playing ? "pause" : "play"} size={22} color={colors.primary} />
+                                                    <Ionicons name={previewStatus.playing ? "pause" : "play"} size={22} color={colors.primary} />
                                                 </TouchableOpacity>
                                             ) : (
+                                                // --- MODO GRABANDO: Punto rojo animado ---
                                                 <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF3B30', marginRight: 8 }} />
                                             )}
 
+                                            {/* Slider o Waveform */}
                                             <View style={{ flex: 1, height: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                                                {meteringHistory.length > 0 ? (
+                                                {isPreviewMode ? (
+                                                    <Slider
+                                                        style={{ flex: 1, height: 40 }}
+                                                        minimumValue={0}
+                                                        maximumValue={previewStatus.duration || 1}
+                                                        value={previewStatus.currentTime}
+                                                        minimumTrackTintColor={colors.primary}
+                                                        maximumTrackTintColor={isDark ? '#333' : '#CCC'}
+                                                        thumbTintColor={colors.primary}
+                                                        onSlidingComplete={async (value) => {
+                                                            if (previewSnapshotUri) {
+                                                                previewPlayer.replace(previewSnapshotUri);
+                                                                await previewPlayer.seekTo(value);
+                                                            }
+                                                        }}
+                                                    />
+                                                ) : meteringHistory.length > 0 ? (
                                                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                                         {meteringHistory.map((level, i) => (
-                                                            <View 
-                                                                key={i} 
-                                                                style={{ 
-                                                                    width: 2, 
-                                                                    height: Math.max(4, 30 * level), 
-                                                                    backgroundColor: colors.primary, 
+                                                            <View
+                                                                key={i}
+                                                                style={{
+                                                                    width: 2,
+                                                                    height: Math.max(4, 30 * level),
+                                                                    backgroundColor: colors.primary,
                                                                     marginHorizontal: 1,
                                                                     borderRadius: 1,
-                                                                    opacity: recorderState.isPaused ? 0.6 : 1
-                                                                }} 
+                                                                }}
                                                             />
                                                         ))}
                                                     </View>
-                                                ) : (
-                                                    <Text style={{ color: colors.textSecondary, fontSize: 13, fontStyle: 'italic' }}>
-                                                        Iniciando...
-                                                    </Text>
-                                                )}
+                                                ) : null}
                                             </View>
-                                            
+
+                                            {/* Tiempo */}
                                             <Text style={{ fontSize: 14, color: colors.text, fontWeight: '600', marginLeft: 10, minWidth: 40 }}>
-                                                {formatDuration(Math.floor(recorderState.durationMillis / 1000))}
+                                                {isPreviewMode
+                                                    ? (previewStatus.playing || previewStatus.currentTime > 0
+                                                        ? formatDuration(Math.floor(previewStatus.currentTime))
+                                                        : formatDuration(Math.floor(previewStatus.duration || 0)))
+                                                    : formatDuration(Math.floor(recorderState.durationMillis / 1000))}
                                             </Text>
                                         </View>
 
-                                        {/* Botón de Pausa/Play para grabar */}
-                                        <TouchableOpacity onPress={togglePauseRecording} style={{ padding: 8, marginRight: 5 }}>
-                                            <Ionicons 
-                                                name={recorder.isRecording ? "pause-circle" : "play-circle"} 
-                                                size={28} 
-                                                color={colors.primary} 
-                                            />
-                                        </TouchableOpacity>
+                                        {/* Botón de Pausa (solo mientras graba, no en preview) */}
+                                        {!isPreviewMode && (
+                                            <TouchableOpacity onPress={togglePauseRecording} style={{ padding: 8, marginRight: 5 }}>
+                                                <Ionicons name="pause-circle" size={28} color={colors.primary} />
+                                            </TouchableOpacity>
+                                        )}
 
                                         {/* Botón de enviar */}
-                                        <TouchableOpacity 
-                                            onPress={stopRecording} 
+                                        <TouchableOpacity
+                                            onPress={stopRecording}
                                             disabled={isUploadingAudio}
                                             style={[styles.sendButton, { backgroundColor: colors.primary }]}
                                         >
@@ -1438,8 +1653,16 @@ export default function ChatRoomScreen() {
                                             {isUploadingMedia ? (
                                                 <ActivityIndicator size="small" color={colors.primary} />
                                             ) : (
-                                                <Ionicons name="attach-outline" size={24} color={colors.primary} style={{ transform: [{ rotate: '45deg' }] }} />
+                                                <Ionicons name="camera-outline" size={24} color={colors.primary} />
                                             )}
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity
+                                            onPress={handlePickDocument}
+                                            style={styles.attachButton}
+                                            disabled={isUploadingMedia || isUploadingAudio}
+                                        >
+                                            <Ionicons name="attach-outline" size={26} color={colors.primary} style={{ transform: [{ rotate: '45deg' }] }} />
                                         </TouchableOpacity>
 
                                         <TextInput
@@ -1451,19 +1674,19 @@ export default function ChatRoomScreen() {
                                             onChangeText={setMessageText}
                                         />
 
-                                        {!messageText.trim() && !imagePreview && !videoPreview ? (
-                                            <TouchableOpacity 
+                                        {!messageText.trim() && !imagePreview && !videoPreview && !documentPreview ? (
+                                            <TouchableOpacity
                                                 onPress={startRecording}
                                                 style={[styles.sendButton, { backgroundColor: colors.primary }]}
                                             >
                                                 <Ionicons name="mic" size={20} color="#FFF" />
                                             </TouchableOpacity>
                                         ) : (
-                                            <TouchableOpacity 
+                                            <TouchableOpacity
                                                 onPress={handleSend}
                                                 disabled={isUploadingMedia || isUploadingAudio}
                                                 style={[
-                                                    styles.sendButton, 
+                                                    styles.sendButton,
                                                     { backgroundColor: colors.primary }
                                                 ]}
                                             >
@@ -1547,15 +1770,15 @@ export default function ChatRoomScreen() {
                 animationType="fade"
                 onRequestClose={() => setIsActionModalVisible(false)}
             >
-                <TouchableOpacity 
-                    style={styles.modalOverlay} 
-                    activeOpacity={1} 
+                <TouchableOpacity
+                    style={styles.modalOverlay}
+                    activeOpacity={1}
                     onPress={() => setIsActionModalVisible(false)}
                 >
                     <View style={[styles.actionModalContainer, { backgroundColor: colors.surface }]}>
                         {selectedMessage?.sender?.id === currentUser?.id ? (
                             <>
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                     style={styles.actionModalBtn}
                                     onPress={handleDeleteForAll}
                                 >
@@ -1563,7 +1786,7 @@ export default function ChatRoomScreen() {
                                     <Text style={[styles.actionModalText, { color: '#FF3B30' }]}>Eliminar para todos</Text>
                                 </TouchableOpacity>
 
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                     style={styles.actionModalBtn}
                                     onPress={handleDeleteForMe}
                                 >
@@ -1573,7 +1796,7 @@ export default function ChatRoomScreen() {
 
                                 <View style={[styles.actionModalDivider, { backgroundColor: colors.border }]} />
 
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                     style={styles.actionModalBtn}
                                     onPress={() => {
                                         setIsActionModalVisible(false);
@@ -1586,7 +1809,7 @@ export default function ChatRoomScreen() {
                                 </TouchableOpacity>
                             </>
                         ) : (
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={styles.actionModalBtn}
                                 onPress={handleDeleteForMe}
                             >
@@ -1598,7 +1821,7 @@ export default function ChatRoomScreen() {
                         <View style={[styles.actionModalDivider, { backgroundColor: colors.border }]} />
 
                         {selectedMessage?.audioUrl ? (
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={styles.actionModalBtn}
                                 onPress={handleDownloadAudio}
                             >
@@ -1606,7 +1829,7 @@ export default function ChatRoomScreen() {
                                 <Text style={[styles.actionModalText, { color: colors.text }]}>Descargar audio</Text>
                             </TouchableOpacity>
                         ) : (
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={styles.actionModalBtn}
                                 onPress={handleCopy}
                             >
@@ -1631,15 +1854,15 @@ export default function ChatRoomScreen() {
                         <Text style={[styles.confirmModalMessage, { color: colors.textSecondary }]}>
                             {confirmModalData.message}
                         </Text>
-                        
+
                         <View style={[styles.confirmModalActions, { borderTopColor: colors.border }]}>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={[styles.confirmModalBtn, { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: colors.border }]}
                                 onPress={() => setIsConfirmModalVisible(false)}
                             >
                                 <Text style={[styles.confirmModalBtnText, { color: colors.text }]}>Cancelar</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={[styles.confirmModalBtn]}
                                 onPress={confirmModalData.onConfirm}
                             >
@@ -1651,8 +1874,8 @@ export default function ChatRoomScreen() {
                     </View>
                 </View>
             </Modal>
-    </View>
-);
+        </View>
+    );
 }
 
 const styles = StyleSheet.create({
@@ -1758,7 +1981,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center', // Centrado verticalmente con el globo
         paddingHorizontal: 12,
-        marginVertical: 2,
+        marginVertical: 0,
     },
     myMessageRow: {
         justifyContent: 'flex-end',

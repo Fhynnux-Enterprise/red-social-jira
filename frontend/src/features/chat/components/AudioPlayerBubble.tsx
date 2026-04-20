@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { useTheme } from '../../../theme/ThemeContext';
@@ -31,10 +31,10 @@ export const AudioPlayerBubble: React.FC<AudioPlayerBubbleProps> = ({
 
     // Efecto reactivo para pausa exclusiva (Senior Dev Practice)
     useEffect(() => {
-        if (currentlyPlayingUri !== audioUrl && player.playing) {
+        if (currentlyPlayingUri !== audioUrl && status.playing) {
             player.pause();
         }
-    }, [currentlyPlayingUri, audioUrl, player.playing]);
+    }, [currentlyPlayingUri, audioUrl, status.playing]);
 
     // Detectar cuando termina para permitir re-play
     useEffect(() => {
@@ -46,7 +46,7 @@ export const AudioPlayerBubble: React.FC<AudioPlayerBubbleProps> = ({
     }, [status.didJustFinish]);
 
     const handlePlayPause = () => {
-        if (player.playing) {
+        if (status.playing) {
             player.pause();
         } else {
             if (isFinished) {
@@ -73,7 +73,7 @@ export const AudioPlayerBubble: React.FC<AudioPlayerBubbleProps> = ({
             <View style={styles.playerRow}>
                 <TouchableOpacity onPress={handlePlayPause} style={styles.playButton}>
                     <Ionicons 
-                        name={player.playing ? "pause" : "play"} 
+                        name={status.playing ? "pause" : "play"} 
                         size={32} 
                         color={isMine ? '#FFF' : colors.primary} 
                     />
@@ -133,14 +133,6 @@ export const AudioPlayerBubble: React.FC<AudioPlayerBubbleProps> = ({
                     <Text style={[styles.metaText, { color: isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
                         {messageTime}
                     </Text>
-                    {isMine && (
-                        <Ionicons 
-                            name="checkmark-done" 
-                            size={14} 
-                            color={isRead ? "#00E5FF" : "rgba(255,255,255,0.4)"} 
-                            style={{ marginLeft: 4 }}
-                        />
-                    )}
                 </View>
             </View>
         </View>

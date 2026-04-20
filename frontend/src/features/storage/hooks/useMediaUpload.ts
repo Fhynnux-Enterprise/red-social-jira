@@ -69,7 +69,13 @@ export const useMediaUpload = () => {
     });
   };
 
-  const uploadMedia = async (localUri: string, mimeType: string, folder: string) => {
+  const uploadMedia = async (
+    localUri: string,
+    mimeType: string,
+    folder: string,
+    onProgress?: (progress: number) => void,
+    onXhrCreated?: (xhr: XMLHttpRequest) => void
+  ) => {
     try {
       // 1. Derivar la extensión a partir del mimeType para garantizar consistencia.
       // Cuando el video se comprime pasa de .MOV a .mp4, pero el URI aún puede
@@ -127,6 +133,19 @@ export const useMediaUpload = () => {
 
         xhr.onerror = () => reject(new Error('Error de red al subir el archivo'));
         xhr.ontimeout = () => reject(new Error('Tiempo de espera agotado al subir el archivo'));
+
+        if (xhr.upload && onProgress) {
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const progress = Math.round((event.loaded / event.total) * 100);
+              onProgress(progress);
+            }
+          };
+        }
+
+        if (onXhrCreated) {
+          onXhrCreated(xhr);
+        }
 
         // IMPORTANTE: NO usar fetch(localUri).then(res.blob()) para videos.
         // En Android, los videos resultan en Blobs vacíos (0 bytes) porque React Native

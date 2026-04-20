@@ -245,6 +245,9 @@ export default function ChatListScreen() {
         } else if (msg.imageUrl) {
             iconName = 'camera';
             if (!text) text = 'Imagen';
+        } else if (msg.fileUrl) {
+            iconName = 'document-attach-outline';
+            text = msg.fileName || 'Archivo';
         }
 
         return (

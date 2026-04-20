@@ -21,6 +21,9 @@ export class ReadMessagesPayload {
 
     @Field()
     readerId: string;
+
+    @Field(() => Date, { nullable: true })
+    readAt: Date;
 }
 
 @Resolver(() => Conversation)
@@ -134,7 +137,20 @@ export class ChatResolver {
         @CurrentUser() user: User,
         @Args() args: SendMessageArgs,
     ) {
-        const newMessage = await this.chatService.sendMessage(user.id, args.conversationId, args.content, args.imageUrl, args.videoUrl, args.storyId, args.audioUrl, args.audioDuration);
+        const newMessage = await this.chatService.sendMessage(
+            user.id, 
+            args.conversationId, 
+            args.content, 
+            args.imageUrl, 
+            args.videoUrl, 
+            args.storyId, 
+            args.audioUrl, 
+            args.audioDuration,
+            args.fileUrl,
+            args.fileName,
+            args.fileSize,
+            args.fileMimeType
+        );
         pubSub.publish('MESSAGE_ADDED_EVENT', { 
             messageAdded: newMessage, 
             inboxUpdate: newMessage 
@@ -186,7 +202,13 @@ export class ChatResolver {
         @Args('conversationId') conversationId: string,
     ) {
         await this.chatService.markMessagesAsRead(conversationId, user.id);
-        pubSub.publish('MESSAGES_READ_EVENT', { messagesRead: { conversationId, readerId: user.id } });
+        pubSub.publish('MESSAGES_READ_EVENT', { 
+            messagesRead: { 
+                conversationId, 
+                readerId: user.id,
+                readAt: new Date()
+            } 
+        });
         return true;
     }
 

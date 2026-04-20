@@ -90,6 +90,10 @@ type Message {
   storyId: String
   audioUrl: String
   audioDuration: Int
+  fileUrl: String
+  fileName: String
+  fileSize: Int
+  fileMimeType: String
   conversationId: String!
   isRead: Boolean!
   createdAt: DateTime!
@@ -97,6 +101,7 @@ type Message {
   deletedFor: [String!]
   isDeletedForAll: Boolean!
   editedAt: DateTime
+  readAt: DateTime
   sender: User!
   conversation: Conversation!
 }
@@ -370,6 +375,7 @@ enum NotificationType {
 type ReadMessagesPayload {
   conversationId: String!
   readerId: String!
+  readAt: DateTime
 }
 
 type ApplyToJobResponse {
@@ -490,7 +496,7 @@ type Mutation {
   deleteConversationForMe(conversationId: String!): Boolean!
   editMessage(messageId: String!, newContent: String!): Message!
   getOrCreateOneOnOneChat(targetUserId: String!): Conversation!
-  sendMessage(conversationId: String!, content: String = "", imageUrl: String, videoUrl: String, storyId: String, audioUrl: String, audioDuration: Int): Message!
+  sendMessage(conversationId: String!, content: String = "", imageUrl: String, videoUrl: String, storyId: String, audioUrl: String, audioDuration: Int, fileUrl: String, fileName: String, fileSize: Int, fileMimeType: String): Message!
   markMessagesAsRead(conversationId: String!): Boolean!
   createStory(mediaUrl: String!, mediaType: String!, content: String): Story!
   markStoryAsViewed(storyId: String!): Boolean!

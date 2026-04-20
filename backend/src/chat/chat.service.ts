@@ -96,7 +96,20 @@ export class ChatService {
         return savedConversation;
     }
 
-    async sendMessage(senderId: string, conversationId: string, content: string, imageUrl?: string, videoUrl?: string, storyId?: string, audioUrl?: string, audioDuration?: number): Promise<Message> {
+    async sendMessage(
+        senderId: string, 
+        conversationId: string, 
+        content: string, 
+        imageUrl?: string, 
+        videoUrl?: string, 
+        storyId?: string, 
+        audioUrl?: string, 
+        audioDuration?: number,
+        fileUrl?: string,
+        fileName?: string,
+        fileSize?: number,
+        fileMimeType?: string
+    ): Promise<Message> {
         const conversation = await this.conversationRepository.findOne({
             where: { id: conversationId },
             relations: ['participants']
@@ -126,6 +139,11 @@ export class ChatService {
             }
         }
 
+        // Validación: El mensaje debe tener contenido o algún tipo de media
+        if (!content && !imageUrl && !videoUrl && !storyId && !audioUrl && !fileUrl) {
+            throw new BadRequestException('El mensaje no puede estar vacío');
+        }
+
         const newMessage = this.messageRepository.create({
             content: content || '',
             imageUrl: imageUrl || undefined,
@@ -133,6 +151,10 @@ export class ChatService {
             storyId: storyId || undefined,
             audioUrl: audioUrl || undefined,
             audioDuration: audioDuration || undefined,
+            fileUrl: fileUrl || undefined,
+            fileName: fileName || undefined,
+            fileSize: fileSize || undefined,
+            fileMimeType: fileMimeType || undefined,
             conversationId,
             userId: senderId,
             isRead: false,
@@ -298,7 +320,10 @@ export class ChatService {
         // y que aún no están marcados como leídos.
         await this.messageRepository.createQueryBuilder()
             .update(Message)
-            .set({ isRead: true })
+            .set({ 
+                isRead: true,
+                readAt: new Date()
+            })
             .where('conversation_id = :conversationId', { conversationId })
             .andWhere('user_id != :userId', { userId })
             .andWhere('is_read = false')
