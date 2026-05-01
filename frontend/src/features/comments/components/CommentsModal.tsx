@@ -6,7 +6,7 @@ import {
     Image, ActivityIndicator, TouchableWithoutFeedback,
     Alert, Pressable, Keyboard, ScrollView, Modal,
     Dimensions, TextInput, PanResponder, Animated,
-    LayoutAnimation, BackHandler
+    LayoutAnimation, BackHandler, Linking
 } from 'react-native';
 
 import { useNavigation, useIsFocused } from '@react-navigation/native';
@@ -32,6 +32,8 @@ import ImageCarousel from '../../feed/components/ImageCarousel';
 import JobOfferCard from '../../jobs/components/JobOfferCard';
 import ProfessionalCard from '../../jobs/components/ProfessionalCard';
 import StoreProductCard from '../../store/components/StoreProductCard';
+import NativeAdCard from '../../ads/components/NativeAdCard';
+
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -93,6 +95,7 @@ export default function CommentsModal({
     const [selectedCommentData, setSelectedCommentData] = useState<{ id: string, isMine: boolean, isReply: boolean } | null>(null);
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [isOptionsModalVisible, setIsOptionsModalVisible] = useState(false);
+    const [isAdOptionsVisible, setIsAdOptionsVisible] = useState(false);
     const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
     const [replyingTo, setReplyingTo] = useState<{ id: string, name: string } | null>(null);
     const [isMinimized, setIsMinimized] = useState(false);
@@ -103,6 +106,7 @@ export default function CommentsModal({
     const [postReportVisible, setPostReportVisible] = useState(false);
     const inputRef = useRef<TextInput>(null);
     const scrollViewRef = useRef<ScrollView>(null);
+    const nativeAdRef = useRef<any>(null);
     // postScrollEnabled: state para re-renderizar el ScrollView, ref para el PanResponder (closure-safe)
     const [postScrollEnabled, setPostScrollEnabled] = React.useState(true);
     const postScrollEnabledRef = useRef(true);
@@ -117,9 +121,13 @@ export default function CommentsModal({
     // El item puede ser un Post, JobOffer o ProfessionalProfile
     const isPost = !post?.__typename || post.__typename === 'Post';
     const isStore = post?.__typename === 'StoreProduct';
-    const isCommentable = isPost || isStore;
+    const isAd = post?.isAd;
+    const isCommentable = (isPost || isStore) && !isAd;
     const isEdited = !!post?.editedAt;
     const effectiveIsMinimized = isMinimized || !isCommentable;
+    // Layout del área superior del anuncio (sin el botón CTA) para el overlay de gestos
+    const [adMediaLayout, setAdMediaLayout] = React.useState<{ y: number; height: number } | null>(null);
+
     // Para todos los tipos de publicación, remap los aliases de Apollo al campo 'media' estándar
     const normalizedItem = React.useMemo(() => {
         if (!post) return post;
@@ -289,10 +297,14 @@ export default function CommentsModal({
     // ya que el ScrollView soltó el control del toque.
     const tiktokSwipePan = useRef(PanResponder.create({
         // Caso A: siguiente toque después de llegar al borde (scrollEnabled ya desactivado)
-        onStartShouldSetPanResponderCapture: () => !postScrollEnabledRef.current,
+        onStartShouldSetPanResponderCapture: () => {
+            if (isAd) return false; // En anuncios, adSwipePan se encarga
+            return !postScrollEnabledRef.current;
+        },
         // Caso B: captura mid-gesture detectando la posición del scroll mientras arrastra
         // Esto permite robar el gesto al ScrollView cuando llega al borde sin soltar el dedo
         onMoveShouldSetPanResponderCapture: (_, g) => {
+            if (isAd) return false; // En anuncios, adSwipePan se encarga
             if (!(Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx))) return false;
             if (!postScrollEnabledRef.current) return true;
             // En el tope, si arrastra abajo (g.dy > 0) -> quiere el post anterior
@@ -393,6 +405,12 @@ export default function CommentsModal({
         }).start(() => {
             onClose();
         });
+    };
+
+    const handleAdOptions = () => {
+        if (nativeAdRef.current) {
+            nativeAdRef.current.openOptions();
+        }
     };
 
     // ── Animación cambio de publicación ────────────────────────────────────
@@ -707,7 +725,7 @@ export default function CommentsModal({
         },
         onPanResponderRelease: (_, g) => {
             const currentAxis = currentGestureAxis.current;
-            currentGestureAxis.current = 'none';
+            currentAxis.current = 'none';
 
             const vy = g.vy; const dy = g.dy; const dx = g.dx; const vx = g.vx;
             if (currentAxis === 'horizontal' && ((dx < -(SCREEN_WIDTH * 0.45)) || (vx < -0.9 && dx < -50))) {
@@ -734,6 +752,80 @@ export default function CommentsModal({
         },
     })).current;
 
+    // ── PanResponder para Anuncios Nativos (isAd) ─────────────────────────
+    // Los componentes nativos de AdMob (NativeAdView) bloquean el sistema de gestos
+    // de React Native. Este PanResponder usa 'Capture' para robar el gesto ANTES
+    // de que lo reciba la capa nativa, pero SOLO si es un swipe (dy > 10).
+    const adSwipePan = useRef(PanResponder.create({
+        // Capturamos el START en el overlay para que AdMob no bloquee el gesto
+        onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => false,
+        onMoveShouldSetPanResponder: (_, g) => {
+            if (Math.abs(g.dy) > 10 && Math.abs(g.dy) > Math.abs(g.dx)) return true;
+            if (g.dx < -15 && Math.abs(g.dy) < Math.abs(g.dx)) return true;
+            return false;
+        },
+        onMoveShouldSetPanResponderCapture: (_, g) => {
+            if (Math.abs(g.dy) > 10 && Math.abs(g.dy) > Math.abs(g.dx)) return true;
+            if (g.dx < -15 && Math.abs(g.dy) < Math.abs(g.dx)) return true;
+            return false;
+        },
+        onPanResponderGrant: () => {
+            currentGestureAxis.current = 'none';
+        },
+        onPanResponderMove: (_, g) => {
+            if (currentGestureAxis.current === 'none') {
+                if (Math.abs(g.dy) > 15) currentGestureAxis.current = 'vertical';
+                else if (g.dx < -25) currentGestureAxis.current = 'horizontal';
+            }
+
+            if (currentGestureAxis.current === 'vertical') {
+                panYPost.setValue(g.dy);
+            } else if (currentGestureAxis.current === 'horizontal') {
+                panX.setValue(g.dx);
+            }
+        },
+        onPanResponderRelease: (_, g) => {
+            const currentAxis = currentGestureAxis.current;
+            currentGestureAxis.current = 'none';
+
+            if (currentAxis === 'horizontal' && (g.dx < -80 || (g.vx < -0.8 && g.dx < -20))) {
+                closeWithXAnimation();
+            } else if (currentAxis === 'vertical') {
+                const THRESHOLD = SCREEN_HEIGHT * 0.18;
+                const { dy, vy } = g;
+                if (dy < -THRESHOLD || vy < -0.5) {
+                    // Swipe arriba → siguiente publicación
+                    if (navRef.current.nextPost) {
+                        Animated.timing(panYPost, { toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                            .start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                    } else if (callbacksRef.current.hasMorePosts) {
+                        Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                        callbacksRef.current.onNextPost?.();
+                    } else {
+                        Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                    }
+                } else if (dy > THRESHOLD || vy > 0.5) {
+                    // Swipe abajo → publicación anterior
+                    if (navRef.current.prevPost) {
+                        Animated.timing(panYPost, { toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                            .start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                    } else {
+                        Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                    }
+                } else {
+                    Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 10 }).start();
+                }
+            } else {
+                Animated.spring(panX, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+            }
+        },
+        onPanResponderTerminate: () => {
+            currentGestureAxis.current = 'none';
+            Animated.spring(panYPost, { toValue: 0, useNativeDriver: true }).start();
+            Animated.spring(panX, { toValue: 0, useNativeDriver: true }).start();
+        },
+    })).current;
 
     // ── Likes ──────────────────────────────────────────────────────────────
     const displayLiked = (isCommentable && post?.likes?.some((l: any) => l.user?.id === currentUser?.id)) || false;
@@ -1101,12 +1193,63 @@ export default function CommentsModal({
                                 styles.postBubble,
                                 isMinimized
                                     ? { flexShrink: 1, maxHeight: SCREEN_HEIGHT - insets.top - TOP_SPACING - BOTTOM_SPACING }
-                                    // POST_EXPANDED_MAX_HEIGHT en línea superior: ajusta su fracción
-                                    : { maxHeight: POST_EXPANDED_MAX_HEIGHT, flexShrink: 1 },
+                                    : isAd
+                                        ? { flexShrink: 1 }  // El anuncio se auto-mide vía onLayout
+                                        : { maxHeight: POST_EXPANDED_MAX_HEIGHT, flexShrink: 1 },
                                 { opacity: postTransition, transform: [{ translateY: slideY }, { translateX: panX }] }
                             ]}
                             {...tiktokSwipePan.panHandlers}
                         >
+                        {isAd ? (
+                            <View style={{ backgroundColor: colors.surface }}>
+                                {/* Contenedor con margen superior para apartar el anuncio de los botones flotantes.
+                                    Esto evita que el toque en los botones (X y Opciones) atraviese hasta AdMob 
+                                    y se registre como un clic falso. */}
+                                <View style={{ marginTop: 56 }}>
+                                    <NativeAdCard
+                                        ref={nativeAdRef}
+                                        isImmersive={true}
+                                        adData={post}
+                                        onMediaLayout={(layout) => setAdMediaLayout(layout)}
+                                    />
+
+                                    {/* Overlay transparente sobre el área superior para capturar swipes.
+                                        Evita que AdMob bloquee el gesto, pero deja libre el botón CTA para clics. */}
+                                    {adMediaLayout && (
+                                        <View
+                                            style={{
+                                                position: 'absolute',
+                                                left: 0,
+                                                right: 0,
+                                                top: adMediaLayout.y,
+                                                height: adMediaLayout.height,
+                                                zIndex: 50,
+                                                elevation: 100, // Fuerza que Android le dé prioridad a este View sobre AdMob
+                                            }}
+                                            {...adSwipePan.panHandlers}
+                                        />
+                                    )}
+                                </View>
+
+                                {/* Controles flotantes superiores */}
+                                <View style={{ position: 'absolute', right: 16, top: 16, zIndex: 100, flexDirection: 'row', gap: 12 }}>
+                                    <TouchableOpacity 
+                                        onPress={handleAdOptions}
+                                        style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 20, padding: 4 }}
+                                    >
+                                        <Ionicons name="ellipsis-horizontal" size={24} color="white" />
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity 
+                                        onPress={closeWithAnimation}
+                                        style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 20, padding: 4 }}
+                                    >
+                                        <Ionicons name="close" size={24} color="white" />
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        ) : (
+                            <>
                             <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
                                 <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
                                 
@@ -1399,6 +1542,8 @@ export default function CommentsModal({
                                 </TouchableOpacity>
                             </Animated.View>
                             )}
+                            </>
+                        )}
                         </Animated.View>
                     )}
 
@@ -1697,6 +1842,48 @@ export default function CommentsModal({
                         closeWithAnimation();
                     }}
                 />
+            )}
+
+            {isAdOptionsVisible && (
+                <Modal visible={isAdOptionsVisible} transparent={true} animationType="fade" onRequestClose={() => setIsAdOptionsVisible(false)}>
+                    <TouchableWithoutFeedback onPress={() => setIsAdOptionsVisible(false)}>
+                        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+                            <TouchableWithoutFeedback>
+                                <View style={{ width: '85%', borderRadius: 20, paddingVertical: 10, backgroundColor: colors.surface, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4 }}>
+                                    <Text style={{ fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginVertical: 15, color: colors.text }}>Opciones del anuncio</Text>
+                                    
+                                    <TouchableOpacity 
+                                        style={{ paddingVertical: 16, alignItems: 'center', justifyContent: 'center', borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }}
+                                        onPress={() => { Linking.openURL('https://support.google.com/ads/answer/1634057'); setIsAdOptionsVisible(false); }}
+                                    >
+                                        <Text style={{ fontSize: 16, color: colors.text }}>¿Por qué veo esto?</Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity 
+                                        style={{ paddingVertical: 16, alignItems: 'center', justifyContent: 'center', borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }}
+                                        onPress={() => { setIsAdOptionsVisible(false); Toast.show({ type: 'success', text1: 'Gracias', text2: 'Tu reporte ha sido enviado.' }); }}
+                                    >
+                                        <Text style={{ fontSize: 16, color: colors.text }}>Ocultar este anuncio</Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity 
+                                        style={{ paddingVertical: 16, alignItems: 'center', justifyContent: 'center', borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }}
+                                        onPress={() => { Linking.openURL('https://support.google.com/ads/troubleshooter/4578507'); setIsAdOptionsVisible(false); }}
+                                    >
+                                        <Text style={{ fontSize: 16, color: '#FF9500' }}>Reportar anuncio</Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity 
+                                        style={{ paddingVertical: 16, alignItems: 'center', justifyContent: 'center' }}
+                                        onPress={() => setIsAdOptionsVisible(false)}
+                                    >
+                                        <Text style={{ fontSize: 16, color: colors.textSecondary }}>Cancelar</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </TouchableWithoutFeedback>
+                        </View>
+                    </TouchableWithoutFeedback>
+                </Modal>
             )}
             <Toast config={customToastConfig} position="top" topOffset={60} />
         </Modal>

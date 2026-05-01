@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback, memo } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, RefreshControl, Platform, FlatList, TextInput, KeyboardAvoidingView } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, RefreshControl, Platform, FlatList, TextInput, KeyboardAvoidingView, Linking } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -832,18 +832,33 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                                     <View style={{ width: 28 }} />
                                 </View>
                                 {['ADMIN', 'MODERATOR'].includes(authContext.user?.role) && (
-                                    <TouchableOpacity
-                                        style={styles.settingButton}
-                                        onPress={() => { handleCloseMenu(); setTimeout(() => (navigation as any).navigate('Moderation'), 300); }}
-                                    >
-                                        <View style={styles.settingLeft}>
-                                            <View style={{ backgroundColor: 'rgba(255,101,36,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
-                                                <Ionicons name="shield-checkmark-outline" size={22} color="#FF6524" />
+                                    <>
+                                        <TouchableOpacity
+                                            style={styles.settingButton}
+                                            onPress={() => { handleCloseMenu(); setTimeout(() => (navigation as any).navigate('Moderation', { initialTab: 'reports' }), 300); }}
+                                        >
+                                            <View style={styles.settingLeft}>
+                                                <View style={{ backgroundColor: 'rgba(255,101,36,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
+                                                    <Ionicons name="shield-checkmark-outline" size={22} color="#FF6524" />
+                                                </View>
+                                                <Text style={[styles.settingText, { color: '#FF6524' }]}>Moderación</Text>
                                             </View>
-                                            <Text style={[styles.settingText, { color: '#FF6524' }]}>Moderación</Text>
-                                        </View>
-                                        <Ionicons name="chevron-forward" size={20} color="#FF6524" />
-                                    </TouchableOpacity>
+                                            <Ionicons name="chevron-forward" size={20} color="#FF6524" />
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity
+                                            style={styles.settingButton}
+                                            onPress={() => { handleCloseMenu(); setTimeout(() => (navigation as any).navigate('Admin'), 300); }}
+                                        >
+                                            <View style={styles.settingLeft}>
+                                                <View style={{ backgroundColor: 'rgba(99,102,241,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
+                                                    <Ionicons name="settings-outline" size={22} color="#6366F1" />
+                                                </View>
+                                                <Text style={[styles.settingText, { color: '#6366F1' }]}>Administración</Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color="#6366F1" />
+                                        </TouchableOpacity>
+                                    </>
                                 )}
                                 <TouchableOpacity
                                     style={styles.settingButton}
@@ -862,6 +877,21 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                                     <View style={styles.settingLeft}>
                                         <Ionicons name="lock-closed-outline" size={24} color={colors.text} />
                                         <Text style={styles.settingText}>Bloqueados</Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.settingButton}
+                                    onPress={() => {
+                                        handleCloseMenu();
+                                        setTimeout(() => {
+                                            router.push('/ads/info');
+                                        }, 300);
+                                    }}
+                                >
+                                    <View style={styles.settingLeft}>
+                                        <Ionicons name="megaphone-outline" size={24} color={colors.text} />
+                                        <Text style={styles.settingText}>Publicidad</Text>
                                     </View>
                                     <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                                 </TouchableOpacity>

@@ -201,26 +201,15 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
                                 </View>
                             </TouchableOpacity>
 
-                            {/* Experiencia badge + ellipsis para dueño */}
+                            {/* Ellipsis siempre visible */}
                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                {isOwnCard && (
-                                    <TouchableOpacity
-                                        onPress={() => setMenuVisible(true)}
-                                        style={styles.postEllipsis}
-                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                                    >
-                                        <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-                                    </TouchableOpacity>
-                                )}
-                                {!isOwnCard && (
-                                    <TouchableOpacity
-                                        onPress={() => setReportVisible(true)}
-                                        style={styles.postEllipsis}
-                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                                    >
-                                        <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
-                                    </TouchableOpacity>
-                                )}
+                                <TouchableOpacity
+                                    onPress={() => setMenuVisible(true)}
+                                    style={styles.postEllipsis}
+                                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                                >
+                                    <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                                </TouchableOpacity>
                             </View>
                         </View>
                     </View>
@@ -303,19 +292,30 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
                                 <View style={[styles.menuHandle, { backgroundColor: isDark ? '#444' : '#DDD' }]} />
                                 <Text style={[styles.menuTitle, { color: colors.text }]}>Opciones</Text>
                                 
-                                <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={handleEdit}>
-                                    <View style={[styles.menuItemIcon, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
-                                        <Ionicons name="pencil" size={20} color={colors.text} />
-                                    </View>
-                                    <Text style={[styles.menuItemTitle, { color: colors.text }]}>Editar servicio</Text>
-                                </TouchableOpacity>
-                                
-                                <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={handleDelete} disabled={deleting}>
-                                    <View style={[styles.menuItemIcon, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
-                                        {deleting ? <ActivityIndicator size="small" color="#FF3B30" /> : <Ionicons name="trash" size={20} color="#FF3B30" />}
-                                    </View>
-                                    <Text style={[styles.menuItemTitle, { color: '#FF3B30' }]}>Eliminar servicio</Text>
-                                </TouchableOpacity>
+                                {isOwnCard ? (
+                                    <>
+                                        <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={handleEdit}>
+                                            <View style={[styles.menuItemIcon, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
+                                                <Ionicons name="pencil" size={20} color={colors.text} />
+                                            </View>
+                                            <Text style={[styles.menuItemTitle, { color: colors.text }]}>Editar servicio</Text>
+                                        </TouchableOpacity>
+                                        
+                                        <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={handleDelete} disabled={deleting}>
+                                            <View style={[styles.menuItemIcon, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
+                                                {deleting ? <ActivityIndicator size="small" color="#FF3B30" /> : <Ionicons name="trash" size={20} color="#FF3B30" />}
+                                            </View>
+                                            <Text style={[styles.menuItemTitle, { color: '#FF3B30' }]}>Eliminar servicio</Text>
+                                        </TouchableOpacity>
+                                    </>
+                                ) : (
+                                    <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); setReportVisible(true); }}>
+                                        <View style={[styles.menuItemIcon, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
+                                            <Ionicons name="flag" size={20} color={colors.text} />
+                                        </View>
+                                        <Text style={[styles.menuItemTitle, { color: colors.text }]}>Reportar servicio</Text>
+                                    </TouchableOpacity>
+                                )}
                                 
                                 <TouchableOpacity style={[styles.menuItem, { marginTop: 10, borderBottomWidth: 0 }]} onPress={() => setMenuVisible(false)}>
                                     <View style={[styles.menuItemIcon, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>

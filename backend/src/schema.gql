@@ -408,6 +408,45 @@ enum AppealType {
   CONTENT_DELETION
 }
 
+type LocalAdMedia {
+  id: ID!
+  url: String!
+  type: String!
+  thumbnailUrl: String
+}
+
+type LocalAd {
+  id: ID!
+  advertiserId: String!
+  advertiser: User!
+  title: String!
+  description: String!
+  actionUrl: String
+  actionLabel: String!
+  whatsappPhone: String
+  isActive: Boolean!
+  views: Int!
+  clicks: Int!
+  media: [LocalAdMedia!]
+  createdAt: DateTime!
+}
+
+type AdDecision {
+  type: String!
+  localAd: LocalAd
+}
+
+type AdvertiserPermission {
+  id: ID!
+  userId: String!
+  user: User!
+  isActive: Boolean!
+  expiresAt: DateTime!
+  maxAds: Int!
+  grantedBy: String
+  createdAt: DateTime!
+}
+
 type Query {
   """Verifica si el servidor GraphQL está funcionando"""
   ping: String!
@@ -458,6 +497,15 @@ type Query {
   getAllReports(limit: Int! = 20, offset: Int! = 0, filter: String): [Report!]!
   getMyReportStatus(reportedItemId: ID!): Report
   getPendingAppeals(limit: Int! = 20, offset: Int! = 0): [Appeal!]!
+  getNextAd: AdDecision!
+  getAdFrequency: Int!
+  getAdProbability: Int!
+  getAdvertiserPermissions(search: String, limit: Int, offset: Int): [AdvertiserPermission!]!
+  getAllLocalAds: [LocalAd!]!
+  getAdvertiserAds(userId: String!): [LocalAd!]!
+  hasAdvertiserPermission: Boolean!
+  getMyAdvertiserPermission: AdvertiserPermission
+  getMyAds: [LocalAd!]!
 }
 
 union FeedItem = Post | JobOffer | ProfessionalProfile | StoreProduct
@@ -527,6 +575,16 @@ type Mutation {
   directModerateContent(input: DirectModerateInput!): Report!
   createAppeal(input: CreateAppealInput!): Appeal!
   resolveAppeal(input: ResolveAppealInput!): Appeal!
+  registerAdClick(adId: String!): Boolean!
+  updateAdFrequency(frequency: Int!): Boolean!
+  updateAdProbability(probability: Int!): Boolean!
+  grantAdvertiserPermission(input: GrantAdvertiserInput!): AdvertiserPermission!
+  updateAdvertiserPermission(input: UpdateAdvertiserPermissionInput!): AdvertiserPermission!
+  revokeAdvertiserPermission(id: String!): Boolean!
+  toggleLocalAd(id: String!, isActive: Boolean!): LocalAd!
+  deleteLocalAd(id: String!): Boolean!
+  createLocalAd(input: CreateLocalAdInput!): LocalAd!
+  updateLocalAd(input: UpdateLocalAdInput!): LocalAd!
 }
 
 input PostMediaInput {
@@ -650,6 +708,44 @@ input CreateAppealInput {
 input ResolveAppealInput {
   appealId: ID!
   approve: Boolean!
+}
+
+input GrantAdvertiserInput {
+  userId: String!
+  expiresAt: DateTime!
+  maxAds: Int = 5
+}
+
+input UpdateAdvertiserPermissionInput {
+  id: String!
+  isActive: Boolean
+  expiresAt: DateTime
+  maxAds: Int
+}
+
+input CreateLocalAdInput {
+  title: String!
+  description: String!
+  actionUrl: String
+  actionLabel: String
+  whatsappPhone: String
+  media: [LocalAdMediaInput!]
+}
+
+input LocalAdMediaInput {
+  url: String!
+  type: String!
+  thumbnailUrl: String
+}
+
+input UpdateLocalAdInput {
+  id: String!
+  title: String
+  description: String
+  actionUrl: String
+  actionLabel: String
+  whatsappPhone: String
+  media: [LocalAdMediaInput!]
 }
 
 type Subscription {

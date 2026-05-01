@@ -19,6 +19,7 @@ import { GET_ME } from '../../profile/graphql/profile.operations';
 import Toast from 'react-native-toast-message';
 import PostCard from '../components/PostCard';
 import PostOptionsModal from '../components/PostOptionsModal';
+import ReportModal from '../../reports/components/ReportModal';
 import CommentsModal from '../../comments/components/CommentsModal';
 import { StoriesBar } from '../../stories/components/StoriesBar';
 import FeedItemDetailModal from '../components/FeedItemDetailModal';
@@ -26,6 +27,10 @@ import StoreProductCard from '../../store/components/StoreProductCard';
 import ListFooter from '../../../components/ListFooter';
 import NotificationBell from '../../notifications/components/NotificationBell';
 import CreateProductModal from '../../store/components/CreateProductModal';
+import CreateLocalAdModal from '../../advertisers/components/CreateLocalAdModal';
+import NativeAdCard from '../../ads/components/NativeAdCard';
+import { GET_AD_FREQUENCY, UPDATE_AD_FREQUENCY } from '../../ads/graphql/ads.operations';
+
 
 export interface PostAuthor {
     id: string;
@@ -33,6 +38,7 @@ export interface PostAuthor {
     lastName: string;
     username: string;
     photoUrl?: string | null;
+    role?: string;
 }
 
 export interface PostMedia {
@@ -90,6 +96,9 @@ export default function FeedScreen() {
     const [selectedFeedItem, setSelectedFeedItem] = useState<any | null>(null);
     const [isStoreModalVisible, setIsStoreModalVisible] = useState(false);
     const [editingProduct, setEditingProduct] = useState<any | null>(null);
+    const [isLocalAdModalVisible, setIsLocalAdModalVisible] = useState(false);
+    const [editingLocalAd, setEditingLocalAd] = useState<any | null>(null);
+    const [isReportModalVisible, setIsReportModalVisible] = useState(false);
     const resumeCommentsRef = useRef<any>(null);
     const apolloClient = useApolloClient();
 
@@ -99,6 +108,10 @@ export default function FeedScreen() {
     const [hasMore, setHasMore] = useState(true);
     const [scrollOffset, setScrollOffset] = useState(0);
     const flatListRef = useRef<FlatList>(null);
+    const [adFrequency, setAdFrequency] = useState(5);
+    
+    // Memoria para guardar los anuncios cargados y evitar que cambien al hacer scroll o swipe
+    const [loadedAds, setLoadedAds] = useState<Record<string, any>>({});
 
     const { data, loading, error, refetch, fetchMore, networkStatus } = useQuery<{ getFeed: any[] }>(GET_FEED, {
         variables: { limit: 10, offset: 0 },
@@ -110,12 +123,60 @@ export default function FeedScreen() {
         fetchPolicy: 'cache-and-network',
     });
     const currentUser = meData?.me;
+    const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MODERATOR';
+
+    // Obtener frecuencia de anuncios desde el servidor
+    const { data: configData, refetch: refetchAdFrequency } = useQuery(GET_AD_FREQUENCY, {
+        fetchPolicy: 'network-only',
+    });
+
+    // Sincronizar el estado local con la respuesta del servidor
+    useEffect(() => {
+        if (configData?.getAdFrequency != null) {
+            setAdFrequency(configData.getAdFrequency);
+        }
+    }, [configData?.getAdFrequency]);
+
+    useFocusEffect(
+        useCallback(() => {
+            refetchAdFrequency();
+        }, [refetchAdFrequency])
+    );
 
     // Ya no usamos useFocusEffect para refetch manual en cada foco para evitar saltos y recargas molestas.
     // Apollo Client con cache-and-network ya se encarga de servir datos de caché inmediatamente.
 
     // Generamos estilos dinámicos que reaccionan al tema
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
+
+    /**
+     * Inyecta un objeto de publicidad cada N elementos del feed y fusiona datos cacheados si existen.
+     */
+    const injectAds = useCallback((items: any[], freq: number, cachedAds: Record<string, any>) => {
+        const result: any[] = [];
+        items.forEach((item, index) => {
+            result.push(item);
+            // Inyectar publicidad cada N elementos (freq)
+            if ((index + 1) % freq === 0) {
+                const adId = `ad-after-${item.id}`;
+                const cachedAd = cachedAds[adId] || {};
+                result.push({
+                    ...cachedAd,
+                    realId: cachedAd.id || cachedAd.realId, // Preservar el UUID real
+                    id: adId,                               // Mantener el ID posicional para el FlatList
+                    isAd: true,
+                    __typename: 'Ad',
+                });
+            }
+        });
+        return result;
+    }, []);
+
+    const augmentedFeed = useMemo(() => {
+        if (!data?.getFeed) return [];
+        const freq = configData?.getAdFrequency ?? adFrequency;
+        return injectAds(data.getFeed, freq, loadedAds);
+    }, [data?.getFeed, injectAds, adFrequency, configData?.getAdFrequency, loadedAds]);
 
     const [deletePost] = useMutation(DELETE_POST, {
         refetchQueries: [{ query: GET_FEED, variables: { limit: 10, offset: 0 } }],
@@ -247,6 +308,27 @@ export default function FeedScreen() {
     }).current;
 
     const renderFeedItem = useCallback(({ item }: { item: any }) => {
+        if (item.isAd) {
+            // Fusionar el item del feed con los datos cacheados del anuncio (que incluyen el realId)
+            const cachedAdData = loadedAds[item.id];
+            const adDataToPass = cachedAdData
+                ? { ...cachedAdData, id: cachedAdData.realId || cachedAdData.id } // Siempre usar el UUID real
+                : (item.type || item.title ? { ...item, id: item.realId || item.id } : undefined);
+            return <NativeAdCard 
+                adData={adDataToPass}
+                onAdLoaded={(adData) => {
+                    if (!loadedAds[item.id]) {
+                        setLoadedAds(prev => ({ ...prev, [item.id]: adData }));
+                    }
+                }}
+                onPress={(ad) => setSelectedPostForComments({ 
+                    post: { ...ad, id: item.id, realId: ad.realId || ad.id }, 
+                    minimize: true, 
+                    initialTab: 'comments', 
+                    initialExpanded: false 
+                })} 
+            />;
+        }
 
         if (item.__typename === 'JobOffer') {
             const mappedItem = { 
@@ -327,7 +409,7 @@ export default function FeedScreen() {
                 isOverlayActive={!!selectedPostForComments || isModalVisible}
             />
         );
-    }, [currentUser?.id, handleOptionsPress, visiblePostId, isFocused, selectedPostForComments, isModalVisible]);
+    }, [currentUser?.id, handleOptionsPress, visiblePostId, isFocused, selectedPostForComments, isModalVisible, loadedAds]);
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -365,6 +447,7 @@ export default function FeedScreen() {
                     >
                         <Ionicons name="search-outline" size={22} color={colors.text} />
                     </TouchableOpacity>
+                    
                     <NotificationBell />
                 </View>
             </View>
@@ -426,8 +509,8 @@ export default function FeedScreen() {
                                 </View>
                             </>
                         }
-                        data={data?.getFeed || []}
-                        extraData={data}
+                        data={augmentedFeed}
+                        extraData={augmentedFeed}
                         keyExtractor={(item) => `${item.__typename}-${item.id}`}
                         renderItem={renderFeedItem}
                         contentContainerStyle={styles.listContainer}
@@ -467,6 +550,15 @@ export default function FeedScreen() {
             <PostOptionsModal
                 visible={isOptionsMenuVisible}
                 onClose={() => setIsOptionsMenuVisible(false)}
+                isOwner={
+                    selectedPost?.author?.id === currentUser?.id || 
+                    selectedPost?.seller?.id === currentUser?.id ||
+                    selectedPost?.user?.id === currentUser?.id
+                }
+                onReport={() => {
+                    setIsOptionsMenuVisible(false);
+                    setIsReportModalVisible(true);
+                }}
                 onEdit={() => {
                     if (selectedPost) {
                         const type = selectedPost.__typename;
@@ -474,20 +566,23 @@ export default function FeedScreen() {
                         // Ya no cerramos el CommentsModal aquí para que permanezca abierto al terminar de editar
 
                         if (type === 'StoreProduct') {
-                            setEditingProduct(selectedPost);
+                            setEditingProduct({ ...selectedPost, id: selectedPost.realId || selectedPost.id });
                             setIsStoreModalVisible(true);
+                        } else if (type === 'Ad' || selectedPost.isAd) {
+                            setEditingLocalAd({ ...selectedPost, id: selectedPost.realId || selectedPost.id });
+                            setIsLocalAdModalVisible(true);
                         } else if (type === 'JobOffer' || type === 'ProfessionalProfile') {
                             router.push({
                                 pathname: '/jobs/create',
                                 params: { 
-                                    editId: selectedPost.id, 
-                                    editData: JSON.stringify(selectedPost),
+                                    editId: selectedPost.realId || selectedPost.id, 
+                                    editData: JSON.stringify({ ...selectedPost, id: selectedPost.realId || selectedPost.id }),
                                     initialTab: type === 'ProfessionalProfile' ? 'service' : 'offer'
                                 }
                             });
                         } else {
                             // Default: Post
-                            setEditingPostId(selectedPost.id);
+                            setEditingPostId(selectedPost.realId || selectedPost.id);
                             setEditingPostContent(selectedPost.content);
                             setEditingPostTitle(selectedPost.title || '');
                             setEditingPostMedia(selectedPost.media || []);
@@ -542,14 +637,16 @@ export default function FeedScreen() {
 
                         const onError = (err: any) => Toast.show({ type: 'error', text1: 'Error', text2: err.message });
                         
+                        const targetId = selectedPost.realId || selectedPost.id;
+                        
                         if (!type || type === 'Post') {
-                            deletePost({ variables: { id: selectedPost.id } }).then(() => afterDelete(selectedPost.id, 'Post')).catch(onError);
+                            deletePost({ variables: { id: targetId } }).then(() => afterDelete(targetId, 'Post')).catch(onError);
                         } else if (type === 'StoreProduct') {
-                            deleteStoreProduct({ variables: { id: selectedPost.id } }).then(() => afterDelete(selectedPost.id, 'StoreProduct')).catch(onError);
+                            deleteStoreProduct({ variables: { id: targetId } }).then(() => afterDelete(targetId, 'StoreProduct')).catch(onError);
                         } else if (type === 'JobOffer') {
-                            deleteJobOffer({ variables: { id: selectedPost.id } }).then(() => afterDelete(selectedPost.id, 'JobOffer')).catch(onError);
+                            deleteJobOffer({ variables: { id: targetId } }).then(() => afterDelete(targetId, 'JobOffer')).catch(onError);
                         } else if (type === 'ProfessionalProfile') {
-                            deleteProfessionalProfile({ variables: { id: selectedPost.id } }).then(() => afterDelete(selectedPost.id, 'ProfessionalProfile')).catch(onError);
+                            deleteProfessionalProfile({ variables: { id: targetId } }).then(() => afterDelete(targetId, 'ProfessionalProfile')).catch(onError);
                         }
                     }
                 }}
@@ -566,21 +663,54 @@ export default function FeedScreen() {
                 editItem={editingProduct}
             />
 
+            {/* Modal para Editar Anuncio Local desde el Feed */}
+            <CreateLocalAdModal
+                visible={isLocalAdModalVisible}
+                onClose={() => {
+                    setIsLocalAdModalVisible(false);
+                    setEditingLocalAd(null);
+                }}
+                onSuccess={(updatedAd) => {
+                    setIsLocalAdModalVisible(false);
+                    if (updatedAd && editingLocalAd) {
+                        // Encontrar la clave posicional en loadedAds y actualizar los datos en tiempo real
+                        const posKey = Object.keys(loadedAds).find(
+                            key => loadedAds[key]?.id === editingLocalAd.id || loadedAds[key]?.realId === editingLocalAd.id
+                        );
+                        if (posKey) {
+                            setLoadedAds(prev => ({
+                                ...prev,
+                                [posKey]: {
+                                    ...prev[posKey],
+                                    ...updatedAd,
+                                    realId: updatedAd.id, // Preservar UUID real
+                                    type: 'LOCAL',
+                                },
+                            }));
+                        }
+                    }
+                    setEditingLocalAd(null);
+                }}
+                ad={editingLocalAd}
+            />
+
             {/* CommentsModal — siempre montado para mantener estado y UI fluida */}
             <CommentsModal
                 visible={!!selectedPostForComments}
                 post={
                     selectedPostForComments
-                        ? (data?.getFeed?.find((p: any) => p.id === selectedPostForComments.post?.id) ?? selectedPostForComments.post)
+                        ? (selectedPostForComments.post?.isAd 
+                            ? selectedPostForComments.post 
+                            : (augmentedFeed.find((p: any) => p.id === selectedPostForComments.post?.id) ?? selectedPostForComments.post))
                         : null
                 }
                 nextPost={(() => {
-                    const feed = data?.getFeed || [];
+                    const feed = augmentedFeed;
                     const currentIndex = feed.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     return (currentIndex !== -1 && currentIndex < feed.length - 1) ? feed[currentIndex + 1] : null;
                 })()}
                 prevPost={(() => {
-                    const feed = data?.getFeed || [];
+                    const feed = augmentedFeed;
                     const currentIndex = feed.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     return (currentIndex > 0) ? feed[currentIndex - 1] : null;
                 })()}
@@ -589,7 +719,7 @@ export default function FeedScreen() {
                 initialTab={selectedPostForComments?.initialTab}
                 initialExpanded={selectedPostForComments?.initialExpanded}
                 onNextPost={() => {
-                    const feed = data?.getFeed || [];
+                    const feed = augmentedFeed;
                     const currentIndex = feed.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
 
                     if (currentIndex !== -1) {
@@ -612,7 +742,7 @@ export default function FeedScreen() {
                     }
                 }}
                 onPrevPost={() => {
-                    const feed = data?.getFeed || [];
+                    const feed = augmentedFeed;
                     const currentIndex = feed.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     if (currentIndex > 0) {
                         setSelectedPostForComments({
@@ -628,6 +758,25 @@ export default function FeedScreen() {
                     setIsOptionsMenuVisible(true);
                 }}
                 hasMorePosts={hasMore}
+            />
+
+            <ReportModal
+                visible={isReportModalVisible}
+                onClose={() => setIsReportModalVisible(false)}
+                reportedItemId={selectedPost?.realId || selectedPost?.id || ''}
+                reportedItemType={
+                    selectedPost?.__typename === 'StoreProduct' ? 'PRODUCT' :
+                    selectedPost?.__typename === 'JobOffer' ? 'JOB_OFFER' :
+                    selectedPost?.__typename === 'ProfessionalProfile' ? 'PROFESSIONAL_PROFILE' :
+                    'POST'
+                }
+                onContentDeleted={() => {
+                    if (selectedPost) {
+                        apolloClient.cache.evict({ id: apolloClient.cache.identify({ __typename: selectedPost.__typename, id: selectedPost.id }) });
+                        apolloClient.cache.gc();
+                    }
+                    setIsReportModalVisible(false);
+                }}
             />
         </SafeAreaView>
     );

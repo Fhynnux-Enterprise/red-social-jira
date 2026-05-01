@@ -211,16 +211,9 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
                 </View>
               </TouchableOpacity>
 
-              {isOwner && (
-                <TouchableOpacity onPress={() => setMenuVisible(true)} style={styles.ellipsis} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                  <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-                </TouchableOpacity>
-              )}
-              {!isOwner && (
-                <TouchableOpacity onPress={() => setReportVisible(true)} style={styles.ellipsis} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                  <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity onPress={() => setMenuVisible(true)} style={styles.ellipsis} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -354,21 +347,32 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
                   <View style={[styles.menuHandle, { backgroundColor: isDark ? '#444' : '#DDD' }]} />
                   <Text style={[styles.menuTitle, { color: colors.text }]}>Opciones</Text>
                   
-                  {onEdit && (
-                    <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); onEdit(item); }}>
+                  {isOwner ? (
+                    <>
+                      {onEdit && (
+                        <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); onEdit(item); }}>
+                          <View style={[styles.menuIconWrap, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
+                            <Ionicons name="pencil" size={20} color={colors.text} />
+                          </View>
+                          <Text style={[styles.menuLabel, { color: colors.text }]}>Editar producto</Text>
+                        </TouchableOpacity>
+                      )}
+                      
+                      <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); setTimeout(() => setConfirmDelete(true), 150); }}>
+                        <View style={[styles.menuIconWrap, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
+                          <Ionicons name="trash" size={20} color="#FF3B30" />
+                        </View>
+                        <Text style={[styles.menuLabel, { color: '#FF3B30' }]}>Eliminar producto</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); setReportVisible(true); }}>
                       <View style={[styles.menuIconWrap, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
-                        <Ionicons name="pencil" size={20} color={colors.text} />
+                        <Ionicons name="flag" size={20} color={colors.text} />
                       </View>
-                      <Text style={[styles.menuLabel, { color: colors.text }]}>Editar producto</Text>
+                      <Text style={[styles.menuLabel, { color: colors.text }]}>Reportar producto</Text>
                     </TouchableOpacity>
                   )}
-                  
-                  <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); setTimeout(() => setConfirmDelete(true), 150); }}>
-                    <View style={[styles.menuIconWrap, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
-                      <Ionicons name="trash" size={20} color="#FF3B30" />
-                    </View>
-                    <Text style={[styles.menuLabel, { color: '#FF3B30' }]}>Eliminar producto</Text>
-                  </TouchableOpacity>
                   
                   <TouchableOpacity style={[styles.menuItem, { marginTop: 10, borderBottomWidth: 0 }]} onPress={() => setMenuVisible(false)}>
                     <View style={[styles.menuIconWrap, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>

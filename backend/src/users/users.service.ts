@@ -165,7 +165,6 @@ export class UsersService {
 
     return this.userRepository.createQueryBuilder('user')
       .where('(user.username ILIKE :term OR user.firstName ILIKE :term OR user.lastName ILIKE :term)', { term: `%${searchTerm}%` })
-      .andWhere('user.id != :currentUserId', { currentUserId })
       .andWhere('(user.bannedUntil IS NULL OR user.bannedUntil < :now)', { now: new Date() })
       .take(limit)
       .skip(offset)

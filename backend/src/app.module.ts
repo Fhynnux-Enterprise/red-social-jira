@@ -25,6 +25,8 @@ import { GqlAuthGuard } from './auth/guards/gql-auth.guard';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AppealsModule } from './appeals/appeals.module';
 import { UserBlocksModule } from './user-blocks/user-blocks.module';
+import { AdsModule } from './ads/ads.module';
+import { AdvertisersModule } from './advertisers/advertisers.module';
 
 @Module({
   imports: [
@@ -98,6 +100,8 @@ import { UserBlocksModule } from './user-blocks/user-blocks.module';
     NotificationsModule,
     AppealsModule,
     UserBlocksModule,
+    AdsModule,
+    AdvertisersModule,
   ],
   controllers: [],
   providers: [GqlAuthGuard],

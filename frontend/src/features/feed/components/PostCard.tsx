@@ -172,26 +172,14 @@ export default function PostCard({
                     </View>
                 </TouchableOpacity>
 
-                {/* Options menu */}
-                {item.author.id === userId && (
-                    <TouchableOpacity
-                        onPress={() => onOptionsPress?.(item)}
-                        style={styles.moreBtn}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                        <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                )}
-                {/* Botones para no-dueños */}
-                {item.author.id !== userId && (
-                    <TouchableOpacity
-                        onPress={() => setReportVisible(true)}
-                        style={styles.moreBtn}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                        <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                )}
+                {/* Options menu (Siempre visible) */}
+                <TouchableOpacity
+                    onPress={() => onOptionsPress?.(item)}
+                    style={styles.moreBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                    <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
             </View>
 
             {/* ── Contenido ── */}

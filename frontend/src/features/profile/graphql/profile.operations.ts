@@ -128,6 +128,7 @@ export const GET_ME = gql`
       email
       photoUrl
       coverUrl
+      role
     }
   }
 `;

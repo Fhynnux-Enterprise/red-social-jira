@@ -17,6 +17,7 @@ import JobsScreen from '../features/jobs/screens/JobsScreen';
 import StoreScreen from '../features/store/screens/StoreScreen';
 import NotificationsScreen from '../features/notifications/screens/NotificationsScreen';
 import ModerationScreen from '../features/moderation/screens/ModerationScreen';
+import AdminScreen from '../features/moderation/screens/AdminScreen';
 import BannedScreen from '../features/auth/screens/BannedScreen';
 import { useTheme } from '../theme/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -32,7 +33,8 @@ export type AppStackParamList = {
     NewChat: undefined;
     Profile: { userId?: string } | undefined;
     StoryViewer: { userId: string; initialStoryId?: string };
-    Moderation: undefined;
+    Moderation: { initialTab?: string } | undefined;
+    Admin: undefined;
 };
 
 export type AppTabParamList = {
@@ -248,6 +250,11 @@ export default function AppNavigator() {
             <Stack.Screen
                 name="Moderation"
                 component={ModerationScreen}
+                options={{ animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+                name="Admin"
+                component={AdminScreen}
                 options={{ animation: 'slide_from_right' }}
             />
         </Stack.Navigator>

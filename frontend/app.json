@@ -18,11 +18,22 @@
         "foregroundImage": "./assets/images/icon.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "config": {
+        "googleMobileAds": {
+          "androidAppId": "ca-app-pub-7868058661453955~5852649017"
+        }
+      }
     },
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
+    },
+    "extra": {
+      "react-native-google-mobile-ads": {
+        "androidAppId": "ca-app-pub-7868058661453955~5852649017",
+        "iosAppId": "ca-app-pub-7868058661453955~5852649017"
+      }
     },
     "plugins": [
       "expo-router",
@@ -49,11 +60,22 @@
           "microphonePermission": "Permite que Chunchi City use el micrófono para grabar mensajes de voz."
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-7868058661453955~5852649017",
+          "iosAppId": "ca-app-pub-7868058661453955~5852649017"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     }
+  },
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-7868058661453955~5852649017",
+    "ios_app_id": "ca-app-pub-7868058661453955~5852649017"
   }
 }
