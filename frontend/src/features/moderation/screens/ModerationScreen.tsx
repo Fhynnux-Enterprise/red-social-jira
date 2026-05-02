@@ -11,12 +11,13 @@ import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
 import { useApolloClient } from '@apollo/client/react';
 import Toast from 'react-native-toast-message';
 import { useTheme } from '../../../theme/ThemeContext';
-import { GET_ALL_REPORTS, RESOLVE_REPORT, DISMISS_REPORT, GET_POST_BY_ID, GET_STORE_PRODUCT_BY_ID, GET_JOB_OFFER_BY_ID, GET_COMMENT_BY_ID, GET_STORE_PRODUCT_COMMENT_BY_ID, GET_PROFESSIONAL_PROFILE_BY_ID, UNBAN_USER, GET_BANNED_USERS, GET_USER_MINIMAL_PROFILE, GET_PENDING_APPEALS, RESOLVE_APPEAL } from '../graphql/moderation.operations';
+import { GET_ALL_REPORTS, RESOLVE_REPORT, DISMISS_REPORT, GET_POST_BY_ID, GET_STORE_PRODUCT_BY_ID, GET_JOB_OFFER_BY_ID, GET_COMMENT_BY_ID, GET_STORE_PRODUCT_COMMENT_BY_ID, GET_PROFESSIONAL_PROFILE_BY_ID, UNBAN_USER, GET_BANNED_USERS, GET_USER_MINIMAL_PROFILE, GET_PENDING_APPEALS, RESOLVE_APPEAL, GET_LOCAL_AD_BY_ID } from '../graphql/moderation.operations';
 import PostCard from '../../feed/components/PostCard';
 import StoreProductCard from '../../store/components/StoreProductCard';
 import JobOfferCard from '../../jobs/components/JobOfferCard';
 import ProfessionalCard from '../../jobs/components/ProfessionalCard';
 import CommentsModal from '../../comments/components/CommentsModal';
+import NativeAdCard from '../../ads/components/NativeAdCard';
 import BanUserModal from '../components/BanUserModal';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -32,6 +33,7 @@ const TYPE_LABEL: Record<string, string> = {
     PRODUCT: 'Producto de Tienda',
     COMMENT: 'Comentario',
     USER: 'Reporte a usuario',
+    LOCAL_AD: 'Anuncio Local',
 };
 
 const TYPE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -41,6 +43,7 @@ const TYPE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
     PRODUCT: 'storefront-outline',
     COMMENT: 'chatbubble-outline',
     USER: 'person-outline',
+    LOCAL_AD: 'megaphone-outline',
 };
 
 export default function ModerationScreen() {
@@ -289,6 +292,7 @@ export default function ModerationScreen() {
     const [getComment] = useLazyQuery(GET_COMMENT_BY_ID);
     const [getStoreComment] = useLazyQuery(GET_STORE_PRODUCT_COMMENT_BY_ID);
     const [getUser] = useLazyQuery(GET_USER_MINIMAL_PROFILE);
+    const [getLocalAd] = useLazyQuery(GET_LOCAL_AD_BY_ID);
     const [fetchingItem, setFetchingItem] = useState(false);
 
     const handleReportPress = async (item: any) => {
@@ -330,6 +334,9 @@ export default function ModerationScreen() {
             } else if (item.reportedItemType === 'USER') {
                 res = await getUser({ variables: { id: item.reportedItemId } });
                 setFetchedItem(res.data?.getUserProfile);
+            } else if (item.reportedItemType === 'LOCAL_AD') {
+                res = await getLocalAd({ variables: { id: item.reportedItemId } });
+                setFetchedItem(res.data?.getLocalAdById);
             } else {
                 // Si no hay endpoint para este tipo (ej: SERVICE)
                 console.log('[Moderation] Unhandled type:', item.reportedItemType);
@@ -862,6 +869,11 @@ export default function ModerationScreen() {
                             )}
                             {selectedReport?.reportedItemType === 'SERVICE' && (
                                 <ProfessionalCard item={fetchedItem} isModalView />
+                            )}
+                            {selectedReport?.reportedItemType === 'LOCAL_AD' && (
+                                <View style={{ pointerEvents: 'none' }}>
+                                    <NativeAdCard adData={{ ...fetchedItem, type: 'LOCAL' }} />
+                                </View>
                             )}
                             {selectedReport?.reportedItemType === 'COMMENT' && (
                                 <View style={{ padding: 10 }}>

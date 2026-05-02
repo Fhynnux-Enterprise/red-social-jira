@@ -351,3 +351,29 @@ export const RESOLVE_APPEAL = gql`
         }
     }
 `;
+
+export const GET_LOCAL_AD_BY_ID = gql`
+    query GetLocalAdById($id: String!) {
+        getLocalAdById(id: $id) {
+            id
+            title
+            description
+            actionUrl
+            actionLabel
+            whatsappPhone
+            isActive
+            createdAt
+            advertiser {
+                id
+                firstName
+                lastName
+                username
+                photoUrl
+            }
+            media {
+                url
+                type
+            }
+        }
+    }
+`;

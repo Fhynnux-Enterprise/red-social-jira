@@ -16,6 +16,8 @@ import { TOGGLE_FOLLOW, IS_FOLLOWING } from '../../follows/graphql/follows.opera
 import { BLOCK_USER, UNBLOCK_USER } from '../../user-blocks/graphql/user-blocks.operations';
 import { GET_STORE_PRODUCTS_BY_USER, DELETE_STORE_PRODUCT } from '../../store/graphql/store.operations';
 import { GET_JOB_OFFERS_BY_USER, GET_PROFESSIONAL_PROFILES_BY_USER, DELETE_JOB_OFFER, DELETE_PROFESSIONAL_PROFILE } from '../../jobs/graphql/jobs.operations';
+import { GET_ADVERTISER_ADS } from '../../advertisers/graphql/advertisers.operations';
+import NativeAdCard from '../../ads/components/NativeAdCard';
 import CreatePostModal from '../../feed/components/CreatePostModal';
 import PostOptionsModal from '../../feed/components/PostOptionsModal';
 import PostCard from '../../feed/components/PostCard';
@@ -266,6 +268,12 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         fetchPolicy: 'cache-and-network',
     });
 
+    const { data: adsData, refetch: refetchAds } = useQuery<any>(GET_ADVERTISER_ADS, {
+        variables: { userId: profileUserId },
+        skip: !profileUserId,
+        fetchPolicy: 'cache-and-network',
+    });
+
     // ── Mutations ─────────────────────────────────────────────────────────────
     const [toggleFollow] = useMutation<any>(TOGGLE_FOLLOW, {
         variables: { followingId: profileUserId },
@@ -404,15 +412,26 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         [jobOffers, professionalProfiles]
     );
 
-    // Tab "Todo": posts + productos de tienda + empleos, ordenados por fecha
+    const localAds = useMemo(
+        () => (adsData?.getAdvertiserAds || []).map((ad: any) => ({ 
+            ...ad, 
+            __itemType: 'ad', 
+            __typename: 'LocalAd',
+            type: 'LOCAL'
+        })),
+        [adsData]
+    );
+
+    // Tab "Todo": posts + productos de tienda + empleos + ads, ordenados por fecha
     const allTabData = useMemo(() => {
         const posts = (userData?.posts || []).map((p: any) => ({ ...p, __itemType: 'post', __typename: p.__typename || 'Post', author: userData }));
         const store = storeProducts.map((p: any) => ({ ...p, __itemType: 'store', __typename: p.__typename || 'StoreProduct' }));
         const jobs = [...jobOffers, ...professionalProfiles];
-        return [...posts, ...store, ...jobs].sort(
+        const ads = localAds;
+        return [...posts, ...store, ...jobs, ...ads].sort(
             (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
-    }, [userData, storeProducts, jobOffers, professionalProfiles]);
+    }, [userData, storeProducts, jobOffers, professionalProfiles, localAds]);
 
     // Reset hasMore when switching profiles
     useEffect(() => {
@@ -443,6 +462,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 refetchStore(),
                 refetchJobOffers(),
                 refetchProfs(),
+                refetchAds(),
             ]);
         } catch (error) {
             if (!(error as any)?.message?.includes('Usuario no encontrado')) {
@@ -727,6 +747,17 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 />
             );
         }
+        if (type === 'ad') {
+            return (
+                <View style={{ marginBottom: 12 }}>
+                    <NativeAdCard 
+                        adData={item}
+                        onPress={(ad) => openInModal(false)}
+                        onDelete={onRefresh}
+                    />
+                </View>
+            );
+        }
         // Fallback seguro: no renderizar nada si el tipo es desconocido
         return null;
     }, [currentUserId, visiblePostId, isFocused, userData, stableHandleEdit, stableHandleOptionsPress, stableOnOpenComments]);
@@ -736,6 +767,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         if (type === 'store') return `store-${item.id}`;
         if (type === 'job') return `job-${item.id}`;
         if (type === 'professional') return `prof-${item.id}`;
+        if (type === 'ad') return `ad-${item.id}`;
         return `post-${item.id}`;
     }, []);
 

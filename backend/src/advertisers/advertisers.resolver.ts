@@ -30,6 +30,12 @@ export class AdvertisersResolver {
     return this.advertisersService.getAllLocalAds();
   }
 
+  @Query(() => LocalAd, { name: 'getLocalAdById', nullable: true })
+  @UseGuards(GqlAuthGuard)
+  async getLocalAdById(@Args('id') id: string): Promise<LocalAd | null> {
+    return this.advertisersService.reloadLocalAd(id).catch(() => null);
+  }
+
   @Query(() => [LocalAd], { name: 'getAdvertiserAds' })
   @UseGuards(GqlAuthGuard)
   async getAdvertiserAds(@Args('userId') userId: string): Promise<LocalAd[]> {

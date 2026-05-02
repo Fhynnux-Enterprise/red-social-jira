@@ -30,7 +30,7 @@ export class AdsService {
     if (random <= localProbability) {
       // 3. Buscar anuncios locales de anunciantes con permisos activos y no expirados
       const localAds = await this.localAdRepo.createQueryBuilder('ad')
-        .innerJoinAndSelect('ad.media', 'media')
+        .leftJoinAndSelect('ad.media', 'media')
         .innerJoinAndSelect('ad.advertiser', 'advertiser')
         .innerJoin('advertiser_permissions', 'perm', 'perm.user_id = ad.advertiser_id')
         .where('ad.is_active = :isActive', { isActive: true })

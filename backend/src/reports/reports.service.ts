@@ -13,6 +13,7 @@ import { Comment } from '../comments/entities/comment.entity';
 import { StoreProductComment } from '../store/entities/store-product-comment.entity';
 import { JobOffer } from '../jobs/entities/job-offer.entity';
 import { ProfessionalProfile } from '../jobs/entities/professional-profile.entity';
+import { LocalAd } from '../advertisers/entities/local-ad.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/enums/notification.enums';
 
@@ -60,6 +61,8 @@ export class ReportsService implements OnModuleInit {
         private readonly jobOfferRepository: Repository<JobOffer>,
         @InjectRepository(ProfessionalProfile)
         private readonly professionalProfileRepository: Repository<ProfessionalProfile>,
+        @InjectRepository(LocalAd)
+        private readonly localAdRepository: Repository<LocalAd>,
         private readonly notificationsService: NotificationsService,
     ) {}
 
@@ -369,6 +372,14 @@ export class ReportsService implements OnModuleInit {
             console.log(`[Moderation] SERVICE (ProfessionalProfile) ${itemId} hard-deleted.`);
         } else if (type === ReportedItemType.USER) {
             ownerId = itemId;
+        } else if (type === ReportedItemType.LOCAL_AD) {
+            const ad = await this.localAdRepository.findOne({ where: { id: itemId }, relations: ['advertiser'] });
+            if (ad) {
+                ownerId = ad.advertiser?.id ?? null;
+                // Hard-delete del anuncio local
+                await this.localAdRepository.delete({ id: itemId });
+                console.log(`[Moderation] LOCAL_AD ${itemId} hard-deleted.`);
+            }
         }
 
         return ownerId;

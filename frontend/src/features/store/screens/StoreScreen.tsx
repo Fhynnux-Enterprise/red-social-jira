@@ -15,6 +15,9 @@ import CommentsModal from '../../comments/components/CommentsModal';
 import ListFooter from '../../../components/ListFooter';
 import PostOptionsModal from '../../feed/components/PostOptionsModal';
 import Toast from 'react-native-toast-message';
+import { GET_AD_FREQUENCY } from '../../ads/graphql/ads.operations';
+import NativeAdCard from '../../ads/components/NativeAdCard';
+import { useFocusEffect } from '@react-navigation/native';
 
 interface TabConfig {
   key: TabKey;
@@ -90,7 +93,54 @@ export default function StoreScreen() {
     fetchPolicy: 'cache-and-network',
   });
 
-  const products = activeTab === 'all' ? (allData?.storeProducts ?? []) : (mineData?.myStoreProducts ?? []);
+  const [adFrequency, setAdFrequency] = useState(5);
+  const [loadedAds, setLoadedAds] = useState<Record<string, any>>({});
+  
+  const { data: configData, refetch: refetchAdFrequency } = useQuery(GET_AD_FREQUENCY, {
+    fetchPolicy: 'network-only',
+  });
+
+  React.useEffect(() => {
+    if (configData?.getAdFrequency != null) {
+      setAdFrequency(configData.getAdFrequency);
+    }
+  }, [configData?.getAdFrequency]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      refetchAdFrequency();
+    }, [refetchAdFrequency])
+  );
+
+  const injectAds = React.useCallback((items: any[], freq: number, cachedAds: Record<string, any>) => {
+    const result: any[] = [];
+    items.forEach((item, index) => {
+      result.push(item);
+      if ((index + 1) % freq === 0) {
+        const adId = `ad-after-${item.id}`;
+        const cachedAd = cachedAds[adId] || {};
+        if (cachedAd.isDeleted) return;
+        result.push({
+          ...cachedAd,
+          realId: cachedAd.id || cachedAd.realId,
+          id: adId,
+          isAd: true,
+          __typename: 'Ad',
+        });
+      }
+    });
+    return result;
+  }, []);
+
+  const rawProducts = activeTab === 'all' ? (allData?.storeProducts ?? []) : (mineData?.myStoreProducts ?? []);
+  const products = React.useMemo(() => {
+      if (activeTab === 'all') {
+          const freq = configData?.getAdFrequency ?? adFrequency;
+          return injectAds(rawProducts, freq, loadedAds);
+      }
+      return rawProducts;
+  }, [activeTab, rawProducts, configData, adFrequency, injectAds, loadedAds]);
+
   const loading = activeTab === 'all' ? loadingAll : loadingMine;
 
   const commentsModalData = React.useMemo(() => {
@@ -252,15 +302,43 @@ export default function StoreScreen() {
         <FlatList
           data={products}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <StoreProductCard
-              item={item}
-              cardWidth={undefined}
-              onEdit={handleEdit}
-              onPress={() => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' })}
-              onCommentPress={() => setSelectedPostForComments({ post: item, minimize: false, initialTab: 'comments' })}
-            />
-          )}
+          renderItem={({ item }) => {
+            if (item.isAd) {
+              const cachedAdData = loadedAds[item.id];
+              const adDataToPass = cachedAdData
+                  ? { ...cachedAdData, id: cachedAdData.realId || cachedAdData.id }
+                  : (item.type || item.title ? { ...item, id: item.realId || item.id } : undefined);
+              return (
+                  <View style={{ marginBottom: 12 }}>
+                      <NativeAdCard 
+                          adData={adDataToPass}
+                          onAdLoaded={(adData) => {
+                              if (!loadedAds[item.id]) {
+                                  setLoadedAds(prev => ({ ...prev, [item.id]: adData }));
+                              }
+                          }}
+                          onDelete={() => {
+                              setLoadedAds(prev => ({ ...prev, [item.id]: { ...prev[item.id], isDeleted: true } }));
+                          }}
+                          onPress={(ad) => setSelectedPostForComments({ 
+                              post: { ...ad, id: item.id, realId: ad.realId || ad.id }, 
+                              minimize: true, 
+                              initialTab: 'comments' 
+                          })} 
+                      />
+                  </View>
+              );
+            }
+            return (
+              <StoreProductCard
+                item={item}
+                cardWidth={undefined}
+                onEdit={handleEdit}
+                onPress={() => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' })}
+                onCommentPress={() => setSelectedPostForComments({ post: item, minimize: false, initialTab: 'comments' })}
+              />
+            );
+          }}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={renderEmpty}

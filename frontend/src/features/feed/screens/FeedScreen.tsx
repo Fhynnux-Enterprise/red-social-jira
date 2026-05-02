@@ -160,6 +160,10 @@ export default function FeedScreen() {
             if ((index + 1) % freq === 0) {
                 const adId = `ad-after-${item.id}`;
                 const cachedAd = cachedAds[adId] || {};
+                
+                // Si el anuncio fue borrado u ocultado localmente, no lo inyectamos
+                if (cachedAd.isDeleted) return;
+
                 result.push({
                     ...cachedAd,
                     realId: cachedAd.id || cachedAd.realId, // Preservar el UUID real
@@ -320,6 +324,10 @@ export default function FeedScreen() {
                     if (!loadedAds[item.id]) {
                         setLoadedAds(prev => ({ ...prev, [item.id]: adData }));
                     }
+                }}
+                onDelete={() => {
+                    // Marcar el anuncio como borrado en el caché local del feed
+                    setLoadedAds(prev => ({ ...prev, [item.id]: { ...prev[item.id], isDeleted: true } }));
                 }}
                 onPress={(ad) => setSelectedPostForComments({ 
                     post: { ...ad, id: item.id, realId: ad.realId || ad.id }, 
@@ -715,6 +723,12 @@ export default function FeedScreen() {
                     return (currentIndex > 0) ? feed[currentIndex - 1] : null;
                 })()}
                 onClose={() => setSelectedPostForComments(null)}
+                onDelete={() => {
+                    if (selectedPostForComments?.post?.id) {
+                        const adId = selectedPostForComments.post.id;
+                        setLoadedAds(prev => ({ ...prev, [adId]: { ...prev[adId], isDeleted: true } }));
+                    }
+                }}
                 initialMinimized={selectedPostForComments?.minimize}
                 initialTab={selectedPostForComments?.initialTab}
                 initialExpanded={selectedPostForComments?.initialExpanded}

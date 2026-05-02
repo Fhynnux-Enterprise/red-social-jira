@@ -20,7 +20,7 @@ import { useAuth } from '../../auth/context/AuthContext';
 import { CREATE_REPORT, DIRECT_MODERATE_CONTENT } from '../graphql/reports.operations';
 
 // ── Tipos de contenido soportados ──────────────────────────────────────────
-export type ReportedItemType = 'POST' | 'JOB_OFFER' | 'SERVICE' | 'PRODUCT' | 'COMMENT';
+export type ReportedItemType = 'POST' | 'JOB_OFFER' | 'SERVICE' | 'PRODUCT' | 'COMMENT' | 'LOCAL_AD';
 
 interface ReportReason {
     id: string;

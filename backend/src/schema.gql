@@ -354,6 +354,7 @@ enum ReportedItemType {
   PRODUCT
   COMMENT
   USER
+  LOCAL_AD
 }
 
 type Notification {
@@ -385,29 +386,6 @@ type ApplyToJobResponse {
   cvPublicUrl: String!
 }
 
-type Appeal {
-  id: ID!
-  reason: String!
-  status: AppealStatus!
-  type: AppealType!
-  referenceId: ID
-  user: User!
-  createdAt: DateTime!
-}
-
-"""Estado de la apelación"""
-enum AppealStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-"""Tipo de apelación"""
-enum AppealType {
-  ACCOUNT_BAN
-  CONTENT_DELETION
-}
-
 type LocalAdMedia {
   id: ID!
   url: String!
@@ -429,6 +407,29 @@ type LocalAd {
   clicks: Int!
   media: [LocalAdMedia!]
   createdAt: DateTime!
+}
+
+type Appeal {
+  id: ID!
+  reason: String!
+  status: AppealStatus!
+  type: AppealType!
+  referenceId: ID
+  user: User!
+  createdAt: DateTime!
+}
+
+"""Estado de la apelación"""
+enum AppealStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+"""Tipo de apelación"""
+enum AppealType {
+  ACCOUNT_BAN
+  CONTENT_DELETION
 }
 
 type AdDecision {
@@ -502,6 +503,7 @@ type Query {
   getAdProbability: Int!
   getAdvertiserPermissions(search: String, limit: Int, offset: Int): [AdvertiserPermission!]!
   getAllLocalAds: [LocalAd!]!
+  getLocalAdById(id: String!): LocalAd
   getAdvertiserAds(userId: String!): [LocalAd!]!
   hasAdvertiserPermission: Boolean!
   getMyAdvertiserPermission: AdvertiserPermission

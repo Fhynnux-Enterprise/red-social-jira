@@ -28,7 +28,7 @@ export class AdvertisersService {
     return result;
   }
 
-  private async reloadLocalAd(id: string): Promise<LocalAd> {
+  async reloadLocalAd(id: string): Promise<LocalAd> {
     const result = await this.localAdRepo.findOne({
       where: { id },
       relations: ['advertiser', 'media'],

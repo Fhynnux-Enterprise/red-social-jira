@@ -33,6 +33,7 @@ import JobOfferCard from '../../jobs/components/JobOfferCard';
 import ProfessionalCard from '../../jobs/components/ProfessionalCard';
 import StoreProductCard from '../../store/components/StoreProductCard';
 import NativeAdCard from '../../ads/components/NativeAdCard';
+import PostOptionsModal from '../../feed/components/PostOptionsModal';
 
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -77,12 +78,14 @@ export interface CommentsModalProps {
     hasMorePosts?: boolean;
     onOptionsPress?: (post: any) => void;
     initialExpanded?: boolean;
+    /** Callback cuando se elimina un anuncio local, para que el Feed lo quite en tiempo real */
+    onDelete?: () => void;
 }
 export default function CommentsModal({
     visible, post, onClose,
     initialMinimized = false, initialTab = 'comments',
     onNextPost, onPrevPost, nextPost, prevPost, hasMorePosts = false,
-    onOptionsPress, initialExpanded = false
+    onOptionsPress, initialExpanded = false, onDelete
 }: CommentsModalProps) {
     const isFocused = useIsFocused();
     const { colors, isDark } = useTheme();
@@ -104,6 +107,7 @@ export default function CommentsModal({
     const [isExpanded, setIsExpanded] = useState(false);
     const [reportVisible, setReportVisible] = useState(false);
     const [postReportVisible, setPostReportVisible] = useState(false);
+    const [isPostOptionsMenuVisible, setIsPostOptionsMenuVisible] = useState(false);
     const inputRef = useRef<TextInput>(null);
     const scrollViewRef = useRef<ScrollView>(null);
     const nativeAdRef = useRef<any>(null);
@@ -195,13 +199,13 @@ export default function CommentsModal({
     };
 
     // Almacenamos los callbacks actualizados en una referencia porque el PanResponder guarda las variables del primer render
-    const callbacksRef = useRef({ onNextPost, onPrevPost, hasMorePosts });
+    const callbacksRef = useRef({ onNextPost, onPrevPost, hasMorePosts, onDelete });
     // IGUAL para nextPost/prevPost: el PanResponder los lee desde la ref, no del closure inicial
     const navRef = useRef({ nextPost, prevPost });
     useEffect(() => {
-        callbacksRef.current = { onNextPost, onPrevPost, hasMorePosts };
+        callbacksRef.current = { onNextPost, onPrevPost, hasMorePosts, onDelete };
         navRef.current = { nextPost, prevPost };
-    }, [onNextPost, onPrevPost, nextPost, prevPost, hasMorePosts]);
+    }, [onNextPost, onPrevPost, nextPost, prevPost, hasMorePosts, onDelete]);
 
     const toggleMinimize = () => {
         // Para no-Posts (Ofertas/Servicios) temporalmente bloqueamos, excepto Store
@@ -1211,6 +1215,17 @@ export default function CommentsModal({
                                         isImmersive={true}
                                         adData={post}
                                         onMediaLayout={(layout) => setAdMediaLayout(layout)}
+                                        onDelete={() => {
+                                            // Notificar al FeedScreen para que quite el anuncio en tiempo real
+                                            callbacksRef.current.onDelete?.();
+                                            // Navegar al siguiente post o cerrar si no hay más
+                                            if (navRef.current.nextPost || callbacksRef.current.hasMorePosts) {
+                                                lastSwipeDir.current = 'up';
+                                                callbacksRef.current.onNextPost?.();
+                                            } else {
+                                                closeWithAnimation();
+                                            }
+                                        }}
                                     />
 
                                     {/* Overlay transparente sobre el área superior para capturar swipes.
@@ -1340,11 +1355,11 @@ export default function CommentsModal({
                                                 )}
                                                 {!isOwner && (
                                                     <TouchableOpacity
-                                                        onPress={() => setPostReportVisible(true)}
+                                                        onPress={() => setIsPostOptionsMenuVisible(true)}
                                                         style={{ marginRight: 16 }}
                                                         hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
                                                     >
-                                                        <Ionicons name="flag-outline" size={20} color={colors.textSecondary} />
+                                                        <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
                                                     </TouchableOpacity>
                                                 )}
                                             </>
@@ -1818,6 +1833,19 @@ export default function CommentsModal({
                     }}
                 />
             )}
+
+            {/* Menú de opciones para publicaciones ajenas - reutiliza PostOptionsModal para mantener coherencia visual */}
+            <PostOptionsModal
+                visible={isPostOptionsMenuVisible}
+                onClose={() => setIsPostOptionsMenuVisible(false)}
+                isOwner={false}
+                onEdit={() => {}}
+                onDelete={() => {}}
+                onReport={() => {
+                    setIsPostOptionsMenuVisible(false);
+                    setPostReportVisible(true);
+                }}
+            />
 
             {postReportVisible && post && (
                 <ReportModal

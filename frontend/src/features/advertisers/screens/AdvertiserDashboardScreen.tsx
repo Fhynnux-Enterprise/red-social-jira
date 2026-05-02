@@ -186,14 +186,33 @@ function getTimeRemaining(expiresAt?: string) {
 
     if (diff <= 0) return { label: 'Campaña finalizada', isExpired: true };
 
-    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
 
-    if (days > 1) return { label: `Quedan ${days} días`, isWarning: days <= 3 };
-    if (days === 1) return { label: `Queda 1 día`, isWarning: true };
-    if (hours > 0) return { label: `Quedan ${hours} hora${hours > 1 ? 's' : ''}`, isWarning: true };
-    return { label: `Queda ${minutes} minuto${minutes > 1 ? 's' : ''}`, isWarning: true };
+    if (days > 0) {
+        const prefix = days === 1 ? 'Queda' : 'Quedan';
+        const dStr = days === 1 ? '1 día' : `${days} días`;
+        const hStr = hours === 1 ? '1 hora' : `${hours} horas`;
+        if (hours > 0) {
+            return { label: `${prefix} ${dStr} y ${hStr}`, isWarning: days <= 3 };
+        }
+        return { label: `${prefix} ${dStr}`, isWarning: days <= 3 };
+    }
+    
+    if (hours > 0) {
+        const prefix = hours === 1 ? 'Queda' : 'Quedan';
+        const hStr = hours === 1 ? '1 hora' : `${hours} horas`;
+        const mStr = minutes === 1 ? '1 minuto' : `${minutes} minutos`;
+        if (minutes > 0) {
+            return { label: `${prefix} ${hStr} y ${mStr}`, isWarning: true };
+        }
+        return { label: `${prefix} ${hStr}`, isWarning: true };
+    }
+    
+    const prefix = minutes === 1 ? 'Queda' : 'Quedan';
+    const mStr = minutes === 1 ? '1 minuto' : `${minutes} minutos`;
+    return { label: `${prefix} ${mStr}`, isWarning: true };
 }
 
 function CampaignBanner({ expiresAt, colors, currentAds, maxAds }: any) {
