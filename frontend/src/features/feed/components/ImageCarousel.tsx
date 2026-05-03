@@ -588,11 +588,50 @@ const ActualVideoPlayer = ({
     }, []);
 
     const player = useVideoPlayer(source, (p: any) => {
-        p.loop = true;
+        p.loop = false;  // NO usar loop nativo — causa pantalla negra en expo-video
         p.muted = isMuted;
         if (shouldPlay) p.play();
     });
 
+    // Escuchar el evento playToEnd para hacer replay manual y evitar pantalla negra
+    useEffect(() => {
+        if (!player) return;
+        let sub: any;
+        try {
+            sub = player.addListener('playToEnd', () => {
+                if (!isMounted.current) return;
+                try {
+                    // replay() reinicia desde el principio sin pantalla negra
+                    if (typeof player.replay === 'function') {
+                        player.replay();
+                    } else {
+                        player.currentTime = 0;
+                        player.play();
+                    }
+                } catch (e) {}
+            });
+        } catch (e) {}
+        return () => {
+            try { sub?.remove?.(); } catch (e) {}
+        };
+    }, [player]);
+
+    // Escuchar cambios de estado del player para sincronizar isPlaying
+    useEffect(() => {
+        if (!player) return;
+        let sub: any;
+        try {
+            sub = player.addListener('statusChange', ({ status }: any) => {
+                if (!isMounted.current) return;
+                setIsPlaying(status === 'readyToPlay' && player.playing);
+            });
+        } catch (e) {}
+        return () => {
+            try { sub?.remove?.(); } catch (e) {}
+        };
+    }, [player]);
+
+    // Controlar play/pause según la visibilidad del post
     useEffect(() => {
         if (!player) return;
         try {
@@ -600,15 +639,16 @@ const ActualVideoPlayer = ({
                 player.play();
             } else {
                 player.pause();
-                if (player.playing) player.pause();
             }
         } catch (e) {}
     }, [shouldPlay, player, showFullscreenLocal]);
 
+    // Sincronizar mute
     useEffect(() => {
         if (player) player.muted = isMuted;
     }, [isMuted, player]);
 
+    // Polling de posición para el slider
     useEffect(() => {
         const interval = setInterval(() => {
             if (!isMounted.current) return;

@@ -5,6 +5,7 @@ import { passportJwtSecret } from 'jwks-rsa';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { v5 as uuidv5 } from 'uuid';
 import { User } from '../entities/user.entity';
 
 @Injectable()
@@ -29,22 +30,49 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
                 jwksUri: `${supabaseUrl}/auth/v1/.well-known/jwks.json`,
             }),
             algorithms: ['RS256', 'ES256'],
+            passReqToCallback: true, // Permitir acceso a los headers
         });
     }
 
-    async validate(payload: any) {
-        // Obtenemos el usuario de nuestra base de datos para cargar su verdadero rol (UserRole)
-        const dbUser = await this.userRepository.findOne({ where: { id: payload.sub } });
+    async validate(req: any, payload: any) {
+        // Obtenemos el cityId del header para saber en qué contexto de app estamos
+        const cityId = req.headers['x-city-id'] || 'chunchi';
         
+        // 1. Intentar buscar por ID directo (Usuarios Email/Password) 
+        // Filtramos también por cityId para asegurar que un token solo funcione en su ciudad
+        let dbUser = await this.userRepository.findOne({ 
+            where: { id: payload.sub, cityId: cityId } 
+        });
+
+        // 2. Si no existe, intentar buscar por ID determinista (Usuarios Google SSO)
+        if (!dbUser) {
+            const NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+            const deterministicId = uuidv5(`${payload.sub}:${cityId}`, NAMESPACE);
+            dbUser = await this.userRepository.findOne({ where: { id: deterministicId, cityId: cityId } });
+        }
+        
+        if (!dbUser) {
+            // El usuario existe en Supabase pero no tiene un perfil en ESTA ciudad
+            return {
+                id: payload.sub,
+                email: payload.email,
+                role: 'USER',
+                cityId: cityId,
+                metadata: payload.user_metadata,
+                isNotSynced: true
+            };
+        }
+
         return {
-            id: payload.sub,
+            id: dbUser.id, 
+            supabaseId: payload.sub,
             email: payload.email,
-            // Supabase manda 'authenticated' en payload.role, mejor tomamos el de nuestra BD:
-            role: dbUser?.role || 'USER',
+            role: dbUser.role || 'USER',
+            cityId: dbUser.cityId,
             metadata: payload.user_metadata,
-            firstName: dbUser?.firstName || payload.user_metadata?.firstName,
-            lastName: dbUser?.lastName || payload.user_metadata?.lastName,
-            photoUrl: dbUser?.photoUrl,
+            firstName: dbUser.firstName,
+            lastName: dbUser.lastName,
+            photoUrl: dbUser.photoUrl,
         };
     }
 }

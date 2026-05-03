@@ -4,6 +4,7 @@ import { User } from '../../auth/entities/user.entity';
 import { PostLike } from './post-like.entity';
 import { Comment } from '../../comments/entities/comment.entity';
 import { PostMedia } from './post-media.entity';
+import { City } from '../../cities/entities/city.entity';
 
 @ObjectType()
 @Entity('posts')
@@ -33,6 +34,16 @@ export class Post {
     @Column({ name: 'user_id' })
     authorId: string;
 
+    // ── Multi-tenant: City isolation ──────────────────────────────────────
+    @Field()
+    @Column({ name: 'city_id', default: 'chunchi' })
+    cityId: string;
+
+    @Field(() => City, { nullable: true })
+    @ManyToOne(() => City, { eager: false, nullable: true })
+    @JoinColumn({ name: 'city_id' })
+    city?: City;
+
     @Field(() => [PostLike], { nullable: true })
     @OneToMany(() => PostLike, like => like.post)
     likes?: PostLike[];
@@ -59,4 +70,7 @@ export class Post {
 
     @Field(() => Number, { defaultValue: 0 })
     commentsCount?: number;
+
+    @Field(() => Boolean, { defaultValue: false })
+    isSaved?: boolean;
 }

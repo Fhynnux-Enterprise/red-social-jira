@@ -6,11 +6,13 @@ import { v4 as uuidv4 } from 'uuid';
 @Injectable()
 export class SupabaseService {
   private supabase: SupabaseClient;
+  private readonly bucketName: string;
   private readonly logger = new Logger(SupabaseService.name);
 
   constructor(private configService: ConfigService) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL')!;
     const supabaseKey = (this.configService.get<string>('SUPABASE_KEY') || this.configService.get<string>('SUPABASE_ANON_KEY'))!;
+    this.bucketName = this.configService.get<string>('SUPABASE_STORAGE_BUCKET') || 'chunchi-media';
 
     this.supabase = createClient(supabaseUrl, supabaseKey);
     this.logger.log('Supabase initialized');
@@ -26,7 +28,7 @@ export class SupabaseService {
     // Generar la URL prefirmada para subir el archivo
     const { data: uploadData, error: uploadError } = await this.supabase
       .storage
-      .from('chunchi-media')
+      .from(this.bucketName)
       .createSignedUploadUrl(uniquePath);
 
     if (uploadError) {
@@ -37,7 +39,7 @@ export class SupabaseService {
     // Generar la URL pública final
     const { data: publicData } = this.supabase
       .storage
-      .from('chunchi-media')
+      .from(this.bucketName)
       .getPublicUrl(uniquePath);
 
     return {
@@ -50,7 +52,7 @@ export class SupabaseService {
     this.logger.log(`Attempting to delete file: ${filePath}`);
     const { error } = await this.supabase
       .storage
-      .from('chunchi-media')
+      .from(this.bucketName)
       .remove([filePath]);
 
     if (error) {

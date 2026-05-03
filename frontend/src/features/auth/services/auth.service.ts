@@ -2,6 +2,7 @@ import { apiClient } from '../../../api/axios.client';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../../../api/supabase.client';
 import { GoogleSignin, statusCodes, isErrorWithCode } from '@react-native-google-signin/google-signin';
+import Constants from 'expo-constants';
 
 export const AuthService = {
     async login(loginData: { email: string; password: string }) {
@@ -23,7 +24,11 @@ export const AuthService = {
 
     async register(registerData: any) {
         try {
-            const response = await apiClient.post('/auth/register', registerData);
+            const payload = {
+                ...registerData,
+                cityId: Constants.expoConfig?.extra?.cityId || 'chunchi',
+            };
+            const response = await apiClient.post('/auth/register', payload);
             return response.data;
         } catch (error) {
             throw error;
@@ -61,8 +66,8 @@ export const AuthService = {
                 throw { isCancelled: true };
             }
 
-            // Adjusting to handle newer versions for safety
-            const idToken = (userInfo as any).data?.idToken || (userInfo as any).idToken;
+            // Manejo seguro de idToken según versión de la librería
+            const idToken = userInfo.data?.idToken || userInfo.idToken;
 
             if (!idToken) {
                 throw new Error('No se recibió idToken de Google Sign-In');
@@ -81,19 +86,48 @@ export const AuthService = {
 
             const { access_token } = data.session;
 
-            // 4. Guardar access_token en SecureStore y Axios
+            // 4. Guardar access_token y configurar Axios inmediatamente
             await SecureStore.setItemAsync('access_token', access_token);
             apiClient.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
 
-            // 5. Sincronizar usuario con nuestro backend local (NestJS)
-            await apiClient.post('/auth/sync');
+            // 5. Flujo de Sincronización Multi-tenant Silenciosa
+            try {
+                // Intentamos verificar si el perfil ya existe en el backend local para esta ciudad
+                await apiClient.get('/auth/me');
+            } catch (err: any) {
+                const responseData = err.response?.data?.message;
+                
+                // Detectar si el backend indica que el perfil no está sincronizado
+                const isNotSynced = (() => {
+                    try {
+                        const parsed = typeof responseData === 'string' ? JSON.parse(responseData) : responseData;
+                        return parsed?.code === 'USER_NOT_SYNCED';
+                    } catch (_) {
+                        return false;
+                    }
+                })();
+
+                if (isNotSynced) {
+                    console.log('[AuthService] Usuario no sincronizado en esta ciudad. Iniciando sincronización silenciosa...');
+                    
+                    // Ejecutar la sincronización automática enviando el cityId actual
+                    await apiClient.post('/auth/sync', {
+                        cityId: Constants.expoConfig?.extra?.cityId || 'chunchi',
+                    });
+                    
+                    console.log('[AuthService] Sincronización multi-tenant completada con éxito.');
+                } else {
+                    // Si es otro tipo de error (ej. Ban o error de red), propagarlo
+                    throw err;
+                }
+            }
 
             return { access_token };
         } catch (error: any) {
             if (error?.isCancelled || (isErrorWithCode(error) && error.code === statusCodes.SIGN_IN_CANCELLED)) {
                 throw { isCancelled: true };
             }
-            console.error('Error in Native loginWithGoogle: ', error);
+            console.error('Error in loginWithGoogle Flow: ', error);
             throw error;
         }
     }

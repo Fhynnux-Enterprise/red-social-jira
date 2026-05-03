@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMutation, useQuery } from '@apollo/client/react';
+import { useMutation, useQuery, useApolloClient } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
 import ApplyJobModal from './ApplyJobModal';
@@ -21,7 +21,6 @@ import {
     GET_MY_APPLICATIONS,
 } from '../graphql/jobs.operations';
 import { DIRECT_MODERATE_CONTENT } from '../../moderation/graphql/moderation.operations';
-import { useApolloClient } from '@apollo/client/react';
 import Toast from 'react-native-toast-message';
 
 interface JobOfferCardProps {
@@ -30,9 +29,11 @@ interface JobOfferCardProps {
     /** Llama a este callback para pasar el item al padre cuando el usuario quiere editar */
     onEdit?: (item: any) => void;
     isModalView?: boolean;
+    onToggleSave?: (item: any) => void;
+    isSaved?: boolean;
 }
 
-export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isModalView }: JobOfferCardProps & { hideAuthorRow?: boolean }) {
+export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isModalView, onToggleSave, isSaved: propIsSaved }: JobOfferCardProps & { hideAuthorRow?: boolean }) {
     const { colors, isDark } = useTheme();
     const router = useRouter();
     const navigation = useNavigation();
@@ -133,6 +134,8 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
         return text;
     };
 
+    const displayIsSaved = propIsSaved ?? item.isSaved;
+
     const [cardWidth, setCardWidth] = useState(Dimensions.get('window').width - 32);
 
     return (
@@ -178,26 +181,14 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
                             </View>
                         </TouchableOpacity>
 
-                        {/* Ellipsis opciones (solo owner) */}
-                        {isOwner && (
-                            <TouchableOpacity
-                                onPress={() => setMenuVisible(true)}
-                                style={styles.postEllipsis}
-                                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                            >
-                                <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-                            </TouchableOpacity>
-                        )}
-                        {/* Botón denuncia para no-propietarios */}
-                        {!isOwner && (
-                            <TouchableOpacity
-                                onPress={() => setReportVisible(true)}
-                                style={styles.postEllipsis}
-                                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                            >
-                                <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
-                            </TouchableOpacity>
-                        )}
+                        {/* Ellipsis opciones (Siempre visible) */}
+                        <TouchableOpacity
+                            onPress={() => setMenuVisible(true)}
+                            style={styles.postEllipsis}
+                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                        >
+                            <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                        </TouchableOpacity>
                     </View>
                 </View>
                 )}
@@ -307,18 +298,38 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
                                 <View style={[styles.menuHandle, { backgroundColor: isDark ? '#444' : '#DDD' }]} />
                                 <Text style={[styles.menuTitle, { color: colors.text }]}>Opciones</Text>
                                 
-                                <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={handleEdit}>
-                                    <View style={[styles.menuItemIcon, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
-                                        <Ionicons name="pencil" size={20} color={colors.text} />
-                                    </View>
-                                    <Text style={[styles.menuItemTitle, { color: colors.text }]}>Editar oferta</Text>
-                                </TouchableOpacity>
+                                {isOwner ? (
+                                    <>
+                                        <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={handleEdit}>
+                                            <View style={[styles.menuItemIcon, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
+                                                <Ionicons name="pencil" size={20} color={colors.text} />
+                                            </View>
+                                            <Text style={[styles.menuItemTitle, { color: colors.text }]}>Editar oferta</Text>
+                                        </TouchableOpacity>
+                                        
+                                        <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={handleDelete} disabled={deleting}>
+                                            <View style={[styles.menuItemIcon, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
+                                                {deleting ? <ActivityIndicator size="small" color="#FF3B30" /> : <Ionicons name="trash" size={20} color="#FF3B30" />}
+                                            </View>
+                                            <Text style={[styles.menuItemTitle, { color: '#FF3B30' }]}>Eliminar oferta</Text>
+                                        </TouchableOpacity>
+                                    </>
+                                ) : (
+                                    <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); setReportVisible(true); }}>
+                                        <View style={[styles.menuItemIcon, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
+                                            <Ionicons name="flag" size={20} color={colors.text} />
+                                        </View>
+                                        <Text style={[styles.menuItemTitle, { color: colors.text }]}>Reportar oferta</Text>
+                                    </TouchableOpacity>
+                                )}
                                 
-                                <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={handleDelete} disabled={deleting}>
-                                    <View style={[styles.menuItemIcon, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
-                                        {deleting ? <ActivityIndicator size="small" color="#FF3B30" /> : <Ionicons name="trash" size={20} color="#FF3B30" />}
+                                <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); onToggleSave?.(item); }}>
+                                    <View style={[styles.menuItemIcon, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
+                                        <Ionicons name={displayIsSaved ? "bookmark" : "bookmark-outline"} size={20} color={displayIsSaved ? colors.primary : colors.text} />
                                     </View>
-                                    <Text style={[styles.menuItemTitle, { color: '#FF3B30' }]}>Eliminar oferta</Text>
+                                    <Text style={[styles.menuItemTitle, { color: displayIsSaved ? colors.primary : colors.text }]}>
+                                        {displayIsSaved ? 'Quitar de guardados' : 'Guardar oferta'}
+                                    </Text>
                                 </TouchableOpacity>
                                 
                                 <TouchableOpacity style={[styles.menuItem, { marginTop: 10, borderBottomWidth: 0 }]} onPress={() => setMenuVisible(false)}>
@@ -418,6 +429,23 @@ const styles = StyleSheet.create({
         marginVertical: 8,
         borderRadius: 16, // Coherencia con PostCard
         marginHorizontal: 4,
+    },
+    divider: {
+        height: StyleSheet.hairlineWidth,
+        marginHorizontal: 14,
+        marginBottom: 2,
+        marginTop: 4,
+    },
+    actionsRow: {
+        flexDirection: 'row',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+    },
+    actionBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 8,
+        borderRadius: 8,
     },
     contentPadding: {
         paddingBottom: 12,

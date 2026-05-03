@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { AuthService } from '../services/auth.service';
 import { useAuth } from '../context/AuthContext';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
+import Constants from 'expo-constants';
 
 // --- Esquema de validación con Zod ---
 const registerSchema = z
@@ -148,7 +149,7 @@ export default function RegisterScreen({ navigation }: any) {
                     </View>
 
                     <Text style={styles.title}>Crear Cuenta</Text>
-                    <Text style={styles.subtitle}>Únete a Chunchi City App</Text>
+                    <Text style={styles.subtitle}>Únete a {Constants.expoConfig?.name || 'App'}</Text>
 
                     <View style={styles.inputContainer}>
                         {/* Nombre */}

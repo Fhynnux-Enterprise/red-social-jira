@@ -31,6 +31,8 @@ export interface PostCardProps {
     isFocused?: boolean;
     isOverlayActive?: boolean;
     onPressAuthor?: () => void;
+    onToggleSave?: () => void;
+    isSaved?: boolean;
 }
 
 export default function PostCard({
@@ -44,16 +46,20 @@ export default function PostCard({
     isFocused = true,
     isOverlayActive = false,
     onPressAuthor,
+    onToggleSave,
+    isSaved: propIsSaved,
 }: PostCardProps) {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
     const router = useRouter();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
+    const client = useApolloClient();
 
     const authContext = useAuth() as any;
     const userId = authContext.user?.id || currentUserId;
 
     const isEdited = !!item.editedAt;
+    const displayIsSaved = propIsSaved ?? item.isSaved;
 
     const displayCount = item.likes?.length || 0;
     const commentsCount = item.commentsCount ?? item.comments?.length ?? 0;
@@ -103,6 +109,7 @@ export default function PostCard({
 
         toggleLikeMutation({
             variables: { postId: item.id },
+            refetchQueries: ['GetLikedItems'],
             optimisticResponse: {
                 toggleLike: {
                     __typename: 'Post',
@@ -172,26 +179,14 @@ export default function PostCard({
                     </View>
                 </TouchableOpacity>
 
-                {/* Options menu */}
-                {item.author.id === userId && (
-                    <TouchableOpacity
-                        onPress={() => onOptionsPress?.(item)}
-                        style={styles.moreBtn}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                        <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                )}
-                {/* Botones para no-dueños */}
-                {item.author.id !== userId && (
-                    <TouchableOpacity
-                        onPress={() => setReportVisible(true)}
-                        style={styles.moreBtn}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                        <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                )}
+                {/* Options menu (Siempre visible) */}
+                <TouchableOpacity
+                    onPress={() => onOptionsPress?.(item)}
+                    style={styles.moreBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                    <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
             </View>
 
             {/* ── Contenido ── */}

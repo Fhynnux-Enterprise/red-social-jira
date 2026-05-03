@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 // Force restart to sync schema changes for bulk deletion
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { GraphQLError } from 'graphql';
@@ -25,6 +26,9 @@ import { GqlAuthGuard } from './auth/guards/gql-auth.guard';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AppealsModule } from './appeals/appeals.module';
 import { UserBlocksModule } from './user-blocks/user-blocks.module';
+import { AdsModule } from './ads/ads.module';
+import { AdvertisersModule } from './advertisers/advertisers.module';
+import { CitiesModule } from './cities/cities.module';
 
 @Module({
   imports: [
@@ -46,9 +50,47 @@ import { UserBlocksModule } from './user-blocks/user-blocks.module';
         username: configService.get<string>('DB_USERNAME'),
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_DATABASE'),
-        autoLoadEntities: true, // Busca automáticamente en los módulos las entidades
-        synchronize: true, // Sincroniza el código a la BD (solo usar en desarrollo local)
+        autoLoadEntities: true,
+        synchronize: false, // Controlado manualmente en dataSourceFactory
       }),
+      /**
+       * dataSourceFactory nos permite controlar el orden exacto de operaciones:
+       * 1. Conectar a la BD
+       * 2. Insertar ciudades seed (ANTES del synchronize)
+       * 3. Ejecutar synchronize (los FK constraints ya encontrarán 'chunchi')
+       *
+       * Esto resuelve la race condition de synchronize vs OnApplicationBootstrap.
+       */
+      dataSourceFactory: async (options) => {
+        const dataSource = new DataSource(options as any);
+        await dataSource.initialize();
+
+        // ── Paso 1: Crear tabla cities si no existe (idempotente) ──────────
+        await dataSource.query(`
+          CREATE TABLE IF NOT EXISTS "cities" (
+            "id"        VARCHAR PRIMARY KEY,
+            "name"      VARCHAR NOT NULL,
+            "is_active" BOOLEAN NOT NULL DEFAULT true
+          )
+        `);
+
+        // ── Paso 2: Insertar ciudades seed (idempotente) ───────────────────
+        await dataSource.query(`
+          INSERT INTO "cities" ("id", "name", "is_active")
+          VALUES 
+            ('chunchi', 'Chunchi', true),
+            ('alausi', 'Alausí', true)
+          ON CONFLICT ("id") DO NOTHING
+        `);
+
+        // ── Paso 3: Eliminar tabla legada saved_posts si existe (reemplazada por saved_items) ──
+        await dataSource.query(`DROP TABLE IF EXISTS "saved_posts";`);
+
+        // ── Paso 4: Ahora sí ejecutar synchronize con FK garantizados ─────
+        await dataSource.synchronize();
+
+        return dataSource;
+      },
     }),
 
     // 3. Configuración de GraphQL (Code-First)
@@ -62,8 +104,15 @@ import { UserBlocksModule } from './user-blocks/user-blocks.module';
           onConnect: (context: any) => {
             const { connectionParams, extra } = context;
             const authToken = connectionParams?.Authorization || connectionParams?.authorization;
+            const xCityId = connectionParams?.['x-city-id'];
+
+            extra.request = { headers: {} };
+
             if (authToken) {
-              extra.request = { headers: { authorization: authToken } };
+              extra.request.headers.authorization = authToken;
+            }
+            if (xCityId) {
+              extra.request.headers['x-city-id'] = xCityId;
             }
           },
         },
@@ -98,6 +147,9 @@ import { UserBlocksModule } from './user-blocks/user-blocks.module';
     NotificationsModule,
     AppealsModule,
     UserBlocksModule,
+    AdsModule,
+    AdvertisersModule,
+    CitiesModule,
   ],
   controllers: [],
   providers: [GqlAuthGuard],

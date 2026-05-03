@@ -31,12 +31,13 @@ export class StoreService {
     private readonly userBlocksService: UserBlocksService,
   ) {}
 
-  async create(data: CreateStoreProductInput, userId: string): Promise<StoreProduct> {
+  async create(data: CreateStoreProductInput, userId: string, cityId: string): Promise<StoreProduct> {
     const { media, ...rest } = data;
     const product = this.productRepo.create({
       ...rest,
       sellerId: userId,
       currency: rest.currency ?? 'USD',
+      cityId, // ← tenant stamp
     });
     const saved = await this.productRepo.save(product);
 
@@ -54,11 +55,16 @@ export class StoreService {
     }) as Promise<StoreProduct>;
   }
 
-  async findAll(limit = 20, offset = 0, viewerId?: string): Promise<StoreProduct[]> {
+  async findAll(limit = 20, offset = 0, viewerId?: string, cityId?: string): Promise<StoreProduct[]> {
     const query = this.productRepo.createQueryBuilder('product')
       .where('product.isAvailable = true')
       .leftJoinAndSelect('product.seller', 'seller')
       .leftJoinAndSelect('product.media', 'media');
+
+    // ── Multi-tenant filter ───────────────────────────────────────────────
+    if (cityId) {
+      query.andWhere('product.cityId = :cityId', { cityId });
+    }
 
     if (viewerId) {
       query.andWhere(qb => {
@@ -80,25 +86,27 @@ export class StoreService {
       .getMany();
   }
 
-  async findMine(userId: string): Promise<StoreProduct[]> {
+  async findMine(userId: string, cityId?: string): Promise<StoreProduct[]> {
     return this.productRepo.find({
-      where: { sellerId: userId },
+      where: { sellerId: userId, cityId },
       order: { createdAt: 'DESC' },
       relations: ['seller', 'media', 'likes', 'likes.user'],
     });
   }
 
-  async findByUser(userId: string): Promise<StoreProduct[]> {
+  async findByUser(userId: string, cityId?: string, limit = 20, offset = 0): Promise<StoreProduct[]> {
     return this.productRepo.find({
-      where: { sellerId: userId },
+      where: { sellerId: userId, cityId },
       order: { createdAt: 'DESC' },
+      take: limit,
+      skip: offset,
       relations: ['seller', 'media', 'likes', 'likes.user'],
     });
   }
 
-  async findById(id: string): Promise<StoreProduct> {
+  async findById(id: string, cityId?: string): Promise<StoreProduct> {
     const product = await this.productRepo.findOne({
-      where: { id },
+      where: { id, cityId },
       relations: ['seller', 'media', 'likes', 'likes.user'],
     });
     if (!product) throw new NotFoundException('Producto no encontrado');
@@ -150,7 +158,7 @@ export class StoreService {
     return true;
   }
 
-  async toggleLike(productId: string, userId: string): Promise<StoreProduct> {
+  async toggleLike(productId: string, userId: string, cityId: string): Promise<StoreProduct> {
     const product = await this.productRepo.findOne({ where: { id: productId } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
@@ -161,7 +169,7 @@ export class StoreService {
     if (existingLike) {
       await this.likeRepo.remove(existingLike);
     } else {
-      const like = this.likeRepo.create({ storeProductId: productId, userId });
+      const like = this.likeRepo.create({ storeProductId: productId, userId, cityId });
       await this.likeRepo.save(like);
     }
 
@@ -171,11 +179,11 @@ export class StoreService {
     }) as Promise<StoreProduct>;
   }
 
-  async createComment(productId: string, userId: string, content: string, parentId?: string): Promise<StoreProductComment> {
+  async createComment(productId: string, userId: string, content: string, cityId: string, parentId?: string): Promise<StoreProductComment> {
     const product = await this.productRepo.findOne({ where: { id: productId } });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
-    const comment = this.commentRepo.create({ storeProductId: productId, userId, content, parentId });
+    const comment = this.commentRepo.create({ storeProductId: productId, userId, content, parentId, cityId });
     const saved = await this.commentRepo.save(comment);
 
     return this.commentRepo.findOne({
@@ -206,6 +214,7 @@ export class StoreService {
         'product.media',
         'product.likes',
         'product.likes.user',
+        'product.author',
       ],
     });
     if (!comment) return null;
@@ -237,7 +246,7 @@ export class StoreService {
       .getCount();
   }
 
-  async toggleCommentLike(commentId: string, userId: string): Promise<StoreProductComment> {
+  async toggleCommentLike(commentId: string, userId: string, cityId: string): Promise<StoreProductComment> {
     const comment = await this.commentRepo.findOne({ where: { id: commentId } });
     if (!comment) throw new NotFoundException('Comentario no encontrado');
 
@@ -248,7 +257,7 @@ export class StoreService {
     if (existing) {
       await this.commentLikeRepo.remove(existing);
     } else {
-      const like = this.commentLikeRepo.create({ commentId, userId });
+      const like = this.commentLikeRepo.create({ commentId, userId, cityId });
       await this.commentLikeRepo.save(like);
     }
 

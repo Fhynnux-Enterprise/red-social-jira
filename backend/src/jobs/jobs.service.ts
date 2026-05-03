@@ -15,10 +15,11 @@ export class JobsService {
     private readonly userBlocksService: UserBlocksService,
   ) {}
 
-  async createJobOffer(data: CreateJobOfferInput, userId: string): Promise<JobOffer> {
+  async createJobOffer(data: CreateJobOfferInput, userId: string, cityId: string): Promise<JobOffer> {
     const jobOffer = this.jobOfferRepository.create({
       ...data,
       authorId: userId,
+      cityId, // ← tenant stamp
     });
     const saved = await this.jobOfferRepository.save(jobOffer);
     return this.jobOfferRepository.findOne({
@@ -56,10 +57,15 @@ export class JobsService {
     return true;
   }
 
-  async findAllJobOffers(limit: number = 20, offset: number = 0, viewerId?: string): Promise<JobOffer[]> {
+  async findAllJobOffers(limit: number = 20, offset: number = 0, viewerId?: string, cityId?: string): Promise<JobOffer[]> {
     const query = this.jobOfferRepository.createQueryBuilder('job')
       .leftJoinAndSelect('job.author', 'author')
       .leftJoinAndSelect('job.media', 'media');
+
+    // ── Multi-tenant filter ───────────────────────────────────────────────
+    if (cityId) {
+      query.andWhere('job.cityId = :cityId', { cityId });
+    }
 
     if (viewerId) {
       query.andWhere(qb => {
@@ -81,25 +87,27 @@ export class JobsService {
       .getMany();
   }
 
-  async findMyJobOffers(userId: string): Promise<JobOffer[]> {
+  async findMyJobOffers(userId: string, cityId?: string): Promise<JobOffer[]> {
     return this.jobOfferRepository.find({
-      where: { authorId: userId },
+      where: { authorId: userId, cityId },
       order: { createdAt: 'DESC' },
       relations: ['author', 'media'],
     });
   }
 
-  async findJobOffersByUser(userId: string): Promise<JobOffer[]> {
+  async findJobOffersByUser(userId: string, cityId?: string, limit = 20, offset = 0): Promise<JobOffer[]> {
     return this.jobOfferRepository.find({
-      where: { authorId: userId },
+      where: { authorId: userId, cityId },
       order: { createdAt: 'DESC' },
+      take: limit,
+      skip: offset,
       relations: ['author', 'media'],
     });
   }
 
-  async getJobOfferById(id: string): Promise<JobOffer> {
+  async getJobOfferById(id: string, cityId?: string): Promise<JobOffer> {
     const offer = await this.jobOfferRepository.findOne({
-      where: { id },
+      where: { id, cityId },
       relations: ['author', 'media'],
     });
     if (!offer) throw new NotFoundException('Oferta no encontrada');

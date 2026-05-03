@@ -3,6 +3,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateCol
 import { User } from '../../auth/entities/user.entity';
 import { Post } from '../../posts/entities/post.entity';
 import { CommentLike } from './comment-like.entity';
+import { City } from '../../cities/entities/city.entity';
 
 @ObjectType()
 @Entity('comments')
@@ -36,6 +37,16 @@ export class Comment {
     @Field()
     @Column({ name: 'post_id' })
     postId: string;
+
+    // ── Multi-tenant: City isolation ──────────────────────────────────────
+    @Field()
+    @Column({ name: 'city_id', default: 'chunchi' })
+    cityId: string;
+
+    @Field(() => City, { nullable: true })
+    @ManyToOne(() => City, { eager: false, nullable: true })
+    @JoinColumn({ name: 'city_id' })
+    city?: City;
 
     @Field({ nullable: true })
     @Column({ name: 'parent_id', nullable: true })

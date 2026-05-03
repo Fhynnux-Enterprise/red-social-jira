@@ -8,17 +8,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../../theme/ThemeContext';
-import { GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS, GET_MY_APPLICATIONS, GET_MY_PROFESSIONAL_PROFILE, DELETE_APPLICATION } from '../graphql/jobs.operations';
+import { GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS, GET_MY_APPLICATIONS, GET_MY_PROFESSIONAL_PROFILE, DELETE_APPLICATION, DELETE_JOB_OFFER, DELETE_PROFESSIONAL_PROFILE } from '../graphql/jobs.operations';
+import { TOGGLE_SAVE_POST, GET_SAVED_POSTS } from '../../feed/graphql/posts.operations';
 import JobOfferCard from '../components/JobOfferCard';
 import ProfessionalCard from '../components/ProfessionalCard';
 import ApplyJobModal from '../components/ApplyJobModal';
 import PostOptionsModal from '../../feed/components/PostOptionsModal';
-import { DELETE_JOB_OFFER, DELETE_PROFESSIONAL_PROFILE } from '../graphql/jobs.operations';
 import Toast from 'react-native-toast-message';
 import { LinearGradient } from 'expo-linear-gradient';
 import CommentsModal from '../../comments/components/CommentsModal';
 import ListFooter from '../../../components/ListFooter';
 import { useFocusEffect } from '@react-navigation/native';
+import { GET_AD_FREQUENCY } from '../../ads/graphql/ads.operations';
+import NativeAdCard from '../../ads/components/NativeAdCard';
 
 type TabKey = 'offers' | 'services' | 'results';
 type ResultsTabKey = 'my_applications' | 'my_offers' | 'my_services';
@@ -78,6 +80,59 @@ export default function JobsScreen() {
         fetchPolicy: 'cache-and-network',
     });
 
+    const [adFrequency, setAdFrequency] = useState(5);
+    const [loadedAds, setLoadedAds] = useState<Record<string, any>>({});
+    
+    const { data: configData, refetch: refetchAdFrequency } = useQuery(GET_AD_FREQUENCY, {
+        fetchPolicy: 'network-only',
+    });
+
+    React.useEffect(() => {
+        if (configData?.getAdFrequency != null) {
+            setAdFrequency(configData.getAdFrequency);
+        }
+    }, [configData?.getAdFrequency]);
+
+    const injectAds = useCallback((items: any[], freq: number, cachedAds: Record<string, any>) => {
+        const result: any[] = [];
+        items.forEach((item, index) => {
+            result.push(item);
+            if ((index + 1) % freq === 0) {
+                const adId = `ad-after-${item.id}`;
+                const cachedAd = cachedAds[adId] || {};
+                if (cachedAd.isDeleted) return;
+                result.push({
+                    ...cachedAd,
+                    realId: cachedAd.id || cachedAd.realId,
+                    id: adId,
+                    isAd: true,
+                    __typename: 'Ad',
+                });
+            }
+        });
+        return result;
+    }, []);
+
+    const getRawListData = useCallback(() => {
+        if (activeTab === 'offers') return offersData?.jobOffers ?? [];
+        if (activeTab === 'services') return profsData?.professionalProfiles ?? [];
+        if (activeTab === 'results') {
+            if (resultsTab === 'my_applications') return myAppsData?.myApplications ?? [];
+            if (resultsTab === 'my_offers') return myOffersData?.myJobOffers ?? [];
+            if (resultsTab === 'my_services') return myServicesData?.myProfessionalProfile ?? [];
+        }
+        return [];
+    }, [activeTab, resultsTab, offersData, profsData, myAppsData, myOffersData, myServicesData]);
+
+    const getListData = useCallback(() => {
+        const raw = getRawListData();
+        if (activeTab === 'offers' || activeTab === 'services') {
+            const freq = configData?.getAdFrequency ?? adFrequency;
+            return injectAds(raw, freq, loadedAds);
+        }
+        return raw;
+    }, [getRawListData, activeTab, configData, adFrequency, injectAds, loadedAds]);
+
     const [appMenuVisible, setAppMenuVisible] = useState<any>(null);
     const [editAppVisible, setEditAppVisible] = useState<any>(null);
     const [deleteAppId, setDeleteAppId] = useState<string | null>(null);
@@ -130,6 +185,40 @@ export default function JobsScreen() {
         },
         onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message })
     });
+
+    const [toggleSavePost] = useMutation(TOGGLE_SAVE_POST);
+
+    const handleToggleSave = useCallback(async (item: any) => {
+        if (!item) return;
+        const itemId = item.id;
+        const itemType = item.__typename === 'JobOffer' ? 'JOB_OFFER' : 'PROFESSIONAL_PROFILE';
+        const wasSaved = !!item.isSaved;
+
+        try {
+            await toggleSavePost({
+                variables: { postId: itemId, itemType },
+                optimisticResponse: { toggleSavePost: !wasSaved },
+                refetchQueries: [{ query: GET_SAVED_POSTS }],
+                update: (cache, { data }) => {
+                    const cacheId = cache.identify({ __typename: item.__typename, id: itemId });
+                    if (cacheId) {
+                        cache.modify({
+                            id: cacheId,
+                            fields: { isSaved: () => !!data?.toggleSavePost }
+                        });
+                    }
+                }
+            });
+            Toast.show({
+                type: 'success',
+                text1: wasSaved ? 'Quitado de guardados' : 'Guardado correctamente',
+                position: 'bottom'
+            });
+        } catch (err) {
+            console.error('Error toggling save:', err);
+            Toast.show({ type: 'error', text1: 'No se pudo procesar la acción', position: 'bottom' });
+        }
+    }, [toggleSavePost]);
 
     const handleOptionsPress = (item: any) => {
         setSelectedItemForOptions(item);
@@ -191,6 +280,7 @@ export default function JobsScreen() {
 
     useFocusEffect(
         useCallback(() => {
+            refetchAdFrequency();
             if (resumeCommentsRef.current) {
                 const timer = setTimeout(() => {
                     setSelectedPostForComments(resumeCommentsRef.current);
@@ -198,7 +288,7 @@ export default function JobsScreen() {
                 }, 300);
                 return () => clearTimeout(timer);
             }
-        }, [])
+        }, [refetchAdFrequency])
     );
 
 
@@ -303,16 +393,7 @@ export default function JobsScreen() {
         </View>
     );
 
-    const getListData = () => {
-        if (activeTab === 'offers') return offersData?.jobOffers ?? [];
-        if (activeTab === 'services') return profsData?.professionalProfiles ?? [];
-        if (activeTab === 'results') {
-            if (resultsTab === 'my_applications') return myAppsData?.myApplications ?? [];
-            if (resultsTab === 'my_offers') return myOffersData?.myJobOffers ?? [];
-            if (resultsTab === 'my_services') return myServicesData?.myProfessionalProfile ?? [];
-        }
-        return [];
-    };
+
 
     const commentsModalData = React.useMemo(() => {
         if (!selectedPostForComments) return { post: null, nextPost: null, prevPost: null };
@@ -341,7 +422,7 @@ export default function JobsScreen() {
             nextPost,
             prevPost,
         };
-    }, [selectedPostForComments, activeTab, resultsTab, offersData, profsData, myOffersData, myAppsData, myServicesData]);
+    }, [selectedPostForComments, activeTab, resultsTab, getListData]);
 
     const handleRefresh = () => {
         if (activeTab === 'offers') refetchOffers();
@@ -403,10 +484,37 @@ export default function JobsScreen() {
     };
 
     const renderItem = ({ item }: { item: any }) => {
+        if (item.isAd) {
+            const cachedAdData = loadedAds[item.id];
+            const adDataToPass = cachedAdData
+                ? { ...cachedAdData, id: cachedAdData.realId || cachedAdData.id }
+                : (item.type || item.title ? { ...item, id: item.realId || item.id } : undefined);
+            return (
+                <View style={{ marginBottom: 12 }}>
+                    <NativeAdCard 
+                        adData={adDataToPass}
+                        onAdLoaded={(adData) => {
+                            if (!loadedAds[item.id]) {
+                                setLoadedAds(prev => ({ ...prev, [item.id]: adData }));
+                            }
+                        }}
+                        onDelete={() => {
+                            setLoadedAds(prev => ({ ...prev, [item.id]: { ...prev[item.id], isDeleted: true } }));
+                        }}
+                        onPress={(ad) => setSelectedPostForComments({ 
+                            post: { ...ad, id: item.id, realId: ad.realId || ad.id }, 
+                            minimize: true, 
+                            initialTab: 'comments' 
+                        })} 
+                    />
+                </View>
+            );
+        }
+
         const openInModal = () => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' });
 
-        if (activeTab === 'offers') return <JobOfferCard item={item} onPress={openInModal} onEdit={handleEdit} />;
-        if (activeTab === 'services') return <ProfessionalCard item={item} onPress={openInModal} onEdit={handleEdit} />;
+        if (activeTab === 'offers') return <JobOfferCard item={item} onPress={openInModal} onEdit={handleEdit} onToggleSave={() => handleToggleSave(item)} isSaved={item.isSaved} />;
+        if (activeTab === 'services') return <ProfessionalCard item={item} onPress={openInModal} onEdit={handleEdit} onToggleSave={() => handleToggleSave(item)} isSaved={item.isSaved} />;
         if (activeTab === 'results') {
             if (resultsTab === 'my_applications') {
                 const getStatusColor = (status: string) => {
@@ -474,12 +582,14 @@ export default function JobsScreen() {
                         item={item}
                         onPress={openInModal}
                         onEdit={handleEdit}
+                        onToggleSave={() => handleToggleSave(item)}
+                        isSaved={item.isSaved}
                     />
                 );
             }
 
             if (resultsTab === 'my_services') {
-                return <ProfessionalCard item={item} onPress={openInModal} onEdit={handleEdit} />;
+                return <ProfessionalCard item={item} onPress={openInModal} onEdit={handleEdit} onToggleSave={() => handleToggleSave(item)} isSaved={item.isSaved} />;
             }
         }
         return null;

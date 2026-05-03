@@ -58,12 +58,15 @@ export class UsersResolver {
   }
 
   @ResolveField(() => [Post])
+  @UseGuards(JwtGqlGuard)
   async posts(
     @Parent() user: User,
     @Args('limit', { type: () => Int, defaultValue: 5, nullable: true }) limit: number,
     @Args('offset', { type: () => Int, defaultValue: 0, nullable: true }) offset: number,
+    @CurrentUser() currentUser: any,
   ): Promise<Post[]> {
-    return this.postsService.findByUser(user.id, limit ?? 5, offset ?? 0);
+    // Aislamiento: solo ver posts del usuario en la ciudad actual
+    return this.postsService.findByUser(user.id, limit ?? 5, offset ?? 0, currentUser.cityId);
   }
 
   @Mutation(() => UserCustomField)
@@ -112,7 +115,7 @@ export class UsersResolver {
     @Args('id') id: string,
     @CurrentUser() currentUser: any,
   ): Promise<User> {
-    const user = await this.usersService.findById(id);
+    const user = await this.usersService.findById(id, currentUser.cityId);
     
     // Si el usuario está baneado, ocultarlo (simular que no existe)
     // a menos que sea un ADMIN o MODERATOR quien lo consulta.
@@ -136,7 +139,7 @@ export class UsersResolver {
   @Query(() => User, { name: 'me' })
   @UseGuards(JwtGqlGuard)
   async getMe(@CurrentUser() user: any): Promise<User> {
-    return this.usersService.findById(user.id);
+    return this.usersService.findById(user.id, user.cityId);
   }
 
   @Mutation(() => User)
@@ -170,7 +173,7 @@ export class UsersResolver {
     @Args('offset', { type: () => Int, defaultValue: 0, nullable: true }) offset: number,
     @CurrentUser() user: any,
   ): Promise<User[]> {
-    return this.usersService.searchUsers(searchTerm, user.id, limit ?? 5, offset ?? 0);
+    return this.usersService.searchUsers(searchTerm, user.id, limit ?? 5, offset ?? 0, user.cityId);
   }
 
   @Mutation(() => Boolean)

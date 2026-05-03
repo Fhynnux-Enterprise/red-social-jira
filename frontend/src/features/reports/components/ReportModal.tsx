@@ -14,13 +14,15 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation } from '@apollo/client/react';
+import { LinearGradient } from 'expo-linear-gradient';
 import Toast, { BaseToast, ErrorToast } from 'react-native-toast-message';
+import Constants from 'expo-constants';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
 import { CREATE_REPORT, DIRECT_MODERATE_CONTENT } from '../graphql/reports.operations';
 
 // ── Tipos de contenido soportados ──────────────────────────────────────────
-export type ReportedItemType = 'POST' | 'JOB_OFFER' | 'SERVICE' | 'PRODUCT' | 'COMMENT';
+export type ReportedItemType = 'POST' | 'JOB_OFFER' | 'SERVICE' | 'PRODUCT' | 'COMMENT' | 'LOCAL_AD';
 
 interface ReportReason {
     id: string;
@@ -96,7 +98,7 @@ export default function ReportModal({
             Toast.show({
                 type: 'success',
                 text1: '¡Gracias por tu ayuda!',
-                text2: 'Gracias por ayudar a mantener Chunchi City seguro.',
+                text2: `Gracias por ayudar a mantener ${Constants.expoConfig?.extra?.cityName || 'nuestra app'} segura.`,
                 visibilityTime: 3000,
             });
             setTimeout(onClose, 1800);

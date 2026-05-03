@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { AuthService } from '../services/auth.service';
 import { useAuth } from '../context/AuthContext';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
+import Constants from 'expo-constants';
 
 // --- Esquema de validación con Zod ---
 const loginSchema = z.object({
@@ -120,7 +121,7 @@ export default function LoginScreen({ navigation }: any) {
                         />
                     </View>
 
-                    <Text style={styles.title}>Chunchi City App</Text>
+                    <Text style={styles.title}>{Constants.expoConfig?.name || 'App'}</Text>
                     <Text style={styles.subtitle}>Inicia sesión para continuar</Text>
 
                     <View style={styles.inputContainer}>

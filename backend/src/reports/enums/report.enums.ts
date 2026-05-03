@@ -13,6 +13,7 @@ export enum ReportedItemType {
     PRODUCT = 'PRODUCT',
     COMMENT = 'COMMENT',
     USER = 'USER',
+    LOCAL_AD = 'LOCAL_AD',
 }
 
 registerEnumType(ReportStatus, {

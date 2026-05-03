@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength, Matches } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, MinLength, Matches, IsOptional } from 'class-validator';
 
 export class RegisterDto {
     @IsEmail({}, { message: 'El formato de email no es válido' })
@@ -22,4 +22,13 @@ export class RegisterDto {
     @IsNotEmpty({ message: 'El nombre de usuario es requerido' })
     @Matches(/^[a-zA-Z0-9_]+$/, { message: 'El nombre de usuario solo puede contener letras, números y guiones bajos (sin espacios)' })
     username: string;
+
+    /**
+     * Identificador del cantón/ciudad al que pertenece el usuario.
+     * Define su tenant: solo verá contenido de esta ciudad.
+     * Por defecto 'chunchi' para compatibilidad con usuarios existentes.
+     */
+    @IsOptional()
+    @IsString()
+    cityId?: string;
 }

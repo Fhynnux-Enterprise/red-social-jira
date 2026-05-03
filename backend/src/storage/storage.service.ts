@@ -47,10 +47,11 @@ export class StorageService {
     file: Express.Multer.File | Buffer,
     filename: string,
     folder: string,
+    cityId: string,
   ): Promise<string> {
     const extension = filename.split('.').pop();
     const uniqueFilename = `${uuidv4()}.${extension}`;
-    const key = `${folder}/${uniqueFilename}`;
+    const key = `${cityId}/${folder}/${uniqueFilename}`;
 
     const body = Buffer.isBuffer(file) ? file : file.buffer;
     const contentType = Buffer.isBuffer(file) ? 'application/octet-stream' : file.mimetype;
@@ -87,10 +88,11 @@ export class StorageService {
     filename: string,
     folder: string,
     contentType: string,
+    cityId: string,
   ): Promise<{ uploadUrl: string; publicUrl: string }> {
     const extension = filename.split('.').pop();
     const uniqueFilename = `${uuidv4()}.${extension}`;
-    const key = `${folder}/${uniqueFilename}`;
+    const key = `${cityId}/${folder}/${uniqueFilename}`;
 
     const command = new PutObjectCommand({
       Bucket: this.bucketName,

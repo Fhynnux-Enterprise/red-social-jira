@@ -7,6 +7,7 @@ import { setContext } from '@apollo/client/link/context';
 import * as SecureStore from 'expo-secure-store';
 import { notifySessionExpired } from './session.manager';
 import Toast from 'react-native-toast-message';
+import Constants from 'expo-constants';
 
 // ─── Ban event emitter (singleton) ───────────────────────────────────────────
 type BanHandler = (info: { bannedUntil: string; banReason: string }) => void;
@@ -27,15 +28,26 @@ const httpLink = createHttpLink({
 const authLink = setContext(async (_, { headers }) => {
     // Read the token from Secure Store (global)
     const token = await SecureStore.getItemAsync('access_token');
+    const cityId = Constants.expoConfig?.extra?.cityId || 'chunchi';
 
     // Return the authorization header so the httpLink processes it
     return {
         headers: {
             ...headers,
             authorization: token ? `Bearer ${token}` : '',
+            'x-city-id': cityId,
         }
     }
 });
+
+// ─── Session expiry debounce (previene múltiples logout simultáneos) ─────────
+// Cuando muchas queries fallan con 401 al mismo tiempo (token expirado),
+// el errorLink se dispara para cada una. Esta bandera asegura que
+// notifySessionExpired() solo se llame UNA VEZ hasta que el estado se resetee.
+let _sessionExpiredFired = false;
+
+/** Exportada para resetear la bandera al hacer login de nuevo. */
+export const resetSessionExpiredFlag = () => { _sessionExpiredFired = false; };
 
 // Global Error Link for Apollo Client
 const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
@@ -85,18 +97,24 @@ const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
         }
     }
 
-    if (isUnauthorized) {
-        // Limpiamos la caché de Apollo inmediatamente para mayor seguridad
+    if (isUnauthorized && !_sessionExpiredFired) {
+        _sessionExpiredFired = true;
+
+        // Limpiar caché para evitar datos rancios
         apolloClient.clearStore().catch(e => console.error('Error clearing store:', e));
 
-        // Notificamos via el session manager (sin riesgo de race condition)
+        // Notificar al AuthContext para que haga logout y navegue al login
         notifySessionExpired();
+
         Toast.show({
             type: 'error',
-            text1: 'Sesión expirada',
-            text2: 'Tus credenciales han caducado, por favor inicia sesión de nuevo.',
-            visibilityTime: 4000
+            text1: '⏱ Sesión expirada',
+            text2: 'Tu sesión ha expirado. Por favor inicia sesión de nuevo.',
+            visibilityTime: 4500,
         });
+
+        // Resetear la bandera al cabo de 5 segundos para permitir nuevos logins
+        setTimeout(() => { _sessionExpiredFired = false; }, 5000);
     }
 });
 
@@ -106,8 +124,10 @@ const wsLink = new GraphQLWsLink(createClient({
     url: wsUrl,
     connectionParams: async () => {
         const token = await SecureStore.getItemAsync('access_token');
+        const cityId = Constants.expoConfig?.extra?.cityId || 'chunchi';
         return {
             Authorization: token ? `Bearer ${token}` : '',
+            'x-city-id': cityId,
         };
     },
 }));
@@ -129,9 +149,11 @@ const splitLink = split(
 export const apolloClient = new ApolloClient({
     link: from([errorLink, splitLink]),
     cache: new InMemoryCache({
-        // Permite al cache entender qué tipos concretos puede devolver el union FeedItem
+        // Permite al cache entender qué tipos concretos puede devolver el union FeedItem y SavedContent
         possibleTypes: {
             FeedItem: ['Post', 'JobOffer', 'ProfessionalProfile', 'StoreProduct'],
+            SavedContent: ['Post', 'JobOffer', 'ProfessionalProfile', 'StoreProduct'],
+            LikedContent: ['Post', 'StoreProduct'],
         },
         typePolicies: {
             Query: {

@@ -47,10 +47,15 @@ export class ProfessionalsService {
     })) ?? savedProfile;
   }
 
-  async findAllProfessionals(limit: number = 20, offset: number = 0, viewerId?: string): Promise<ProfessionalProfile[]> {
+  async findAllProfessionals(limit: number = 20, offset: number = 0, viewerId?: string, cityId?: string): Promise<ProfessionalProfile[]> {
     const query = this.profileRepository.createQueryBuilder('profile')
       .leftJoinAndSelect('profile.user', 'user')
       .leftJoinAndSelect('profile.media', 'media');
+
+    // ── Multi-tenant filter ───────────────────────────────────────────────
+    if (cityId) {
+      query.andWhere('user.cityId = :cityId', { cityId });
+    }
 
     if (viewerId) {
       query.andWhere(qb => {
@@ -72,20 +77,28 @@ export class ProfessionalsService {
       .getMany();
   }
   
-  async findOneByUserId(userId: string): Promise<ProfessionalProfile | null> {
-    return this.profileRepository.findOne({ where: { userId } });
+  async findOneByUserId(userId: string, cityId?: string): Promise<ProfessionalProfile | null> {
+    const where: any = { userId };
+    if (cityId) where.user = { cityId };
+    return this.profileRepository.findOne({ where });
   }
 
-  async findAllByUserId(userId: string): Promise<ProfessionalProfile[]> {
+  async findAllByUserId(userId: string, cityId?: string, limit = 20, offset = 0): Promise<ProfessionalProfile[]> {
+    const where: any = { userId };
+    // if (cityId) where.user = { cityId }; // Esto a veces falla si el join no está hecho, mejor usar query builder o simple find
     return this.profileRepository.find({
-      where: { userId },
+      where,
       order: { createdAt: 'DESC' },
+      take: limit,
+      skip: offset,
       relations: ['media', 'user'],
     });
   }
 
-  async findOneById(id: string): Promise<ProfessionalProfile | null> {
-    return this.profileRepository.findOne({ where: { id }, relations: ['media', 'user'] });
+  async findOneById(id: string, cityId?: string): Promise<ProfessionalProfile | null> {
+    const where: any = { id };
+    if (cityId) where.user = { cityId };
+    return this.profileRepository.findOne({ where, relations: ['media', 'user'] });
   }
 
   async deleteProfessionalProfile(id: string, userId: string): Promise<boolean> {

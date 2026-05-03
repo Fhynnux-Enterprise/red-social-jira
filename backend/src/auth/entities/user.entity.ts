@@ -1,4 +1,4 @@
-import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, OneToMany, OneToOne } from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, OneToMany, OneToOne, ManyToOne, JoinColumn, Unique } from 'typeorm';
 import { ObjectType, Field, ID } from '@nestjs/graphql';
 import { Post } from '../../posts/entities/post.entity';
 import { UserCustomField } from '../../users/entities/user-custom-field.entity';
@@ -12,17 +12,19 @@ import { JobOffer } from '../../jobs/entities/job-offer.entity';
 import { ProfessionalProfile } from '../../jobs/entities/professional-profile.entity';
 import { JobApplication } from '../../jobs/entities/job-application.entity';
 import { UserRole } from '../enums/user-role.enum';
+import { City } from '../../cities/entities/city.entity';
 
 
 @ObjectType()
 @Entity('users')
+@Unique(['email', 'cityId'])
 export class User {
     @Field(() => ID)
     @PrimaryColumn('uuid')
     id: string;
 
     @Field()
-    @Column({ unique: true })
+    @Column()
     email: string;
 
     @Field()
@@ -84,6 +86,17 @@ export class User {
     @Field({ nullable: true })
     @Column({ name: 'ban_reason', type: 'varchar', nullable: true })
     banReason?: string;
+
+    // ── Multi-tenant: City isolation ──────────────────────────────────────
+    @Field()
+    @Column({ name: 'city_id', default: 'chunchi' })
+    cityId: string;
+
+    @Field(() => City, { nullable: true })
+    @ManyToOne(() => City, { eager: false, nullable: true })
+    @JoinColumn({ name: 'city_id' })
+    city?: City;
+
 
     @Field(() => [Post], { nullable: true })
     @OneToMany(() => Post, (post) => post.author)

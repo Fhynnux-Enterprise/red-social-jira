@@ -12,10 +12,11 @@ import { StoreProductComment } from '../store/entities/store-product-comment.ent
 import { JobOffer } from '../jobs/entities/job-offer.entity';
 import { ProfessionalProfile } from '../jobs/entities/professional-profile.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { LocalAd } from '../advertisers/entities/local-ad.entity';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Report, Post, PostMedia, StoreProduct, StoreProductMedia, Comment, StoreProductComment, JobOffer, ProfessionalProfile]),
+        TypeOrmModule.forFeature([Report, Post, PostMedia, StoreProduct, StoreProductMedia, Comment, StoreProductComment, JobOffer, ProfessionalProfile, LocalAd]),
         NotificationsModule
     ],
     providers: [ReportsService, ReportsResolver],

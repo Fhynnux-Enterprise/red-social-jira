@@ -4,8 +4,13 @@ import { Repository, DataSource } from 'typeorm';
 import { Post } from './entities/post.entity';
 import { PostLike } from './entities/post-like.entity';
 import { PostMedia } from './entities/post-media.entity';
+import { SavedItem, SavedItemType } from './entities/saved-item.entity';
 import { PostMediaInput } from './dto/post-media.input';
 import { UserBlocksService } from '../user-blocks/user-blocks.service';
+import { StoreProduct } from '../store/entities/store-product.entity';
+import { StoreProductLike } from '../store/entities/store-product-like.entity';
+import { JobOffer } from '../jobs/entities/job-offer.entity';
+import { ProfessionalProfile } from '../jobs/entities/professional-profile.entity';
 import { UserBlock } from '../user-blocks/entities/user-block.entity';
 
 @Injectable()
@@ -17,11 +22,21 @@ export class PostsService {
         private readonly postLikesRepository: Repository<PostLike>,
         @InjectRepository(PostMedia)
         private readonly postMediaRepository: Repository<PostMedia>,
+        @InjectRepository(SavedItem)
+        private readonly savedItemsRepository: Repository<SavedItem>,
+        @InjectRepository(StoreProduct)
+        private readonly storeProductsRepository: Repository<StoreProduct>,
+        @InjectRepository(StoreProductLike)
+        private readonly storeProductLikesRepository: Repository<StoreProductLike>,
+        @InjectRepository(JobOffer)
+        private readonly jobOffersRepository: Repository<JobOffer>,
+        @InjectRepository(ProfessionalProfile)
+        private readonly professionalProfilesRepository: Repository<ProfessionalProfile>,
         private readonly dataSource: DataSource,
         private readonly userBlocksService: UserBlocksService,
     ) { }
 
-    async createPost(content: string, authorId: string, media?: PostMediaInput[], title?: string): Promise<Post> {
+    async createPost(content: string, authorId: string, cityId: string, media?: PostMediaInput[], title?: string): Promise<Post> {
         const queryRunner = this.dataSource.createQueryRunner();
         await queryRunner.connect();
         await queryRunner.startTransaction();
@@ -31,6 +46,7 @@ export class PostsService {
                 content,
                 title,
                 authorId,
+                cityId,   // ← tenant stamp
             });
             newPost = await queryRunner.manager.save(newPost);
 
@@ -64,13 +80,18 @@ export class PostsService {
         }
     }
 
-    async findAll(limit: number = 5, offset: number = 0, viewerId?: string): Promise<Post[]> {
+    async findAll(limit: number = 5, offset: number = 0, viewerId?: string, cityId?: string): Promise<Post[]> {
         const query = this.postsRepository.createQueryBuilder('post')
             .leftJoinAndSelect('post.author', 'author')
             .leftJoinAndSelect('post.likes', 'likes')
             .leftJoinAndSelect('likes.user', 'likeUser')
             .leftJoinAndSelect('post.media', 'media')
             .where('post.deletedAt IS NULL');
+
+        // ── Multi-tenant filter ───────────────────────────────────────────────
+        if (cityId) {
+            query.andWhere('post.cityId = :cityId', { cityId });
+        }
 
         if (viewerId) {
             query.andWhere(qb => {
@@ -120,14 +141,19 @@ export class PostsService {
         return posts;
     }
 
-    async findById(id: string): Promise<Post> {
-        const post = await this.postsRepository.createQueryBuilder('post')
+    async findById(id: string, cityId?: string): Promise<Post> {
+        const query = this.postsRepository.createQueryBuilder('post')
             .leftJoinAndSelect('post.author', 'author')
             .leftJoinAndSelect('post.likes', 'likes')
             .leftJoinAndSelect('likes.user', 'likeUser')
             .leftJoinAndSelect('post.media', 'media')
-            .where('post.id = :id', { id })
-            .getOne();
+            .where('post.id = :id', { id });
+
+        if (cityId) {
+            query.andWhere('post.cityId = :cityId', { cityId });
+        }
+
+        const post = await query.getOne();
         if (!post) throw new NotFoundException('Publicación no encontrada');
         if (post.media && post.media.length > 1) {
             post.media.sort((a, b) => a.order - b.order);
@@ -135,15 +161,22 @@ export class PostsService {
         return post;
     }
 
-    async searchPosts(query: string, limit: number = 5, offset: number = 0): Promise<Post[]> {
+    async searchPosts(query: string, limit: number = 5, offset: number = 0, cityId?: string): Promise<Post[]> {
         const term = `%${query}%`;
-        const posts = await this.postsRepository.createQueryBuilder('post')
+        const qb = this.postsRepository.createQueryBuilder('post')
             .leftJoinAndSelect('post.author', 'author')
             .leftJoinAndSelect('post.likes', 'likes')
             .leftJoinAndSelect('likes.user', 'likeUser')
             .leftJoinAndSelect('post.media', 'media')
             .where('post.title ILIKE :term OR post.content ILIKE :term', { term })
-            .andWhere('post.deletedAt IS NULL')
+            .andWhere('post.deletedAt IS NULL');
+
+        // ── Multi-tenant filter ───────────────────────────────────────────────
+        if (cityId) {
+            qb.andWhere('post.cityId = :cityId', { cityId });
+        }
+
+        const posts = await qb
             .orderBy('post.createdAt', 'DESC')
             .take(limit)
             .skip(offset)
@@ -176,14 +209,20 @@ export class PostsService {
         return posts;
     }
 
-    async findByUser(authorId: string, limit: number = 5, offset: number = 0): Promise<Post[]> {
-        const posts = await this.postsRepository.createQueryBuilder('post')
+    async findByUser(authorId: string, limit: number = 5, offset: number = 0, cityId?: string): Promise<Post[]> {
+        const query = this.postsRepository.createQueryBuilder('post')
             .where('post.authorId = :authorId', { authorId })
             .andWhere('post.deletedAt IS NULL')
             .leftJoinAndSelect('post.author', 'author')
             .leftJoinAndSelect('post.likes', 'likes')
             .leftJoinAndSelect('likes.user', 'likeUser')
-            .leftJoinAndSelect('post.media', 'media')
+            .leftJoinAndSelect('post.media', 'media');
+
+        if (cityId) {
+            query.andWhere('post.cityId = :cityId', { cityId });
+        }
+
+        const posts = await query
             .orderBy('post.createdAt', 'DESC')
             .addOrderBy('post.id', 'DESC')
             .take(limit)
@@ -251,7 +290,7 @@ export class PostsService {
         return true;
     }
 
-    async toggleLike(postId: string, userId: string): Promise<Post> {
+    async toggleLike(postId: string, userId: string, cityId: string): Promise<Post> {
         const post = await this.postsRepository.findOne({ where: { id: postId } });
         if (!post) {
             throw new NotFoundException('Publicación no encontrada');
@@ -264,7 +303,7 @@ export class PostsService {
         if (existingLike) {
             await this.postLikesRepository.remove(existingLike);
         } else {
-            const newLike = this.postLikesRepository.create({ postId, userId });
+            const newLike = this.postLikesRepository.create({ postId, userId, cityId });
             await this.postLikesRepository.save(newLike);
         }
 
@@ -278,5 +317,170 @@ export class PostsService {
         }
 
         return fullyLoadedPost;
+    }
+
+    async checkIfSaved(itemId: string, userId: string, cityId: string): Promise<boolean> {
+        const count = await this.savedItemsRepository.count({
+            where: { itemId, userId }
+        });
+        return count > 0;
+    }
+
+    async toggleSaveItem(itemId: string, itemType: SavedItemType, userId: string, cityId: string): Promise<boolean> {
+        const existingSave = await this.savedItemsRepository.findOne({
+            where: { itemId, itemType, userId }
+        });
+
+        if (existingSave) {
+            await this.savedItemsRepository.remove(existingSave);
+            return false;
+        } else {
+            const newSave = this.savedItemsRepository.create({ itemId, itemType, userId, cityId });
+            await this.savedItemsRepository.save(newSave);
+            return true;
+        }
+    }
+
+    async getSavedItems(userId: string, cityId: string, limit: number = 20, offset: number = 0): Promise<any[]> {
+        const savedItems = await this.savedItemsRepository.find({
+            where: { userId },
+            order: { createdAt: 'DESC' },
+            take: limit,
+            skip: offset,
+        });
+
+        if (savedItems.length === 0) return [];
+
+        const results: any[] = [];
+
+        // Agrupar por tipo para optimizar queries si fuera necesario, 
+        // pero por ahora resolveremos uno a uno para mantener el orden de guardado (DESC)
+        for (const saved of savedItems) {
+            let item: any = null;
+            if (saved.itemType === SavedItemType.POST) {
+                item = await this.postsRepository.findOne({
+                    where: { id: saved.itemId },
+                    relations: ['author', 'media', 'likes', 'likes.user']
+                });
+                if (item) {
+                    item.__typename = 'Post';
+                    item.isSaved = true;
+                    const countRow = await this.postsRepository.manager.query(
+                        'SELECT COUNT(*) as count FROM comments WHERE post_id = $1 AND deleted_at IS NULL',
+                        [item.id]
+                    );
+                    item.commentsCount = parseInt(countRow[0].count, 10);
+                }
+            } else if (saved.itemType === SavedItemType.STORE_PRODUCT) {
+                item = await this.storeProductsRepository.findOne({
+                    where: { id: saved.itemId },
+                    relations: ['seller', 'media']
+                });
+                if (item) {
+                    item.__typename = 'StoreProduct';
+                    item.isSaved = true;
+                }
+            } else if (saved.itemType === SavedItemType.JOB_OFFER) {
+                item = await this.jobOffersRepository.findOne({
+                    where: { id: saved.itemId },
+                    relations: ['author', 'media']
+                });
+                if (item) {
+                    item.__typename = 'JobOffer';
+                    item.isSaved = true;
+                }
+            } else if (saved.itemType === SavedItemType.PROFESSIONAL_PROFILE) {
+                item = await this.professionalProfilesRepository.findOne({
+                    where: { id: saved.itemId }, // ProfessionalProfile doesn't have cityId yet
+                    relations: ['user', 'media']
+                });
+                if (item) {
+                    item.__typename = 'ProfessionalProfile';
+                    item.isSaved = true;
+                }
+            }
+
+            if (item) {
+                results.push({
+                    ...item,
+                    __typename: saved.itemType === SavedItemType.POST ? 'Post' :
+                                saved.itemType === SavedItemType.STORE_PRODUCT ? 'StoreProduct' :
+                                saved.itemType === SavedItemType.JOB_OFFER ? 'JobOffer' :
+                                saved.itemType === SavedItemType.PROFESSIONAL_PROFILE ? 'ProfessionalProfile' : 'Post',
+                    isSaved: true
+                });
+            }
+        }
+
+        return results;
+    }
+
+    async getLikedItems(userId: string, cityId: string, limit: number = 20, offset: number = 0): Promise<any[]> {
+        console.log(`[PostsService] Fetching liked items for user: ${userId}`);
+        
+        // Query post likes
+        const postLikes = await this.postLikesRepository.find({
+            where: { userId },
+            order: { createdAt: 'DESC' },
+            take: limit + offset,
+        });
+
+        // Query store product likes
+        const storeLikes = await this.storeProductLikesRepository.find({
+            where: { userId },
+            order: { createdAt: 'DESC' },
+            take: limit + offset,
+        });
+
+        console.log(`[PostsService] Found ${postLikes.length} post likes and ${storeLikes.length} store likes`);
+
+        // Combine and sort by createdAt
+        const combined = [
+            ...postLikes.map(l => ({ id: l.postId, type: 'POST', createdAt: l.createdAt })),
+            ...storeLikes.map(l => ({ id: l.storeProductId, type: 'STORE_PRODUCT', createdAt: l.createdAt }))
+        ].sort((a, b) => {
+            const timeA = a.createdAt?.getTime() || 0;
+            const timeB = b.createdAt?.getTime() || 0;
+            return timeB - timeA;
+        }).slice(offset, offset + limit);
+
+        if (combined.length === 0) {
+            console.log(`[PostsService] No combined likes found after slice`);
+            return [];
+        }
+
+        const results: any[] = [];
+        for (const item of combined) {
+            let entity: any = null;
+            if (item.type === 'POST') {
+                entity = await this.postsRepository.findOne({
+                    where: { id: item.id },
+                    relations: ['author', 'media', 'likes', 'likes.user']
+                });
+                if (entity) {
+                    entity.__typename = 'Post';
+                    const countRow = await this.postsRepository.manager.query(
+                        'SELECT COUNT(*) as count FROM comments WHERE post_id = $1 AND deleted_at IS NULL',
+                        [entity.id]
+                    );
+                    entity.commentsCount = parseInt(countRow[0].count, 10);
+                }
+            } else if (item.type === 'STORE_PRODUCT') {
+                entity = await this.storeProductsRepository.findOne({
+                    where: { id: item.id },
+                    relations: ['seller', 'media', 'likes', 'likes.user']
+                });
+                if (entity) {
+                    entity.__typename = 'StoreProduct';
+                }
+            }
+
+            if (entity) {
+                results.push(entity);
+            }
+        }
+
+        console.log(`[PostsService] Returning ${results.length} liked entities`);
+        return results;
     }
 }

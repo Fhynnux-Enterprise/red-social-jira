@@ -133,7 +133,7 @@ export const GET_FEED = gql`
             ... on Post {
                 id
                 content
-                title
+                postTitle: title
                 createdAt
                 updatedAt
                 editedAt
@@ -166,9 +166,9 @@ export const GET_FEED = gql`
                 id
                 jobTitle: title
                 description
-                location
+                jobLocation: location
                 salary
-                contactPhone
+                jobContactPhone: contactPhone
                 createdAt
                 editedAt
                 jobMedia: media {
@@ -190,7 +190,7 @@ export const GET_FEED = gql`
                 profession
                 description
                 experienceYears
-                contactPhone
+                profContactPhone: contactPhone
                 createdAt
                 editedAt
                 profMedia: media {
@@ -205,6 +205,199 @@ export const GET_FEED = gql`
                     lastName
                     username
                     photoUrl
+                }
+            }
+            ... on StoreProduct {
+                id
+                storeTitle: title
+                description
+                price
+                currency
+                storeLocation: location
+                storeContactPhone: contactPhone
+                condition
+                category
+                isAvailable
+                createdAt
+                editedAt
+                commentsCount
+                storeMedia: media {
+                    id
+                    url
+                    type
+                    order
+                }
+                likes {
+                    id
+                    user {
+                        id
+                        firstName
+                        lastName
+                        username
+                        photoUrl
+                    }
+                }
+                seller {
+                    id
+                    firstName
+                    lastName
+                    username
+                    photoUrl
+                }
+            }
+        }
+    }
+`;
+
+export const TOGGLE_SAVE_POST = gql`
+    mutation ToggleSavePost($postId: String!, $itemType: SavedItemType) {
+        toggleSavePost(postId: $postId, itemType: $itemType)
+    }
+`;
+
+export const GET_SAVED_POSTS = gql`
+    query GetSavedPosts($limit: Int, $offset: Int) {
+        getSavedPosts(limit: $limit, offset: $offset) {
+            __typename
+            ... on Post {
+                id
+                content
+                postTitle: title
+                createdAt
+                updatedAt
+                editedAt
+                commentsCount
+                postMedia: media {
+                    id
+                    url
+                    type
+                    order
+                }
+                author {
+                    id
+                    firstName
+                    lastName
+                    username
+                    photoUrl
+                }
+            }
+            ... on JobOffer {
+                id
+                jobTitle: title
+                description
+                jobLocation: location
+                salary
+                jobContactPhone: contactPhone
+                createdAt
+                editedAt
+                jobMedia: media {
+                    id
+                    url
+                    type
+                    order
+                }
+                author {
+                    id
+                    firstName
+                    lastName
+                    username
+                    photoUrl
+                }
+            }
+            ... on ProfessionalProfile {
+                id
+                profession
+                description
+                experienceYears
+                profContactPhone: contactPhone
+                createdAt
+                editedAt
+                profMedia: media {
+                    id
+                    url
+                    type
+                    order
+                }
+                user {
+                    id
+                    firstName
+                    lastName
+                    username
+                    photoUrl
+                }
+            }
+            ... on StoreProduct {
+                id
+                storeTitle: title
+                description
+                price
+                currency
+                storeLocation: location
+                storeContactPhone: contactPhone
+                condition
+                category
+                isAvailable
+                createdAt
+                editedAt
+                commentsCount
+                storeMedia: media {
+                    id
+                    url
+                    type
+                    order
+                }
+                likes {
+                    id
+                    user {
+                        id
+                        firstName
+                        lastName
+                        username
+                        photoUrl
+                    }
+                }
+                seller {
+                    id
+                    firstName
+                    lastName
+                    username
+                    photoUrl
+                }
+            }
+        }
+    }
+`;
+
+export const GET_LIKED_POSTS = gql`
+    query GetLikedItems($limit: Int, $offset: Int) {
+        getLikedItems(limit: $limit, offset: $offset) {
+            __typename
+            ... on Post {
+                id
+                content
+                postTitle: title
+                createdAt
+                updatedAt
+                editedAt
+                commentsCount
+                postMedia: media {
+                    id
+                    url
+                    type
+                    order
+                }
+                author {
+                    id
+                    firstName
+                    lastName
+                    username
+                    photoUrl
+                }
+                likes {
+                    id
+                    user {
+                        id
+                    }
                 }
             }
             ... on StoreProduct {

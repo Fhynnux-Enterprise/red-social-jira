@@ -16,6 +16,6 @@ export class FeedResolver {
     @Args('offset', { type: () => Int, defaultValue: 0 }) offset: number,
     @CurrentUser() user: any,
   ): Promise<FeedItemType[]> {
-    return this.feedService.getUnifiedFeed(limit, offset, user.id);
+    return this.feedService.getUnifiedFeed(limit, offset, user.id, user.cityId);
   }
 }

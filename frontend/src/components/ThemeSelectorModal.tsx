@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, TouchableWithoutFeedback } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 
@@ -35,7 +36,7 @@ export default function ThemeSelectorModal({ visible, onClose, onSelectTheme, cu
                             <View style={styles.handle} />
                             <Text style={styles.title}>Elige tu tema</Text>
                             <Text style={styles.subtitle}>
-                                Personaliza cómo se ve Chunchi City en este dispositivo.
+                                Personaliza cómo se ve {Constants.expoConfig?.extra?.cityName || 'la app'} en este dispositivo.
                             </Text>
 
                             <View style={styles.optionsContainer}>

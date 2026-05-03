@@ -10,9 +10,13 @@ interface PostOptionsModalProps {
     onClose: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    isOwner?: boolean;
+    onReport?: () => void;
+    onToggleSave?: () => void;
+    isSaved?: boolean;
 }
 
-export default function PostOptionsModal({ visible, onClose, onEdit, onDelete }: PostOptionsModalProps) {
+export default function PostOptionsModal({ visible, onClose, onEdit, onDelete, isOwner = true, onReport, onToggleSave, isSaved = false }: PostOptionsModalProps) {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const styles = useMemo(() => getStyles(colors, isDark, insets), [colors, isDark, insets]);
@@ -51,18 +55,38 @@ export default function PostOptionsModal({ visible, onClose, onEdit, onDelete }:
 
                                 <Text style={styles.modalTitle}>Opciones</Text>
 
-                                <TouchableOpacity style={styles.optionButton} onPress={handleEditPress}>
-                                    <View style={styles.iconContainer}>
-                                        <Ionicons name="pencil" size={20} color={colors.text} />
-                                    </View>
-                                    <Text style={styles.optionText}>Editar publicación</Text>
-                                </TouchableOpacity>
+                                {isOwner ? (
+                                    <>
+                                        <TouchableOpacity style={styles.optionButton} onPress={handleEditPress}>
+                                            <View style={styles.iconContainer}>
+                                                <Ionicons name="pencil" size={20} color={colors.text} />
+                                            </View>
+                                            <Text style={styles.optionText}>Editar publicación</Text>
+                                        </TouchableOpacity>
 
-                                <TouchableOpacity style={styles.optionButton} onPress={handleDeletePress}>
-                                    <View style={[styles.iconContainer, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
-                                        <Ionicons name="trash" size={20} color="#FF3B30" />
+                                        <TouchableOpacity style={styles.optionButton} onPress={handleDeletePress}>
+                                            <View style={[styles.iconContainer, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
+                                                <Ionicons name="trash" size={20} color="#FF3B30" />
+                                            </View>
+                                            <Text style={[styles.optionText, { color: '#FF3B30' }]}>Eliminar publicación</Text>
+                                        </TouchableOpacity>
+                                    </>
+                                ) : (
+                                    <TouchableOpacity style={styles.optionButton} onPress={() => { onClose(); onReport?.(); }}>
+                                        <View style={styles.iconContainer}>
+                                            <Ionicons name="flag" size={20} color={colors.text} />
+                                        </View>
+                                        <Text style={styles.optionText}>Reportar publicación</Text>
+                                    </TouchableOpacity>
+                                )}
+
+                                <TouchableOpacity style={styles.optionButton} onPress={() => { onClose(); onToggleSave?.(); }}>
+                                    <View style={styles.iconContainer}>
+                                        <Ionicons name={isSaved ? "bookmark" : "bookmark-outline"} size={20} color={isSaved ? colors.primary : colors.text} />
                                     </View>
-                                    <Text style={[styles.optionText, { color: '#FF3B30' }]}>Eliminar publicación</Text>
+                                    <Text style={[styles.optionText, isSaved && { color: colors.primary }]}>
+                                        {isSaved ? 'Quitar de guardados' : 'Guardar publicación'}
+                                    </Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity style={[styles.optionButton, { marginTop: 10 }]} onPress={onClose}>

@@ -40,6 +40,7 @@ export class ApplicationsService {
   async applyToJob(
     input: ApplyToJobInput,
     applicantId: string,
+    cityId: string,
   ): Promise<ApplyToJobResponse> {
     // 1. Verificar que la oferta existe
     const jobOffer = await this.jobOfferRepo.findOne({
@@ -63,6 +64,7 @@ export class ApplicationsService {
         'cv.pdf',
         'cvs',
         'application/pdf',
+        cityId,
       );
 
     // 4. Guardar la postulación (cvUrl = la URL pública que tendrá el PDF una vez subido)
@@ -176,7 +178,7 @@ export class ApplicationsService {
   /**
    * Actualiza tu propia postulación y puede devolver un nuevo enlace de CV.
    */
-  async updateApplication(input: UpdateApplicationInput, applicantId: string): Promise<ApplyToJobResponse> {
+  async updateApplication(input: UpdateApplicationInput, applicantId: string, cityId: string): Promise<ApplyToJobResponse> {
     const application = await this.applicationRepo.findOne({
       where: { id: input.applicationId },
       relations: ['applicant', 'jobOffer', 'jobOffer.author'],
@@ -190,7 +192,7 @@ export class ApplicationsService {
     let cvPublicUrl = application.cvUrl;
 
     if (input.requestNewCv) {
-      const res = await this.storageService.generatePresignedUploadUrl('cv.pdf', 'cvs', 'application/pdf');
+      const res = await this.storageService.generatePresignedUploadUrl('cv.pdf', 'cvs', 'application/pdf', cityId);
       cvUploadUrl = res.uploadUrl;
       cvPublicUrl = res.publicUrl;
     }
