@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 import { LocalAdMedia } from './local-ad-media.entity';
+import { City } from '../../cities/entities/city.entity';
 
 @Entity('local_ads')
 @ObjectType()
@@ -63,6 +64,16 @@ export class LocalAd {
   @OneToMany(() => LocalAdMedia, (media) => media.ad, { eager: true, cascade: true })
   @Field(() => [LocalAdMedia], { nullable: true })
   media: LocalAdMedia[];
+
+  // ── Multi-tenant: City isolation ───────────────────────────────────────
+  @Column({ name: 'city_id', default: 'chunchi' })
+  @Field()
+  cityId: string;
+
+  @ManyToOne(() => City, { eager: false, nullable: true })
+  @JoinColumn({ name: 'city_id' })
+  @Field(() => City, { nullable: true })
+  city?: City;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   @Field()

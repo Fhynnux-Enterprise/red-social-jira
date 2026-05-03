@@ -46,6 +46,8 @@ interface Props {
   onPress?: () => void;
   onCommentPress?: () => void;
   isModalView?: boolean;
+  onToggleSave?: (item: StoreProduct) => void;
+  isSaved?: boolean;
 }
 
 function formatDate(isoString: string) {
@@ -75,7 +77,7 @@ function conditionColor(c?: string) {
   return '#FF9800';
 }
 
-export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdit, onPress, onCommentPress, isModalView }: Props) {
+export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdit, onPress, onCommentPress, isModalView, onToggleSave, isSaved: propIsSaved }: Props) {
   const { colors, isDark } = useTheme();
   const { user } = useAuth() as any;
   const router = useRouter();
@@ -102,6 +104,8 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
     setLocalLiked(item.likes?.some(l => l.user?.id === user?.id) || false);
     setLocalCount(item.likes?.length || 0);
   }, [item.likes, user?.id]);
+
+  const displayIsSaved = propIsSaved ?? (item as any).isSaved;
 
   const [toggleLikeMutation] = useMutation(TOGGLE_STORE_PRODUCT_LIKE);
   const [getOrCreateChat, { loading: creatingChat }] = useMutation(GET_OR_CREATE_CHAT);
@@ -138,6 +142,7 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
 
     toggleLikeMutation({
       variables: { productId: item.id },
+      refetchQueries: ['GetLikedItems'],
       optimisticResponse: {
         toggleStoreProductLike: {
           __typename: 'StoreProduct',
@@ -373,6 +378,15 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
                       <Text style={[styles.menuLabel, { color: colors.text }]}>Reportar producto</Text>
                     </TouchableOpacity>
                   )}
+                  
+                  <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); onToggleSave?.(item); }}>
+                    <View style={[styles.menuIconWrap, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
+                      <Ionicons name={displayIsSaved ? "bookmark" : "bookmark-outline"} size={20} color={displayIsSaved ? colors.primary : colors.text} />
+                    </View>
+                    <Text style={[styles.menuLabel, { color: displayIsSaved ? colors.primary : colors.text }]}>
+                      {displayIsSaved ? 'Quitar de guardados' : 'Guardar producto'}
+                    </Text>
+                  </TouchableOpacity>
                   
                   <TouchableOpacity style={[styles.menuItem, { marginTop: 10, borderBottomWidth: 0 }]} onPress={() => setMenuVisible(false)}>
                     <View style={[styles.menuIconWrap, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>

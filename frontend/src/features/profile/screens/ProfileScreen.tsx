@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback, memo } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, RefreshControl, Platform, FlatList, TextInput, KeyboardAvoidingView, Linking } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, RefreshControl, Platform, FlatList, TextInput, KeyboardAvoidingView, Linking, ScrollView } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,8 +10,9 @@ import ThemeSelectorModal from '../../../components/ThemeSelectorModal';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import Toast from 'react-native-toast-message';
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
+import { gql } from '@apollo/client';
 import { GET_USER_PROFILE, CREATE_REPORT, GET_MY_REPORT_STATUS } from '../graphql/profile.operations';
-import { DELETE_POST, GET_POSTS } from '../../feed/graphql/posts.operations';
+import { DELETE_POST, GET_POSTS, GET_SAVED_POSTS, GET_LIKED_POSTS, TOGGLE_SAVE_POST } from '../../feed/graphql/posts.operations';
 import { TOGGLE_FOLLOW, IS_FOLLOWING } from '../../follows/graphql/follows.operations';
 import { BLOCK_USER, UNBLOCK_USER } from '../../user-blocks/graphql/user-blocks.operations';
 import { GET_STORE_PRODUCTS_BY_USER, DELETE_STORE_PRODUCT } from '../../store/graphql/store.operations';
@@ -43,7 +44,7 @@ interface ProfileHeaderProps {
     userData: any;
     isMyProfile: boolean;
     isFollowing: boolean;
-    activeTab: 'all' | 'store' | 'jobs';
+    activeTab: 'all' | 'store' | 'jobs' | 'saved' | 'likes';
     colors: ThemeColors;
     currentUserRole?: string;
     onToggleFollow: () => void;
@@ -51,7 +52,7 @@ interface ProfileHeaderProps {
     onEditProfile: () => void;
     onOpenMenu: () => void;
     onGoBack: () => void;
-    onTabChange: (tab: 'all' | 'store' | 'jobs') => void;
+    onTabChange: (tab: 'all' | 'store' | 'jobs' | 'saved' | 'likes') => void;
     onOpenContextMenu: () => void;
 }
 
@@ -93,7 +94,7 @@ const ProfileHeader = memo(({
                                 <Ionicons name="pencil" size={20} color="#FFF" />
                             </TouchableOpacity>
                             <TouchableOpacity onPress={onOpenMenu} style={headerStyles.floatingMenuButton}>
-                                <Ionicons name="ellipsis-vertical" size={24} color="#FFF" />
+                                <Ionicons name="menu-outline" size={24} color="#FFF" />
                             </TouchableOpacity>
                         </>
                     ) : (
@@ -147,35 +148,57 @@ const ProfileHeader = memo(({
                 <ProfileBio bio={userData?.bio} phone={userData?.phone} customFields={userData?.customFields} />
             </View>
 
-            {/* Tab Bar */}
+            {/* Tab Bar — Diseño optimizado para 5 pestañas sin scroll */}
             <View style={headerStyles.tabBar}>
-                <TouchableOpacity
-                    style={[headerStyles.tabItem, activeTab === 'all' && headerStyles.tabItemActive]}
-                    onPress={() => onTabChange('all')}
-                >
-                    <Ionicons name="grid-outline" size={20} color={activeTab === 'all' ? colors.primary : colors.textSecondary} />
-                    <Text style={[headerStyles.tabLabel, { color: activeTab === 'all' ? colors.primary : colors.textSecondary }]}>
-                        Todo
-                    </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[headerStyles.tabItem, activeTab === 'store' && headerStyles.tabItemActive]}
-                    onPress={() => onTabChange('store')}
-                >
-                    <Ionicons name="storefront-outline" size={20} color={activeTab === 'store' ? colors.primary : colors.textSecondary} />
-                    <Text style={[headerStyles.tabLabel, { color: activeTab === 'store' ? colors.primary : colors.textSecondary }]}>
-                        Tienda
-                    </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[headerStyles.tabItem, activeTab === 'jobs' && headerStyles.tabItemActive]}
-                    onPress={() => onTabChange('jobs')}
-                >
-                    <Ionicons name="briefcase-outline" size={20} color={activeTab === 'jobs' ? colors.primary : colors.textSecondary} />
-                    <Text style={[headerStyles.tabLabel, { color: activeTab === 'jobs' ? colors.primary : colors.textSecondary }]}>
-                        Empleos
-                    </Text>
-                </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[headerStyles.tabItem, activeTab === 'all' && headerStyles.tabItemActive]}
+                        onPress={() => onTabChange('all')}
+                    >
+                        <Ionicons name="grid-outline" size={16} color={activeTab === 'all' ? colors.primary : colors.textSecondary} />
+                        <Text numberOfLines={1} style={[headerStyles.tabLabel, { color: activeTab === 'all' ? colors.primary : colors.textSecondary }]}>
+                            Todo
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[headerStyles.tabItem, activeTab === 'store' && headerStyles.tabItemActive]}
+                        onPress={() => onTabChange('store')}
+                    >
+                        <Ionicons name="storefront-outline" size={16} color={activeTab === 'store' ? colors.primary : colors.textSecondary} />
+                        <Text numberOfLines={1} style={[headerStyles.tabLabel, { color: activeTab === 'store' ? colors.primary : colors.textSecondary }]}>
+                            Tienda
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[headerStyles.tabItem, activeTab === 'jobs' && headerStyles.tabItemActive]}
+                        onPress={() => onTabChange('jobs')}
+                    >
+                        <Ionicons name="briefcase-outline" size={16} color={activeTab === 'jobs' ? colors.primary : colors.textSecondary} />
+                        <Text numberOfLines={1} style={[headerStyles.tabLabel, { color: activeTab === 'jobs' ? colors.primary : colors.textSecondary }]}>
+                            Empleos
+                        </Text>
+                    </TouchableOpacity>
+                    {isMyProfile && (
+                        <>
+                            <TouchableOpacity
+                                style={[headerStyles.tabItem, activeTab === 'saved' && headerStyles.tabItemActive]}
+                                onPress={() => onTabChange('saved')}
+                            >
+                                <Ionicons name="bookmark-outline" size={16} color={activeTab === 'saved' ? colors.primary : colors.textSecondary} />
+                                <Text numberOfLines={1} style={[headerStyles.tabLabel, { color: activeTab === 'saved' ? colors.primary : colors.textSecondary }]}>
+                                    Guardados
+                                </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[headerStyles.tabItem, activeTab === 'likes' && headerStyles.tabItemActive]}
+                                onPress={() => onTabChange('likes')}
+                            >
+                                <Ionicons name="heart-outline" size={16} color={activeTab === 'likes' ? colors.primary : colors.textSecondary} />
+                                <Text numberOfLines={1} style={[headerStyles.tabLabel, { color: activeTab === 'likes' ? colors.primary : colors.textSecondary }]}>
+                                    Likes
+                                </Text>
+                            </TouchableOpacity>
+                        </>
+                    )}
             </View>
         </>
     );
@@ -197,7 +220,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     const authContext = useAuth() as any;
     const currentUserId = authContext.user?.id;
 
-    const [activeTab, setActiveTab] = useState<'all' | 'store' | 'jobs'>('all');
+    const [activeTab, setActiveTab] = useState<'all' | 'store' | 'jobs' | 'saved' | 'likes'>('all');
     const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [isMenuVisible, setIsMenuVisible] = useState(false);
@@ -217,6 +240,11 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         initialTab?: 'comments' | 'likes';
     } | null>(null);
     const [hasMore, setHasMore] = useState(true);
+    const [hasMoreSaved, setHasMoreSaved] = useState(true);
+    const [hasMoreLiked, setHasMoreLiked] = useState(true);
+    const [hasMoreStore, setHasMoreStore] = useState(true);
+    const [hasMoreJobOffers, setHasMoreJobOffers] = useState(true);
+    const [hasMoreProfs, setHasMoreProfs] = useState(true);
     const [isFetchingMore, setIsFetchingMore] = useState(false);
     const resumeCommentsRef = useRef<any>(null);
 
@@ -236,6 +264,14 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     const profileUserId = propsUserId || route.params?.userId || currentUserId;
     const isMyProfile = profileUserId === currentUserId;
 
+    useEffect(() => {
+        if (route.params?.openMenu) {
+            setIsMenuVisible(true);
+            // Clear the param so it doesn't reopen automatically on re-focus
+            navigation.setParams({ openMenu: undefined } as any);
+        }
+    }, [route.params?.openMenu, navigation]);
+
     // ── Queries ──────────────────────────────────────────────────────────────
     const { data: gqlData, loading: gqlLoading, error: gqlError, refetch: refetchProfile, fetchMore } = useQuery<any>(GET_USER_PROFILE, {
         variables: { id: profileUserId, limit: PROFILE_PAGE_SIZE, offset: 0 },
@@ -244,22 +280,31 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         notifyOnNetworkStatusChange: true,
     });
 
-    const { data: storeData, refetch: refetchStore } = useQuery<any>(GET_STORE_PRODUCTS_BY_USER, {
-        variables: { userId: profileUserId },
+    const { data: storeData, refetch: refetchStore, fetchMore: fetchMoreStore } = useQuery<any>(GET_STORE_PRODUCTS_BY_USER, {
+        variables: { userId: profileUserId, limit: 20, offset: 0 },
         skip: !profileUserId,
         fetchPolicy: 'cache-and-network',
+        onCompleted: (data) => {
+            if ((data?.storeProductsByUser?.length || 0) < 20) setHasMoreStore(false);
+        }
     });
 
-    const { data: jobOffersData, refetch: refetchJobOffers } = useQuery<any>(GET_JOB_OFFERS_BY_USER, {
-        variables: { userId: profileUserId },
+    const { data: jobOffersData, refetch: refetchJobOffers, fetchMore: fetchMoreJobOffers } = useQuery<any>(GET_JOB_OFFERS_BY_USER, {
+        variables: { userId: profileUserId, limit: 20, offset: 0 },
         skip: !profileUserId,
         fetchPolicy: 'cache-and-network',
+        onCompleted: (data) => {
+            if ((data?.jobOffersByUser?.length || 0) < 20) setHasMoreJobOffers(false);
+        }
     });
 
-    const { data: profsData, refetch: refetchProfs } = useQuery<any>(GET_PROFESSIONAL_PROFILES_BY_USER, {
-        variables: { userId: profileUserId },
+    const { data: profsData, refetch: refetchProfs, fetchMore: fetchMoreProfs } = useQuery<any>(GET_PROFESSIONAL_PROFILES_BY_USER, {
+        variables: { userId: profileUserId, limit: 20, offset: 0 },
         skip: !profileUserId,
         fetchPolicy: 'cache-and-network',
+        onCompleted: (data) => {
+            if ((data?.professionalProfilesByUser?.length || 0) < 20) setHasMoreProfs(false);
+        }
     });
 
     const { data: followData } = useQuery<any>(IS_FOLLOWING, {
@@ -272,6 +317,25 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         variables: { userId: profileUserId },
         skip: !profileUserId,
         fetchPolicy: 'cache-and-network',
+    });
+
+    // Guardados y Likes — solo se carga si es mi propio perfil
+    const { data: savedData, refetch: refetchSaved, fetchMore: fetchMoreSaved } = useQuery<any>(GET_SAVED_POSTS, {
+        variables: { limit: 20, offset: 0 },
+        skip: !isMyProfile,
+        fetchPolicy: 'cache-and-network',
+        onCompleted: (data) => {
+            if ((data?.getSavedPosts?.length || 0) < 20) setHasMoreSaved(false);
+        }
+    });
+
+    const { data: likedData, refetch: refetchLiked, fetchMore: fetchMoreLiked } = useQuery<any>(GET_LIKED_POSTS, {
+        variables: { limit: 20, offset: 0 },
+        skip: !isMyProfile,
+        fetchPolicy: 'cache-and-network',
+        onCompleted: (data) => {
+            if ((data?.getLikedItems?.length || 0) < 20) setHasMoreLiked(false);
+        }
     });
 
     // ── Mutations ─────────────────────────────────────────────────────────────
@@ -323,6 +387,55 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         },
         onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message })
     });
+
+    const [toggleSavePost] = useMutation(TOGGLE_SAVE_POST);
+
+    const handleToggleSave = useCallback(async (item: any) => {
+        if (!item) return;
+
+        const itemId = item.realId || item.id;
+        const itemType = item.__typename === 'JobOffer' ? 'JOB_OFFER' :
+                         item.__typename === 'ProfessionalProfile' ? 'PROFESSIONAL_PROFILE' :
+                         item.__typename === 'StoreProduct' ? 'STORE_PRODUCT' :
+                         item.isAd || item.__typename === 'Ad' ? 'AD' : 'POST';
+
+        const wasSaved = !!item.isSaved;
+
+        try {
+            await toggleSavePost({
+                variables: { postId: itemId, itemType },
+                optimisticResponse: {
+                    toggleSavePost: !wasSaved,
+                },
+                refetchQueries: [{ query: GET_SAVED_POSTS }],
+                update: (cache, { data }) => {
+                    const cacheId = cache.identify({
+                        __typename: item.__typename || 'Post',
+                        id: item.id,
+                    });
+                    if (!cacheId) return;
+                    cache.modify({
+                        id: cacheId,
+                        fields: {
+                            isSaved: () => !!data?.toggleSavePost,
+                        },
+                    });
+                },
+            });
+            Toast.show({
+                type: 'success',
+                text1: wasSaved ? 'Quitado de guardados' : 'Guardado correctamente',
+                position: 'bottom'
+            });
+        } catch (err) {
+            console.error('Error toggling save:', err);
+            Toast.show({
+                type: 'error',
+                text1: 'No se pudo procesar la acción',
+                position: 'bottom'
+            });
+        }
+    }, [toggleSavePost]);
 
     const [deleteProfessional] = useMutation(DELETE_PROFESSIONAL_PROFILE, {
         onCompleted: () => {
@@ -456,6 +569,11 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
         setHasMore(true);
+        setHasMoreSaved(true);
+        setHasMoreLiked(true);
+        setHasMoreStore(true);
+        setHasMoreJobOffers(true);
+        setHasMoreProfs(true);
         try {
             await Promise.all([
                 refetchProfile({ id: profileUserId, limit: PROFILE_PAGE_SIZE, offset: 0 }),
@@ -463,6 +581,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 refetchJobOffers(),
                 refetchProfs(),
                 refetchAds(),
+                ...(isMyProfile ? [refetchSaved()] : []),
             ]);
         } catch (error) {
             if (!(error as any)?.message?.includes('Usuario no encontrado')) {
@@ -500,6 +619,139 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         })
         .finally(() => setIsFetchingMore(false));
     }, [isFetchingMore, hasMore, gqlData, profileUserId, fetchMore]);
+
+    const loadMoreSaved = useCallback(() => {
+        const currentSaved = savedData?.getSavedPosts || [];
+        if (isFetchingMore || !hasMoreSaved || currentSaved.length < 20) return;
+
+        setIsFetchingMore(true);
+        fetchMoreSaved({
+            variables: { limit: 20, offset: currentSaved.length },
+            updateQuery: (prev: any, { fetchMoreResult }: any) => {
+                if (!fetchMoreResult) return prev;
+                const newItems = fetchMoreResult.getSavedPosts || [];
+                if (newItems.length === 0) {
+                    setHasMoreSaved(false);
+                    return prev;
+                }
+                return {
+                    getSavedPosts: [...prev.getSavedPosts, ...newItems],
+                };
+            },
+        })
+        .then((res: any) => {
+            const fetched = res?.data?.getSavedPosts || [];
+            if (fetched.length < 20) setHasMoreSaved(false);
+        })
+        .finally(() => setIsFetchingMore(false));
+    }, [isFetchingMore, hasMoreSaved, savedData, fetchMoreSaved]);
+
+    const loadMoreLiked = useCallback(() => {
+        const currentLiked = likedData?.getLikedItems || [];
+        if (isFetchingMore || !hasMoreLiked || currentLiked.length < 20) return;
+
+        setIsFetchingMore(true);
+        fetchMoreLiked({
+            variables: { limit: 20, offset: currentLiked.length },
+            updateQuery: (prev: any, { fetchMoreResult }: any) => {
+                if (!fetchMoreResult) return prev;
+                const newItems = fetchMoreResult.getLikedItems || [];
+                if (newItems.length === 0) {
+                    setHasMoreLiked(false);
+                    return prev;
+                }
+                return {
+                    getLikedItems: [...prev.getLikedItems, ...newItems],
+                };
+            },
+        })
+        .then((res: any) => {
+            const fetched = res?.data?.getLikedItems || [];
+            if (fetched.length < 20) setHasMoreLiked(false);
+        })
+        .finally(() => setIsFetchingMore(false));
+    }, [isFetchingMore, hasMoreLiked, likedData, fetchMoreLiked]);
+
+    const loadMoreStore = useCallback(() => {
+        const currentStore = storeData?.storeProductsByUser || [];
+        if (isFetchingMore || !hasMoreStore || currentStore.length < 20) return;
+
+        setIsFetchingMore(true);
+        fetchMoreStore({
+            variables: { userId: profileUserId, limit: 20, offset: currentStore.length },
+            updateQuery: (prev: any, { fetchMoreResult }: any) => {
+                if (!fetchMoreResult) return prev;
+                const newItems = fetchMoreResult.storeProductsByUser || [];
+                if (newItems.length === 0) {
+                    setHasMoreStore(false);
+                    return prev;
+                }
+                return {
+                    storeProductsByUser: [...prev.storeProductsByUser, ...newItems],
+                };
+            },
+        })
+        .then((res: any) => {
+            const fetched = res?.data?.storeProductsByUser || [];
+            if (fetched.length < 20) setHasMoreStore(false);
+        })
+        .finally(() => setIsFetchingMore(false));
+    }, [isFetchingMore, hasMoreStore, storeData, profileUserId, fetchMoreStore]);
+
+    const loadMoreJobs = useCallback(() => {
+        if (isFetchingMore) return;
+        
+        const currentJobs = jobOffersData?.jobOffersByUser || [];
+        const currentProfs = profsData?.professionalProfilesByUser || [];
+        
+        const canLoadJobs = hasMoreJobOffers && currentJobs.length >= 20;
+        const canLoadProfs = hasMoreProfs && currentProfs.length >= 20;
+
+        if (!canLoadJobs && !canLoadProfs) return;
+
+        setIsFetchingMore(true);
+        const promises = [];
+
+        if (canLoadJobs) {
+            promises.push(fetchMoreJobOffers({
+                variables: { userId: profileUserId, limit: 20, offset: currentJobs.length },
+                updateQuery: (prev: any, { fetchMoreResult }: any) => {
+                    if (!fetchMoreResult) return prev;
+                    const newItems = fetchMoreResult.jobOffersByUser || [];
+                    if (newItems.length === 0) {
+                        setHasMoreJobOffers(false);
+                        return prev;
+                    }
+                    return {
+                        jobOffersByUser: [...prev.jobOffersByUser, ...newItems],
+                    };
+                },
+            }).then(res => {
+                if ((res?.data?.jobOffersByUser?.length || 0) < 20) setHasMoreJobOffers(false);
+            }));
+        }
+
+        if (canLoadProfs) {
+            promises.push(fetchMoreProfs({
+                variables: { userId: profileUserId, limit: 20, offset: currentProfs.length },
+                updateQuery: (prev: any, { fetchMoreResult }: any) => {
+                    if (!fetchMoreResult) return prev;
+                    const newItems = fetchMoreResult.professionalProfilesByUser || [];
+                    if (newItems.length === 0) {
+                        setHasMoreProfs(false);
+                        return prev;
+                    }
+                    return {
+                        professionalProfilesByUser: [...prev.professionalProfilesByUser, ...newItems],
+                    };
+                },
+            }).then(res => {
+                if ((res?.data?.professionalProfilesByUser?.length || 0) < 20) setHasMoreProfs(false);
+            }));
+        }
+
+        Promise.all(promises).finally(() => setIsFetchingMore(false));
+    }, [isFetchingMore, hasMoreJobOffers, hasMoreProfs, jobOffersData, profsData, profileUserId, fetchMoreJobOffers, fetchMoreProfs]);
 
     const handleMessagePress = useCallback(async () => {
         if (!profileUserId) return;
@@ -650,18 +902,75 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
             onEditProfile={handleEditProfile}
             onOpenMenu={handleOpenMenu}
             onGoBack={handleGoBack}
-            onTabChange={setActiveTab}
+            onTabChange={setActiveTab as any}
             onOpenContextMenu={handleOpenContextMenu}
         />
     ), [userData, isMyProfile, isFollowing, activeTab, colors, toggleFollow, handleMessagePress, handleEditProfile, handleOpenMenu, handleGoBack, handleOpenContextMenu]);
 
     // Determinar qué datos para cada tab
     // IMPORTANTE: siempre marcar __itemType para que renderItem sepa qué componente usar
+    // Refetch al cambiar a tabs que dependen de datos externos y dinámicos
+    useEffect(() => {
+        if (activeTab === 'saved') refetchSaved();
+        if (activeTab === 'likes') refetchLiked();
+    }, [activeTab]);
+
+    const savedTabData = useMemo(
+        () => (savedData?.getSavedPosts || []).map((p: any) => {
+            let itemType = 'post';
+            if (p.__typename === 'StoreProduct') itemType = 'store';
+            if (p.__typename === 'JobOffer') itemType = 'job';
+            if (p.__typename === 'ProfessionalProfile') itemType = 'professional';
+            return { ...p, __itemType: itemType };
+        }),
+        [savedData]
+    );
+
+    const likedTabData = useMemo(
+        () => (likedData?.getLikedItems || []).map((p: any) => {
+            let itemType = 'post';
+            if (p.__typename === 'StoreProduct') itemType = 'store';
+            return { ...p, __itemType: itemType };
+        }),
+        [likedData]
+    );
+
     const tabData = useMemo(() => {
         if (activeTab === 'store') return storeProducts.map((p: any) => ({ ...p, __itemType: 'store', __typename: p.__typename || 'StoreProduct' }));
         if (activeTab === 'jobs') return jobsTabData;
+        if (activeTab === 'saved') return savedTabData;
+        if (activeTab === 'likes') return likedTabData;
         return allTabData;
-    }, [activeTab, storeProducts, jobsTabData, allTabData]);
+    }, [activeTab, storeProducts, jobsTabData, allTabData, savedTabData, likedTabData]);
+
+    const shouldShowFooter = useMemo(() => {
+        if (isFetchingMore) return false;
+        
+        switch (activeTab) {
+            case 'all':
+                const allLen = userData?.posts?.length || 0;
+                return allLen > 0 && (allLen < 20 || !hasMore);
+            case 'saved':
+                const savedLen = savedData?.getSavedPosts?.length || 0;
+                return savedLen > 0 && (savedLen < 20 || !hasMoreSaved);
+            case 'likes':
+                const likesLen = likedData?.getLikedItems?.length || 0;
+                return likesLen > 0 && (likesLen < 20 || !hasMoreLiked);
+            case 'store':
+                const storeLen = storeData?.storeProductsByUser?.length || 0;
+                return storeLen > 0 && (storeLen < 20 || !hasMoreStore);
+            case 'jobs':
+                // En empleos se juntan dos fuentes. Si ambas tienen menos de 20, es el final.
+                const jobOffersLen = jobOffersData?.jobOffersByUser?.length || 0;
+                const profsLen = profsData?.professionalProfilesByUser?.length || 0;
+                return tabData.length > 0 && (jobOffersLen < 20 || !hasMoreJobOffers) && (profsLen < 20 || !hasMoreProfs);
+            default:
+                return tabData.length > 0;
+        }
+    }, [
+        activeTab, isFetchingMore, userData, savedData, likedData, storeData, tabData, 
+        hasMore, hasMoreSaved, hasMoreLiked, hasMoreStore, hasMoreJobOffers, hasMoreProfs
+    ]);
 
     // ── Memoized data for CommentsModal ───────────────────────────────────────
     const commentsModalData = useMemo(() => {
@@ -697,10 +1006,19 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     const renderItem = useCallback(({ item }: any) => {
         const type = item.__itemType;
 
+        // Mapear los alias de GraphQL para que las tarjetas reciban los nombres estándar
+        const mappedItem = {
+            ...item,
+            title: item.storeTitle ?? item.jobTitle ?? item.postTitle ?? item.title,
+            media: item.storeMedia ?? item.jobMedia ?? item.profMedia ?? item.postMedia ?? item.media ?? [],
+            location: item.storeLocation ?? item.jobLocation ?? item.location,
+            contactPhone: item.storeContactPhone ?? item.jobContactPhone ?? item.profContactPhone ?? item.contactPhone,
+        };
+
         const openInModal = (isPost = false) => {
             // Aseguramos que el item que llega al modal tenga un author si le falta
             // En el perfil, si le falta el author, seguramente es el usuario dueño del perfil.
-            const itemWithAuthor = item.author ? item : { ...item, author: userData };
+            const itemWithAuthor = mappedItem.author ? mappedItem : { ...mappedItem, author: userData };
             setSelectedPostForComments({ 
                 post: itemWithAuthor, 
                 minimize: !isPost, 
@@ -710,31 +1028,37 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
 
         if (type === 'store') {
             return <StoreProductCard 
-                item={item} 
+                item={mappedItem} 
                 onPress={() => openInModal(false)} 
                 onCommentPress={() => openInModal(true)}
                 onEdit={stableHandleEdit}
+                onToggleSave={handleToggleSave}
+                isSaved={mappedItem.isSaved}
             />;
         }
         if (type === 'job') {
             return <JobOfferCard 
-                item={item} 
+                item={mappedItem} 
                 onPress={() => openInModal(false)} 
                 onEdit={stableHandleEdit}
+                onToggleSave={handleToggleSave}
+                isSaved={mappedItem.isSaved}
             />;
         }
         if (type === 'professional') {
             return <ProfessionalCard 
-                item={item} 
+                item={mappedItem} 
                 onPress={() => openInModal(false)} 
                 onEdit={stableHandleEdit}
+                onToggleSave={handleToggleSave}
+                isSaved={mappedItem.isSaved}
             />;
         }
         if (type === 'post') {
             // item ya viene con author inyectado desde allTabData
             return (
                 <PostCard
-                    item={item}
+                    item={mappedItem}
                     currentUserId={currentUserId}
                     onOptionsPress={stableHandleOptionsPress}
                     onOpenComments={(_, initialTab, minimize) =>
@@ -772,13 +1096,15 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     }, []);
 
     // ── Empty states ──────────────────────────────────────────────────────────
-    const emptyIcon = activeTab === 'store' ? 'storefront-outline' : activeTab === 'jobs' ? 'briefcase-outline' : 'grid-outline';
-    const emptyTitle = activeTab === 'store' ? 'Sin productos en tienda' : activeTab === 'jobs' ? 'Sin publicaciones de empleo' : 'Sin publicaciones aún';
+    const emptyIcon = activeTab === 'store' ? 'storefront-outline' : activeTab === 'jobs' ? 'briefcase-outline' : activeTab === 'saved' ? 'bookmark-outline' : 'grid-outline';
+    const emptyTitle = activeTab === 'store' ? 'Sin productos en tienda' : activeTab === 'jobs' ? 'Sin publicaciones de empleo' : activeTab === 'saved' ? 'Sin guardados aún' : 'Sin publicaciones aún';
     const emptySub = activeTab === 'store'
         ? 'Los productos publicados en la tienda aparecerán aquí.'
         : activeTab === 'jobs'
             ? 'Las ofertas de empleo y servicios aparecerán aquí.'
-            : 'Cuando compartas algo, aparecerá aquí.';
+            : activeTab === 'saved'
+                ? 'Las publicaciones que guardes aparecerán aquí.'
+                : 'Cuando compartas algo, aparecerá aquí.';
 
     // ── Early returns (SIEMPRE después de todos los hooks) ────────────────────
     if (gqlLoading && !gqlData) {
@@ -835,12 +1161,18 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 refreshControl={
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} tintColor={colors.primary} />
                 }
-                onEndReached={activeTab === 'all' ? loadMorePosts : undefined}
+                onEndReached={() => {
+                    if (activeTab === 'all') loadMorePosts();
+                    if (activeTab === 'saved') loadMoreSaved();
+                    if (activeTab === 'likes') loadMoreLiked();
+                    if (activeTab === 'store') loadMoreStore();
+                    if (activeTab === 'jobs') loadMoreJobs();
+                }}
                 onEndReachedThreshold={0.4}
                 ListFooterComponent={
-                    activeTab === 'all' && isFetchingMore ? (
+                    isFetchingMore ? (
                         <ActivityIndicator size="small" color={colors.primary} style={{ paddingVertical: 20 }} />
-                    ) : (activeTab === 'all' && !hasMore && (userData?.posts?.length ?? 0) > 0) || (activeTab !== 'all' && tabData.length > 0) ? (
+                    ) : shouldShowFooter ? (
                         <ListFooter />
                     ) : null
                 }
@@ -1195,6 +1527,13 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
             <PostOptionsModal
                 visible={isOptionsMenuVisible}
                 onClose={() => setIsOptionsMenuVisible(false)}
+                isOwner={
+                    selectedPost?.author?.id === currentUserId || 
+                    selectedPost?.seller?.id === currentUserId ||
+                    selectedPost?.user?.id === currentUserId
+                }
+                onToggleSave={() => handleToggleSave(selectedPost)}
+                isSaved={selectedPost?.isSaved}
                 onEdit={() => {
                     if (selectedPost) stableHandleEdit(selectedPost);
                 }}
@@ -1295,17 +1634,27 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     badgeText: { color: colors.text, fontWeight: '700', fontSize: 10, textTransform: 'uppercase', letterSpacing: 2 },
     tabBar: {
         flexDirection: 'row',
-        borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
-        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
-        marginTop: 8, backgroundColor: colors.surface,
+        marginTop: 8,
+        backgroundColor: colors.surface,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: colors.border,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: colors.border,
+        justifyContent: 'space-around',
+        paddingHorizontal: 4,
     },
     tabItem: {
-        flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-        gap: 6, paddingVertical: 12,
-        borderBottomWidth: 2, borderBottomColor: 'transparent',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 4,
+        gap: 4,
+        borderBottomWidth: 2,
+        borderBottomColor: 'transparent',
     },
     tabItemActive: { borderBottomColor: colors.primary },
-    tabLabel: { fontSize: 13, fontWeight: '600' },
+    tabLabel: { fontSize: 11, fontWeight: '600' },
     emptyPostsContainer: {
         alignItems: 'center', justifyContent: 'center', paddingVertical: 40,
         backgroundColor: colors.surface, borderRadius: 16,

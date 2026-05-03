@@ -225,8 +225,8 @@ export const UPDATE_APPLICATION_STATUS = gql`
 `;
 
 export const GET_JOB_OFFERS_BY_USER = gql`
-  query GetJobOffersByUser($userId: ID!) {
-    jobOffersByUser(userId: $userId) {
+  query GetJobOffersByUser($userId: ID!, $limit: Int, $offset: Int) {
+    jobOffersByUser(userId: $userId, limit: $limit, offset: $offset) {
       id
       title
       description
@@ -252,8 +252,8 @@ export const GET_JOB_OFFERS_BY_USER = gql`
 `;
 
 export const GET_PROFESSIONAL_PROFILES_BY_USER = gql`
-  query GetProfessionalProfilesByUser($userId: String!) {
-    professionalProfilesByUser(userId: $userId) {
+  query GetProfessionalProfilesByUser($userId: String!, $limit: Int, $offset: Int) {
+    professionalProfilesByUser(userId: $userId, limit: $limit, offset: $offset) {
       id
       profession
       description

@@ -21,9 +21,9 @@ export class ReportsResolver {
     @UseGuards(GqlAuthGuard)
     createReport(
         @Args('input') input: CreateReportInput,
-        @CurrentUser() user: User,
+        @CurrentUser() user: any,
     ): Promise<Report> {
-        return this.reportsService.createReport(input, user);
+        return this.reportsService.createReport(input, user, user.cityId);
     }
 
     /**
@@ -35,8 +35,9 @@ export class ReportsResolver {
     getPendingReports(
         @Args('limit', { type: () => Int, defaultValue: 20 }) limit: number,
         @Args('offset', { type: () => Int, defaultValue: 0 }) offset: number,
+        @CurrentUser() user: any,
     ): Promise<Report[]> {
-        return this.reportsService.getPendingReports(limit, offset);
+        return this.reportsService.getPendingReports(limit, offset, user.cityId);
     }
 
     /**
@@ -48,9 +49,10 @@ export class ReportsResolver {
     getAllReports(
         @Args('limit', { type: () => Int, defaultValue: 20 }) limit: number,
         @Args('offset', { type: () => Int, defaultValue: 0 }) offset: number,
-        @Args('filter', { type: () => String, nullable: true }) filter?: string,
+        @Args('filter', { type: () => String, nullable: true }) filter: string | undefined,
+        @CurrentUser() user: any,
     ): Promise<Report[]> {
-        return this.reportsService.getAllReports(limit, offset, filter);
+        return this.reportsService.getAllReports(limit, offset, filter, user.cityId);
     }
 
     /**
@@ -87,9 +89,9 @@ export class ReportsResolver {
     @Roles(UserRole.ADMIN, UserRole.MODERATOR)
     directModerateContent(
         @Args('input') input: DirectModerateInput,
-        @CurrentUser() user: User,
+        @CurrentUser() user: any,
     ): Promise<Report> {
-        return this.reportsService.directModerateContent(input, user);
+        return this.reportsService.directModerateContent(input, user, user.cityId);
     }
 
     /**

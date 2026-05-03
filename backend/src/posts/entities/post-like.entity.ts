@@ -2,6 +2,7 @@ import { ObjectType, Field, ID } from '@nestjs/graphql';
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, Unique, CreateDateColumn } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 import { Post } from './post.entity';
+import { City } from '../../cities/entities/city.entity';
 
 @ObjectType()
 @Entity('post_likes')
@@ -28,6 +29,16 @@ export class PostLike {
     @Field()
     @Column({ name: 'post_id' })
     postId: string;
+
+    // ── Multi-tenant: City isolation ──────────────────────────────────────
+    @Field()
+    @Column({ name: 'city_id', default: 'chunchi' })
+    cityId: string;
+
+    @Field(() => City, { nullable: true })
+    @ManyToOne(() => City, { eager: false, nullable: true })
+    @JoinColumn({ name: 'city_id' })
+    city?: City;
 
     @Field()
     @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

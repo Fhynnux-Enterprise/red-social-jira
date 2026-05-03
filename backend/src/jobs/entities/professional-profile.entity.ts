@@ -53,4 +53,7 @@ export class ProfessionalProfile {
   @Field(() => [ProfessionalProfileMedia], { nullable: true })
   @OneToMany(() => ProfessionalProfileMedia, media => media.professionalProfile, { cascade: true, eager: true, orphanedRowAction: 'delete' })
   media?: ProfessionalProfileMedia[];
+
+  @Field(() => Boolean, { defaultValue: false })
+  isSaved?: boolean;
 }

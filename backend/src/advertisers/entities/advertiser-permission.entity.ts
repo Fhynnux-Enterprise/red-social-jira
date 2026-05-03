@@ -9,6 +9,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
+import { City } from '../../cities/entities/city.entity';
 
 @Entity('advertiser_permissions')
 @ObjectType()
@@ -41,6 +42,16 @@ export class AdvertiserPermission {
   @Column({ name: 'granted_by', nullable: true })
   @Field({ nullable: true })
   grantedBy?: string;
+
+  // ── Multi-tenant: City isolation ───────────────────────────────────────
+  @Column({ name: 'city_id', default: 'chunchi' })
+  @Field()
+  cityId: string;
+
+  @ManyToOne(() => City, { eager: false, nullable: true })
+  @JoinColumn({ name: 'city_id' })
+  @Field(() => City, { nullable: true })
+  city?: City;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   @Field()

@@ -10,41 +10,67 @@ import { GqlAuthGuard } from '../auth/guards/gql-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User } from '../auth/entities/user.entity';
 
+import { PostsService } from '../posts/posts.service';
+
 @Resolver(() => StoreProduct)
 export class StoreResolver {
-  constructor(private readonly storeService: StoreService) {}
+  constructor(
+    private readonly storeService: StoreService,
+    private readonly postsService: PostsService,
+  ) {}
+
+  @ResolveField(() => Boolean)
+  async isSaved(
+    @Parent() product: StoreProduct,
+    @CurrentUser() user: any,
+  ): Promise<boolean> {
+    if (!user) return false;
+    return this.postsService.checkIfSaved(product.id, user.id, user.cityId);
+  }
 
   @Query(() => [StoreProduct], { name: 'storeProducts' })
+  @UseGuards(GqlAuthGuard)
   findAll(
     @Args('limit', { type: () => Int, defaultValue: 20 }) limit: number,
     @Args('offset', { type: () => Int, defaultValue: 0 }) offset: number,
+    @CurrentUser() user: any,
   ) {
-    return this.storeService.findAll(limit, offset);
+    return this.storeService.findAll(limit, offset, user.id, user.cityId);
   }
 
   @Query(() => [StoreProduct], { name: 'myStoreProducts' })
   @UseGuards(GqlAuthGuard)
   myProducts(@CurrentUser() user: User) {
-    return this.storeService.findMine(user.id);
+    return this.storeService.findMine(user.id, user.cityId);
   }
 
   @Query(() => [StoreProduct], { name: 'storeProductsByUser' })
-  storeProductsByUser(@Args('userId', { type: () => ID }) userId: string) {
-    return this.storeService.findByUser(userId);
+  @UseGuards(GqlAuthGuard)
+  storeProductsByUser(
+    @Args('userId', { type: () => ID }) userId: string,
+    @Args('limit', { type: () => Int, defaultValue: 20 }) limit: number,
+    @Args('offset', { type: () => Int, defaultValue: 0 }) offset: number,
+    @CurrentUser() currentUser: any,
+  ) {
+    return this.storeService.findByUser(userId, currentUser.cityId, limit, offset);
   }
 
   @Query(() => StoreProduct, { name: 'getStoreProductById', nullable: true })
-  getStoreProductById(@Args('id', { type: () => ID }) id: string) {
-    return this.storeService.findById(id);
+  @UseGuards(GqlAuthGuard)
+  getStoreProductById(
+    @Args('id', { type: () => ID }) id: string,
+    @CurrentUser() currentUser: any,
+  ) {
+    return this.storeService.findById(id, currentUser.cityId);
   }
 
   @Mutation(() => StoreProduct)
   @UseGuards(GqlAuthGuard)
   createStoreProduct(
     @Args('input') input: CreateStoreProductInput,
-    @CurrentUser() user: User,
+    @CurrentUser() user: any,
   ) {
-    return this.storeService.create(input, user.id);
+    return this.storeService.create(input, user.id, user.cityId);
   }
 
   @Mutation(() => StoreProduct)
@@ -74,9 +100,9 @@ export class StoreResolver {
   @UseGuards(GqlAuthGuard)
   toggleStoreProductLike(
     @Args('productId', { type: () => ID }) productId: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: any,
   ) {
-    return this.storeService.toggleLike(productId, user.id);
+    return this.storeService.toggleLike(productId, user.id, user.cityId);
   }
 
   @Mutation(() => StoreProductComment)
@@ -85,9 +111,9 @@ export class StoreResolver {
     @Args('productId', { type: () => ID }) productId: string,
     @Args('content') content: string,
     @Args('parentId', { type: () => ID, nullable: true }) parentId: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: any,
   ) {
-    return this.storeService.createComment(productId, user.id, content, parentId);
+    return this.storeService.createComment(productId, user.id, content, user.cityId, parentId);
   }
 
   @Query(() => [StoreProductComment], { name: 'getStoreProductComments' })
@@ -121,9 +147,9 @@ export class StoreResolver {
   @UseGuards(GqlAuthGuard)
   toggleStoreProductCommentLike(
     @Args('commentId', { type: () => ID }) commentId: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: any,
   ) {
-    return this.storeService.toggleCommentLike(commentId, user.id);
+    return this.storeService.toggleCommentLike(commentId, user.id, user.cityId);
   }
 }
 

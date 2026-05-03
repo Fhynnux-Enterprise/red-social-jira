@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext, useRef, useCallback } from 'react';
 import { registerSessionExpiredHandler, unregisterSessionExpiredHandler } from '../../../api/session.manager';
-import { registerBanHandler, unregisterBanHandler } from '../../../api/apollo.client';
+import { registerBanHandler, unregisterBanHandler, resetSessionExpiredFlag } from '../../../api/apollo.client';
 import { registerAxiosBanHandler, unregisterAxiosBanHandler } from '../../../api/axios.client';
 import * as SecureStore from 'expo-secure-store';
 import { AuthService } from '../services/auth.service';
@@ -35,7 +35,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setUserToken(null);
         setUser(null);
         setBanInfo(null);
-        isHandlingExpiry.current = false;  // reset para futuras sesiones
+        // NOTA: isHandlingExpiry.current NO se resetea aquí para evitar race conditions.
+        // Múltiples errores 401 simultáneos podrían volver a llamar signOut si se resetea
+        // antes de que React re-renderice. Solo se resetea al iniciar sesión nueva (signIn).
 
         // 2. Limpiar almacenamiento en segundo plano (sin bloquear la UI)
         try {
@@ -128,6 +130,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // ── signIn ───────────────────────────────────────────────────────────────
     const signIn = async (token: string) => {
         isHandlingExpiry.current = false;  // reset al iniciar sesión
+        resetSessionExpiredFlag();         // resetear guard de Apollo errorLink
         setBanInfo(null);
         await SecureStore.setItemAsync('access_token', token);
         setUserToken(token);

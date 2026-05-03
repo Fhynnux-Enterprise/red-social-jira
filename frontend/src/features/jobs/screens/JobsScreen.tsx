@@ -8,12 +8,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../../theme/ThemeContext';
-import { GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS, GET_MY_APPLICATIONS, GET_MY_PROFESSIONAL_PROFILE, DELETE_APPLICATION } from '../graphql/jobs.operations';
+import { GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS, GET_MY_APPLICATIONS, GET_MY_PROFESSIONAL_PROFILE, DELETE_APPLICATION, DELETE_JOB_OFFER, DELETE_PROFESSIONAL_PROFILE } from '../graphql/jobs.operations';
+import { TOGGLE_SAVE_POST, GET_SAVED_POSTS } from '../../feed/graphql/posts.operations';
 import JobOfferCard from '../components/JobOfferCard';
 import ProfessionalCard from '../components/ProfessionalCard';
 import ApplyJobModal from '../components/ApplyJobModal';
 import PostOptionsModal from '../../feed/components/PostOptionsModal';
-import { DELETE_JOB_OFFER, DELETE_PROFESSIONAL_PROFILE } from '../graphql/jobs.operations';
 import Toast from 'react-native-toast-message';
 import { LinearGradient } from 'expo-linear-gradient';
 import CommentsModal from '../../comments/components/CommentsModal';
@@ -185,6 +185,40 @@ export default function JobsScreen() {
         },
         onError: (err) => Toast.show({ type: 'error', text1: 'Error', text2: err.message })
     });
+
+    const [toggleSavePost] = useMutation(TOGGLE_SAVE_POST);
+
+    const handleToggleSave = useCallback(async (item: any) => {
+        if (!item) return;
+        const itemId = item.id;
+        const itemType = item.__typename === 'JobOffer' ? 'JOB_OFFER' : 'PROFESSIONAL_PROFILE';
+        const wasSaved = !!item.isSaved;
+
+        try {
+            await toggleSavePost({
+                variables: { postId: itemId, itemType },
+                optimisticResponse: { toggleSavePost: !wasSaved },
+                refetchQueries: [{ query: GET_SAVED_POSTS }],
+                update: (cache, { data }) => {
+                    const cacheId = cache.identify({ __typename: item.__typename, id: itemId });
+                    if (cacheId) {
+                        cache.modify({
+                            id: cacheId,
+                            fields: { isSaved: () => !!data?.toggleSavePost }
+                        });
+                    }
+                }
+            });
+            Toast.show({
+                type: 'success',
+                text1: wasSaved ? 'Quitado de guardados' : 'Guardado correctamente',
+                position: 'bottom'
+            });
+        } catch (err) {
+            console.error('Error toggling save:', err);
+            Toast.show({ type: 'error', text1: 'No se pudo procesar la acción', position: 'bottom' });
+        }
+    }, [toggleSavePost]);
 
     const handleOptionsPress = (item: any) => {
         setSelectedItemForOptions(item);
@@ -479,8 +513,8 @@ export default function JobsScreen() {
 
         const openInModal = () => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' });
 
-        if (activeTab === 'offers') return <JobOfferCard item={item} onPress={openInModal} onEdit={handleEdit} />;
-        if (activeTab === 'services') return <ProfessionalCard item={item} onPress={openInModal} onEdit={handleEdit} />;
+        if (activeTab === 'offers') return <JobOfferCard item={item} onPress={openInModal} onEdit={handleEdit} onToggleSave={() => handleToggleSave(item)} isSaved={item.isSaved} />;
+        if (activeTab === 'services') return <ProfessionalCard item={item} onPress={openInModal} onEdit={handleEdit} onToggleSave={() => handleToggleSave(item)} isSaved={item.isSaved} />;
         if (activeTab === 'results') {
             if (resultsTab === 'my_applications') {
                 const getStatusColor = (status: string) => {
@@ -548,12 +582,14 @@ export default function JobsScreen() {
                         item={item}
                         onPress={openInModal}
                         onEdit={handleEdit}
+                        onToggleSave={() => handleToggleSave(item)}
+                        isSaved={item.isSaved}
                     />
                 );
             }
 
             if (resultsTab === 'my_services') {
-                return <ProfessionalCard item={item} onPress={openInModal} onEdit={handleEdit} />;
+                return <ProfessionalCard item={item} onPress={openInModal} onEdit={handleEdit} onToggleSave={() => handleToggleSave(item)} isSaved={item.isSaved} />;
             }
         }
         return null;

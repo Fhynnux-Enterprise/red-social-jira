@@ -27,6 +27,7 @@ import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { useAuth } from '../../auth/context/AuthContext';
 import ConfirmModal from '../../../components/ConfirmModal';
 import { customToastConfig } from '../../../components/CustomToast';
+import Constants from 'expo-constants';
 
 interface CreatePostModalProps {
     visible: boolean;
@@ -439,7 +440,7 @@ export default function CreatePostModal({
                         </View>
                         <TextInput
                             style={styles.input}
-                            placeholder="¿Qué está pasando en Chunchi?"
+                            placeholder={`¿Qué está pasando en ${Constants.expoConfig?.extra?.cityName || 'tu ciudad'}?`}
                             placeholderTextColor={colors.textSecondary}
                             multiline
                             autoFocus={true}

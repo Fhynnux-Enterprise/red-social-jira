@@ -8,11 +8,13 @@ import { StoreProductCommentLike } from './entities/store-product-comment-like.e
 import { StoreService } from './store.service';
 import { StoreResolver, StoreProductCommentResolver } from './store.resolver';
 import { UserBlocksModule } from '../user-blocks/user-blocks.module';
+import { PostsModule } from '../posts/posts.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([StoreProduct, StoreProductMedia, StoreProductLike, StoreProductComment, StoreProductCommentLike]),
     UserBlocksModule,
+    PostsModule,
   ],
   providers: [StoreService, StoreResolver, StoreProductCommentResolver],
   exports: [StoreService],

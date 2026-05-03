@@ -29,9 +29,11 @@ interface ProfessionalCardProps {
     hideAuthorRow?: boolean;
     onEdit?: (item: any) => void;
     isModalView?: boolean;
+    onToggleSave?: (item: any) => void;
+    isSaved?: boolean;
 }
 
-export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit, isModalView }: ProfessionalCardProps) {
+export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit, isModalView, onToggleSave, isSaved: propIsSaved }: ProfessionalCardProps) {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
     const router = useRouter();
@@ -116,6 +118,8 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
         if (item.contactPhone) text += `Teléfono: ${item.contactPhone}\n`;
         return text;
     };
+
+    const displayIsSaved = propIsSaved ?? item.isSaved;
 
     const handlePrivateMessage = async () => {
         if (isOwnCard) return;
@@ -282,6 +286,7 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
                         <Text style={styles.contactBtnText}>Mensaje Privado</Text>
                     </TouchableOpacity>
                 </View>
+
             </TouchableOpacity>
 
             <Modal visible={menuVisible} transparent animationType="slide" onRequestClose={() => setMenuVisible(false)} statusBarTranslucent>
@@ -316,6 +321,15 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
                                         <Text style={[styles.menuItemTitle, { color: colors.text }]}>Reportar servicio</Text>
                                     </TouchableOpacity>
                                 )}
+                                
+                                <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); onToggleSave?.(item); }}>
+                                    <View style={[styles.menuItemIcon, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
+                                        <Ionicons name={displayIsSaved ? "bookmark" : "bookmark-outline"} size={20} color={displayIsSaved ? colors.primary : colors.text} />
+                                    </View>
+                                    <Text style={[styles.menuItemTitle, { color: displayIsSaved ? colors.primary : colors.text }]}>
+                                        {displayIsSaved ? 'Quitar de guardados' : 'Guardar servicio'}
+                                    </Text>
+                                </TouchableOpacity>
                                 
                                 <TouchableOpacity style={[styles.menuItem, { marginTop: 10, borderBottomWidth: 0 }]} onPress={() => setMenuVisible(false)}>
                                     <View style={[styles.menuItemIcon, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>
@@ -375,8 +389,8 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
             <ReportModal
                 visible={reportVisible}
                 onClose={() => setReportVisible(false)}
-                targetId={item.id}
-                targetType="PROFESSIONAL_PROFILE"
+                reportedItemId={item.id}
+                reportedItemType="SERVICE"
             />
             <CopyTextModal
                 visible={isCopyModalVisible}
@@ -395,6 +409,23 @@ const styles = StyleSheet.create({
         marginVertical: 8,
         borderRadius: 16,
         marginHorizontal: 4,
+    },
+    divider: {
+        height: StyleSheet.hairlineWidth,
+        marginHorizontal: 14,
+        marginBottom: 2,
+        marginTop: 4,
+    },
+    actionsRow: {
+        flexDirection: 'row',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+    },
+    actionBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 8,
+        borderRadius: 8,
     },
     postHeader: {
         flexDirection: 'row',

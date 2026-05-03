@@ -30,9 +30,28 @@ export const ChatBubbleVideo = ({ url, width, height, onPressFullScreen, onLongP
 
     // Usamos useVideoPlayer de forma estable
     const player = useVideoPlayer(cachedSource || url || '', (p) => {
-        p.loop = true;
+        p.loop = false;  // NO usar loop nativo — causa pantalla negra en expo-video
         p.muted = true;
     });
+
+    // Loop manual para evitar pantalla negra al terminar el video
+    useEffect(() => {
+        if (!player) return;
+        let sub: any;
+        try {
+            sub = player.addListener('playToEnd', () => {
+                try {
+                    if (typeof player.replay === 'function') {
+                        player.replay();
+                    } else {
+                        player.currentTime = 0;
+                        player.play();
+                    }
+                } catch (e) {}
+            });
+        } catch (e) {}
+        return () => { try { sub?.remove?.(); } catch (e) {} };
+    }, [player]);
 
     // Limpieza explícita del player al desmontar (Android stability)
     useEffect(() => {
@@ -42,6 +61,7 @@ export const ChatBubbleVideo = ({ url, width, height, onPressFullScreen, onLongP
             }
         };
     }, [player]);
+
 
     const handleInternalPress = () => {
         if (!player) return;

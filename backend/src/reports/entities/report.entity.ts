@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { ObjectType, Field, ID } from '@nestjs/graphql';
 import { User } from '../../auth/entities/user.entity';
+import { City } from '../../cities/entities/city.entity';
 import { ReportStatus, ReportedItemType } from '../enums/report.enums';
 
 @ObjectType()
@@ -59,4 +60,14 @@ export class Report {
     @Field(() => Date)
     @Column({ name: 'created_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
     createdAt: Date;
+
+    // ── Multi-tenant: City isolation ───────────────────────────────────────
+    @Field()
+    @Column({ name: 'city_id', default: 'chunchi' })
+    cityId: string;
+
+    @Field(() => City, { nullable: true })
+    @ManyToOne(() => City, { eager: false, nullable: true })
+    @JoinColumn({ name: 'city_id' })
+    city?: City;
 }

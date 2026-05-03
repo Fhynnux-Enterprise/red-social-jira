@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { useMutation } from '@apollo/client/react';
 import { gql } from '@apollo/client';
+import { notifySessionExpired } from '../api/session.manager';
 
 const PING_PRESENCE_MUTATION = gql`
   mutation PingPresence {
@@ -12,7 +13,20 @@ const PING_PRESENCE_MUTATION = gql`
 export const usePresencePing = (isAuthenticated: boolean) => {
   const [pingPresence] = useMutation(PING_PRESENCE_MUTATION, {
     onError: (err) => {
-      console.log('Error silente en pingPresence:', err.message);
+      const isAuthError =
+        err.message?.includes('Unauthorized') ||
+        err.message?.includes('not authenticated') ||
+        err.graphQLErrors?.some(
+          (e: any) => e.extensions?.code === 'UNAUTHENTICATED' || e.extensions?.code === '401'
+        );
+
+      if (isAuthError) {
+        // La sesión expiró — activar el flujo de logout global
+        notifySessionExpired();
+      } else {
+        // Otro error de red silente (no interrumpir al usuario)
+        console.log('Error silente en pingPresence:', err.message);
+      }
     }
   });
   const appState = useRef(AppState.currentState);
@@ -24,12 +38,17 @@ export const usePresencePing = (isAuthenticated: boolean) => {
 
     const executePing = () => {
       pingPresence().catch((err: any) => {
-        // Ignoramos errores de red silentes para no molestar al usuario
-        console.log('Error silente en pingPresence:', err.message);
+        // Si llega aquí, ya fue manejado por onError; solo logueamos como respaldo
+        if (
+          err?.message?.includes('Unauthorized') ||
+          err?.message?.includes('not authenticated')
+        ) {
+          notifySessionExpired();
+        }
       });
     };
 
-    // Ejecutar inmediatamente al montar y autenticarse estar activo
+    // Ejecutar inmediatamente al montar y cuando la app está activa
     if (appState.current === 'active') {
       executePing();
       pingInterval = setInterval(executePing, 3 * 60 * 1000); // 3 minutos

@@ -3,6 +3,8 @@ import { UseGuards } from '@nestjs/common';
 import { GqlAuthGuard } from '../auth/guards/gql-auth.guard';
 import { StorageService } from './storage.service';
 import { UploadUrlResponse } from './dto/upload-url.response';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { User } from '../auth/entities/user.entity';
 
 @Resolver()
 export class StorageResolver {
@@ -30,11 +32,13 @@ export class StorageResolver {
     @Args('fileName') fileName: string,
     @Args('fileType') fileType: string,
     @Args('folder') folder: string,
+    @CurrentUser() user: User,
   ): Promise<UploadUrlResponse> {
     const { uploadUrl, publicUrl } = await this.storageService.generatePresignedUploadUrl(
       fileName,
       folder,
       fileType,
+      user.cityId,
     );
 
     // El campo `signedUrl` del DTO legacy mapea al `uploadUrl` de R2.

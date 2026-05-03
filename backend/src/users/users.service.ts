@@ -68,12 +68,17 @@ export class UsersService {
     return this.customFieldRepository.save(field);
   }
 
-  async findById(id: string): Promise<User> {
-    const user = await this.userRepository.createQueryBuilder('user')
+  async findById(id: string, cityId?: string): Promise<User> {
+    const query = this.userRepository.createQueryBuilder('user')
       .where('user.id = :id', { id })
       .leftJoinAndSelect('user.customFields', 'customFields')
-      .leftJoinAndSelect('user.badge', 'badge')
-      .getOne();
+      .leftJoinAndSelect('user.badge', 'badge');
+
+    if (cityId) {
+        query.andWhere('user.cityId = :cityId', { cityId });
+    }
+
+    const user = await query.getOne();
     if (!user) {
       throw new BadRequestException('Usuario no encontrado');
     }
@@ -160,12 +165,18 @@ export class UsersService {
     return this.userRepository.save(user);
   }
 
-  async searchUsers(searchTerm: string, currentUserId: string, limit: number = 5, offset: number = 0): Promise<User[]> {
+  async searchUsers(searchTerm: string, currentUserId: string, limit: number = 5, offset: number = 0, cityId?: string): Promise<User[]> {
     if (!searchTerm) return [];
 
-    return this.userRepository.createQueryBuilder('user')
+    const query = this.userRepository.createQueryBuilder('user')
       .where('(user.username ILIKE :term OR user.firstName ILIKE :term OR user.lastName ILIKE :term)', { term: `%${searchTerm}%` })
-      .andWhere('(user.bannedUntil IS NULL OR user.bannedUntil < :now)', { now: new Date() })
+      .andWhere('(user.bannedUntil IS NULL OR user.bannedUntil < :now)', { now: new Date() });
+
+    if (cityId) {
+        query.andWhere('user.cityId = :cityId', { cityId });
+    }
+
+    return query
       .take(limit)
       .skip(offset)
       .getMany();

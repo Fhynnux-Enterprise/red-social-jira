@@ -1,0 +1,34 @@
+{
+  "cli": {
+    "version": ">= 14.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_CITY_ID": "chunchi"
+      }
+    },
+    "chunchi": {
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_CITY_ID": "chunchi"
+      }
+    },
+    "alausi": {
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_CITY_ID": "alausi"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

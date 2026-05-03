@@ -19,7 +19,7 @@ export class AdsService {
    * Implementa el modelo "Inventario Directo con Backfill".
    * Fuente de anuncios locales: tabla `local_ads` (sistema nuevo).
    */
-  async getNextAdDecision(): Promise<AdDecision> {
+  async getNextAdDecision(cityId?: string): Promise<AdDecision> {
     // 1. Obtener probabilidad local de la configuración (default 70%)
     const config = await this.configRepository.findOne({ where: { key: 'local_ad_probability' } });
     const localProbability = config ? parseInt(config.value, 10) : 70;
@@ -29,14 +29,19 @@ export class AdsService {
 
     if (random <= localProbability) {
       // 3. Buscar anuncios locales de anunciantes con permisos activos y no expirados
-      const localAds = await this.localAdRepo.createQueryBuilder('ad')
+      const query = this.localAdRepo.createQueryBuilder('ad')
         .leftJoinAndSelect('ad.media', 'media')
         .innerJoinAndSelect('ad.advertiser', 'advertiser')
         .innerJoin('advertiser_permissions', 'perm', 'perm.user_id = ad.advertiser_id')
         .where('ad.is_active = :isActive', { isActive: true })
         .andWhere('perm.is_active = :permActive', { permActive: true })
-        .andWhere('perm.expires_at > :now', { now: new Date() })
-        .getMany();
+        .andWhere('perm.expires_at > :now', { now: new Date() });
+
+      if (cityId) {
+        query.andWhere('ad.cityId = :cityId', { cityId });
+      }
+
+      const localAds = await query.getMany();
 
       if (localAds.length > 0) {
         // 4. Seleccionar uno al azar

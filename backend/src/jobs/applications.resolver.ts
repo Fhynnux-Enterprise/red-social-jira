@@ -24,7 +24,7 @@ export class ApplicationsResolver {
     @Args('input') input: ApplyToJobInput,
     @CurrentUser() user: User,
   ) {
-    return this.applicationsService.applyToJob(input, user.id);
+    return this.applicationsService.applyToJob(input, user.id, user.cityId);
   }
 
   /**
@@ -70,6 +70,6 @@ export class ApplicationsResolver {
     @Args('input') input: UpdateApplicationInput,
     @CurrentUser() user: User,
   ) {
-    return this.applicationsService.updateApplication(input, user.id);
+    return this.applicationsService.updateApplication(input, user.id, user.cityId);
   }
 }

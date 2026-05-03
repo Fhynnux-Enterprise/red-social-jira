@@ -3,6 +3,7 @@ import { UseGuards } from '@nestjs/common';
 import { CommentsService } from './comments.service';
 import { Comment } from './entities/comment.entity';
 import { JwtGqlGuard } from '../auth/guards/jwt-gql.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @Resolver(() => Comment)
 export class CommentsResolver {
@@ -14,10 +15,9 @@ export class CommentsResolver {
         @Args('postId') postId: string,
         @Args('content') content: string,
         @Args('parentId', { nullable: true }) parentId: string,
-        @Context() context: any,
+        @CurrentUser() user: any,
     ): Promise<Comment> {
-        const userId = context.req.user.id;
-        return this.commentsService.createComment(postId, content, userId, parentId);
+        return this.commentsService.createComment(postId, content, user.id, user.cityId, parentId);
     }
 
     @Query(() => [Comment], { name: 'getCommentsByPost' })
@@ -28,8 +28,8 @@ export class CommentsResolver {
         @Args('offset', { type: () => Int, defaultValue: 0, nullable: true }) offset: number,
         @Context() context: any,
     ): Promise<Comment[]> {
-        const userId = context.req?.user?.id;
-        return this.commentsService.getCommentsByPost(postId, userId, limit ?? 10, offset ?? 0);
+        const user = context.req?.user;
+        return this.commentsService.getCommentsByPost(postId, user?.id, limit ?? 10, offset ?? 0, user?.cityId);
     }
 
     @Query(() => Comment, { name: 'getCommentById', nullable: true })
@@ -38,8 +38,8 @@ export class CommentsResolver {
         @Args('id') id: string,
         @Context() context: any,
     ): Promise<Comment | null> {
-        const userId = context.req?.user?.id;
-        return this.commentsService.getCommentById(id, userId);
+        const user = context.req?.user;
+        return this.commentsService.getCommentById(id, user?.id, user?.cityId);
     }
 
     @Mutation(() => Boolean, { name: 'deleteComment' })
@@ -67,10 +67,9 @@ export class CommentsResolver {
     @UseGuards(JwtGqlGuard)
     async toggleCommentLike(
         @Args('commentId') commentId: string,
-        @Context() context: any,
+        @CurrentUser() user: any,
     ): Promise<Comment> {
-        const userId = context.req.user.id;
-        return this.commentsService.toggleCommentLike(commentId, userId);
+        return this.commentsService.toggleCommentLike(commentId, user.id, user.cityId);
     }
 
     @ResolveField(() => [Comment])
@@ -78,8 +77,8 @@ export class CommentsResolver {
         @Parent() comment: Comment,
         @Context() context: any,
     ): Promise<Comment[]> {
-        const userId = context.req?.user?.id;
-        return this.commentsService.getReplies(comment.id, userId);
+        const user = context.req?.user;
+        return this.commentsService.getReplies(comment.id, user?.id, user?.cityId);
     }
 }
 

@@ -73,7 +73,7 @@ export class ReportsService implements OnModuleInit {
      *   reason y status a PENDING. Esto respeta el UNIQUE constraint (reporter_id, reported_item_id).
      * - Si no existe ningún reporte previo → crea uno nuevo.
      */
-    async createReport(input: CreateReportInput, reporter: User): Promise<Report> {
+    async createReport(input: CreateReportInput, reporter: User, cityId: string): Promise<Report> {
         // Buscar cualquier reporte previo del mismo usuario sobre el mismo ítem
         const existing = await this.reportRepository.findOne({
             where: {
@@ -94,6 +94,7 @@ export class ReportsService implements OnModuleInit {
             existing.moderatorNote = null as any;
             existing.contentDeleted = false;
             existing.createdAt = new Date(); // Actualizamos la fecha para que flote al tope
+            // No cambiamos cityId del existente, pertenece al usuario original
             return this.reportRepository.save(existing);
         }
 
@@ -103,6 +104,7 @@ export class ReportsService implements OnModuleInit {
             reportedItemId: input.reportedItemId,
             reportedItemType: input.reportedItemType,
             reporter,
+            cityId, // ← tenant stamp
         });
 
         return this.reportRepository.save(report);
@@ -111,39 +113,48 @@ export class ReportsService implements OnModuleInit {
     /**
      * Devuelve todas las denuncias con estado PENDING.
      */
-    async getPendingReports(limit = 20, offset = 0): Promise<Report[]> {
-        const reports = await this.reportRepository.createQueryBuilder('report')
+    async getPendingReports(limit = 20, offset = 0, cityId?: string): Promise<Report[]> {
+        const query = this.reportRepository.createQueryBuilder('report')
             .leftJoinAndSelect('report.reporter', 'reporter')
-            .where('report.status = :status', { status: ReportStatus.PENDING })
+            .where('report.status = :status', { status: ReportStatus.PENDING });
+
+        // ── Multi-tenant filter ───────────────────────────────────────────────
+        if (cityId) {
+            query.andWhere('report.cityId = :cityId', { cityId });
+        }
+
+        return query
             .orderBy('report.createdAt', 'DESC', 'NULLS LAST')
             .take(limit)
             .skip(offset)
             .getMany();
-        return reports;
     }
 
     /**
      * Devuelve todos los reportes con soporte opcional para filtrado por estado.
      * Solo para ADMIN.
      */
-    async getAllReports(limit = 20, offset = 0, filter?: string): Promise<Report[]> {
+    async getAllReports(limit = 20, offset = 0, filter?: string, cityId?: string): Promise<Report[]> {
         const query = this.reportRepository.createQueryBuilder('report')
             .leftJoinAndSelect('report.reporter', 'reporter');
 
+        // ── Multi-tenant filter ───────────────────────────────────────────────
+        if (cityId) {
+            query.andWhere('report.cityId = :cityId', { cityId });
+        }
+
         if (filter) {
             if (filter === 'PENDING') {
-                query.where('report.status = :status', { status: ReportStatus.PENDING });
+                query.andWhere('report.status = :status', { status: ReportStatus.PENDING });
             } else if (filter === 'RESOLVED') {
-                // "Resuelta" -> Resuelta pero NO eliminada
-                query.where('report.status = :status AND report.contentDeleted = :deleted', { 
+                query.andWhere('report.status = :status AND report.contentDeleted = :deleted', { 
                     status: ReportStatus.RESOLVED, 
                     deleted: false 
                 });
             } else if (filter === 'DISMISSED') {
-                query.where('report.status = :status', { status: ReportStatus.DISMISSED });
+                query.andWhere('report.status = :status', { status: ReportStatus.DISMISSED });
             } else if (filter === 'DELETED') {
-                // "Eliminada" -> Resuelta Y eliminada
-                query.where('report.status = :status AND report.contentDeleted = :deleted', { 
+                query.andWhere('report.status = :status AND report.contentDeleted = :deleted', { 
                     status: ReportStatus.RESOLVED, 
                     deleted: true 
                 });
@@ -221,7 +232,7 @@ export class ReportsService implements OnModuleInit {
     /**
      * Moderación directa: Elimina el contenido inmediatamente y crea una denuncia "RESUELTA" para el registro.
      */
-    async directModerateContent(input: any, moderator: User): Promise<Report> {
+    async directModerateContent(input: any, moderator: User, cityId: string): Promise<Report> {
         // 1. Ejecutar el soft delete / hard delete según el tipo
         const ownerId = await this.softDeleteContent(input.reportedItemType, input.reportedItemId);
 
@@ -259,6 +270,7 @@ export class ReportsService implements OnModuleInit {
                 reporter: moderator,
                 moderatorNote: input.moderatorNote || 'Eliminado por moderador.',
                 contentDeleted: true,
+                cityId, // ← tenant stamp
             });
         }
 

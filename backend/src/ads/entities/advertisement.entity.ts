@@ -1,5 +1,6 @@
 import { ObjectType, Field, ID, Int } from '@nestjs/graphql';
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { City } from '../../cities/entities/city.entity';
 
 @Entity('advertisements')
 @ObjectType()
@@ -49,4 +50,14 @@ export class Advertisement {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
+
+  // ── Multi-tenant: City isolation ──────────────────────────────────────
+  @Field()
+  @Column({ name: 'city_id', default: 'chunchi' })
+  cityId: string;
+
+  @Field(() => City, { nullable: true })
+  @ManyToOne(() => City, { eager: false, nullable: true })
+  @JoinColumn({ name: 'city_id' })
+  city?: City;
 }

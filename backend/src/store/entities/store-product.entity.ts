@@ -14,6 +14,7 @@ import { User } from '../../auth/entities/user.entity';
 import { StoreProductMedia } from './store-product-media.entity';
 import { StoreProductLike } from './store-product-like.entity';
 import { StoreProductComment } from './store-product-comment.entity';
+import { City } from '../../cities/entities/city.entity';
 
 @ObjectType()
 @Entity('store_products')
@@ -82,6 +83,16 @@ export class StoreProduct {
   @Column({ name: 'seller_id' })
   sellerId: string;
 
+  // ── Multi-tenant: City isolation ───────────────────────────────────────
+  @Field()
+  @Column({ name: 'city_id', default: 'chunchi' })
+  cityId: string;
+
+  @Field(() => City, { nullable: true })
+  @ManyToOne(() => City, { eager: false, nullable: true })
+  @JoinColumn({ name: 'city_id' })
+  city?: City;
+
   @Field(() => [StoreProductMedia], { nullable: true })
   @OneToMany(() => StoreProductMedia, (m) => m.product, { cascade: true, eager: true })
   media?: StoreProductMedia[];
@@ -97,4 +108,7 @@ export class StoreProduct {
   // This is a virtual field resolved manually by counting comments
   @Field(() => Float, { defaultValue: 0 })
   commentsCount?: number;
+
+  @Field(() => Boolean, { defaultValue: false })
+  isSaved?: boolean;
 }

@@ -13,6 +13,7 @@ import {
 import { User } from '../../auth/entities/user.entity';
 import { StoreProduct } from './store-product.entity';
 import { StoreProductCommentLike } from './store-product-comment-like.entity';
+import { City } from '../../cities/entities/city.entity';
 import { Int } from '@nestjs/graphql';
 
 @ObjectType()
@@ -41,6 +42,16 @@ export class StoreProductComment {
 
   @Column({ name: 'user_id' })
   userId: string;
+
+  // ── Multi-tenant: City isolation ───────────────────────────────────────
+  @Field()
+  @Column({ name: 'city_id', default: 'chunchi' })
+  cityId: string;
+
+  @Field(() => City, { nullable: true })
+  @ManyToOne(() => City, { eager: false, nullable: true })
+  @JoinColumn({ name: 'city_id' })
+  city?: City;
 
   @Field()
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

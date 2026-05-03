@@ -232,10 +232,29 @@ export default function ZoomableImageViewer({ url, mediaType = 'image', onClose,
     const { cachedSource } = useVideoCache(mediaType === 'video' ? url : '');
     const player = useVideoPlayer(mediaType === 'video' ? (cachedSource || url) : null, (p) => {
         if (p) {
-            p.loop = true;
+            p.loop = false;  // NO usar loop nativo — causa pantalla negra en expo-video
             p.play();
         }
     });
+
+    // Loop manual: evita la pantalla negra que causa player.loop = true en expo-video
+    useEffect(() => {
+        if (!player || mediaType !== 'video') return;
+        let sub: any;
+        try {
+            sub = player.addListener('playToEnd', () => {
+                try {
+                    if (typeof player.replay === 'function') {
+                        player.replay();
+                    } else {
+                        player.currentTime = 0;
+                        player.play();
+                    }
+                } catch (e) {}
+            });
+        } catch (e) {}
+        return () => { try { sub?.remove?.(); } catch (e) {} };
+    }, [player, mediaType]);
 
     const animatedStyle = useAnimatedStyle(() => {
         return {

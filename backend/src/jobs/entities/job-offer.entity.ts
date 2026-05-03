@@ -2,6 +2,7 @@ import { ObjectType, Field, ID } from '@nestjs/graphql';
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 import { JobOfferMedia } from './job-offer-media.entity';
+import { City } from '../../cities/entities/city.entity';
 
 @ObjectType()
 @Entity('job_offers')
@@ -54,7 +55,20 @@ export class JobOffer {
   @Column({ name: 'user_id' })
   authorId: string;
 
+  // ── Multi-tenant: City isolation ───────────────────────────────────────
+  @Field()
+  @Column({ name: 'city_id', default: 'chunchi' })
+  cityId: string;
+
+  @Field(() => City, { nullable: true })
+  @ManyToOne(() => City, { eager: false, nullable: true })
+  @JoinColumn({ name: 'city_id' })
+  city?: City;
+
   @Field(() => [JobOfferMedia], { nullable: true })
   @OneToMany(() => JobOfferMedia, media => media.jobOffer, { cascade: true, eager: true })
   media?: JobOfferMedia[];
+
+  @Field(() => Boolean, { defaultValue: false })
+  isSaved?: boolean;
 }

@@ -13,12 +13,13 @@ export class CommentsService {
         private commentLikeRepository: Repository<CommentLike>,
     ) {}
 
-    async createComment(postId: string, content: string, userId: string, parentId?: string): Promise<Comment> {
+    async createComment(postId: string, content: string, userId: string, cityId: string, parentId?: string): Promise<Comment> {
         const comment = this.commentRepository.create({
             postId,
             content,
             userId,
             parentId,
+            cityId,   // ← tenant stamp
         });
         const saved = await this.commentRepository.save(comment);
         const result = await this.commentRepository.findOne({
@@ -28,9 +29,12 @@ export class CommentsService {
         return this.mapComment(result!, userId);
     }
 
-    async getCommentsByPost(postId: string, userId?: string, limit: number = 10, offset: number = 0): Promise<Comment[]> {
+    async getCommentsByPost(postId: string, userId?: string, limit: number = 10, offset: number = 0, cityId?: string): Promise<Comment[]> {
+        const where: any = { postId, parentId: IsNull() };
+        if (cityId) where.cityId = cityId;
+
         const comments = await this.commentRepository.find({
-            where: { postId, parentId: IsNull() },
+            where,
             relations: ['user', 'likes'],
             order: { createdAt: 'DESC' },
             take: limit,
@@ -39,18 +43,24 @@ export class CommentsService {
         return comments.map(comment => this.mapComment(comment, userId));
     }
 
-    async getCommentById(id: string, userId?: string): Promise<Comment | null> {
+    async getCommentById(id: string, userId?: string, cityId?: string): Promise<Comment | null> {
+        const where: any = { id };
+        if (cityId) where.cityId = cityId;
+
         const comment = await this.commentRepository.findOne({
-            where: { id },
+            where,
             relations: ['user', 'likes', 'post', 'post.author', 'post.author.badge', 'post.media', 'post.likes'],
         });
         if (!comment) return null;
         return this.mapComment(comment, userId);
     }
 
-    async getReplies(commentId: string, userId?: string): Promise<Comment[]> {
+    async getReplies(commentId: string, userId?: string, cityId?: string): Promise<Comment[]> {
+        const where: any = { parentId: commentId };
+        if (cityId) where.cityId = cityId;
+
         const replies = await this.commentRepository.find({
-            where: { parentId: commentId },
+            where,
             relations: ['user', 'likes'],
             order: { createdAt: 'ASC' },
         });
@@ -80,7 +90,7 @@ export class CommentsService {
         return this.mapComment(saved, userId);
     }
 
-    async toggleCommentLike(commentId: string, userId: string): Promise<Comment> {
+    async toggleCommentLike(commentId: string, userId: string, cityId: string): Promise<Comment> {
         const comment = await this.commentRepository.findOne({ where: { id: commentId } });
         if (!comment) {
             throw new NotFoundException('Comentario no encontrado');
@@ -93,7 +103,7 @@ export class CommentsService {
         if (existingLike) {
             await this.commentLikeRepository.remove(existingLike);
         } else {
-            const newLike = this.commentLikeRepository.create({ commentId, userId });
+            const newLike = this.commentLikeRepository.create({ commentId, userId, cityId });
             await this.commentLikeRepository.save(newLike);
         }
 

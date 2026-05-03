@@ -1,14 +1,18 @@
 import { Resolver, Query, Mutation, Args, Int } from '@nestjs/graphql';
+import { UseGuards } from '@nestjs/common';
 import { AdsService } from './ads.service';
 import { AdDecision } from './dto/ad-decision.type';
+import { JwtGqlGuard } from '../auth/guards/jwt-gql.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @Resolver()
 export class AdsResolver {
   constructor(private readonly adsService: AdsService) {}
 
   @Query(() => AdDecision, { name: 'getNextAd' })
-  async getNextAd(): Promise<AdDecision> {
-    return this.adsService.getNextAdDecision();
+  @UseGuards(JwtGqlGuard)
+  async getNextAd(@CurrentUser() user: any): Promise<AdDecision> {
+    return this.adsService.getNextAdDecision(user?.cityId);
   }
 
   @Mutation(() => Boolean, { name: 'registerAdClick' })

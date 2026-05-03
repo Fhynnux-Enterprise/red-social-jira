@@ -16,17 +16,18 @@ export class StoriesResolver {
     @Args('mediaType') mediaType: string,
     @Args('content', { nullable: true }) content?: string,
   ) {
-    const userId = context.req.user.id;
-    return this.storiesService.create(userId, mediaUrl, mediaType, content);
+    const user = context.req.user;
+    return this.storiesService.create(user.id, mediaUrl, mediaType, user.cityId, content);
   }
 
   @Query(() => [Story], { name: 'getActiveStories' })
   @UseGuards(JwtGqlGuard)
   getActiveStories(
+    @Context() context: any,
     @Args('limit', { type: () => Int, defaultValue: 20 }) limit: number,
     @Args('offset', { type: () => Int, defaultValue: 0 }) offset: number,
   ) {
-    return this.storiesService.getActiveStories(offset, limit);
+    return this.storiesService.getActiveStories(offset, limit, context.req.user?.cityId);
   }
 
   @Mutation(() => Boolean)

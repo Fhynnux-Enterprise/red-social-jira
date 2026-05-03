@@ -13,7 +13,7 @@ import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { Ionicons } from '@expo/vector-icons';
 import { GET_COMMENTS, CREATE_COMMENT, DELETE_COMMENT, UPDATE_COMMENT } from '../graphql/comments.operations';
-import { TOGGLE_LIKE } from '../../feed/graphql/posts.operations';
+import { TOGGLE_LIKE, TOGGLE_SAVE_POST } from '../../feed/graphql/posts.operations';
 import { 
     TOGGLE_STORE_PRODUCT_LIKE, 
     CREATE_STORE_PRODUCT_COMMENT, 
@@ -192,6 +192,54 @@ export default function CommentsModal({
     // Puedes ajustar este multiplicador (p. ej 0.45) para que el post no se acorte tanto al leer comentarios.
     const POST_EXPANDED_MAX_HEIGHT = SCREEN_HEIGHT * 0.35;
     // =======================================================================================
+
+    const [toggleSavePost] = useMutation(TOGGLE_SAVE_POST);
+
+    const handleToggleSave = useCallback(async () => {
+        if (!post) return;
+
+        const itemId = post.realId || post.id;
+        const itemType = post.__typename === 'JobOffer' ? 'JOB_OFFER' :
+                         post.__typename === 'ProfessionalProfile' ? 'PROFESSIONAL_PROFILE' :
+                         post.__typename === 'StoreProduct' ? 'STORE_PRODUCT' :
+                         post.isAd || post.__typename === 'Ad' ? 'AD' : 'POST';
+
+        const wasSaved = !!post.isSaved;
+
+        try {
+            await toggleSavePost({
+                variables: { postId: itemId, itemType },
+                optimisticResponse: {
+                    toggleSavePost: !wasSaved,
+                },
+                update: (cache, { data }) => {
+                    const cacheId = cache.identify({
+                        __typename: post.__typename || 'Post',
+                        id: post.id,
+                    });
+                    if (!cacheId) return;
+                    cache.modify({
+                        id: cacheId,
+                        fields: {
+                            isSaved: () => !!data?.toggleSavePost,
+                        },
+                    });
+                },
+            });
+            Toast.show({
+                type: 'success',
+                text1: wasSaved ? 'Quitado de guardados' : 'Guardado correctamente',
+                position: 'bottom'
+            });
+        } catch (err) {
+            console.error('Error toggling save in modal:', err);
+            Toast.show({
+                type: 'error',
+                text1: 'No se pudo procesar la acción',
+                position: 'bottom'
+            });
+        }
+    }, [post, toggleSavePost]);
 
     const navigateToProfile = (userId: string) => {
         onClose();
@@ -1838,13 +1886,19 @@ export default function CommentsModal({
             <PostOptionsModal
                 visible={isPostOptionsMenuVisible}
                 onClose={() => setIsPostOptionsMenuVisible(false)}
-                isOwner={false}
-                onEdit={() => {}}
-                onDelete={() => {}}
+                isOwner={
+                    post?.author?.id === currentUser?.id || 
+                    post?.seller?.id === currentUser?.id ||
+                    post?.user?.id === currentUser?.id
+                }
+                onEdit={() => {}} // TODO: implementar edición desde modal si es necesario
+                onDelete={() => {}} // TODO: implementar borrado desde modal si es necesario
                 onReport={() => {
                     setIsPostOptionsMenuVisible(false);
                     setPostReportVisible(true);
                 }}
+                onToggleSave={handleToggleSave}
+                isSaved={post?.isSaved}
             />
 
             {postReportVisible && post && (

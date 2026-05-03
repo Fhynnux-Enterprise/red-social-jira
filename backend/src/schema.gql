@@ -2,12 +2,20 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+type City {
+  id: ID!
+  name: String!
+  isActive: Boolean!
+}
+
 type PostLike {
   id: ID!
   user: User!
   userId: String!
   post: Post!
   postId: String!
+  cityId: String!
+  city: City
   createdAt: DateTime!
 }
 
@@ -22,6 +30,8 @@ type CommentLike {
   userId: String!
   comment: Comment!
   commentId: String!
+  cityId: String!
+  city: City
   createdAt: DateTime!
 }
 
@@ -33,6 +43,8 @@ type Comment {
   userId: String!
   post: Post
   postId: String!
+  cityId: String!
+  city: City
   parentId: String
   parent: Comment
   replies: [Comment!]
@@ -60,6 +72,8 @@ type Post {
   media: [PostMedia]
   author: User!
   authorId: String!
+  cityId: String!
+  city: City
   likes: [PostLike!]
   createdAt: DateTime!
   updatedAt: DateTime!
@@ -67,6 +81,7 @@ type Post {
   editedAt: DateTime
   comments: [Comment!]
   commentsCount: Float!
+  isSaved: Boolean!
 }
 
 type UserCustomField {
@@ -143,6 +158,8 @@ type Story {
   mediaType: String!
   createdAt: DateTime!
   expiresAt: DateTime!
+  cityId: String!
+  city: City
 }
 
 type JobOfferMedia {
@@ -166,7 +183,10 @@ type JobOffer {
   deletedAt: DateTime
   editedAt: DateTime
   author: User!
+  cityId: String!
+  city: City
   media: [JobOfferMedia!]
+  isSaved: Boolean!
 }
 
 type ProfessionalProfileMedia {
@@ -190,6 +210,7 @@ type ProfessionalProfile {
   deletedAt: DateTime
   user: User!
   media: [ProfessionalProfileMedia!]
+  isSaved: Boolean!
 }
 
 type JobApplication {
@@ -225,6 +246,8 @@ type User {
   lastActiveAt: DateTime
   bannedUntil: DateTime
   banReason: String
+  cityId: String!
+  city: City
   posts(limit: Int = 5, offset: Int = 0): [Post!]
   customFields: [UserCustomField!]
   badge: UserBadge
@@ -260,11 +283,6 @@ type UserBlock {
   createdAt: DateTime!
 }
 
-type UploadUrlResponse {
-  signedUrl: String!
-  publicUrl: String!
-}
-
 type StoreProductMedia {
   id: ID!
   url: String!
@@ -277,6 +295,8 @@ type StoreProductLike {
   id: ID!
   product: StoreProduct!
   user: User!
+  cityId: String!
+  city: City
   createdAt: DateTime!
 }
 
@@ -285,6 +305,8 @@ type StoreProductCommentLike {
   user: User
   userId: String!
   commentId: String!
+  cityId: String!
+  city: City
   createdAt: DateTime!
 }
 
@@ -293,6 +315,8 @@ type StoreProductComment {
   content: String!
   product: StoreProduct!
   user: User!
+  cityId: String!
+  city: City
   createdAt: DateTime!
   updatedAt: DateTime!
   likes: [StoreProductCommentLike!]
@@ -321,10 +345,18 @@ type StoreProduct {
   deletedAt: DateTime
   editedAt: DateTime
   seller: User!
+  cityId: String!
+  city: City
   media: [StoreProductMedia!]
   likes: [StoreProductLike!]
   comments: [StoreProductComment!]
   commentsCount: Float!
+  isSaved: Boolean!
+}
+
+type UploadUrlResponse {
+  signedUrl: String!
+  publicUrl: String!
 }
 
 type Report {
@@ -337,6 +369,8 @@ type Report {
   contentDeleted: Boolean
   reporter: User!
   createdAt: DateTime!
+  cityId: String!
+  city: City
 }
 
 """Estado de una denuncia"""
@@ -406,6 +440,8 @@ type LocalAd {
   views: Int!
   clicks: Int!
   media: [LocalAdMedia!]
+  cityId: String!
+  city: City
   createdAt: DateTime!
 }
 
@@ -445,15 +481,19 @@ type AdvertiserPermission {
   expiresAt: DateTime!
   maxAds: Int!
   grantedBy: String
+  cityId: String!
+  city: City
   createdAt: DateTime!
 }
 
 type Query {
   """Verifica si el servidor GraphQL está funcionando"""
   ping: String!
-  getPosts(limit: Int! = 5, offset: Int! = 0): [Post!]!
   getPostById(id: String!): Post
+  getPosts(limit: Int! = 5, offset: Int! = 0): [Post!]!
   searchPosts(query: String!, limit: Int! = 5, offset: Int! = 0): [Post!]!
+  getSavedPosts(limit: Int! = 20, offset: Int! = 0): [SavedContent!]!
+  getLikedItems(limit: Int! = 20, offset: Int! = 0): [LikedContent!]!
   getMyBlockedUsers(limit: Float, offset: Float): [User!]!
   getUserProfile(id: String!): User!
   me: User!
@@ -480,17 +520,17 @@ type Query {
   jobOffers(limit: Int! = 20, offset: Int! = 0): [JobOffer!]!
   getJobOfferById(id: ID!): JobOffer
   myJobOffers: [JobOffer!]!
-  jobOffersByUser(userId: ID!): [JobOffer!]!
+  jobOffersByUser(userId: ID!, limit: Int! = 20, offset: Int! = 0): [JobOffer!]!
   professionalProfiles(limit: Int! = 20, offset: Int! = 0): [ProfessionalProfile!]!
   getProfessionalProfileById(id: String!): ProfessionalProfile
-  professionalProfilesByUser(userId: String!): [ProfessionalProfile!]!
+  professionalProfilesByUser(userId: String!, limit: Int! = 20, offset: Int! = 0): [ProfessionalProfile!]!
   myProfessionalProfile: [ProfessionalProfile!]!
   jobApplications(jobOfferId: ID!): [JobApplication!]!
   myApplications: [JobApplication!]!
   getFeed(limit: Int! = 10, offset: Int! = 0): [FeedItem!]!
   storeProducts(limit: Int! = 20, offset: Int! = 0): [StoreProduct!]!
   myStoreProducts: [StoreProduct!]!
-  storeProductsByUser(userId: ID!): [StoreProduct!]!
+  storeProductsByUser(userId: ID!, limit: Int! = 20, offset: Int! = 0): [StoreProduct!]!
   getStoreProductById(id: ID!): StoreProduct
   getStoreProductComments(productId: ID!, limit: Int! = 20, offset: Int! = 0): [StoreProductComment!]!
   getStoreProductCommentById(id: ID!): StoreProductComment
@@ -510,6 +550,10 @@ type Query {
   getMyAds: [LocalAd!]!
 }
 
+union SavedContent = Post | StoreProduct | JobOffer | ProfessionalProfile
+
+union LikedContent = Post | StoreProduct
+
 union FeedItem = Post | JobOffer | ProfessionalProfile | StoreProduct
 
 type Mutation {
@@ -517,6 +561,7 @@ type Mutation {
   updatePost(id: String!, content: String!, title: String): Post!
   deletePost(id: String!): Boolean!
   toggleLike(postId: String!): Post!
+  toggleSavePost(postId: String!, itemType: SavedItemType! = POST): Boolean!
   generateUploadUrl(fileName: String!, fileType: String!, folder: String!): UploadUrlResponse!
   blockUser(userId: String!): UserBlock!
   unblockUser(userId: String!): Boolean!
@@ -593,6 +638,14 @@ input PostMediaInput {
   url: String!
   type: String!
   order: Int!
+}
+
+enum SavedItemType {
+  POST
+  JOB_OFFER
+  PROFESSIONAL_PROFILE
+  STORE_PRODUCT
+  AD
 }
 
 input CreateJobOfferInput {

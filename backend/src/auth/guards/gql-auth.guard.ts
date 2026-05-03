@@ -83,6 +83,18 @@ export class GqlAuthGuard extends AuthGuard('jwt') {
             );
         }
 
+        // 5. Muro de Seguridad Multi-Tenant (Aislamiento Estricto)
+        // El usuario solo puede interactuar con el backend si el token pertenece a la misma ciudad de la app.
+        const headerCityId = req.headers['x-city-id'] || req.headers['x-city-id']?.toString().toLowerCase();
+        
+        if (headerCityId && jwtUser) {
+            const requestedCityId = Array.isArray(headerCityId) ? headerCityId[0] : headerCityId;
+            
+            if (jwtUser.cityId !== requestedCityId) {
+                throw new UnauthorizedException('Token no válido para este cantón/ciudad');
+            }
+        }
+
         return true;
     }
 }

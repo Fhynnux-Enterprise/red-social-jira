@@ -2,6 +2,7 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { notifySessionExpired } from './session.manager';
 import Toast from 'react-native-toast-message';
+import Constants from 'expo-constants';
 
 // Apuntamos usando la IP de tu PC para que un celular físico conectado al mismo Wi-Fi pueda acceder
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
@@ -21,6 +22,12 @@ apiClient.interceptors.request.use(
             if (token) {
                 config.headers.Authorization = `Bearer ${token}`;
             }
+
+            // Inyectar cityId para el aislamiento multi-tenant en el backend
+            // Esto permite que el backend sepa en qué contexto de ciudad opera el token
+            const cityId = Constants.expoConfig?.extra?.cityId || 'chunchi';
+            config.headers['x-city-id'] = cityId;
+
         } catch (error) {
             console.error('Error al recuperar el token de SecureStore:', error);
         }
@@ -56,22 +63,29 @@ apiClient.interceptors.response.use(
             error.message = friendlyMessage;
             error.isNetworkError = true;
         } 
-        // ERROR 401: puede ser sesión expirada O cuenta baneada
+        // ERROR 401: puede ser sesión expirada O cuenta baneada O falta de sincronización
         else if (error.response?.status === 401) {
-            // Intentar parsear si es un ban estructurado
             const raw = error.response?.data?.message ?? '';
             try {
                 const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                
+                // 1. CASO BANEO
                 if (parsed?.code === 'USER_BANNED' && parsed?.bannedUntil) {
-                    // Notificar el ban via handler registrado (AuthContext lo escucha)
                     _axiosBanHandler?.({
                         bannedUntil: parsed.bannedUntil,
                         banReason: parsed.banReason ?? 'Violación de las normas de la comunidad',
                     });
-                    // Propagar el error sin toast de "sesión expirada"
                     return Promise.reject(error);
                 }
-            } catch (_) { /* no era JSON de ban */ }
+
+                // 2. CASO NO SINCRONIZADO (Para Google SSO)
+                // Devolvemos el error pero dejamos que el llamador lo maneje o lo ignoramos
+                // si es un error esperado que el AuthService manejará.
+                if (parsed?.code === 'USER_NOT_SYNCED') {
+                    return Promise.reject(error);
+                }
+
+            } catch (_) { /* no era JSON estructurado */ }
 
             // 401 normal → sesión expirada
             notifySessionExpired();

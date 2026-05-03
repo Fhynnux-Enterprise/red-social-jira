@@ -34,7 +34,7 @@ export const ActualFullscreenVideo = ({
     const safeBottom = (insets?.bottom ?? 0) + 56;
 
     const fsPlayer = useVideoPlayer(url, (player: any) => {
-        player.loop = true;
+        player.loop = false;  // NO usar loop nativo — causa pantalla negra en expo-video
         player.muted = isMuted;
         player.play();
     });
@@ -48,6 +48,26 @@ export const ActualFullscreenVideo = ({
         isMounted.current = true;
         return () => { isMounted.current = false; };
     }, []);
+
+    // Loop manual: evita la pantalla negra que causa player.loop = true en expo-video
+    useEffect(() => {
+        if (!fsPlayer) return;
+        let sub: any;
+        try {
+            sub = fsPlayer.addListener('playToEnd', () => {
+                if (!isMounted.current) return;
+                try {
+                    if (typeof fsPlayer.replay === 'function') {
+                        fsPlayer.replay();
+                    } else {
+                        fsPlayer.currentTime = 0;
+                        fsPlayer.play();
+                    }
+                } catch (e) {}
+            });
+        } catch (e) {}
+        return () => { try { sub?.remove?.(); } catch (e) {} };
+    }, [fsPlayer]);
 
     useEffect(() => {
         if (!fsPlayer || !isVisible) return;

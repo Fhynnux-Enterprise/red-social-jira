@@ -154,8 +154,8 @@ export const UPDATE_STORE_PRODUCT = gql`
 `;
 
 export const GET_STORE_PRODUCTS_BY_USER = gql`
-  query GetStoreProductsByUser($userId: ID!) {
-    storeProductsByUser(userId: $userId) {
+  query GetStoreProductsByUser($userId: ID!, $limit: Int, $offset: Int) {
+    storeProductsByUser(userId: $userId, limit: $limit, offset: $offset) {
       id
       title
       description

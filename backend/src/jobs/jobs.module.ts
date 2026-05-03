@@ -15,6 +15,7 @@ import { ApplicationsResolver } from './applications.resolver';
 import { AuthModule } from '../auth/auth.module';
 import { StorageModule } from '../storage/storage.module';
 import { UserBlocksModule } from '../user-blocks/user-blocks.module';
+import { PostsModule } from '../posts/posts.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { UserBlocksModule } from '../user-blocks/user-blocks.module';
     AuthModule,
     StorageModule,
     UserBlocksModule,
+    PostsModule,
   ],
   providers: [
     JobsService,

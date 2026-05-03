@@ -18,21 +18,29 @@ export class StoriesService {
     private readonly storageService: StorageService,
   ) {}
 
-  async create(userId: string, mediaUrl: string, mediaType: string, content?: string) {
+  async create(userId: string, mediaUrl: string, mediaType: string, cityId: string, content?: string) {
     const story = this.storiesRepository.create({
       userId,
       mediaUrl,
       mediaType,
       content,
+      cityId, // ← tenant stamp
     });
     return this.storiesRepository.save(story);
   }
 
   // Obtiene historias activas agrupadas por usuario (paginado)
-  async getActiveStories(skip: number = 0, take: number = 20) {
-    return this.storiesRepository.createQueryBuilder('story')
+  async getActiveStories(skip: number = 0, take: number = 20, cityId?: string) {
+    const query = this.storiesRepository.createQueryBuilder('story')
       .leftJoinAndSelect('story.user', 'user')
-      .where('story.expiresAt > CURRENT_TIMESTAMP')
+      .where('story.expiresAt > CURRENT_TIMESTAMP');
+
+    // ── Multi-tenant filter ───────────────────────────────────────────────
+    if (cityId) {
+      query.andWhere('story.cityId = :cityId', { cityId });
+    }
+
+    return query
       .orderBy('story.createdAt', 'DESC')
       .skip(skip)
       .take(take)

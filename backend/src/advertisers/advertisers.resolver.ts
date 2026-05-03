@@ -110,9 +110,9 @@ export class AdvertisersResolver {
   @UseGuards(GqlAuthGuard)
   async createLocalAd(
     @Args('input') input: CreateLocalAdInput,
-    @CurrentUser() user: User,
+    @CurrentUser() user: any,
   ): Promise<LocalAd> {
-    return this.advertisersService.createLocalAd(input, user.id);
+    return this.advertisersService.createLocalAd(input, user.id, user.cityId);
   }
 
   @Mutation(() => LocalAd, { name: 'updateLocalAd' })

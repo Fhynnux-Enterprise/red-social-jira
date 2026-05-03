@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, ValidationPipe, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Get, Body, ValidationPipe, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -20,13 +20,21 @@ export class AuthController {
 
     @Post('sync')
     @UseGuards(JwtRestGuard)
-    async syncGoogleUser(@Req() req: any) {
-        return this.authService.syncGoogleUser(req.user);
+    async syncGoogleUser(@Req() req: any, @Body() body: any) {
+        return this.authService.syncGoogleUser(req.user, body?.cityId);
     }
 
     @Get('me')
     @UseGuards(JwtRestGuard)
     async getProfile(@Req() req: any) {
+        if (req.user?.isNotSynced) {
+            throw new UnauthorizedException(
+                JSON.stringify({
+                    code: 'USER_NOT_SYNCED',
+                    message: 'El usuario no tiene un perfil en esta ciudad aún.',
+                })
+            );
+        }
         // req.user trae el ID desde Supabase / Custom Strategy
         return this.authService.getProfile(req.user.id);
     }

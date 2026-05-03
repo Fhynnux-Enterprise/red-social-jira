@@ -151,7 +151,7 @@ export class AdvertisersService {
   }
 
   /** Crea un nuevo anuncio local para el anunciante autenticado. */
-  async createLocalAd(input: CreateLocalAdInput, advertiserId: string): Promise<LocalAd> {
+  async createLocalAd(input: CreateLocalAdInput, advertiserId: string, cityId: string): Promise<LocalAd> {
     const permission = await this.permissionRepo.findOne({ where: { userId: advertiserId } });
     if (!permission) throw new NotFoundException('No tienes permiso de anunciante');
 
@@ -168,6 +168,7 @@ export class AdvertisersService {
       actionLabel: input.actionLabel ?? 'Ver más',
       whatsappPhone: input.whatsappPhone,
       isActive: true,
+      cityId, // ← tenant stamp
     });
 
     // Guardamos primero el anuncio para obtener el ID

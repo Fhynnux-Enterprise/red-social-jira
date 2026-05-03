@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   ActivityIndicator, Animated, Pressable,
@@ -9,6 +9,7 @@ import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../../theme/ThemeContext';
 import { GET_STORE_PRODUCTS, GET_MY_STORE_PRODUCTS, DELETE_STORE_PRODUCT } from '../graphql/store.operations';
+import { TOGGLE_SAVE_POST, GET_SAVED_POSTS } from '../../feed/graphql/posts.operations';
 import StoreProductCard from '../components/StoreProductCard';
 import CreateProductModal from '../components/CreateProductModal';
 import CommentsModal from '../../comments/components/CommentsModal';
@@ -213,6 +214,39 @@ export default function StoreScreen() {
     }
   });
 
+  const [toggleSavePost] = useMutation(TOGGLE_SAVE_POST);
+
+  const handleToggleSave = useCallback(async (item: any) => {
+    if (!item) return;
+    const itemId = item.id;
+    const wasSaved = !!item.isSaved;
+
+    try {
+      await toggleSavePost({
+        variables: { postId: itemId, itemType: 'STORE_PRODUCT' },
+        optimisticResponse: { toggleSavePost: !wasSaved },
+        refetchQueries: [{ query: GET_SAVED_POSTS }],
+        update: (cache, { data }) => {
+          const cacheId = cache.identify({ __typename: 'StoreProduct', id: itemId });
+          if (cacheId) {
+            cache.modify({
+              id: cacheId,
+              fields: { isSaved: () => !!data?.toggleSavePost }
+            });
+          }
+        }
+      });
+      Toast.show({
+        type: 'success',
+        text1: wasSaved ? 'Quitado de guardados' : 'Guardado correctamente',
+        position: 'bottom'
+      });
+    } catch (err) {
+      console.error('Error toggling save:', err);
+      Toast.show({ type: 'error', text1: 'No se pudo procesar la acción', position: 'bottom' });
+    }
+  }, [toggleSavePost]);
+
   const handleOptionsPress = (product: any) => {
     setSelectedProductForOptions(product);
     setIsOptionsVisible(true);
@@ -336,6 +370,8 @@ export default function StoreScreen() {
                 onEdit={handleEdit}
                 onPress={() => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' })}
                 onCommentPress={() => setSelectedPostForComments({ post: item, minimize: false, initialTab: 'comments' })}
+                onToggleSave={() => handleToggleSave(item)}
+                isSaved={item.isSaved}
               />
             );
           }}

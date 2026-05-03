@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, Image, Platform, Alert, StatusBar } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, Image, Platform, Alert, StatusBar, Modal, TouchableWithoutFeedback } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
+import { gql } from '@apollo/client';
 import { useFocusEffect, useNavigation, useIsFocused } from '@react-navigation/native';
-import { DELETE_POST, GET_FEED } from '../graphql/posts.operations';
+import { DELETE_POST, GET_FEED, TOGGLE_SAVE_POST, GET_SAVED_POSTS } from '../graphql/posts.operations';
 import { DELETE_STORE_PRODUCT } from '../../store/graphql/store.operations';
 import { DELETE_JOB_OFFER, DELETE_PROFESSIONAL_PROFILE } from '../../jobs/graphql/jobs.operations';
 import JobOfferCard from '../../jobs/components/JobOfferCard';
@@ -11,6 +12,7 @@ import ProfessionalCard from '../../jobs/components/ProfessionalCard';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../auth/context/AuthContext';
 import { LinearGradient } from 'expo-linear-gradient';
+import Constants from 'expo-constants';
 import MaskedView from '@react-native-masked-view/masked-view';
 import CreatePostModal from '../components/CreatePostModal';
 import { useRouter } from 'expo-router';
@@ -30,6 +32,8 @@ import CreateProductModal from '../../store/components/CreateProductModal';
 import CreateLocalAdModal from '../../advertisers/components/CreateLocalAdModal';
 import NativeAdCard from '../../ads/components/NativeAdCard';
 import { GET_AD_FREQUENCY, UPDATE_AD_FREQUENCY } from '../../ads/graphql/ads.operations';
+import ThemeSelectorModal from '../../../components/ThemeSelectorModal';
+import BlockedUsersModal from '../../user-blocks/components/BlockedUsersModal';
 
 
 export interface PostAuthor {
@@ -82,7 +86,7 @@ interface SelectedPostForComments {
 
 export default function FeedScreen() {
     const { signOut } = useAuth();
-    const { colors, isDark } = useTheme();
+    const { colors, isDark, themeMode, setThemeMode } = useTheme();
     const navigation = useNavigation();
     const router = useRouter();
     const [isModalVisible, setIsModalVisible] = useState(false);
@@ -110,6 +114,12 @@ export default function FeedScreen() {
     const flatListRef = useRef<FlatList>(null);
     const [adFrequency, setAdFrequency] = useState(5);
     
+    // Estados para el menú de configuración
+    const [isMenuVisible, setIsMenuVisible] = useState(false);
+    const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
+    const [isBlockedUsersVisible, setIsBlockedUsersVisible] = useState(false);
+    const insets = useSafeAreaInsets();
+
     // Memoria para guardar los anuncios cargados y evitar que cambien al hacer scroll o swipe
     const [loadedAds, setLoadedAds] = useState<Record<string, any>>({});
 
@@ -189,6 +199,57 @@ export default function FeedScreen() {
     const [deleteStoreProduct] = useMutation(DELETE_STORE_PRODUCT);
     const [deleteJobOffer] = useMutation(DELETE_JOB_OFFER);
     const [deleteProfessionalProfile] = useMutation(DELETE_PROFESSIONAL_PROFILE);
+
+    const [toggleSavePost] = useMutation(TOGGLE_SAVE_POST);
+
+    const handleToggleSave = useCallback(async (item: any) => {
+        if (!item) return;
+
+        const itemId = item.realId || item.id;
+        const itemType = item.__typename === 'JobOffer' ? 'JOB_OFFER' :
+                         item.__typename === 'ProfessionalProfile' ? 'PROFESSIONAL_PROFILE' :
+                         item.__typename === 'StoreProduct' ? 'STORE_PRODUCT' :
+                         item.isAd || item.__typename === 'Ad' ? 'AD' : 'POST';
+
+        const wasSaved = !!item.isSaved;
+
+        try {
+            await toggleSavePost({
+                variables: { postId: itemId, itemType },
+                // ── Optimistic UI: el ícono cambia INMEDIATAMENTE sin esperar al servidor ──
+                optimisticResponse: {
+                    toggleSavePost: !wasSaved,
+                },
+                refetchQueries: [{ query: GET_SAVED_POSTS }],
+                // ── Actualización del caché: usa modify (no necesita gql) ──
+                update: (cache, { data }) => {
+                    const cacheId = cache.identify({
+                        __typename: item.__typename || 'Post',
+                        id: item.id,
+                    });
+                    if (!cacheId) return;
+                    cache.modify({
+                        id: cacheId,
+                        fields: {
+                            isSaved: () => !!data?.toggleSavePost,
+                        },
+                    });
+                },
+            });
+            Toast.show({
+                type: 'success',
+                text1: wasSaved ? 'Quitado de guardados' : 'Guardado correctamente',
+                position: 'bottom'
+            });
+        } catch (err) {
+            console.error('Error toggling save:', err);
+            Toast.show({
+                type: 'error',
+                text1: 'No se pudo procesar la acción',
+                position: 'bottom'
+            });
+        }
+    }, [toggleSavePost]);
 
     const isFetchingMore = networkStatus === 3;
 
@@ -341,8 +402,10 @@ export default function FeedScreen() {
         if (item.__typename === 'JobOffer') {
             const mappedItem = { 
                 ...item, 
-                title: item.jobTitle ?? item.title, 
-                media: item.jobMedia ?? [] 
+                title: item.jobTitle ?? item.postTitle ?? item.title, 
+                media: item.jobMedia ?? item.postMedia ?? item.media ?? [],
+                location: item.jobLocation ?? item.location,
+                contactPhone: item.jobContactPhone ?? item.contactPhone
             };
             return <JobOfferCard 
                 item={mappedItem} 
@@ -357,12 +420,15 @@ export default function FeedScreen() {
                         }
                     });
                 }}
+                onToggleSave={() => handleToggleSave(mappedItem)}
+                isSaved={item.isSaved}
             />;
         }
         if (item.__typename === 'ProfessionalProfile') {
             const mappedItem = { 
                 ...item, 
-                media: item.profMedia ?? [] 
+                media: item.profMedia ?? item.postMedia ?? item.media ?? [],
+                contactPhone: item.profContactPhone ?? item.contactPhone
             };
             return <ProfessionalCard 
                 item={mappedItem} 
@@ -377,15 +443,17 @@ export default function FeedScreen() {
                         }
                     });
                 }}
+                onToggleSave={() => handleToggleSave(mappedItem)}
+                isSaved={item.isSaved}
             />;
         }
         if (item.__typename === 'StoreProduct') {
             const mappedItem = {
                 ...item,
-                title: item.storeTitle ?? item.title,
-                media: item.storeMedia ?? [],
-                location: item.storeLocation,
-                contactPhone: item.storeContactPhone,
+                title: item.storeTitle ?? item.postTitle ?? item.title,
+                media: item.storeMedia ?? item.postMedia ?? item.media ?? [],
+                location: item.storeLocation ?? item.location,
+                contactPhone: item.storeContactPhone ?? item.contactPhone,
             };
             return <StoreProductCard 
                 item={mappedItem} 
@@ -395,13 +463,16 @@ export default function FeedScreen() {
                     setEditingProduct(itemToEdit);
                     setIsStoreModalVisible(true);
                 }}
+                onToggleSave={() => handleToggleSave(mappedItem)}
+                isSaved={item.isSaved}
             />;
         }
         
         // Default: Post
         const mappedPost = {
             ...item,
-            media: item.postMedia ?? []
+            title: item.postTitle ?? item.title,
+            media: item.postMedia ?? item.media ?? []
         };
         
         return (
@@ -412,6 +483,8 @@ export default function FeedScreen() {
                 onOpenComments={(_, initialTab, minimize, initialExpanded) =>
                     setSelectedPostForComments({ post: mappedPost, minimize: !!minimize, initialTab, initialExpanded })
                 }
+                onToggleSave={() => handleToggleSave(mappedPost)}
+                isSaved={item.isSaved}
                 isViewable={item.id === visiblePostId}
                 isFocused={isFocused}
                 isOverlayActive={!!selectedPostForComments || isModalVisible}
@@ -434,7 +507,7 @@ export default function FeedScreen() {
                         style={{ flex: 1, flexDirection: 'row' }}
                         maskElement={
                             <View style={{ backgroundColor: 'transparent', flex: 1, justifyContent: 'center' }}>
-                                <Text style={styles.brandTitle}>Chunchi City App</Text>
+                                <Text style={styles.brandTitle} numberOfLines={1} adjustsFontSizeToFit>{Constants.expoConfig?.name || 'Red Social'}</Text>
                             </View>
                         }
                     >
@@ -442,8 +515,9 @@ export default function FeedScreen() {
                             colors={[colors.primary, colors.secondary]}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
+                            style={{ flex: 1, justifyContent: 'center' }}
                         >
-                            <Text style={[styles.brandTitle, { opacity: 0 }]}>Chunchi City App</Text>
+                            <Text style={[styles.brandTitle, { opacity: 0 }]} numberOfLines={1} adjustsFontSizeToFit>Chunchi City App</Text>
                         </LinearGradient>
                     </MaskedView>
                 </View>
@@ -455,8 +529,14 @@ export default function FeedScreen() {
                     >
                         <Ionicons name="search-outline" size={22} color={colors.text} />
                     </TouchableOpacity>
-                    
-                    <NotificationBell />
+
+                    <TouchableOpacity 
+                        style={styles.iconButton}
+                        onPress={() => setIsMenuVisible(true)}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons name="menu-outline" size={26} color={colors.text} />
+                    </TouchableOpacity>
                 </View>
             </View>
 
@@ -511,7 +591,7 @@ export default function FeedScreen() {
                                             activeOpacity={0.7}
                                             onPress={handleCreatePostPress}
                                         >
-                                            <Text style={styles.fakeInputText}>¿Qué está pasando en Chunchi?</Text>
+                                            <Text style={styles.fakeInputText}>¿Qué está pasando en {Constants.expoConfig?.extra?.cityName || 'tu ciudad'}?</Text>
                                         </TouchableOpacity>
                                     </View>
                                 </View>
@@ -567,6 +647,8 @@ export default function FeedScreen() {
                     setIsOptionsMenuVisible(false);
                     setIsReportModalVisible(true);
                 }}
+                onToggleSave={() => handleToggleSave(selectedPost)}
+                isSaved={selectedPost?.isSaved}
                 onEdit={() => {
                     if (selectedPost) {
                         const type = selectedPost.__typename;
@@ -792,6 +874,107 @@ export default function FeedScreen() {
                     setIsReportModalVisible(false);
                 }}
             />
+
+            {/* Menú lateral de configuración */}
+            <Modal visible={isMenuVisible} animationType="fade" transparent onRequestClose={() => setIsMenuVisible(false)}>
+                <TouchableWithoutFeedback onPress={() => setIsMenuVisible(false)}>
+                    <View style={styles.modalOverlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={[styles.modalContent, { paddingTop: Math.max(insets.top, 20) + 10, paddingBottom: Math.max(insets.bottom, 20) + 20 }]}>
+                                <View style={styles.drawerHeader}>
+                                    <TouchableOpacity onPress={() => setIsMenuVisible(false)} style={styles.drawerCloseBtn}>
+                                        <Ionicons name="close" size={28} color={colors.text} />
+                                    </TouchableOpacity>
+                                    <Text style={styles.modalTitle}>Configuración</Text>
+                                    <View style={{ width: 28 }} />
+                                </View>
+                                {isAdmin && (
+                                    <>
+                                        <TouchableOpacity
+                                            style={styles.settingButton}
+                                            onPress={() => { setIsMenuVisible(false); setTimeout(() => (navigation as any).navigate('Moderation', { initialTab: 'reports' }), 300); }}
+                                        >
+                                            <View style={styles.settingLeft}>
+                                                <View style={{ backgroundColor: 'rgba(255,101,36,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
+                                                    <Ionicons name="shield-checkmark-outline" size={22} color="#FF6524" />
+                                                </View>
+                                                <Text style={[styles.settingText, { color: '#FF6524' }]}>Moderación</Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color="#FF6524" />
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity
+                                            style={styles.settingButton}
+                                            onPress={() => { setIsMenuVisible(false); setTimeout(() => (navigation as any).navigate('Admin'), 300); }}
+                                        >
+                                            <View style={styles.settingLeft}>
+                                                <View style={{ backgroundColor: 'rgba(99,102,241,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
+                                                    <Ionicons name="settings-outline" size={22} color="#6366F1" />
+                                                </View>
+                                                <Text style={[styles.settingText, { color: '#6366F1' }]}>Administración</Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color="#6366F1" />
+                                        </TouchableOpacity>
+                                    </>
+                                )}
+                                <TouchableOpacity
+                                    style={styles.settingButton}
+                                    onPress={() => { setIsMenuVisible(false); setTimeout(() => setIsThemeModalVisible(true), 400); }}
+                                >
+                                    <View style={styles.settingLeft}>
+                                        <Ionicons name="color-palette-outline" size={24} color={colors.text} />
+                                        <Text style={styles.settingText}>Tema</Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.settingButton}
+                                    onPress={() => { setIsMenuVisible(false); setTimeout(() => setIsBlockedUsersVisible(true), 300); }}
+                                >
+                                    <View style={styles.settingLeft}>
+                                        <Ionicons name="lock-closed-outline" size={24} color={colors.text} />
+                                        <Text style={styles.settingText}>Bloqueados</Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.settingButton}
+                                    onPress={() => {
+                                        setIsMenuVisible(false);
+                                        setTimeout(() => {
+                                            router.push('/ads/info');
+                                        }, 300);
+                                    }}
+                                >
+                                    <View style={styles.settingLeft}>
+                                        <Ionicons name="megaphone-outline" size={24} color={colors.text} />
+                                        <Text style={styles.settingText}>Publicidad</Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                                <View style={styles.spacer} />
+                                <TouchableOpacity style={styles.logoutButton} onPress={signOut}>
+                                    <Ionicons name="log-out-outline" size={24} color={colors.error} />
+                                    <Text style={styles.logoutText}>Cerrar Sesión</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+
+            <ThemeSelectorModal
+                visible={isThemeModalVisible}
+                onClose={() => setIsThemeModalVisible(false)}
+                currentTheme={themeMode}
+                onSelectTheme={(theme) => setThemeMode(theme)}
+            />
+
+            <BlockedUsersModal
+                visible={isBlockedUsersVisible}
+                onClose={() => setIsBlockedUsersVisible(false)}
+            />
+
         </SafeAreaView>
     );
 }
@@ -812,28 +995,26 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         backgroundColor: colors.background,
     },
     brandContainer: {
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
     },
     brandLogo: {
-        width: 50,
-        height: 50,
-        marginRight: 4,
-        marginTop: 2,
+        width: 40,
+        height: 40,
+        marginRight: 8,
         borderRadius: 8,
     },
     brandTitle: {
-        fontSize: 26,
-        fontWeight: '900', // <-- AQUÍ CAMBIAS EL GROSOR ('bold', 'normal', '100' hasta '900')
-        fontFamily: '', // <-- AQUÍ CAMBIAS EL TIPO DE LETRA (Ej en Android: 'sans-serif', 'sans-serif-condensed', 'serif')
-        letterSpacing: 1,
+        fontSize: 22, // Reducido para que quepa mejor
+        fontWeight: '900',
+        letterSpacing: 0.5,
     },
     headerIcons: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        marginLeft: -35,
-        marginTop: 10,
+        gap: 4,
+        flexShrink: 0, // Evitar que los iconos se aplasten
     },
     iconButton: {
         width: 40,
@@ -936,4 +1117,28 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         fontSize: 16,
         fontWeight: 'bold',
     },
+    // Estilos del Modal de Configuración
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'flex-start', alignItems: 'flex-end' },
+    modalContent: {
+        backgroundColor: colors.background, width: '75%', height: '100%',
+        paddingHorizontal: 20, paddingBottom: 40,
+        borderLeftWidth: 1, borderLeftColor: colors.border,
+    },
+    drawerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+    modalTitle: { fontSize: 18, fontWeight: 'bold', color: colors.text },
+    drawerCloseBtn: { padding: 4 },
+    settingButton: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
+    settingLeft: { flexDirection: 'row', alignItems: 'center' },
+    settingText: { fontSize: 16, color: colors.text, marginLeft: 16 },
+    spacer: { flex: 1 },
+    logoutButton: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        paddingVertical: 16, borderRadius: 16,
+        backgroundColor: isDark ? 'rgba(255, 82, 82, 0.1)' : 'rgba(255, 82, 82, 0.05)',
+        marginBottom: 20, marginTop: 10,
+    },
+    logoutText: { color: colors.error, fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
 });
