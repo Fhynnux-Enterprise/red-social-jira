@@ -136,7 +136,8 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
 
     const displayIsSaved = propIsSaved ?? item.isSaved;
 
-    const [cardWidth, setCardWidth] = useState(Dimensions.get('window').width - 32);
+    const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
+    const [cardWidth, setCardWidth] = React.useState(Dimensions.get('window').width - 32);
 
     return (
         <>
@@ -153,7 +154,7 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
                 <View style={[styles.postHeader, { borderBottomColor: colors.border, flexDirection: 'column', alignItems: 'flex-start' }]}>
                     {/* Badge de tipo arriba */}
                     <View style={[styles.typeBadge, { marginBottom: 10 }]}>
-                        <Ionicons name="briefcase-outline" size={12} color="#FF6524" style={{ marginRight: 6 }} />
+                        <Ionicons name="briefcase-outline" size={12} color={colors.primary} style={{ marginRight: 6 }} />
                         <Text style={styles.typeBadgeText}>OFERTA DE EMPLEO</Text>
                     </View>
 
@@ -203,7 +204,7 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
 
                     {/* Ubicación */}
                     <View style={styles.locationRow}>
-                        <Ionicons name="location-outline" size={14} color="#FF6524" />
+                        <Ionicons name="location-outline" size={14} color={colors.primary} />
                         <Text style={[styles.locationText, { color: colors.textSecondary }]}>
                             {item.location}
                         </Text>
@@ -252,17 +253,17 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
                 <View style={styles.applyBtnWrapper}>
                     {isOwner && (
                         <TouchableOpacity
-                            style={[styles.viewApplicantsBtn, { marginBottom: 8 }]}
+                            style={styles.viewApplicantsBtn}
                             onPress={() => router.push(`/jobs/${item.id}/applicants` as any)}
                             activeOpacity={0.8}
                         >
-                            <Ionicons name="people-outline" size={18} color="#FFF" style={{ marginRight: 6 }} />
-                            <Text style={styles.applyBtnText}>Ver Postulantes</Text>
+                            <Ionicons name="people-outline" size={18} color={colors.primary} style={{ marginRight: 6 }} />
+                            <Text style={styles.viewApplicantsBtnText}>Ver Postulantes</Text>
                         </TouchableOpacity>
                     )}
                     
                     {!isOwner && myApplication ? (
-                        <View style={[styles.applyBtn, { backgroundColor: getStatusColor(myApplication.status) + '15', elevation: 0 }]}>
+                        <View style={styles.applyBtn}>
                             <Ionicons name="checkmark-circle" size={18} color={getStatusColor(myApplication.status)} style={{ marginRight: 6 }} />
                             <Text style={[styles.applyBtnText, { color: getStatusColor(myApplication.status) }]}>
                                 {getStatusLabel(myApplication.status)}
@@ -274,7 +275,7 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
                             onPress={() => setApplyVisible(true)}
                             activeOpacity={0.8}
                         >
-                            <Ionicons name="paper-plane-outline" size={18} color="#FFF" style={{ marginRight: 6 }} />
+                            <Ionicons name="paper-plane-outline" size={18} color={colors.primary} style={{ marginRight: 6 }} />
                             <Text style={styles.applyBtnText}>Postularme</Text>
                         </TouchableOpacity>
                     ))}
@@ -421,13 +422,13 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     card: {
         borderBottomWidth: StyleSheet.hairlineWidth,
         overflow: 'hidden',
         backgroundColor: 'transparent',
         marginVertical: 8,
-        borderRadius: 16, // Coherencia con PostCard
+        borderRadius: 16,
         marginHorizontal: 4,
     },
     divider: {
@@ -465,7 +466,7 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         borderRadius: 14,
         borderWidth: 1.5,
-        borderColor: '#FF6524',
+        borderColor: colors.primary,
         position: 'relative',
     },
     topOutlineContent: {
@@ -473,7 +474,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     topOutlineText: {
-        color: '#FF6524',
+        color: colors.primary,
         fontSize: 14,
         fontWeight: '700',
     },
@@ -524,7 +525,7 @@ const styles = StyleSheet.create({
         width: 26,
         height: 26,
         borderRadius: 13,
-        backgroundColor: 'rgba(255,101,36,0.12)',
+        backgroundColor: isDark ? '#333' : '#E0E0E0',
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 8,
@@ -532,7 +533,7 @@ const styles = StyleSheet.create({
     },
     avatarImg: { width: '100%', height: '100%' },
     avatarInitials: {
-        color: '#FF6524',
+        color: colors.textSecondary,
         fontSize: 10,
         fontWeight: '700',
     },
@@ -578,17 +579,15 @@ const styles = StyleSheet.create({
         width: 38,
         height: 38,
         borderRadius: 19,
-        backgroundColor: 'rgba(255,101,36,0.12)',
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 10,
         overflow: 'hidden',
-        borderWidth: 1.5,
-        borderColor: 'rgba(255,101,36,0.25)',
     },
     postAvatarImg: { width: '100%', height: '100%' },
     postAvatarInitials: {
-        color: '#FF6524',
+        color: colors.textSecondary,
         fontSize: 14,
         fontWeight: '700',
     },
@@ -603,18 +602,18 @@ const styles = StyleSheet.create({
     typeBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255,101,36,0.08)',
+        backgroundColor: isDark ? 'rgba(0,179,65,0.12)' : 'rgba(0,179,65,0.08)',
         paddingHorizontal: 10,
         paddingVertical: 6,
         marginBottom: 8,
         alignSelf: 'flex-start',
         borderLeftWidth: 4,
-        borderLeftColor: '#FF6524',
+        borderLeftColor: colors.primary,
         borderTopRightRadius: 8,
         borderBottomRightRadius: 8,
     },
     typeBadgeText: {
-        color: '#FF6524',
+        color: colors.primary,
         fontSize: 10,
         fontWeight: '800',
         letterSpacing: 1,
@@ -636,7 +635,15 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         marginBottom: 14,
         borderRadius: 14,
-        backgroundColor: '#FF6524',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderColor: colors.primary,
+    },
+    applyBtnText: {
+        color: colors.primary,
+        fontWeight: '800',
+        fontSize: 15,
+        letterSpacing: 0.3,
     },
     viewApplicantsBtn: {
         width: '100%',
@@ -645,12 +652,16 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         paddingVertical: 12,
         borderRadius: 14,
-        backgroundColor: '#4CAF50',
+        backgroundColor: '#000000',
+        borderWidth: 2,
+        borderColor: colors.primary,
+        marginBottom: 8,
     },
-    applyBtnText: {
-        color: '#FFF',
-        fontWeight: '700',
+    viewApplicantsBtnText: {
+        color: colors.primary,
+        fontWeight: '800',
         fontSize: 15,
+        letterSpacing: 0.3,
     },
 
     // ── Menú de opciones ──

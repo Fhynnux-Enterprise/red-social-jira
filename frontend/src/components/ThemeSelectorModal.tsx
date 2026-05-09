@@ -1,26 +1,18 @@
 import React from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, TouchableWithoutFeedback, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
 
 interface ThemeSelectorModalProps {
     visible: boolean;
     onClose: () => void;
-    onSelectTheme?: (theme: 'system' | 'light' | 'dark') => void;
-    currentTheme?: 'system' | 'light' | 'dark';
 }
 
-export default function ThemeSelectorModal({ visible, onClose, onSelectTheme, currentTheme = 'system' }: ThemeSelectorModalProps) {
+export default function ThemeSelectorModal({ visible, onClose }: ThemeSelectorModalProps) {
     const insets = useSafeAreaInsets();
-
-    const handleSelect = (theme: 'system' | 'light' | 'dark') => {
-        if (onSelectTheme) {
-            onSelectTheme(theme);
-        }
-        onClose();
-    };
+    const { themeMode, appTheme, colors, setThemeMode, setAppTheme } = useTheme();
 
     return (
         <Modal
@@ -34,66 +26,100 @@ export default function ThemeSelectorModal({ visible, onClose, onSelectTheme, cu
                     <TouchableWithoutFeedback>
                         <View style={[styles.content, { paddingBottom: Math.max(insets.bottom, 20) + 20 }]}>
                             <View style={styles.handle} />
-                            <Text style={styles.title}>Elige tu tema</Text>
-                            <Text style={styles.subtitle}>
-                                Personaliza cómo se ve {Constants.expoConfig?.extra?.cityName || 'la app'} en este dispositivo.
-                            </Text>
+                            <ScrollView showsVerticalScrollIndicator={false}>
+                                <Text style={styles.title}>Configuración visual</Text>
+                                <Text style={styles.subtitle}>
+                                    Personaliza cómo se ve {Constants.expoConfig?.extra?.cityName || 'la app'} en este dispositivo.
+                                </Text>
 
-                            <View style={styles.optionsContainer}>
-                                {/* Opción Sistema */}
-                                <TouchableOpacity
-                                    style={styles.optionBtn}
-                                    onPress={() => handleSelect('system')}
-                                >
-                                    <View style={styles.optionLeft}>
-                                        <View style={styles.iconBox}>
-                                            <Ionicons name="phone-portrait-outline" size={24} color={colors.dark.text} />
+                                {/* --- SECCIÓN TEMA (OSCURO/CLARO) --- */}
+                                <Text style={styles.sectionTitle}>Modo de visualización</Text>
+                                <View style={styles.optionsContainer}>
+                                    <TouchableOpacity style={styles.optionBtn} onPress={() => setThemeMode('system')}>
+                                        <View style={styles.optionLeft}>
+                                            <View style={styles.iconBox}>
+                                                <Ionicons name="phone-portrait-outline" size={22} color={colors.text} />
+                                            </View>
+                                            <Text style={[styles.optionText, { color: colors.text }]}>Sistema</Text>
                                         </View>
-                                        <Text style={styles.optionText}>Usar el del sistema</Text>
-                                    </View>
-                                    <Ionicons
-                                        name={currentTheme === 'system' ? 'radio-button-on' : 'radio-button-off'}
-                                        size={24}
-                                        color={currentTheme === 'system' ? colors.primary : colors.dark.textSecondary}
-                                    />
-                                </TouchableOpacity>
+                                        <Ionicons
+                                            name={themeMode === 'system' ? 'radio-button-on' : 'radio-button-off'}
+                                            size={24}
+                                            color={themeMode === 'system' ? colors.primary : colors.textSecondary}
+                                        />
+                                    </TouchableOpacity>
 
-                                {/* Opción Oscuro */}
-                                <TouchableOpacity
-                                    style={styles.optionBtn}
-                                    onPress={() => handleSelect('dark')}
-                                >
-                                    <View style={styles.optionLeft}>
-                                        <View style={styles.iconBox}>
-                                            <Ionicons name="moon-outline" size={24} color={colors.dark.text} />
+                                    <TouchableOpacity style={styles.optionBtn} onPress={() => setThemeMode('dark')}>
+                                        <View style={styles.optionLeft}>
+                                            <View style={styles.iconBox}>
+                                                <Ionicons name="moon-outline" size={22} color={colors.text} />
+                                            </View>
+                                            <Text style={[styles.optionText, { color: colors.text }]}>Oscuro</Text>
                                         </View>
-                                        <Text style={styles.optionText}>Oscuro</Text>
-                                    </View>
-                                    <Ionicons
-                                        name={currentTheme === 'dark' ? 'radio-button-on' : 'radio-button-off'}
-                                        size={24}
-                                        color={currentTheme === 'dark' ? colors.primary : colors.dark.textSecondary}
-                                    />
-                                </TouchableOpacity>
+                                        <Ionicons
+                                            name={themeMode === 'dark' ? 'radio-button-on' : 'radio-button-off'}
+                                            size={24}
+                                            color={themeMode === 'dark' ? colors.primary : colors.textSecondary}
+                                        />
+                                    </TouchableOpacity>
 
-                                {/* Opción Claro */}
-                                <TouchableOpacity
-                                    style={styles.optionBtn}
-                                    onPress={() => handleSelect('light')}
-                                >
-                                    <View style={styles.optionLeft}>
-                                        <View style={styles.iconBox}>
-                                            <Ionicons name="sunny-outline" size={24} color={colors.dark.text} />
+                                    <TouchableOpacity style={styles.optionBtn} onPress={() => setThemeMode('light')}>
+                                        <View style={styles.optionLeft}>
+                                            <View style={styles.iconBox}>
+                                                <Ionicons name="sunny-outline" size={22} color={colors.text} />
+                                            </View>
+                                            <Text style={[styles.optionText, { color: colors.text }]}>Claro</Text>
                                         </View>
-                                        <Text style={styles.optionText}>Claro</Text>
-                                    </View>
-                                    <Ionicons
-                                        name={currentTheme === 'light' ? 'radio-button-on' : 'radio-button-off'}
-                                        size={24}
-                                        color={currentTheme === 'light' ? colors.primary : colors.dark.textSecondary}
-                                    />
-                                </TouchableOpacity>
-                            </View>
+                                        <Ionicons
+                                            name={themeMode === 'light' ? 'radio-button-on' : 'radio-button-off'}
+                                            size={24}
+                                            color={themeMode === 'light' ? colors.primary : colors.textSecondary}
+                                        />
+                                    </TouchableOpacity>
+                                </View>
+
+                                <View style={styles.divider} />
+
+                                {/* --- SECCIÓN COLOR DE LA APP --- */}
+                                <Text style={styles.sectionTitle}>Color de la App</Text>
+                                <View style={styles.optionsContainer}>
+                                    <TouchableOpacity style={styles.optionBtn} onPress={() => setAppTheme('mountain')}>
+                                        <View style={styles.optionLeft}>
+                                            <View style={[styles.colorCircle, { backgroundColor: '#00b341' }]} />
+                                            <Text style={[styles.optionText, { color: colors.text }]}>Montaña (Verde)</Text>
+                                        </View>
+                                        <Ionicons
+                                            name={appTheme === 'mountain' ? 'checkmark-circle' : 'ellipse-outline'}
+                                            size={24}
+                                            color={appTheme === 'mountain' ? colors.primary : colors.textSecondary}
+                                        />
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity style={styles.optionBtn} onPress={() => setAppTheme('sunset')}>
+                                        <View style={styles.optionLeft}>
+                                            <View style={[styles.colorCircle, { backgroundColor: '#ff6524' }]} />
+                                            <Text style={[styles.optionText, { color: colors.text }]}>Atardecer (Naranja)</Text>
+                                        </View>
+                                        <Ionicons
+                                            name={appTheme === 'sunset' ? 'checkmark-circle' : 'ellipse-outline'}
+                                            size={24}
+                                            color={appTheme === 'sunset' ? colors.primary : colors.textSecondary}
+                                        />
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity style={styles.optionBtn} onPress={() => setAppTheme('ocean')}>
+                                        <View style={styles.optionLeft}>
+                                            <View style={[styles.colorCircle, { backgroundColor: '#00ACC1' }]} />
+                                            <Text style={[styles.optionText, { color: colors.text }]}>Océano (Turquesa)</Text>
+                                        </View>
+                                        <Ionicons
+                                            name={appTheme === 'ocean' ? 'checkmark-circle' : 'ellipse-outline'}
+                                            size={24}
+                                            color={appTheme === 'ocean' ? colors.primary : colors.textSecondary}
+                                        />
+                                    </TouchableOpacity>
+                                </View>
+                            </ScrollView>
                         </View>
                     </TouchableWithoutFeedback>
                 </View>
@@ -105,61 +131,83 @@ export default function ThemeSelectorModal({ visible, onClose, onSelectTheme, cu
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: 'rgba(0,0,0,0.6)',
         justifyContent: 'flex-end',
     },
     content: {
-        backgroundColor: colors.dark.surface,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        paddingHorizontal: 20,
+        backgroundColor: '#121212', // Forzado a dark para el modal
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
+        paddingHorizontal: 24,
         paddingTop: 12,
+        maxHeight: '80%',
     },
     handle: {
-        width: 40,
-        height: 5,
-        borderRadius: 3,
-        backgroundColor: colors.dark.border,
+        width: 36,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: '#333',
         alignSelf: 'center',
         marginBottom: 20,
     },
     title: {
-        fontSize: 22,
-        fontWeight: 'bold',
-        color: colors.dark.text,
-        marginBottom: 8,
+        fontSize: 24,
+        fontWeight: '800',
+        color: '#FFF',
+        marginBottom: 6,
     },
     subtitle: {
         fontSize: 14,
-        color: colors.dark.textSecondary,
+        color: '#888',
         marginBottom: 24,
-        lineHeight: 20,
+    },
+    sectionTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#FFF',
+        marginBottom: 16,
+        marginTop: 8,
+        textTransform: 'uppercase',
+        letterSpacing: 1,
     },
     optionsContainer: {
-        gap: 16,
+        marginBottom: 10,
     },
     optionBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingVertical: 12,
+        paddingVertical: 14,
     },
     optionLeft: {
         flexDirection: 'row',
         alignItems: 'center',
     },
     iconBox: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: colors.dark.background,
+        width: 36,
+        height: 36,
+        borderRadius: 12,
+        backgroundColor: '#1A1A1A',
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 16,
     },
+    colorCircle: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        marginRight: 16,
+        marginLeft: 6,
+        borderWidth: 2,
+        borderColor: '#333',
+    },
     optionText: {
         fontSize: 16,
-        color: colors.dark.text,
-        fontWeight: '500',
+        fontWeight: '600',
     },
+    divider: {
+        height: 1,
+        backgroundColor: '#222',
+        marginVertical: 20,
+    }
 });

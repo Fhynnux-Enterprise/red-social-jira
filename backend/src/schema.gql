@@ -583,6 +583,8 @@ type Mutation {
   toggleFollow(followingId: String!): Boolean!
   markNotificationAsRead(id: ID!): Notification
   markAllNotificationsAsRead: Boolean!
+  registerPushToken(token: String!, platform: String): Boolean!
+  testMyPushNotification: Boolean!
   createComment(postId: String!, content: String!, parentId: String): Comment!
   deleteComment(id: String!): Boolean!
   updateComment(id: String!, content: String!): Comment!

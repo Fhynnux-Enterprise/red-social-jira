@@ -51,7 +51,7 @@ const Tab = createBottomTabNavigator<AppTabParamList>();
 
 function MainTabNavigator() {
     const insets = useSafeAreaInsets();
-    const { colors, isDark } = useTheme();
+    const { colors, isDark, appTheme } = useTheme();
     const { user } = useAuth() as any;
 
     // Obtener conversaciones para calcular el total de mensajes no leídos
@@ -95,7 +95,7 @@ function MainTabNavigator() {
                             return (
                                 <View style={[
                                     styles.profileIconWrap, 
-                                    { borderColor: focused ? '#FF6524' : 'transparent' }
+                                    { borderColor: focused ? colors.primary : 'transparent' }
                                 ]}>
                                     <Image 
                                         source={{ uri: user.photoUrl }} 
@@ -110,10 +110,14 @@ function MainTabNavigator() {
                     const icon = <Ionicons name={iconName} size={24} color={focused ? 'white' : color} />;
 
                     if (focused) {
+                        const gradientColors = [colors.primary, colors.secondary, colors.accent];
+                        const locations = [0, 0.95, 1];
+
                         return (
                             <MaskedView maskElement={<View style={styles.iconCenterer}>{icon}</View>}>
                                 <LinearGradient
-                                    colors={['#BF360C', '#FF5722', '#FF9800']} // De naranja tierra profundo a naranja fuego a naranja vibrante
+                                    colors={gradientColors}
+                                    locations={locations}
                                     start={{ x: 0, y: 0 }}
                                     end={{ x: 0.7, y: 0.7 }}
                                     style={{ width: 30, height: 30 }}
@@ -132,10 +136,14 @@ function MainTabNavigator() {
                     );
 
                     if (focused) {
+                        const labelGradientColors = [colors.primary, colors.secondary, colors.accent];
+                        const labelLocations = [0, 0.95, 1];
+
                         return (
                             <MaskedView maskElement={<View style={styles.labelMaskContainer}>{label}</View>}>
                                 <LinearGradient
-                                    colors={['#BF360C', '#FF5722', '#FBC02D']} // Naranja rojizo -> naranja fuego -> ámbar
+                                    colors={labelGradientColors}
+                                    locations={labelLocations}
                                     start={{ x: 0.2, y: 0 }}
                                     end={{ x: 0.8, y: 0 }}
                                     style={{ width: 80, height: 20 }}

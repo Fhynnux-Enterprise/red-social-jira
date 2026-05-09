@@ -43,10 +43,15 @@ export const ActualFullscreenVideo = ({
         if (fsPlayer) fsPlayer.muted = isMuted;
     }, [isMuted, fsPlayer]);
 
+    const [isReady, setIsReady] = useState(true);
     const isMounted = useRef(true);
     useEffect(() => {
         isMounted.current = true;
-        return () => { isMounted.current = false; };
+        setIsReady(true);
+        return () => {
+            isMounted.current = false;
+            setIsReady(false);
+        };
     }, []);
 
     // Loop manual: evita la pantalla negra que causa player.loop = true en expo-video
@@ -134,7 +139,7 @@ export const ActualFullscreenVideo = ({
         <View style={{ flex: 1 }}>
             <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: bgOpacity }]} />
             <Animated.View style={{ flex: 1, transform: [{ translateY: swipeTranslateY }] }} {...swipePan.panHandlers}>
-                {fsPlayer && (
+                {fsPlayer && isReady && isMounted.current && (
                     <VideoView key={url} player={fsPlayer} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls={false} />
                 )}
                 <TouchableOpacity activeOpacity={1} onPress={handleFsPress} style={StyleSheet.absoluteFill} />

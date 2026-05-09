@@ -499,7 +499,7 @@ export default function FeedScreen() {
             <View style={styles.topHeader}>
                 <View style={styles.brandContainer}>
                     <Image
-                        source={require('../../../../assets/images/icon-transparent.png')}
+                        source={colors.logo}
                         style={styles.brandLogo}
                         resizeMode="contain"
                     />
@@ -512,12 +512,13 @@ export default function FeedScreen() {
                         }
                     >
                         <LinearGradient
-                            colors={[colors.primary, colors.secondary]}
+                            colors={[colors.primary, colors.secondary, colors.accent]}
+                            locations={[0, 0.95, 1]}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
                             style={{ flex: 1, justifyContent: 'center' }}
                         >
-                            <Text style={[styles.brandTitle, { opacity: 0 }]} numberOfLines={1} adjustsFontSizeToFit>Chunchi City App</Text>
+                            <Text style={[styles.brandTitle, { opacity: 0 }]} numberOfLines={1} adjustsFontSizeToFit>{Constants.expoConfig?.name || 'Red Social'}</Text>
                         </LinearGradient>
                     </MaskedView>
                 </View>
@@ -614,9 +615,9 @@ export default function FeedScreen() {
                         ListEmptyComponent={renderEmpty}
                         onViewableItemsChanged={onViewableItemsChanged}
                         viewabilityConfig={viewabilityConfig}
-                        initialNumToRender={5}
-                        maxToRenderPerBatch={5}
-                        windowSize={10}
+                        initialNumToRender={2}
+                        maxToRenderPerBatch={2}
+                        windowSize={5}
                         removeClippedSubviews={Platform.OS === 'android'}
                     />
                 )}

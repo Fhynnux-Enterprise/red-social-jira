@@ -39,9 +39,12 @@ export const AuthService = {
         try {
             await SecureStore.deleteItemAsync('access_token');
             await supabase.auth.signOut();
-            // Asegurarse de inicializar antes de intentar cerrar sesión nativa de Google
-            this.initGoogleSignIn('382684798572-cbcfg6q5gu94pg140c9d2i2mjt9uu12n.apps.googleusercontent.com');
-            await GoogleSignin.signOut();
+            
+            const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+            if (webClientId) {
+                this.initGoogleSignIn(webClientId);
+                await GoogleSignin.signOut();
+            }
         } catch (error) {
             console.error('Error borrando el token al cerrar sesión', error);
         }

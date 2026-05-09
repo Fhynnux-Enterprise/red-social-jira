@@ -67,6 +67,7 @@ export interface NativeAdCardRef {
 const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
   ({ isImmersive = false, adData, onPress, onAdLoaded, onMediaLayout, onDelete }, ref) => {
     const { colors, isDark } = useTheme();
+    const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const { user } = useAuth() as any;
 
     const [nativeAd, setNativeAd] = useState<NativeAd | null>(null);
@@ -392,8 +393,8 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
                         <Image source={{ uri: nativeAd.icon.url }} style={styles.advertiserIcon} />
                       </NativeAsset>
                     ) : (
-                      <View style={[styles.advertiserIconFallback, { backgroundColor: '#FF6524' }]}>
-                        <Ionicons name="megaphone" size={14} color="white" />
+                      <View style={[styles.advertiserIconFallback, { backgroundColor: colors.surface }]}>
+                        <Ionicons name="megaphone" size={14} color={colors.primary} />
                       </View>
                     )}
                     <View style={styles.authorTextBlock}>
@@ -463,10 +464,10 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
 
                 <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
                   <TouchableOpacity style={styles.ctaButton} activeOpacity={0.85}>
-                    <Text style={styles.ctaText}>
+                    <Text style={[styles.ctaText, { color: colors.primary }]}>
                       {nativeAd.callToAction || 'Ver más'}
                     </Text>
-                    <Ionicons name="open-outline" size={16} color="white" />
+                    <Ionicons name="open-outline" size={16} color={colors.primary} />
                   </TouchableOpacity>
                 </NativeAsset>
               </View>
@@ -515,8 +516,8 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
                 {advertiser?.photoUrl ? (
                   <Image source={{ uri: advertiser.photoUrl }} style={styles.advertiserIcon} />
                 ) : (
-                  <View style={[styles.advertiserIconFallback, { backgroundColor: '#FF6524' }]}>
-                    <Ionicons name="megaphone" size={16} color="white" />
+                  <View style={[styles.advertiserIconFallback, { backgroundColor: colors.surface }]}>
+                    <Ionicons name="megaphone" size={16} color={colors.primary} />
                   </View>
                 )}
                 <View style={styles.authorTextBlock}>
@@ -569,12 +570,12 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 {currentAdData.whatsappPhone && (
                   <TouchableOpacity
-                    style={[styles.ctaButton, { backgroundColor: '#25D366', flex: 1 }]}
+                    style={[styles.ctaButton, styles.whatsappCta, { flex: 1 }]}
                     onPress={handleWhatsApp}
                     activeOpacity={0.8}
                   >
-                    <Ionicons name="logo-whatsapp" size={18} color="white" />
-                    <Text style={styles.ctaText}>WhatsApp</Text>
+                    <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+                    <Text style={[styles.ctaText, { color: '#25D366' }]}>WhatsApp</Text>
                   </TouchableOpacity>
                 )}
                 {currentAdData.actionUrl && (
@@ -583,15 +584,15 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
                     onPress={() => handleLocalAdPress(currentAdData.actionUrl)}
                     activeOpacity={0.85}
                   >
-                    <Text style={styles.ctaText}>{currentAdData.actionLabel || 'Ver más'}</Text>
-                    <Ionicons name="arrow-forward" size={16} color="white" />
+                    <Text style={[styles.ctaText, { color: colors.primary }]}>{currentAdData.actionLabel || 'Ver más'}</Text>
+                    <Ionicons name="arrow-forward" size={16} color={colors.primary} />
                   </TouchableOpacity>
                 )}
                 {/* Si no hay ni whatsapp ni url, mostrar botón genérico */}
                 {!currentAdData.whatsappPhone && !currentAdData.actionUrl && (
                   <TouchableOpacity style={[styles.ctaButton, { flex: 1 }]} onPress={() => handleLocalAdPress()} activeOpacity={0.85}>
-                    <Text style={styles.ctaText}>Ver más</Text>
-                    <Ionicons name="arrow-forward" size={16} color="white" />
+                    <Text style={[styles.ctaText, { color: colors.primary }]}>Ver más</Text>
+                    <Ionicons name="arrow-forward" size={16} color={colors.primary} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -605,7 +606,7 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
     return null;
   });
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   card: {
     marginHorizontal: 8,
     marginVertical: 10,
@@ -728,7 +729,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   ctaButton: {
-    backgroundColor: '#FF6524',
+    backgroundColor: '#000000',
     borderRadius: 14,
     height: 52,
     flexDirection: 'row',
@@ -736,15 +737,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     width: '100%',
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  whatsappCta: {
+    borderColor: '#25D366',
   },
   ctaText: {
-    color: 'white',
     fontWeight: '800',
     fontSize: 15,
     letterSpacing: 0.3,
   },
   badge: {
-    backgroundColor: '#FF6524',
+    backgroundColor: colors.primary,
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: 6,
@@ -766,7 +771,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#FF6524',
+    backgroundColor: colors.primary,
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 20,

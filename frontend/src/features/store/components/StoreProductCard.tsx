@@ -83,6 +83,7 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
   const router = useRouter();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
 
   const [innerCardWidth, setInnerCardWidth] = useState(SCREEN_WIDTH - 8);
 
@@ -184,7 +185,7 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
         {!hideSellerRow && (
           <View style={styles.header}>
             <View style={styles.storeBanner}>
-              <Ionicons name="storefront-outline" size={12} color="#FF6524" style={{ marginRight: 6 }} />
+              <Ionicons name="storefront-outline" size={12} color={colors.primary} style={{ marginRight: 6 }} />
               <Text style={styles.storeBannerText}>
                 {item.category ? item.category.toUpperCase() : 'TIENDA'}
               </Text>
@@ -234,7 +235,7 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
             <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
               {item.location && (
                 <>
-                  <Ionicons name="location-outline" size={13} color="#FF6524" />
+                  <Ionicons name="location-outline" size={13} color={colors.primary} />
                   <Text style={[styles.locationText, { color: colors.textSecondary, marginLeft: 4 }]} numberOfLines={1}>
                     {item.location}
                   </Text>
@@ -281,7 +282,7 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
         <View style={styles.contactRow}>
           {item.contactPhone && (
             <TouchableOpacity
-              style={[styles.contactBtn, { backgroundColor: '#25D366' }]}
+              style={[styles.contactBtn, styles.whatsappBtn]}
               onPress={async () => {
                 const rawPhone = item.contactPhone!.replace(/\s+/g, '').replace(/[^+\d]/g, '');
                 const phone = rawPhone.startsWith('+') ? rawPhone.slice(1) : rawPhone;
@@ -290,13 +291,13 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
               }}
               activeOpacity={0.8}
             >
-              <Ionicons name="logo-whatsapp" size={16} color="#FFF" />
-              <Text style={styles.contactBtnText}>WhatsApp</Text>
+              <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
+              <Text style={[styles.contactBtnText, { color: '#25D366' }]}>WhatsApp</Text>
             </TouchableOpacity>
           )}
 
           <TouchableOpacity
-            style={[styles.contactBtn, { backgroundColor: colors.primary, opacity: creatingChat ? 0.7 : 1 }]}
+            style={[styles.contactBtn, styles.privateMessageBtn, { opacity: creatingChat ? 0.7 : 1 }]}
             activeOpacity={0.8}
             disabled={creatingChat}
             onPress={async () => {
@@ -314,8 +315,8 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
               }
             }}
           >
-            <Ionicons name="chatbubbles-outline" size={16} color="#FFF" />
-            <Text style={styles.contactBtnText}>Mensaje Privado</Text>
+            <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.primary} />
+            <Text style={[styles.contactBtnText, { color: colors.primary }]}>Mensaje Privado</Text>
           </TouchableOpacity>
         </View>
 
@@ -351,7 +352,7 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
                 <View style={[styles.menuBox, { backgroundColor: colors.surface, paddingBottom: insets.bottom + 20 }]}>
                   <View style={[styles.menuHandle, { backgroundColor: isDark ? '#444' : '#DDD' }]} />
                   <Text style={[styles.menuTitle, { color: colors.text }]}>Opciones</Text>
-                  
+
                   {isOwner ? (
                     <>
                       {onEdit && (
@@ -362,7 +363,7 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
                           <Text style={[styles.menuLabel, { color: colors.text }]}>Editar producto</Text>
                         </TouchableOpacity>
                       )}
-                      
+
                       <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); setTimeout(() => setConfirmDelete(true), 150); }}>
                         <View style={[styles.menuIconWrap, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
                           <Ionicons name="trash" size={20} color="#FF3B30" />
@@ -378,7 +379,7 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
                       <Text style={[styles.menuLabel, { color: colors.text }]}>Reportar producto</Text>
                     </TouchableOpacity>
                   )}
-                  
+
                   <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); onToggleSave?.(item); }}>
                     <View style={[styles.menuIconWrap, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
                       <Ionicons name={displayIsSaved ? "bookmark" : "bookmark-outline"} size={20} color={displayIsSaved ? colors.primary : colors.text} />
@@ -387,7 +388,7 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
                       {displayIsSaved ? 'Quitar de guardados' : 'Guardar producto'}
                     </Text>
                   </TouchableOpacity>
-                  
+
                   <TouchableOpacity style={[styles.menuItem, { marginTop: 10, borderBottomWidth: 0 }]} onPress={() => setMenuVisible(false)}>
                     <View style={[styles.menuIconWrap, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>
                       <Ionicons name="close" size={20} color={colors.textSecondary} />
@@ -443,13 +444,12 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   card: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderRadius: 16,
+    // borderBottomWidth: StyleSheet.hairlineWidth, // Removed as per remodeling request
+    borderRadius: 12,
     overflow: 'hidden',
-    marginVertical: 8,
-    marginHorizontal: 4,
+    marginHorizontal: 8,
   },
   header: {
     paddingHorizontal: 16,
@@ -463,25 +463,25 @@ const styles = StyleSheet.create({
   storeBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,101,36,0.08)',
+    backgroundColor: isDark ? 'rgba(173, 110, 27, 0.12)' : 'rgba(0,179,65,0.08)',
     paddingHorizontal: 10,
     paddingVertical: 6,
     marginBottom: 10,
     alignSelf: 'flex-start',
     borderLeftWidth: 4,
-    borderLeftColor: '#FF6524',
+    borderLeftColor: colors.primary,
     borderTopRightRadius: 8,
     borderBottomRightRadius: 8,
   },
-  storeBannerText: { color: '#FF6524', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  storeBannerText: { color: colors.primary, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
   sellerRow: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   avatarWrap: {
     width: 38, height: 38, borderRadius: 19,
-    backgroundColor: '#FF6524', justifyContent: 'center', alignItems: 'center', marginRight: 10,
+    backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center', marginRight: 10,
     overflow: 'hidden',
   },
   avatarImg: { width: 38, height: 38, borderRadius: 19 },
-  avatarInitials: { color: '#FFF', fontWeight: '700', fontSize: 14 },
+  avatarInitials: { color: colors.textSecondary, fontWeight: '700', fontSize: 14 },
   sellerName: { fontWeight: '700', fontSize: 14 },
   sellerDate: { fontSize: 12, marginTop: 1 },
   ellipsis: { padding: 4 },
@@ -497,8 +497,24 @@ const styles = StyleSheet.create({
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
   locationText: { fontSize: 13 },
   contactRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 8, paddingBottom: 4, paddingTop: 2 },
-  contactBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 13, borderRadius: 12 },
-  contactBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13 },
+  contactBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: '#000000ff',
+    borderWidth: 1,
+  },
+  whatsappBtn: {
+    borderColor: '#25D366',
+  },
+  privateMessageBtn: {
+    borderColor: colors.primary,
+  },
+  contactBtnText: { fontWeight: '800', fontSize: 13 },
   // Menu
   menuBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   menuBox: { borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 12, elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 10 },
@@ -517,7 +533,7 @@ const styles = StyleSheet.create({
   confirmBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   confirmBtnText: { fontSize: 16, fontWeight: '600' },
   divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 14, marginBottom: 2, marginTop: 4 },
-  actionsRow: { flexDirection: 'row', paddingHorizontal: 6, paddingVertical: 4 },
+  actionsRow: { flexDirection: 'row', paddingHorizontal: 6, paddingVertical: 2 },
   actionBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8 },
   actionCount: { fontSize: 13, fontWeight: '500', marginLeft: 5, color: '#888' },
 });

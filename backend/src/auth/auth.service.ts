@@ -55,8 +55,12 @@ export class AuthService {
 
         try {
             // 4. Insertar nuevo registro en nuestra BD local (TypeORM)
+            // Generar ID determinista para soportar múltiples perfiles por ciudad (multi-tenant)
+            const NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+            const localId = uuidv5(`${authData.user.id}:${cityId}`, NAMESPACE);
+
             const newUser = this.userRepository.create({
-                id: authData.user.id,
+                id: localId,
                 email: email,
                 username: username,
                 firstName: firstName,

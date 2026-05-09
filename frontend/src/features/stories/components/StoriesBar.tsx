@@ -133,9 +133,8 @@ const BrandingCircle = ({
             <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
                 <Defs>
                     <SvgGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-                        <Stop offset="0%" stopColor="#FF4511" />
-                        <Stop offset="60%" stopColor={themeColors.primary} />
-                        <Stop offset="100%" stopColor={themeColors.secondary} />
+                        <Stop offset="0%" stopColor={themeColors.primary} />
+                        <Stop offset="100%" stopColor={themeColors.accent} />
                     </SvgGradient>
                 </Defs>
 

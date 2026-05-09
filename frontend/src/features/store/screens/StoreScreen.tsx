@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
-  ActivityIndicator, Animated, Pressable,
+  ActivityIndicator, Animated, Pressable, Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,6 +41,7 @@ export default function StoreScreen() {
   const insets = useSafeAreaInsets();
   const apolloClient = useApolloClient();
 
+  const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
   const [activeTab, setActiveTab] = useState<TabKey>('all');
   const [createVisible, setCreateVisible] = useState(false);
   const [editItem, setEditItem] = useState<any>(null);
@@ -265,7 +266,7 @@ export default function StoreScreen() {
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <View style={[styles.emptyIconBg, { backgroundColor: isDark ? 'rgba(255,101,36,0.08)' : 'rgba(255,101,36,0.06)' }]}>
-        <Ionicons name="storefront-outline" size={44} color="#FF6524" style={{ opacity: 0.7 }} />
+        <Ionicons name="storefront-outline" size={44} color={colors.primary} style={{ opacity: 0.7 }} />
       </View>
       <Text style={[styles.emptyTitle, { color: colors.text }]}>
         {activeTab === 'all' ? 'No hay productos aún' : 'No has publicado nada'}
@@ -304,11 +305,11 @@ export default function StoreScreen() {
                 <Ionicons
                   name={isActive ? tab.iconActive : tab.icon}
                   size={18}
-                  color={isActive ? '#FF6524' : colors.textSecondary}
+                  color={isActive ? colors.primary : colors.textSecondary}
                 />
                 <Text style={[
                   styles.tabLabel,
-                  { color: isActive ? '#FF6524' : colors.textSecondary },
+                  { color: isActive ? colors.primary : colors.textSecondary },
                   isActive && styles.tabLabelActive,
                 ]}>
                   {tab.label}
@@ -330,7 +331,7 @@ export default function StoreScreen() {
       {/* ── CONTENT ── */}
       {loading && products.length === 0 ? (
         <View style={styles.loaderContainer}>
-          <ActivityIndicator size="large" color="#FF6524" />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
         <FlatList
@@ -343,7 +344,7 @@ export default function StoreScreen() {
                   ? { ...cachedAdData, id: cachedAdData.realId || cachedAdData.id }
                   : (item.type || item.title ? { ...item, id: item.realId || item.id } : undefined);
               return (
-                  <View style={{ marginBottom: 12 }}>
+                  <View style={{ marginHorizontal: 8 }}>
                       <NativeAdCard 
                           adData={adDataToPass}
                           onAdLoaded={(adData) => {
@@ -375,12 +376,17 @@ export default function StoreScreen() {
               />
             );
           }}
+          ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: colors.textSecondary }]} />}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={renderEmpty}
           ListFooterComponent={products.length > 0 ? <ListFooter /> : null}
           onRefresh={() => { refetchAll(); refetchMine(); }}
           refreshing={false}
+          initialNumToRender={4}
+          maxToRenderPerBatch={4}
+          windowSize={7}
+          removeClippedSubviews={Platform.OS === 'android'}
         />
       )}
 
@@ -522,7 +528,7 @@ export default function StoreScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   screen: { flex: 1 },
   header: {
     paddingHorizontal: 16,
@@ -565,7 +571,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     height: 2.5,
-    backgroundColor: '#FF6524',
+    backgroundColor: colors.primary,
     borderRadius: 2,
   },
   listContent: {
@@ -577,6 +583,12 @@ const styles = StyleSheet.create({
   emptyIconBg: { width: 88, height: 88, borderRadius: 44, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
   emptyTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center', marginBottom: 10 },
   emptySubtitle: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  separator: {
+    height: 1,
+    marginHorizontal: 20,
+    opacity: 0.25,
+    marginVertical: 16,
+  },
 
   // ── FAB ──
   fabContainer: {
@@ -590,7 +602,7 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     elevation: 6,
-    shadowColor: '#FF6524',
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.35,
     shadowRadius: 6,
@@ -614,7 +626,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   fabOptionLabelActive: {
-    backgroundColor: '#FF6524',
+    backgroundColor: colors.primary,
   },
   fabOptionLabel: {
     fontSize: 13,
@@ -632,8 +644,8 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   fabMiniPrimary: {
-    backgroundColor: '#FF6524',
-    shadowColor: '#FF6524',
+    backgroundColor: colors.primary,
+    shadowColor: colors.primary,
   },
   fabMiniSecondary: {
     backgroundColor: '#888',

@@ -1,13 +1,35 @@
+export const palettes = {
+    mountain: {
+        primary: '#00b341',
+        secondary: '#92d050',
+        primaryLight: '#a8e61d',
+        primaryDark: '#007a33',
+        accent: '#ccff00',
+    },
+    sunset: {
+        primary: '#ff6524',
+        secondary: '#ffc31f',
+        primaryLight: '#ff844f',
+        primaryDark: '#cc501c',
+        accent: '#ffcc00',
+    },
+    ocean: {
+        primary: '#00ACC1',
+        secondary: '#4DD0E1',
+        primaryLight: '#80DEEA',
+        primaryDark: '#00838F',
+        accent: '#B2EBF2',
+    }
+};
+
 export const colors = {
-    // Paleta principal (Atardecer)
-    primary: '#ff6524', // Naranja vibrante
-    secondary: '#ffc31f', // Amarillo atardecer
+    // Estos se mantendrán como "punteros" que el ThemeContext actualizará
+    primary: palettes.mountain.primary,
+    secondary: palettes.mountain.secondary,
+    primaryLight: palettes.mountain.primaryLight,
+    primaryDark: palettes.mountain.primaryDark,
+    accent: palettes.mountain.accent,
 
-    // Variaciones opcionales para usar en opacidades o estados
-    primaryLight: '#ff844f',
-    primaryDark: '#cc501c',
-
-    // Configuración de temas Light/Dark
     light: {
         background: '#FFFFFF',
         surface: '#F5F5F5',
@@ -18,7 +40,7 @@ export const colors = {
     },
     dark: {
         background: '#000000',
-        surface: '#070707f8',
+        surface: '#060606ff',
         text: '#FFFFFF',
         textSecondary: '#808080',
         border: '#121212',

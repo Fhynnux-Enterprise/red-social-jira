@@ -81,7 +81,7 @@ const ProfileHeader = memo(({
                     <Image source={{ uri: userData.coverUrl }} style={[headerStyles.bannerGradient, { position: 'absolute' }]} />
                 ) : (
                     <LinearGradient
-                        colors={[colors.primary, '#FF9800']}
+                        colors={[colors.primary, colors.accent]}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                         style={headerStyles.bannerGradient}

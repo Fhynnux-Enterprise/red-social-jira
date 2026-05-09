@@ -37,6 +37,7 @@ export default ({ config }) => {
     },
     android: {
       package: cityConfig.package,
+      googleServicesFile: "./google-services.json",
       adaptiveIcon: {
         backgroundColor: "#121212",
         foregroundImage: cityConfig.icon
@@ -59,6 +60,9 @@ export default ({ config }) => {
       "react-native-google-mobile-ads": {
         "androidAppId": "ca-app-pub-7868058661453955~5852649017",
         "iosAppId": "ca-app-pub-7868058661453955~5852649017"
+      },
+      eas: {
+        projectId: "0eef93b7-16ef-429e-9a7e-229d9f823c56"
       }
     },
     plugins: [
@@ -93,7 +97,8 @@ export default ({ config }) => {
           "androidAppId": "ca-app-pub-7868058661453955~5852649017",
           "iosAppId": "ca-app-pub-7868058661453955~5852649017"
         }
-      ]
+      ],
+      "expo-notifications"
     ],
     experiments: {
       typedRoutes: true,

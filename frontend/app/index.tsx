@@ -7,12 +7,14 @@ import { useTheme } from '../src/theme/ThemeContext';
 import { colors as baseColors } from '../src/theme/colors';
 import { StatusBar } from 'expo-status-bar';
 import { usePresencePing } from '../src/hooks/usePresencePing';
+import { usePushNotifications } from '../src/hooks/usePushNotifications';
 
 export default function RootNavigator() {
     const { userToken, isLoading } = useAuth();
     const { colors, isDark } = useTheme();
 
     usePresencePing(!!userToken);
+    usePushNotifications(!!userToken);
 
     if (isLoading) {
         return (

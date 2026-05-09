@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     View, Text, Image, StyleSheet, Dimensions, FlatList,
     TouchableOpacity, Modal, BackHandler, PanResponder, Animated,
-    Pressable, ActivityIndicator
+    Pressable, ActivityIndicator, Platform
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
@@ -308,6 +308,10 @@ export default function ImageCarousel({
                                     setTimeout(() => { recentlyArrivedAtEnd.current = false; }, 300);
                                 }
                             }}
+                            initialNumToRender={1}
+                            maxToRenderPerBatch={1}
+                            windowSize={3}
+                            removeClippedSubviews={Platform.OS === 'android'}
                         />
                     </Animated.View>
                 )}
@@ -384,6 +388,10 @@ export default function ImageCarousel({
                                 const index = Math.round(xOffset / SCREEN_WIDTH);
                                 setViewerActiveIndex(index);
                             }}
+                            initialNumToRender={1}
+                            maxToRenderPerBatch={1}
+                            windowSize={3}
+                            removeClippedSubviews={Platform.OS === 'android'}
                             keyExtractor={(item, index) => `viewer-${item.url}-${index}`}
                             renderItem={({ item, index }) => (
                                 <View style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, backgroundColor: 'transparent' }}>
@@ -580,11 +588,16 @@ const ActualVideoPlayer = ({
     const [showFullscreenLocal, setShowFullscreenLocal] = useState(false);
     const fsModalRef = useRef<any>(null);
     const controlsTimeout = useRef<any>(null);
+    const [isReady, setIsReady] = useState(true);
     const isMounted = useRef(true);
 
     useEffect(() => {
         isMounted.current = true;
-        return () => { isMounted.current = false; };
+        setIsReady(true);
+        return () => {
+            isMounted.current = false;
+            setIsReady(false);
+        };
     }, []);
 
     const player = useVideoPlayer(source, (p: any) => {
@@ -714,7 +727,7 @@ const ActualVideoPlayer = ({
     return (
         <GestureDetector gesture={pinch}>
             <View style={{ width, height, backgroundColor: '#000', overflow: 'hidden' }}>
-                {player && (
+                {player && isReady && isMounted.current && (
                     <AnimatedVideoView key={source} player={player} style={[StyleSheet.absoluteFill, animatedStyle]} contentFit={contentFit} nativeControls={false} surfaceType="textureView" />
                 )}
             <TouchableOpacity activeOpacity={1} onPress={handlePress} style={StyleSheet.absoluteFill} />

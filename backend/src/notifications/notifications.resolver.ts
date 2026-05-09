@@ -1,4 +1,4 @@
-import { Resolver, Query, Mutation, Args, Int, ID } from '@nestjs/graphql';
+import { Resolver, Query, Mutation, Args, Int, ID, Context } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { Notification } from './entities/notification.entity';
@@ -39,5 +39,33 @@ export class NotificationsResolver {
     @UseGuards(GqlAuthGuard)
     markAllNotificationsAsRead(@CurrentUser() user: User): Promise<boolean> {
         return this.notificationsService.markAllAsRead(user.id);
+    }
+
+    @Mutation(() => Boolean)
+    @UseGuards(GqlAuthGuard)
+    async registerPushToken(
+        @CurrentUser() user: User,
+        @Context() context: any,
+        @Args('token', { type: () => String }) token: string,
+        @Args('platform', { type: () => String, nullable: true }) platform?: string,
+    ): Promise<boolean> {
+        const req = context.req;
+        const cityId = req.headers['x-city-id'] as string;
+        
+        if (!cityId) {
+            throw new Error('cityId header is missing');
+        }
+
+        return this.notificationsService.registerPushToken(user.id, cityId, token, platform);
+    }
+
+    @Mutation(() => Boolean)
+    @UseGuards(GqlAuthGuard)
+    async testMyPushNotification(
+        @CurrentUser() user: User,
+    ): Promise<boolean> {
+        const title = "¡Hola desde FynnuX! 🚀";
+        const body = "Tu arquitectura Multi-tenant está enviando notificaciones reales.";
+        return this.notificationsService.sendPushNotification(user.id, title, body);
     }
 }

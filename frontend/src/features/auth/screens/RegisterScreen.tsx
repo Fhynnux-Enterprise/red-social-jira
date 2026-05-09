@@ -72,7 +72,10 @@ export default function RegisterScreen({ navigation }: any) {
     });
 
     useEffect(() => {
-        AuthService.initGoogleSignIn('382684798572-cbcfg6q5gu94pg140c9d2i2mjt9uu12n.apps.googleusercontent.com');
+        const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+        if (webClientId) {
+            AuthService.initGoogleSignIn(webClientId);
+        }
     }, []);
 
     const handleGoogleLogin = async () => {

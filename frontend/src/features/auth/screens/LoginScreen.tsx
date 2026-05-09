@@ -51,7 +51,13 @@ export default function LoginScreen({ navigation }: any) {
     });
 
     useEffect(() => {
-        AuthService.initGoogleSignIn('382684798572-cbcfg6q5gu94pg140c9d2i2mjt9uu12n.apps.googleusercontent.com');
+        // Usamos el ID desde el archivo .env para mayor seguridad y facilidad de mantenimiento
+        const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+        if (webClientId) {
+            AuthService.initGoogleSignIn(webClientId);
+        } else {
+            console.error('EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID no definido en el .env');
+        }
     }, []);
 
     const handleGoogleLogin = async () => {
@@ -115,7 +121,7 @@ export default function LoginScreen({ navigation }: any) {
                 <View style={styles.content}>
                     <View style={styles.logoContainer}>
                         <Image
-                            source={require('../../../../assets/images/icon-transparent.png')}
+                            source={colors.logo}
                             style={styles.logo}
                             resizeMode="contain"
                         />

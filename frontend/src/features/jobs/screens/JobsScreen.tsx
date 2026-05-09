@@ -43,6 +43,7 @@ export default function JobsScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
     const apolloClient = useApolloClient();
+    const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const [activeTab, setActiveTab] = useState<TabKey>('offers');
     const [resultsTab, setResultsTab] = useState<ResultsTabKey>('my_applications');
     const [fabOpen, setFabOpen] = useState(false);
@@ -352,7 +353,7 @@ export default function JobsScreen() {
             {activeTab === 'results' ? (
                 <>
                     <View style={[styles.emptyIconBg, { backgroundColor: isDark ? 'rgba(255,101,36,0.08)' : 'rgba(255,101,36,0.06)' }]}>
-                        <Ionicons name="folder-open-outline" size={40} color="#FF6524" style={{ opacity: 0.7 }} />
+                        <Ionicons name="folder-open-outline" size={40} color={colors.primary} style={{ opacity: 0.7 }} />
                     </View>
                     <Text style={[styles.emptyTitle, { color: colors.text }]}>
                         {resultsTab === 'my_applications' ? 'No tienes postulaciones' : resultsTab === 'my_offers' ? 'No tienes publicaciones' : 'No tienes servicios' }
@@ -362,7 +363,7 @@ export default function JobsScreen() {
                     </Text>
                     {resultsTab === 'my_offers' && (
                         <TouchableOpacity
-                            style={[styles.emptyAction, { backgroundColor: '#FF6524' }]}
+                            style={[styles.emptyAction, { backgroundColor: colors.primary }]}
                             onPress={() => router.push('/jobs/create')}
                         >
                             <Ionicons name="add" size={16} color="#FFF" />
@@ -374,9 +375,7 @@ export default function JobsScreen() {
                 <>
                     <View style={[styles.emptyIconBg, { backgroundColor: isDark ? 'rgba(255,101,36,0.08)' : 'rgba(255,101,36,0.06)' }]}>
                         <Ionicons
-                            name={activeTab === 'offers' ? 'briefcase-outline' : 'construct-outline'}
-                            size={40}
-                            color="#FF6524"
+                            color={colors.primary}
                             style={{ opacity: 0.7 }}
                         />
                     </View>
@@ -627,11 +626,11 @@ export default function JobsScreen() {
                                 <Ionicons
                                     name={isActive ? tab.iconActive : tab.icon}
                                     size={18}
-                                    color={isActive ? '#FF6524' : colors.textSecondary}
+                                    color={isActive ? colors.primary : colors.textSecondary}
                                 />
                                 <Text style={[
                                     styles.tabLabel,
-                                    { color: isActive ? '#FF6524' : colors.textSecondary },
+                                    { color: isActive ? colors.primary : colors.textSecondary },
                                     isActive && styles.tabLabelActive,
                                 ]}>
                                     {tab.label}
@@ -656,7 +655,7 @@ export default function JobsScreen() {
             {/* ── Content ── */}
             {isLoading && !offersData && !profsData && !myOffersData ? (
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#FF6524" />
+                    <ActivityIndicator size="large" color={colors.primary} />
                 </View>
             ) : (
                 <FlatList
@@ -673,6 +672,10 @@ export default function JobsScreen() {
                     refreshing={isRefreshing}
                     onRefresh={handleRefresh}
                     showsVerticalScrollIndicator={false}
+                    initialNumToRender={4}
+                    maxToRenderPerBatch={4}
+                    windowSize={7}
+                    removeClippedSubviews={Platform.OS === 'android'}
                 />
             )}
 
@@ -983,7 +986,7 @@ export default function JobsScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     screen: {
         flex: 1,
     },
@@ -1037,7 +1040,7 @@ const styles = StyleSheet.create({
         position: 'absolute',
         bottom: 0,
         height: 2.5,
-        backgroundColor: '#FF6524',
+        backgroundColor: colors.primary,
         borderRadius: 2,
     },
 
@@ -1066,8 +1069,8 @@ const styles = StyleSheet.create({
         gap: 6,
     },
     chipActive: {
-        backgroundColor: '#FF6524',
-        shadowColor: '#FF6524',
+        backgroundColor: colors.primary,
+        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 6,
@@ -1224,7 +1227,7 @@ const styles = StyleSheet.create({
         height: 56,
         borderRadius: 28,
         elevation: 6,
-        shadowColor: '#FF6524',
+        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 3 },
         shadowOpacity: 0.35,
         shadowRadius: 6,
@@ -1248,8 +1251,8 @@ const styles = StyleSheet.create({
         shadowRadius: 4,
     },
     fabMiniPrimary: {
-        backgroundColor: '#FF6524',
-        shadowColor: '#FF6524',
+        backgroundColor: colors.primary,
+        shadowColor: colors.primary,
     },
     fabMiniSecondary: {
         backgroundColor: '#888',
@@ -1267,7 +1270,7 @@ const styles = StyleSheet.create({
         borderRadius: 10,
     },
     fabOptionLabelActive: {
-        backgroundColor: '#FF6524',
+        backgroundColor: colors.primary,
     },
     fabOptionLabel: {
         fontSize: 13,

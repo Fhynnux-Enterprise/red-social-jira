@@ -41,6 +41,7 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
     const { width: cardWidth } = useWindowDimensions();
     const insets = useSafeAreaInsets();
     const isOwnCard = item.user?.id === authContext?.user?.id;
+    const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
 
     const [menuVisible, setMenuVisible] = useState(false);
     const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
@@ -175,7 +176,7 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
                     <View style={[styles.postHeader, { borderBottomColor: colors.border, flexDirection: 'column', alignItems: 'flex-start' }]}>
                         {/* Badge de tipo arriba */}
                         <View style={[styles.typeBadge, { marginBottom: 10 }]}>
-                            <Ionicons name="person-circle-outline" size={12} color="#FF6524" style={{ marginRight: 6 }} />
+                            <Ionicons name="person-circle-outline" size={12} color={colors.primary} style={{ marginRight: 6 }} />
                             <Text style={styles.typeBadgeText}>SERVICIO PROFESIONAL</Text>
                         </View>
 
@@ -272,18 +273,18 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
                             onPress={handleWhatsApp}
                             activeOpacity={0.8}
                         >
-                            <Ionicons name="logo-whatsapp" size={15} color="#FFF" />
-                            <Text style={styles.contactBtnText}>WhatsApp</Text>
+                            <Ionicons name="logo-whatsapp" size={15} color="#25D366" />
+                            <Text style={[styles.contactBtnText, { color: '#25D366' }]}>WhatsApp</Text>
                         </TouchableOpacity>
                     )}
                     {/* Mensaje Privado */}
                     <TouchableOpacity
-                        style={[styles.contactBtn, { backgroundColor: colors.primary }]}
+                        style={[styles.contactBtn, styles.privateMessageBtn]}
                         onPress={handlePrivateMessage}
                         activeOpacity={0.8}
                     >
-                        <Ionicons name="chatbubble-ellipses-outline" size={15} color="#FFF" />
-                        <Text style={styles.contactBtnText}>Mensaje Privado</Text>
+                        <Ionicons name="chatbubble-ellipses-outline" size={15} color={colors.primary} />
+                        <Text style={[styles.contactBtnText, { color: colors.primary }]}>Mensaje Privado</Text>
                     </TouchableOpacity>
                 </View>
 
@@ -401,7 +402,7 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     card: {
         borderBottomWidth: StyleSheet.hairlineWidth,
         overflow: 'hidden',
@@ -443,17 +444,15 @@ const styles = StyleSheet.create({
         width: 38,
         height: 38,
         borderRadius: 19,
-        backgroundColor: 'rgba(255,101,36,0.12)',
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 10,
         overflow: 'hidden',
-        borderWidth: 1.5,
-        borderColor: 'rgba(255,101,36,0.25)',
     },
     postAvatarImg: { width: '100%', height: '100%' },
     postAvatarInitials: {
-        color: '#FF6524',
+        color: colors.textSecondary,
         fontSize: 14,
         fontWeight: '700',
     },
@@ -468,18 +467,18 @@ const styles = StyleSheet.create({
     typeBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255,101,36,0.08)',
+        backgroundColor: isDark ? 'rgba(0,179,65,0.12)' : 'rgba(0,179,65,0.08)',
         paddingHorizontal: 10,
         paddingVertical: 6,
         marginBottom: 8,
         alignSelf: 'flex-start',
         borderLeftWidth: 4,
-        borderLeftColor: '#FF6524',
+        borderLeftColor: colors.primary,
         borderTopRightRadius: 8,
         borderBottomRightRadius: 8,
     },
     typeBadgeText: {
-        color: '#FF6524',
+        color: colors.primary,
         fontSize: 10,
         fontWeight: '800',
         letterSpacing: 1,
@@ -540,13 +539,17 @@ const styles = StyleSheet.create({
         gap: 6,
         paddingVertical: 13,
         borderRadius: 12,
+        backgroundColor: '#000000',
+        borderWidth: 2,
     },
     whatsappBtn: {
-        backgroundColor: '#25D366',
+        borderColor: '#25D366',
+    },
+    privateMessageBtn: {
+        borderColor: colors.primary,
     },
     contactBtnText: {
-        color: '#FFF',
-        fontWeight: '700',
+        fontWeight: '800',
         fontSize: 13,
     },
     // ── Menú de opciones ──
