@@ -20,6 +20,8 @@ import {
     GET_MY_JOB_OFFERS,
     GET_MY_APPLICATIONS,
 } from '../graphql/jobs.operations';
+import { GET_OR_CREATE_CHAT } from '../../chat/graphql/chat.operations';
+import { Linking } from 'react-native';
 import { DIRECT_MODERATE_CONTENT } from '../../moderation/graphql/moderation.operations';
 import Toast from 'react-native-toast-message';
 
@@ -30,10 +32,18 @@ interface JobOfferCardProps {
     onEdit?: (item: any) => void;
     isModalView?: boolean;
     onToggleSave?: (item: any) => void;
-    isSaved?: boolean;
+    showTopDivider?: boolean;
+    hideAuthorRow?: boolean;
+    isFocused?: boolean;
+    isViewable?: boolean;
+    isOverlayActive?: boolean;
 }
 
-export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isModalView, onToggleSave, isSaved: propIsSaved }: JobOfferCardProps & { hideAuthorRow?: boolean }) {
+export default function JobOfferCard({ 
+    item, onPress, onEdit, hideAuthorRow, isModalView, 
+    onToggleSave, isSaved: propIsSaved, showTopDivider,
+    isFocused = true, isViewable = true, isOverlayActive = false 
+}: JobOfferCardProps) {
     const { colors, isDark } = useTheme();
     const router = useRouter();
     const navigation = useNavigation();
@@ -134,153 +144,228 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
         return text;
     };
 
+    const handleWhatsApp = async () => {
+        if (!item.contactPhone) {
+            Alert.alert('Información', 'Este ofertante no proporcionó un número de WhatsApp.');
+            return;
+        }
+        const rawPhone = item.contactPhone.replace(/\s+/g, '').replace(/[^+\d]/g, '');
+        const message = `Hola, me interesa tu oferta de empleo: *${item.title}* en Cantón.`;
+        const url = `https://wa.me/${rawPhone}?text=${encodeURIComponent(message)}`;
+        try {
+            const canOpen = await Linking.canOpenURL(url);
+            if (canOpen) {
+                await Linking.openURL(url);
+            } else {
+                Alert.alert('Error', 'No se pudo abrir WhatsApp. Asegúrate de tener la app instalada.');
+            }
+        } catch (error) {
+            Alert.alert('Error', 'Ocurrió un error al intentar abrir WhatsApp.');
+        }
+    };
+
+    const [getOrCreateChat] = useMutation(GET_OR_CREATE_CHAT);
+
+    const handlePrivateMessage = async () => {
+        if (!authContext?.user?.id) {
+            Alert.alert('Inicia sesión', 'Debes iniciar sesión para enviar mensajes privados.');
+            return;
+        }
+        if (isOwner) {
+            Alert.alert('Información', 'No puedes enviarte un mensaje a ti mismo.');
+            return;
+        }
+        try {
+            const { data } = await getOrCreateChat({
+                variables: { targetUserId: item.author.id }
+            });
+            if (data?.getOrCreateOneOnOneChat?.id) {
+                router.push({
+                    pathname: '/chatRoom',
+                    params: { conversationId: data.getOrCreateOneOnOneChat.id }
+                });
+            }
+        } catch (error) {
+            Alert.alert('Error', 'No se pudo abrir el chat privado.');
+        }
+    };
+
     const displayIsSaved = propIsSaved ?? item.isSaved;
 
     const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const [cardWidth, setCardWidth] = React.useState(Dimensions.get('window').width - 32);
+    const [activeIndex, setActiveIndex] = useState(0);
+    const carouselRef = React.useRef<any>(null);
+
+    const isVideo = item.media && item.media[0]?.type?.toLowerCase() === 'video';
+    const topRowY = 12;
+    const expandTop = 100;
+    const muteTop = isModalView ? (expandTop + 44) : 56;
+    const typeTop = isModalView ? (isVideo ? (muteTop + 44) : (expandTop + 44)) : (isVideo ? (muteTop + 44) : 56);
 
     return (
         <>
+            {showTopDivider && (
+                <View style={[styles.fullWidthDivider, { marginTop: 0, marginBottom: 12 }]} />
+            )}
+
             <TouchableOpacity
-                style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                style={[styles.card, { backgroundColor: colors.surface }]}
                 onPress={onPress}
                 onLongPress={() => setIsCopyModalVisible(true)}
                 delayLongPress={250}
-                activeOpacity={0.7}
+                activeOpacity={1}
                 onLayout={(e) => setCardWidth(e.nativeEvent.layout.width)}
             >
-                {/* ── Header estilo Post ── */}
-                {!hideAuthorRow && (
-                <View style={[styles.postHeader, { borderBottomColor: colors.border, flexDirection: 'column', alignItems: 'flex-start' }]}>
-                    {/* Badge de tipo arriba */}
-                    <View style={[styles.typeBadge, { marginBottom: 10 }]}>
-                        <Ionicons name="briefcase-outline" size={12} color={colors.primary} style={{ marginRight: 6 }} />
-                        <Text style={styles.typeBadgeText}>OFERTA DE EMPLEO</Text>
-                    </View>
-
-                    <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}>
-                        <TouchableOpacity style={styles.postAuthorRow} onPress={goToProfile} activeOpacity={0.7}>
-                            {/* Avatar */}
-                            <View style={styles.postAvatar}>
-                                {item.author?.photoUrl ? (
-                                    <Image source={{ uri: item.author.photoUrl }} style={styles.postAvatarImg} />
-                                ) : (
-                                    <Text style={styles.postAvatarInitials}>
-                                        {item.author?.firstName?.[0] || ''}{item.author?.lastName?.[0] || ''}
-                                    </Text>
-                                )}
-                            </View>
-                            {/* Nombre + fecha */}
-                            <View style={{ flex: 1 }}>
-                                <Text style={[styles.postAuthorName, { color: colors.text }]} numberOfLines={1}>
-                                    {`${item.author?.firstName ?? ''} ${item.author?.lastName ?? ''}`.trim()}
-                                </Text>
-                                <Text style={[styles.postDate, { color: colors.textSecondary }]}>
-                                    {formatDate(item.createdAt)}
-                                    {!!item.editedAt && " • Editado"}
-                                </Text>
-                            </View>
-                        </TouchableOpacity>
-
-                        {/* Ellipsis opciones (Siempre visible) */}
-                        <TouchableOpacity
-                            onPress={() => setMenuVisible(true)}
-                            style={styles.postEllipsis}
-                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                        >
-                            <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-                        </TouchableOpacity>
+                {/* ── Card Head ── */}
+                <View style={styles.cardHead}>
+                    <View style={[styles.typeBadgeHead, { backgroundColor: '#2196F315' }]}>
+                        <Ionicons name="briefcase" size={12} color="#2196F3" />
+                        <Text style={[styles.typeBadgeTextHead, { color: '#2196F3' }]}>OFERTA DE EMPLEO</Text>
                     </View>
                 </View>
-                )}
 
-                <View 
-                    style={[styles.contentPadding, { paddingBottom: 4, paddingTop: 1 }]}
-                >
-                    {/* Título */}
-                    <Text style={[styles.title, { color: colors.text }]} numberOfLines={hideAuthorRow ? 2 : 1}>
-                        {item.title}
-                    </Text>
-
-                    {/* Ubicación */}
-                    <View style={styles.locationRow}>
-                        <Ionicons name="location-outline" size={14} color={colors.primary} />
-                        <Text style={[styles.locationText, { color: colors.textSecondary }]}>
-                            {item.location}
-                        </Text>
-                    </View>
-
-                    {/* Descripción */}
-                    {item.description.length > 150 && !isDescExpanded ? (
-                        <Text style={[styles.description, { color: colors.textSecondary }]}>
-                            {item.description.slice(0, 150)}
-                            <Text style={{ color: colors.primary, fontWeight: 'bold' }} onPress={() => setIsDescExpanded(true)}> ...más</Text>
-                        </Text>
-                    ) : (
-                        <Text style={[styles.description, { color: colors.textSecondary }]}>
-                            {item.description}
-                            {item.description.length > 150 && isDescExpanded && (
-                                <Text style={{ color: colors.primary, fontWeight: 'bold' }} onPress={() => setIsDescExpanded(false)}> Ver menos.</Text>
-                            )}
-                        </Text>
-                    )}
-
-                    {/* Salario */}
-                    {!!item.salary && (
-                        <View style={styles.salaryRow}>
-                            <Ionicons name="wallet-outline" size={15} color="#4CAF50" />
-                            <Text style={[styles.salary, { color: '#4CAF50' }]} numberOfLines={1}>
-                                ${item.salary.replace(/\$/g, '')}
-                            </Text>
-                        </View>
-                    )}
-                </View>
-
-                {/* Carrusel multimedia */}
-                {item.media && item.media.length > 0 && (
-                    <View style={{ width: '100%', backgroundColor: colors.surface, marginBottom: -8 }}>
+                <View style={styles.mediaContainer}>
+                    {item.media && item.media.length > 0 ? (
                         <ImageCarousel
+                            ref={carouselRef}
                             media={item.media}
                             containerWidth={cardWidth}
-                            customAspectRatio={1}
+                            customAspectRatio={0.8}
                             disableFullscreen={!!onPress && !isModalView}
                             onPress={onPress}
-                        />
-                    </View>
-                )}
+                            onIndexChange={setActiveIndex}
+                            muteButtonStyle={{ top: muteTop, right: 12 }}
+                            isInteractive={isModalView}
+                            hideExpand={isModalView}
+                            hidePagination={true}
+                            isFocused={isFocused}
+                            isViewable={isViewable}
+                            isOverlayActive={isOverlayActive}
+                            overlay={
+                                <View style={styles.bottomActionStrip}>
+                                    {/* 1. Integrated Counter */}
+                                    {item.media && item.media.length > 1 && (
+                                        <View style={styles.integratedCounter}>
+                                            <Text style={styles.integratedCounterText}>
+                                                {activeIndex + 1} / {item.media.length}
+                                            </Text>
+                                        </View>
+                                    )}
 
-                {/* Botones de acción al pie de la tarjeta */}
-                <View style={styles.applyBtnWrapper}>
-                    {isOwner && (
-                        <TouchableOpacity
-                            style={styles.viewApplicantsBtn}
-                            onPress={() => router.push(`/jobs/${item.id}/applicants` as any)}
-                            activeOpacity={0.8}
+                                    {/* 2. Botones de contacto (Estilo Unificado) */}
+                                    <View style={styles.contactButtonsRow}>
+                                        {/* WhatsApp */}
+                                        {!!item.contactPhone && (
+                                            <TouchableOpacity
+                                                style={[styles.contactBtnTransparent, styles.whatsappBtnTransparent]}
+                                                onPress={handleWhatsApp}
+                                                activeOpacity={0.8}
+                                            >
+                                                <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
+                                                <Text style={[styles.contactBtnTextOverlay, { color: '#25D366' }]}>WhatsApp</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                        {/* Chat */}
+                                        <TouchableOpacity
+                                            style={[styles.contactBtnTransparent, styles.privateMessageBtnTransparent]}
+                                            onPress={handlePrivateMessage}
+                                            activeOpacity={0.8}
+                                        >
+                                            <Ionicons name="chatbubble-ellipses" size={16} color="#2196F3" />
+                                            <Text style={[styles.contactBtnTextOverlay, { color: '#2196F3' }]}>Mensaje Privado</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            }
+                        />
+                    ) : (
+                        <View style={[styles.noImage, { height: 350, backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5' }]}>
+                            <Ionicons name="briefcase-outline" size={54} color={colors.textSecondary} style={{ opacity: 0.3 }} />
+                        </View>
+                    )}
+
+                    {/* Author Overlay (Top Leftish) */}
+                    {!hideAuthorRow && (
+                        <TouchableOpacity 
+                            style={styles.sellerOverlay}
+                            onPress={goToProfile}
                         >
-                            <Ionicons name="people-outline" size={18} color={colors.primary} style={{ marginRight: 6 }} />
-                            <Text style={styles.viewApplicantsBtnText}>Ver Postulantes</Text>
+                            <View style={styles.avatarMiniOverlay}>
+                                {item.author?.photoUrl ? (
+                                    <Image source={{ uri: item.author.photoUrl }} style={styles.avatarImg} />
+                                ) : (
+                                    <Text style={{ color: '#FFF', fontSize: 10 }}>{item.author?.firstName?.[0]}</Text>
+                                )}
+                            </View>
+                            <View style={styles.sellerTextColumn}>
+                                <Text style={styles.sellerNameOverlay} numberOfLines={1}>
+                                    {item.author?.firstName} {item.author?.lastName}
+                                </Text>
+                                <Text style={styles.sellerNicknameOverlay} numberOfLines={1}>
+                                    @{item.author?.username || 'usuario'}
+                                </Text>
+                            </View>
                         </TouchableOpacity>
                     )}
-                    
-                    {!isOwner && myApplication ? (
-                        <View style={styles.applyBtn}>
-                            <Ionicons name="checkmark-circle" size={18} color={getStatusColor(myApplication.status)} style={{ marginRight: 6 }} />
-                            <Text style={[styles.applyBtnText, { color: getStatusColor(myApplication.status) }]}>
-                                {getStatusLabel(myApplication.status)}
-                            </Text>
+
+
+                    {/* Menu Button Overlay (Top Right) */}
+                    {!isModalView && (
+                        <View style={styles.topRightActions}>
+                            <TouchableOpacity 
+                                style={styles.glassCircleHeader} 
+                                onPress={() => setMenuVisible(true)}
+                            >
+                                <Ionicons name="ellipsis-horizontal" size={20} color="#FFF" />
+                            </TouchableOpacity>
                         </View>
-                    ) : (!isOwner && (
-                        <TouchableOpacity
-                            style={styles.applyBtn}
-                            onPress={() => setApplyVisible(true)}
-                            activeOpacity={0.8}
-                        >
-                            <Ionicons name="paper-plane-outline" size={18} color={colors.primary} style={{ marginRight: 6 }} />
-                            <Text style={styles.applyBtnText}>Postularme</Text>
-                        </TouchableOpacity>
-                    ))}
+                    )}
                 </View>
 
+                {/* Content Section below image */}
+                <View style={styles.contentPaddingPro}>
+                    <View style={styles.proHeaderGrid}>
+                        <View style={styles.proTitleCol}>
+                            <Text style={[styles.proTitle, { color: colors.text }]} numberOfLines={2}>
+                                {item.title}
+                            </Text>
+                            <View style={styles.proLocationRow}>
+                                <Ionicons name="location-sharp" size={12} color={colors.textSecondary} />
+                                <Text style={[styles.proLocation, { color: colors.textSecondary }]}>
+                                    {item.location}
+                                </Text>
+                            </View>
+                        </View>
+
+                        {item.salary && (
+                            <View style={styles.proInfoCol}>
+                                <Text style={styles.proPriceGreen}>
+                                    Sueldo: ${item.salary.replace(/\$/g, '')}
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+
+                    <Text 
+                        style={[styles.proDescription, { color: colors.textSecondary }]} 
+                        numberOfLines={isDescExpanded ? undefined : 3}
+                    >
+                        {item.description}
+                    </Text>
+
+                    {item.description.length > 100 && (
+                        <TouchableOpacity onPress={() => setIsDescExpanded(!isDescExpanded)} style={{ marginTop: 8 }}>
+                            <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 13 }}>
+                                {isDescExpanded ? 'Ver menos' : 'Leer más...'}
+                            </Text>
+                        </TouchableOpacity>
+                    )}
+
+                    <Text style={[styles.dateTextPro, { color: colors.textSecondary }]}>
+                        {formatDate(item.createdAt)}
+                    </Text>
+                </View>
             </TouchableOpacity>
 
             {/* ── Modal postulación ── */}
@@ -424,383 +509,253 @@ export default function JobOfferCard({ item, onPress, onEdit, hideAuthorRow, isM
 
 const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     card: {
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        overflow: 'hidden',
-        backgroundColor: 'transparent',
+        backgroundColor: colors.surface,
         marginVertical: 8,
-        borderRadius: 16,
-        marginHorizontal: 4,
+        borderRadius: 20,
+        overflow: 'hidden',
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: isDark ? 0.4 : 0.08,
+                shadowRadius: 8,
+            },
+            android: {
+                elevation: isDark ? 6 : 3,
+            },
+        }),
     },
-    divider: {
-        height: StyleSheet.hairlineWidth,
-        marginHorizontal: 14,
-        marginBottom: 2,
-        marginTop: 4,
+    fullWidthDivider: {
+        height: 0.6,
+        backgroundColor: '#BDBDBD',
+        marginTop: 0, 
+        marginBottom: 2, 
+        width: '120%', 
+        marginLeft: -40, 
+        opacity: 0.35,
+        zIndex: 10,
+        elevation: 5,
     },
-    actionsRow: {
-        flexDirection: 'row',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-    },
-    actionBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 8,
-        borderRadius: 8,
-    },
-    contentPadding: {
-        paddingBottom: 12,
-        paddingHorizontal: 16,
-    },
-    topBadgeWrapper: {
-        width: '100%',
-        paddingTop: 12,
-        paddingBottom: 12,
-        paddingHorizontal: 2,
-    },
-    topOutlineBanner: {
-        width: '100%',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 10,
-        borderRadius: 14,
-        borderWidth: 1.5,
-        borderColor: colors.primary,
+    mediaContainer: {
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        overflow: 'hidden',
         position: 'relative',
+        backgroundColor: '#000',
     },
-    topOutlineContent: {
-        flexDirection: 'row',
+    noImage: {
+        width: '100%',
+        justifyContent: 'center',
         alignItems: 'center',
     },
-    topOutlineText: {
-        color: colors.primary,
-        fontSize: 14,
-        fontWeight: '700',
+    avatarImg: { width: '100%', height: '100%' },
+    
+    // Content Styles (Store Style)
+    cardHead: {
+        paddingHorizontal: 16,
+        paddingTop: 12,
+        paddingBottom: 14,
     },
-    topOutlineEllipsis: {
-        position: 'absolute',
-        right: 12,
-    },
-    header: {
+    typeBadgeHead: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 6,
+        alignSelf: 'flex-start',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 6,
+        gap: 6,
     },
-    title: {
-        fontSize: 17,
-        fontWeight: '700',
+    typeBadgeTextHead: {
+        fontSize: 10,
+        fontWeight: '900',
+        letterSpacing: 0.5,
+    },
+    contentPaddingPro: {
+        padding: 16,
+        paddingTop: 8,
+    },
+    proHeaderGrid: {
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        marginBottom: 12,
+        gap: 4,
+    },
+    proTitleCol: {
         flex: 1,
-        marginRight: 10,
+        paddingRight: 12,
     },
-    date: {
-        fontSize: 12,
+    proTitle: {
+        fontSize: 18,
+        fontWeight: '900',
+        lineHeight: 22,
+        marginBottom: 4,
     },
-    locationRow: {
+    proLocationRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 10,
+        gap: 4,
     },
-    locationText: {
+    proLocation: {
         fontSize: 13,
-        marginLeft: 4,
+        fontWeight: '600',
     },
-    description: {
+    proInfoCol: {
+        alignItems: 'flex-end',
+    },
+    proPriceGreen: {
+        fontSize: 15,
+        fontWeight: '800',
+        color: '#4CAF50',
+    },
+    proDescription: {
         fontSize: 14,
         lineHeight: 20,
-        marginBottom: 14,
     },
-    footer: {
+    dateTextPro: {
+        fontSize: 12,
+        marginTop: 16,
+        opacity: 0.4,
+    },
+
+    // Overlay Styles
+    sellerOverlay: {
+        position: 'absolute',
+        top: 12,
+        left: 12,
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        padding: 6,
+        paddingRight: 12,
+        borderRadius: 24,
+        zIndex: 20,
     },
-    authorRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
-    avatarWrap: {
-        width: 26,
-        height: 26,
-        borderRadius: 13,
-        backgroundColor: isDark ? '#333' : '#E0E0E0',
+    avatarMiniOverlay: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: 'rgba(255,255,255,0.2)',
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 8,
         overflow: 'hidden',
     },
-    avatarImg: { width: '100%', height: '100%' },
-    avatarInitials: {
-        color: colors.textSecondary,
-        fontSize: 10,
-        fontWeight: '700',
+    sellerTextColumn: {
+        justifyContent: 'center',
     },
-    authorName: {
+    sellerNameOverlay: {
+        color: '#FFF',
         fontSize: 13,
-        fontWeight: '500',
-        flex: 1,
+        fontWeight: '800',
+        lineHeight: 15,
     },
-    salaryBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 6,
-        borderRadius: 12,
-        flexShrink: 0,
-        maxWidth: Dimensions.get('window').width * 0.35,
-    },
-    salary: {
-        fontSize: 14,
-        fontWeight: '700',
-        marginLeft: 4,
-        flexShrink: 1,
-    },
-    salaryRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 4,
-    },
-
-    // ── Header estilo Post ──
-    postHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-    },
-    postAuthorRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
-    postAvatar: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
-        backgroundColor: colors.surface,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 10,
-        overflow: 'hidden',
-    },
-    postAvatarImg: { width: '100%', height: '100%' },
-    postAvatarInitials: {
-        color: colors.textSecondary,
-        fontSize: 14,
-        fontWeight: '700',
-    },
-    postAuthorName: {
-        fontSize: 14,
-        fontWeight: '700',
-    },
-    postDate: {
-        fontSize: 12,
-        marginTop: 1,
-    },
-    typeBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: isDark ? 'rgba(0,179,65,0.12)' : 'rgba(0,179,65,0.08)',
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        marginBottom: 8,
-        alignSelf: 'flex-start',
-        borderLeftWidth: 4,
-        borderLeftColor: colors.primary,
-        borderTopRightRadius: 8,
-        borderBottomRightRadius: 8,
-    },
-    typeBadgeText: {
-        color: colors.primary,
+    sellerNicknameOverlay: {
+        color: 'rgba(255,255,255,0.7)',
         fontSize: 10,
-        fontWeight: '800',
-        letterSpacing: 1,
-    },
-    postEllipsis: {
-        padding: 4,
-        marginLeft: 8,
-    },
-
-    applyBtnWrapper: {
-        paddingTop: 10,
-        paddingHorizontal: 2,
-    },
-    applyBtn: {
-        width: '100%',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 12,
-        marginBottom: 14,
-        borderRadius: 14,
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        borderColor: colors.primary,
-    },
-    applyBtnText: {
-        color: colors.primary,
-        fontWeight: '800',
-        fontSize: 15,
-        letterSpacing: 0.3,
-    },
-    viewApplicantsBtn: {
-        width: '100%',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 12,
-        borderRadius: 14,
-        backgroundColor: '#000000',
-        borderWidth: 2,
-        borderColor: colors.primary,
-        marginBottom: 8,
-    },
-    viewApplicantsBtnText: {
-        color: colors.primary,
-        fontWeight: '800',
-        fontSize: 15,
-        letterSpacing: 0.3,
-    },
-
-    // ── Menú de opciones ──
-    menuOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        justifyContent: 'flex-end',
-    },
-    menuSheet: {
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        paddingHorizontal: 20,
-        paddingTop: 12,
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 10,
-    },
-    menuHandle: {
-        width: 40,
-        height: 5,
-        borderRadius: 3,
-        alignSelf: 'center',
-        marginBottom: 16,
-    },
-    menuTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        textAlign: 'center',
-        marginBottom: 16,
-    },
-    menuItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 14,
-        borderBottomWidth: 1,
-    },
-    menuItemIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-    },
-    menuItemText: {
-        flex: 1,
-    },
-    menuItemTitle: {
-        fontSize: 16,
-        fontWeight: '500',
-    },
-    menuItemSub: {
-        fontSize: 12,
-        marginTop: 2,
-    },
-    cancelBtn: {
-        marginTop: 16,
-        borderRadius: 14,
-        paddingVertical: 14,
-        alignItems: 'center',
-    },
-    cancelText: {
-        fontSize: 16,
         fontWeight: '600',
     },
+    conditionOverlayTop: {
+        position: 'absolute',
+        right: 12,
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 8,
+        zIndex: 20,
+    },
+    conditionTextPremium: {
+        color: '#FFF',
+        fontSize: 10,
+        fontWeight: '900',
+        letterSpacing: 0.5,
+    },
+    topRightActions: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        zIndex: 25,
+    },
+    glassCircleHeader: {
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 8,
+        minWidth: 36,
+    },
 
-    // ── Modal de confirmación ──
-    confirmOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        justifyContent: 'center',
+    // Bottom Action Strip (Inside Carousel)
+    bottomActionStrip: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        paddingTop: 10,
+        paddingBottom: 14,
         alignItems: 'center',
-        paddingHorizontal: 28,
+        zIndex: 15,
     },
-    confirmCard: {
-        width: '100%',
-        borderRadius: 24,
-        paddingTop: 32,
-        paddingHorizontal: 24,
-        paddingBottom: 24,
-        alignItems: 'center',
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.18,
-                shadowRadius: 20,
-            },
-            android: { elevation: 12 },
-        }),
+    integratedCounter: {
+        marginBottom: 8,
+        backgroundColor: 'transparent',
     },
-    confirmIconCircle: {
-        width: 68,
-        height: 68,
-        borderRadius: 34,
-        backgroundColor: 'rgba(244,67,54,0.12)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 20,
-        borderWidth: 1.5,
-        borderColor: 'rgba(244,67,54,0.25)',
+    integratedCounterText: {
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '900',
+        letterSpacing: 0.5,
     },
-    confirmTitle: {
-        fontSize: 20,
-        fontWeight: '700',
-        marginBottom: 10,
-        textAlign: 'center',
-    },
-    confirmMessage: {
-        fontSize: 14,
-        lineHeight: 22,
-        textAlign: 'center',
-        marginBottom: 4,
-    },
-    confirmDivider: {
-        width: '100%',
-        height: StyleSheet.hairlineWidth,
-        marginVertical: 20,
-    },
-    confirmButtons: {
+    contactButtonsRow: {
         flexDirection: 'row',
+        width: '100%',
+        paddingHorizontal: 16,
         gap: 12,
-        width: '100%',
     },
-    confirmBtn: {
+    contactBtnTransparent: {
         flex: 1,
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 14,
-        borderRadius: 14,
+        alignItems: 'center',
+        height: 38,
+        borderRadius: 12,
+        borderWidth: 1.5,
+        backgroundColor: 'transparent',
+        gap: 8,
     },
-    confirmBtnDanger: {
-        backgroundColor: '#F44336',
+    contactBtnText: {
+        fontWeight: '800',
+        fontSize: 13,
+        textTransform: 'uppercase',
     },
-    confirmBtnLabel: {
-        fontSize: 15,
-        fontWeight: '700',
+    contactBtnTextOverlay: {
+        fontWeight: '800',
+        fontSize: 12,
+        textTransform: 'uppercase',
     },
+    whatsappBtnTransparent: {
+        borderColor: '#25D366',
+    },
+    privateMessageBtnTransparent: {
+        borderColor: '#2196F3',
+    },
+
+    // Modals Styles
+    menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    menuSheet: { borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 24, paddingTop: 12 },
+    menuHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+    menuTitle: { fontSize: 18, fontWeight: '900', textAlign: 'center', marginBottom: 20 },
+    menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16 },
+    menuItemIcon: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+    menuItemTitle: { fontSize: 16, fontWeight: '600' },
+    confirmOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
+    confirmCard: { width: '100%', padding: 24, borderRadius: 24, alignItems: 'center' },
+    confirmIconCircle: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+    confirmTitle: { fontSize: 18, fontWeight: '900', marginBottom: 12 },
+    confirmMessage: { fontSize: 14, textAlign: 'center', marginBottom: 24 },
+    confirmDivider: { width: '100%', height: 1, marginBottom: 24 },
+    confirmButtons: { flexDirection: 'row', gap: 12 },
+    confirmBtn: { flex: 1, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center', flexDirection: 'row' },
+    confirmBtnDanger: { backgroundColor: '#F44336' },
+    confirmBtnLabel: { fontWeight: '700', fontSize: 15 },
 });

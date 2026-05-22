@@ -59,6 +59,24 @@ export default function StoreScreen() {
   const indicatorAnim = useRef(new Animated.Value(0)).current;
   const indicatorWidth = useRef(new Animated.Value(0)).current;
 
+  // ── Control de Visibilidad para Videos: solo UN video activo a la vez ──
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+  const onViewableItemsChanged = useRef(({ viewableItems: vItems }: any) => {
+    if (!vItems || vItems.length === 0) {
+      setActiveVideoId(null);
+      return;
+    }
+    // Solo el item más visible (mayor percentVisible) tiene permiso de sonar
+    const mostVisible = vItems.reduce((best: any, cur: any) => {
+      return (cur.percentVisible ?? 0) > (best.percentVisible ?? 0) ? cur : best;
+    }, vItems[0]);
+    setActiveVideoId(mostVisible?.item?.id ?? null);
+  }).current;
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 40,
+    minimumViewTime: 100,
+  }).current;
+
   const handleTabPress = (key: TabKey, index: number) => {
     setActiveTab(key);
     if (tabOffsets[index] !== undefined && tabWidths[index] !== undefined) {
@@ -337,46 +355,54 @@ export default function StoreScreen() {
         <FlatList
           data={products}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => {
+          renderItem={({ item, index }) => {
             if (item.isAd) {
               const cachedAdData = loadedAds[item.id];
               const adDataToPass = cachedAdData
                   ? { ...cachedAdData, id: cachedAdData.realId || cachedAdData.id }
                   : (item.type || item.title ? { ...item, id: item.realId || item.id } : undefined);
               return (
+                <View>
                   <View style={{ marginHorizontal: 8 }}>
-                      <NativeAdCard 
-                          adData={adDataToPass}
-                          onAdLoaded={(adData) => {
-                              if (!loadedAds[item.id]) {
-                                  setLoadedAds(prev => ({ ...prev, [item.id]: adData }));
-                              }
-                          }}
-                          onDelete={() => {
-                              setLoadedAds(prev => ({ ...prev, [item.id]: { ...prev[item.id], isDeleted: true } }));
-                          }}
-                          onPress={(ad) => setSelectedPostForComments({ 
-                              post: { ...ad, id: item.id, realId: ad.realId || ad.id }, 
-                              minimize: true, 
-                              initialTab: 'comments' 
-                          })} 
-                      />
+                    <NativeAdCard 
+                        adData={adDataToPass}
+                        onAdLoaded={(adData) => {
+                            if (!loadedAds[item.id]) {
+                                setLoadedAds(prev => ({ ...prev, [item.id]: adData }));
+                            }
+                        }}
+                        onDelete={() => {
+                            setLoadedAds(prev => ({ ...prev, [item.id]: { ...prev[item.id], isDeleted: true } }));
+                        }}
+                        onPress={(ad) => setSelectedPostForComments({ 
+                            post: { ...ad, id: item.id, realId: ad.realId || ad.id }, 
+                            minimize: true, 
+                            initialTab: 'comments' 
+                        })} 
+                    />
                   </View>
+                  <View style={styles.feedDivider} />
+                </View>
               );
             }
+
             return (
-              <StoreProductCard
-                item={item}
-                cardWidth={undefined}
-                onEdit={handleEdit}
-                onPress={() => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' })}
-                onCommentPress={() => setSelectedPostForComments({ post: item, minimize: false, initialTab: 'comments' })}
-                onToggleSave={() => handleToggleSave(item)}
-                isSaved={item.isSaved}
-              />
+              <View>
+                <StoreProductCard
+                  item={item}
+                  cardWidth={undefined}
+                  onEdit={handleEdit}
+                  onPress={() => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' })}
+                  onCommentPress={() => setSelectedPostForComments({ post: item, minimize: false, initialTab: 'comments' })}
+                  onToggleSave={() => handleToggleSave(item)}
+                  isSaved={item.isSaved}
+                  isViewable={!selectedPostForComments && activeVideoId === item.id}
+                />
+                <View style={styles.feedDivider} />
+              </View>
             );
           }}
-          ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: colors.textSecondary }]} />}
+          ItemSeparatorComponent={null}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={renderEmpty}
@@ -387,6 +413,8 @@ export default function StoreScreen() {
           maxToRenderPerBatch={4}
           windowSize={7}
           removeClippedSubviews={Platform.OS === 'android'}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
         />
       )}
 
@@ -583,11 +611,12 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   emptyIconBg: { width: 88, height: 88, borderRadius: 44, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
   emptyTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center', marginBottom: 10 },
   emptySubtitle: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
-  separator: {
-    height: 1,
-    marginHorizontal: 20,
-    opacity: 0.25,
-    marginVertical: 16,
+  feedDivider: {
+    height: 0.6,
+    backgroundColor: '#BDBDBD',
+    opacity: 0.35,
+    marginTop: 10,
+    marginBottom: 20,
   },
 
   // ── FAB ──

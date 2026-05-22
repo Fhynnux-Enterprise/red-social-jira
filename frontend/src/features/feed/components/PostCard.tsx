@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
@@ -33,6 +33,7 @@ export interface PostCardProps {
     onPressAuthor?: () => void;
     onToggleSave?: () => void;
     isSaved?: boolean;
+    showTopDivider?: boolean;
 }
 
 export default function PostCard({
@@ -48,6 +49,7 @@ export default function PostCard({
     onPressAuthor,
     onToggleSave,
     isSaved: propIsSaved,
+    showTopDivider,
 }: PostCardProps) {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
@@ -70,6 +72,7 @@ export default function PostCard({
     const [isExpanded, setIsExpanded] = useState(false);
     const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
     const [reportVisible, setReportVisible] = useState(false);
+    const [cardWidth, setCardWidth] = useState(SCREEN_WIDTH);
 
     const isTruncatable = !isModalView && (item.content?.length ?? 0) > MAX_CHARS;
     const displayContent = isTruncatable && !isExpanded
@@ -149,81 +152,89 @@ export default function PostCard({
         (navigation as any).navigate('Profile', { userId: profileUserId });
     };
 
-    const content = item.content || '';
-    const truncatedContent = isTruncatable ? content.slice(0, MAX_CHARS).trimEnd() : content;
+    const hasMedia = item.media && item.media.length > 0;
 
     return (
-        <View style={styles.card}>
-            {/* ── Header ── */}
-            <View style={styles.header} {...(headerPanHandlers || {})}>
-                <TouchableOpacity style={styles.authorRow} onPress={goToProfile} activeOpacity={0.75}>
-                    {/* Avatar */}
-                    <View style={styles.avatarWrap}>
-                        {item.author?.photoUrl ? (
-                            <Image source={{ uri: item.author.photoUrl }} style={styles.avatarImg} />
-                        ) : (
-                            <Text style={styles.avatarInitials}>
-                                {item.author?.firstName?.[0] || ''}{item.author?.lastName?.[0] || ''}
-                            </Text>
-                        )}
-                    </View>
-                    {/* Name + date */}
-                    <View style={{ flex: 1 }}>
-                        <Text style={styles.authorName} numberOfLines={1}>
-                            {item.author?.firstName} {item.author?.lastName}
-                        </Text>
-                        <View style={styles.dateRow}>
-                            <Text style={styles.dateText}>{formatDate(item.createdAt)}</Text>
-                            {isEdited && <Text style={styles.editedBadge}> · Editado</Text>}
-                        </View>
-                    </View>
-                </TouchableOpacity>
-
-                {/* Options menu (Siempre visible) */}
-                <TouchableOpacity
-                    onPress={() => onOptionsPress?.(item)}
-                    style={styles.moreBtn}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                    <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
-                </TouchableOpacity>
-            </View>
-
-            {/* ── Contenido ── */}
-            <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => onOpenComments?.(item.id, 'comments', true, isTruncatable)}
-                onLongPress={() => setIsCopyModalVisible(true)}
-                delayLongPress={250}
+        <>
+            {showTopDivider && (
+                <View style={[styles.fullWidthDivider, { marginTop: 0, marginBottom: 12 }]} />
+            )}
+            <View
+                style={hasMedia ? styles.cardWithMedia : styles.cardWithoutMedia}
+                onLayout={(e) => setCardWidth(e.nativeEvent.layout.width)}
             >
-                {item.title && (
-                    <Text style={styles.postTitle}>{item.title}</Text>
-                )}
-                <Text style={styles.content}>
-                    {displayContent}
-                    {isTruncatable && !isExpanded && (
-                        <Text 
-                            onPress={() => setIsExpanded(true)} 
-                            style={styles.verMasLink}
-                        >
-                             ... más
+
+            {/* ── Header clásico — solo para posts SIN media ── */}
+            {!hasMedia && (
+                <View style={styles.header} {...(headerPanHandlers || {})}>
+                    <TouchableOpacity style={styles.authorRow} onPress={goToProfile} activeOpacity={0.75}>
+                        {/* Avatar */}
+                        <View style={styles.avatarWrap}>
+                            {item.author?.photoUrl ? (
+                                <Image source={{ uri: item.author.photoUrl }} style={styles.avatarImg} />
+                            ) : (
+                                <Text style={styles.avatarInitials}>
+                                    {item.author?.firstName?.[0] || ''}{item.author?.lastName?.[0] || ''}
+                                </Text>
+                            )}
+                        </View>
+                        {/* Name + Nickname */}
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.authorName} numberOfLines={1}>
+                                {item.author?.firstName} {item.author?.lastName}
+                            </Text>
+                            {item.author?.username && (
+                                <Text style={[styles.dateText, { opacity: 0.7 }]}>@{item.author.username}</Text>
+                            )}
+                        </View>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        onPress={() => onOptionsPress?.(item)}
+                        style={styles.moreBtn}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                        <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                </View>
+            )}
+            {/* ── Contenido de texto — solo posts SIN media ── */}
+            {!hasMedia && (
+                <>
+                    <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => onOpenComments?.(item.id, 'comments', true, isTruncatable)}
+                        onLongPress={() => setIsCopyModalVisible(true)}
+                        delayLongPress={250}
+                    >
+                        {item.title && (
+                            <Text style={styles.postTitle}>{item.title}</Text>
+                        )}
+                        <Text style={styles.content}>
+                            {displayContent}
+                            {isTruncatable && !isExpanded && (
+                                <Text onPress={() => setIsExpanded(true)} style={styles.verMasLink}>
+                                    {' '}... más
+                                </Text>
+                            )}
                         </Text>
+                    </TouchableOpacity>
+                    {isTruncatable && isExpanded && (
+                        <TouchableOpacity
+                            onPress={() => setIsExpanded(false)}
+                            style={styles.verMasBtn}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        >
+                            <Text style={styles.verMasLink}>Ver menos.</Text>
+                        </TouchableOpacity>
                     )}
-                </Text>
-            </TouchableOpacity>
-            {isTruncatable && isExpanded && (
-                <TouchableOpacity
-                    onPress={() => setIsExpanded(false)}
-                    style={styles.verMasBtn}
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                >
-                    <Text style={styles.verMasLink}>Ver menos.</Text>
-                </TouchableOpacity>
+                </>
             )}
 
-            {/* ── Media Adjunta ── */}
-            {item.media && item.media.length > 0 && (
-                <View style={{ marginTop: 6 }}>
+
+            {/* ── Media Adjunta con overlay de autor ARRIBA (Store style) ── */}
+            {hasMedia && (
+                <View style={styles.mediaWrapper}>
                     <ImageCarousel
                         media={item.media}
                         onPress={() => onOpenComments?.(item.id, 'comments', true, false)}
@@ -231,47 +242,145 @@ export default function PostCard({
                         isViewable={isViewable}
                         isFocused={isFocused}
                         isOverlayActive={isOverlayActive}
-                        containerWidth={CARD_WIDTH}
+                        containerWidth={cardWidth}
                         customAspectRatio={1080 / 1485}
                     />
+
+                    {/* Autor overlay — glassmorphism en la esquina SUPERIOR IZQUIERDA */}
+                    <TouchableOpacity
+                        style={styles.authorOverlay}
+                        onPress={goToProfile}
+                        activeOpacity={0.85}
+                    >
+                        <View style={styles.avatarMini}>
+                            {item.author?.photoUrl ? (
+                                <Image source={{ uri: item.author.photoUrl }} style={styles.avatarImg} />
+                            ) : (
+                                <Text style={styles.avatarMiniInitials}>
+                                    {item.author?.firstName?.[0] || ''}{item.author?.lastName?.[0] || ''}
+                                </Text>
+                            )}
+                        </View>
+                        <View style={styles.overlayTextCol}>
+                            <Text style={styles.overlayAuthorName} numberOfLines={1}>
+                                {item.author?.firstName} {item.author?.lastName}
+                            </Text>
+                            {item.author?.username && (
+                                <Text style={styles.overlayNickname} numberOfLines={1}>
+                                    @{item.author.username}
+                                </Text>
+                            )}
+                        </View>
+                    </TouchableOpacity>
+
+                    {/* Botón ⋯ esquina superior derecha */}
+                    <TouchableOpacity
+                        style={styles.overlayOptionsBtn}
+                        onPress={() => onOptionsPress?.(item)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                        <Ionicons name="ellipsis-horizontal" size={18} color="#FFF" />
+                    </TouchableOpacity>
                 </View>
             )}
+
+            {/* ── Acciones Instagram-style — justo debajo de la imagen ── */}
+            {hasMedia && (
+                <View style={styles.instagramActionsRow}>
+                    <TouchableOpacity style={styles.instaBtn} onPress={handleLikePress}>
+                        <Feather
+                            name="heart"
+                            size={22}
+                            color={localLiked ? '#FF3B30' : colors.text}
+                        />
+                        {localCount > 0 && (
+                            <Text style={[styles.instaCount, { color: colors.text }]}>{localCount}</Text>
+                        )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.instaBtn}
+                        onPress={() => onOpenComments?.(item.id, 'comments', false, false)}
+                    >
+                        <Feather name="message-circle" size={22} color={colors.text} />
+                        {commentsCount > 0 && (
+                            <Text style={[styles.instaCount, { color: colors.text }]}>{commentsCount}</Text>
+                        )}
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            {/* ── Contenido/descripción debajo de los botones ── */}
+            {hasMedia && item.content && item.content.trim() !== '' && (
+                <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => onOpenComments?.(item.id, 'comments', true, isTruncatable)}
+                    onLongPress={() => setIsCopyModalVisible(true)}
+                    delayLongPress={250}
+                    style={styles.belowMediaContent}
+                >
+                    {item.title && (
+                        <Text style={styles.postTitle}>{item.title}</Text>
+                    )}
+                    <Text style={styles.content}>
+                        {displayContent}
+                        {isTruncatable && !isExpanded && (
+                            <Text onPress={() => setIsExpanded(true)} style={styles.verMasLink}>
+                                {' '}... más
+                            </Text>
+                        )}
+                    </Text>
+                    {isTruncatable && isExpanded && (
+                        <Text onPress={() => setIsExpanded(false)} style={[styles.verMasLink, { marginTop: 4 }]}>
+                            Ver menos.
+                        </Text>
+                    )}
+                </TouchableOpacity>
+            )}
+
 
             {/* ── Divider ── */}
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-            {/* ── Actions + stats ── */}
-            <View style={styles.actionsRow}>
-                {/* Like */}
-                <TouchableOpacity
-                    style={styles.actionBtn}
-                    onPress={handleLikePress}
-                    activeOpacity={0.7}
-                >
-                    <Ionicons
-                        name={localLiked ? 'heart' : 'heart-outline'}
-                        size={21}
-                        color={localLiked ? '#FF3B30' : colors.textSecondary}
-                    />
-                    {localCount > 0 && (
-                        <Text style={[styles.actionCount, localLiked && { color: '#FF3B30' }]}>
-                            {localCount}
-                        </Text>
-                    )}
-                </TouchableOpacity>
+            {/* ── Actions (solo posts SIN media) ── */}
+            {!hasMedia && (
+                <View style={styles.instagramActionsRow}>
+                    {/* Like */}
+                    <TouchableOpacity
+                        style={styles.instaBtn}
+                        onPress={handleLikePress}
+                        activeOpacity={0.7}
+                    >
+                        <Feather
+                            name="heart"
+                            size={22}
+                            color={localLiked ? '#FF3B30' : colors.text}
+                        />
+                        {localCount > 0 && (
+                            <Text style={[styles.instaCount, { color: colors.text }]}>
+                                {localCount}
+                            </Text>
+                        )}
+                    </TouchableOpacity>
 
-                {/* Comentar */}
-                <TouchableOpacity
-                    style={styles.actionBtn}
-                    onPress={() => onOpenComments?.(item.id, 'comments', false, false)}
-                    activeOpacity={0.7}
-                >
-                    <Ionicons name="chatbubble-outline" size={19} color={colors.textSecondary} />
-                    {commentsCount > 0 && (
-                        <Text style={styles.actionCount}>{commentsCount}</Text>
-                    )}
-                </TouchableOpacity>
-            </View>
+                    {/* Comentar */}
+                    <TouchableOpacity
+                        style={styles.instaBtn}
+                        onPress={() => onOpenComments?.(item.id, 'comments', false, false)}
+                        activeOpacity={0.7}
+                    >
+                        <Feather name="message-circle" size={22} color={colors.text} />
+                        {commentsCount > 0 && (
+                            <Text style={[styles.instaCount, { color: colors.text }]}>{commentsCount}</Text>
+                        )}
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            {/* Fecha al final (para todos los posts) */}
+            <Text style={[styles.postDateBottom, { color: colors.textSecondary }]}>
+                {formatDate(item.createdAt)}{isEdited ? ' · Editado' : ''}
+            </Text>
             <CopyTextModal
                 visible={isCopyModalVisible}
                 textToCopy={displayContent}
@@ -283,26 +392,43 @@ export default function PostCard({
                 reportedItemId={item.id}
                 reportedItemType="POST"
                 onContentDeleted={() => {
-                    // Evictar el post del caché de Apollo para que desaparezca del feed al instante
                     client.cache.evict({ id: client.cache.identify({ __typename: 'Post', id: item.id }) });
                     client.cache.gc();
                     setReportVisible(false);
                 }}
             />
         </View>
-    );
+    </>
+);
 }
 
 const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
-    card: {
+    cardWithoutMedia: {
         backgroundColor: colors.surface,
-        marginHorizontal: 4,
         marginVertical: 6,
-        borderRadius: 16,
+        borderRadius: 20,
+        overflow: 'hidden',
         paddingTop: 14,
         paddingBottom: 4,
-        overflow: 'hidden', // CRÍTICO: Evita que el carrusel se desborde del recuadro
-        // Sombra moderna
+        ...Platform.select({
+            ios: {
+                shadowColor: isDark ? '#000' : '#00000022',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: isDark ? 0.4 : 0.08,
+                shadowRadius: 8,
+            },
+            android: {
+                elevation: isDark ? 6 : 3,
+            },
+        }),
+    },
+    cardWithMedia: {
+        backgroundColor: colors.surface,
+        marginVertical: 6,
+        borderRadius: 20,
+        overflow: 'hidden',
+        paddingTop: 0,
+        paddingBottom: 4,
         ...Platform.select({
             ios: {
                 shadowColor: isDark ? '#000' : '#00000022',
@@ -428,6 +554,24 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         fontWeight: '500',
         marginLeft: 5,
     },
+    // ── Instagram-style actions (posts con media) ──
+    instagramActionsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingTop: 8,
+        paddingBottom: 2,
+        gap: 18,
+    },
+    instaBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    instaCount: {
+        fontSize: 15,
+        fontWeight: '700',
+    },
     mediaContainer: {
         width: '100%',
         marginTop: 6,
@@ -437,5 +581,91 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         width: '100%',
         height: 300,
         backgroundColor: colors.surface,
-    }
+    },
+    // ── Overlay store-style ──
+    mediaWrapper: {
+        width: '100%',
+        position: 'relative',
+        backgroundColor: '#000',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        overflow: 'hidden',
+    },
+    authorOverlay: {
+        position: 'absolute',
+        top: 24,
+        left: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        paddingVertical: 5,
+        paddingHorizontal: 10,
+        borderRadius: 20,
+        zIndex: 20,
+    },
+    overlayTextCol: {
+        flexDirection: 'column',
+        justifyContent: 'center',
+        marginLeft: 2,
+    },
+    avatarMini: {
+        width: 34,
+        height: 34,
+        borderRadius: 17,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+    },
+    avatarMiniInitials: {
+        color: '#FFF',
+        fontSize: 11,
+        fontWeight: '700',
+    },
+    overlayAuthorName: {
+        color: '#FFF',
+        fontSize: 13,
+        fontWeight: '800',
+        lineHeight: 15,
+    },
+    overlayNickname: {
+        color: 'rgba(255,255,255,0.7)',
+        fontSize: 10,
+        fontWeight: '600',
+    },
+    overlayOptionsBtn: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 25,
+    },
+    belowMediaContent: {
+        paddingTop: 4,
+        paddingBottom: 4,
+    },
+    postDateBottom: {
+        fontSize: 11,
+        paddingHorizontal: 16,
+        paddingBottom: 8,
+        paddingTop: 4,
+        opacity: 0.5,
+    },
+    fullWidthDivider: {
+        height: 0.6,
+        backgroundColor: '#BDBDBD',
+        marginTop: 0, 
+        marginBottom: 2, 
+        width: '120%', 
+        marginLeft: -40, 
+        opacity: 0.35,
+        zIndex: 10,
+        elevation: 5,
+    },
 });

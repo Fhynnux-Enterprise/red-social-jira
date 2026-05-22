@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Dimensions, Image, Modal, ActivityIndicator, TouchableWithoutFeedback
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
 import { useRouter } from 'expo-router';
@@ -48,6 +48,8 @@ interface Props {
   isModalView?: boolean;
   onToggleSave?: (item: StoreProduct) => void;
   isSaved?: boolean;
+  isViewable?: boolean;
+  showTopDivider?: boolean;
 }
 
 function formatDate(isoString: string) {
@@ -77,16 +79,22 @@ function conditionColor(c?: string) {
   return '#FF9800';
 }
 
-export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdit, onPress, onCommentPress, isModalView, onToggleSave, isSaved: propIsSaved }: Props) {
+const StoreProductCard = React.forwardRef((props: any, ref: any) => {
+  const { item, cardWidth, hideSellerRow, onEdit, onPress, onCommentPress, isModalView, onToggleSave, isSaved: propIsSaved, showTopDivider, isViewable } = props;
+  const carouselRef = React.useRef<any>(null);
+
+  React.useImperativeHandle(ref, () => ({
+    openFullscreen: (index = 0) => {
+      carouselRef.current?.openViewer?.(index);
+    }
+  }));
   const { colors, isDark } = useTheme();
   const { user } = useAuth() as any;
   const router = useRouter();
-  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
 
-  const [innerCardWidth, setInnerCardWidth] = useState(SCREEN_WIDTH - 8);
-
+  const [innerCardWidth, setInnerCardWidth] = useState(SCREEN_WIDTH - 16);
   const isOwner = user?.id === item.seller?.id;
 
   const [menuVisible, setMenuVisible] = useState(false);
@@ -97,14 +105,16 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
 
   const client = useApolloClient();
 
-  const displayLiked = item.likes?.some(l => l.user?.id === user?.id) || false;
-  const [localLiked, setLocalLiked] = useState(displayLiked);
-  const [localCount, setLocalCount] = useState(item.likes?.length || 0);
+  const displayLiked = item.likes?.some((l: any) => l.user?.id === user?.id) || false;
+  const displayCount = item.likes?.length || 0;
+  const [localLiked, setLocalLiked] = useState<boolean>(displayLiked);
+  const [localCount, setLocalCount] = useState<number>(displayCount);
 
+  // Igual que PostCard: sincronizar cuando Apollo actualiza el caché
   useEffect(() => {
-    setLocalLiked(item.likes?.some(l => l.user?.id === user?.id) || false);
-    setLocalCount(item.likes?.length || 0);
-  }, [item.likes, user?.id]);
+    setLocalLiked(displayLiked);
+    setLocalCount(displayCount);
+  }, [displayLiked, displayCount]);
 
   const displayIsSaved = propIsSaved ?? (item as any).isSaved;
 
@@ -112,24 +122,23 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
   const [getOrCreateChat, { loading: creatingChat }] = useMutation(GET_OR_CREATE_CHAT);
 
   const getFullCopyText = () => {
-    let text = `${item.title}\n\n`;
-    text += `Precio: $${parseFloat(String(item.price)).toFixed(2)} ${item.currency || 'USD'}\n`;
+    let text = `${item.title}\n\nPrecio: $${parseFloat(String(item.price)).toFixed(2)} ${item.currency || 'USD'}\n`;
     text += `Descripción: ${item.description}\n`;
     if (item.location) text += `Ubicación: ${item.location}\n`;
-    if (item.contactPhone) text += `Teléfono: ${item.contactPhone}\n`;
-    if (item.condition) text += `Estado: ${conditionLabel(item.condition)}\n`;
     return text;
   };
 
   const handleLikePress = () => {
     if (!user?.id) return;
-    const next = !localLiked;
-    setLocalLiked(next);
-    setLocalCount(c => next ? c + 1 : Math.max(0, c - 1));
 
+    const nextLiked = !localLiked;
+    setLocalLiked(nextLiked);
+    setLocalCount(c => nextLiked ? c + 1 : Math.max(0, c - 1));
+
+    // Construir optimisticLikes igual que PostCard
     let optimisticLikes = [...(item.likes || [])];
-    if (localLiked) {
-      optimisticLikes = optimisticLikes.filter(l => l.user?.id !== user.id);
+    if (displayLiked) {
+      optimisticLikes = optimisticLikes.filter((l: any) => l.user?.id !== user.id);
     } else {
       optimisticLikes.push({
         __typename: 'StoreProductLike',
@@ -137,6 +146,9 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
         user: {
           __typename: 'User',
           id: user.id,
+          firstName: user.firstName || '',
+          lastName: user.lastName || '',
+          photoUrl: user.photoUrl || null,
         }
       });
     }
@@ -152,388 +164,715 @@ export default function StoreProductCard({ item, cardWidth, hideSellerRow, onEdi
         }
       }
     }).catch(() => {
-      setLocalLiked(!next);
-      setLocalCount(c => !next ? c + 1 : Math.max(0, c - 1));
+      setLocalLiked(displayLiked);
+      setLocalCount(displayCount);
     });
   };
 
   const [deleteProduct, { loading: deleting }] = useMutation(DELETE_STORE_PRODUCT, {
-    refetchQueries: [
-      { query: GET_STORE_PRODUCTS, variables: { limit: 20, offset: 0 } },
-      { query: GET_MY_STORE_PRODUCTS },
-    ],
     onCompleted: () => {
       setConfirmDelete(false);
       Toast.show({ type: 'success', text1: 'Producto eliminado' });
-    },
-    onError: (err) => {
-      setConfirmDelete(false);
-      Toast.show({ type: 'error', text1: 'Error', text2: err.message });
-    },
+    }
   });
+
+  const [activeIndex, setActiveIndex] = useState(0);
+  const isVideo = item.media && item.media[0]?.type?.toLowerCase() === 'video';
+  const hasCounter = item.media && item.media.length > 1;
+  const topRowY = 12;
+  const expandTop = 100;
+  const muteTop = isModalView ? (expandTop + 44) : 56;
+  const conditionTop = isModalView 
+      ? (isVideo ? (muteTop + 44) : (expandTop + 44))
+      : (isVideo ? (muteTop + 44) : 56);
+
+  const dynamicSliderOffset = isModalView ? (hasCounter ? 58 : 32) : 0;
 
   return (
     <>
-      <TouchableOpacity
-        style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-        activeOpacity={onPress ? 0.7 : 1}
-        onPress={onPress}
+      {showTopDivider && (
+        <View style={[styles.fullWidthDivider, { marginTop: 0, marginBottom: 12 }]} />
+      )}
+
+      <TouchableOpacity 
+        style={[styles.card, { backgroundColor: colors.surface }]}
+        onPress={onPress} 
         onLongPress={() => setIsCopyModalVisible(true)}
         delayLongPress={250}
+        activeOpacity={0.9}
         onLayout={(e) => setInnerCardWidth(e.nativeEvent.layout.width)}
       >
-        {!hideSellerRow && (
-          <View style={styles.header}>
-            <View style={styles.storeBanner}>
-              <Ionicons name="storefront-outline" size={12} color={colors.primary} style={{ marginRight: 6 }} />
-              <Text style={styles.storeBannerText}>
-                {item.category ? item.category.toUpperCase() : 'TIENDA'}
-              </Text>
+        <View style={{ overflow: 'hidden' }}>
+            {/* ── Card Head (Estilo Oferta) ── */}
+            <View style={styles.cardHead}>
+              <View style={[styles.typeBadgeHead, { backgroundColor: '#2196F315' }]}>
+                <Ionicons name="cart" size={12} color="#2196F3" />
+                <Text style={[styles.typeBadgeTextHead, { color: '#2196F3' }]}>PUBLICACIÓN DE TIENDA</Text>
+              </View>
             </View>
 
-            <View style={styles.headerRow}>
-              <TouchableOpacity
-                style={styles.sellerRow}
-                activeOpacity={0.7}
-                onPress={() => router.push({ pathname: '/profile', params: { userId: item.seller?.id } })}
-              >
-                <View style={styles.avatarWrap}>
-                  {item.seller?.photoUrl ? (
-                    <Image source={{ uri: item.seller.photoUrl }} style={styles.avatarImg} />
-                  ) : (
-                    <Text style={styles.avatarInitials}>
-                      {item.seller?.firstName?.[0]}{item.seller?.lastName?.[0]}
-                    </Text>
-                  )}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.sellerName, { color: colors.text }]} numberOfLines={1}>
-                    {item.seller?.firstName} {item.seller?.lastName}
-                  </Text>
-                  <Text style={[styles.sellerDate, { color: colors.textSecondary }]}>
-                    {formatDate(item.createdAt)}
-                    {!!item.editedAt && " • Editado"}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={() => setMenuVisible(true)} style={styles.ellipsis} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        <View style={styles.body}>
-          <View style={styles.titleRow}>
-            <Text style={[styles.title, { color: colors.text, flex: 1 }]}>
-              {item.title}
-            </Text>
-          </View>
-
-          <View style={styles.locationRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              {item.location && (
-                <>
-                  <Ionicons name="location-outline" size={13} color={colors.primary} />
-                  <Text style={[styles.locationText, { color: colors.textSecondary, marginLeft: 4 }]} numberOfLines={1}>
-                    {item.location}
-                  </Text>
-                </>
-              )}
-            </View>
-            <View style={[styles.priceBadge, { backgroundColor: isDark ? 'rgba(76,175,80,0.15)' : 'rgba(76,175,80,0.1)' }]}>
-              <Text style={[styles.price, { color: '#4CAF50' }]}>
-                Precio: ${parseFloat(String(item.price)).toFixed(2)}
-              </Text>
-            </View>
-          </View>
-
-          {item.condition && (
-            <View style={[styles.conditionBadge, { backgroundColor: `${conditionColor(item.condition)}18` }]}>
-              <View style={[styles.conditionDot, { backgroundColor: conditionColor(item.condition) }]} />
-              <Text style={[styles.conditionText, { color: conditionColor(item.condition) }]}>
-                {conditionLabel(item.condition)}
-              </Text>
-            </View>
-          )}
-
-          {item.description.length > 150 && !isDescExpanded ? (
-            <Text style={[styles.description, { color: colors.textSecondary }]}>
-              {item.description.slice(0, 150)}
-              <Text style={{ color: colors.primary, fontWeight: 'bold' }} onPress={() => setIsDescExpanded(true)}> ...más</Text>
-            </Text>
-          ) : (
-            <Text style={[styles.description, { color: colors.textSecondary }]}>
-              {item.description}
-              {item.description.length > 150 && isDescExpanded && (
-                <Text style={{ color: colors.primary, fontWeight: 'bold' }} onPress={() => setIsDescExpanded(false)}> Ver menos.</Text>
-              )}
-            </Text>
-          )}
-        </View>
-
-        {item.media && item.media.length > 0 && (
-          <View style={{ width: '100%', backgroundColor: colors.surface }}>
-            <ImageCarousel media={item.media} containerWidth={cardWidth ?? innerCardWidth} customAspectRatio={1.1} onPress={onPress} disableFullscreen={!!onPress && !isModalView} />
-          </View>
-        )}
-
-        <View style={styles.contactRow}>
-          {item.contactPhone && (
-            <TouchableOpacity
-              style={[styles.contactBtn, styles.whatsappBtn]}
-              onPress={async () => {
-                const rawPhone = item.contactPhone!.replace(/\s+/g, '').replace(/[^+\d]/g, '');
-                const phone = rawPhone.startsWith('+') ? rawPhone.slice(1) : rawPhone;
-                const { Linking } = await import('react-native');
-                Linking.openURL(`https://wa.me/${phone}?text=Hola, vi tu publicación "${item.title}" y me interesa.`);
-              }}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
-              <Text style={[styles.contactBtnText, { color: '#25D366' }]}>WhatsApp</Text>
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity
-            style={[styles.contactBtn, styles.privateMessageBtn, { opacity: creatingChat ? 0.7 : 1 }]}
-            activeOpacity={0.8}
-            disabled={creatingChat}
-            onPress={async () => {
-              if (!item.seller?.id) return;
-              try {
-                const { data } = await getOrCreateChat({ variables: { targetUserId: item.seller.id } });
-                if (data?.getOrCreateOneOnOneChat?.id) {
-                  router.push({
-                    pathname: '/chatRoom',
-                    params: { conversationId: data.getOrCreateOneOnOneChat.id }
-                  });
-                }
-              } catch (err) {
-                Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir el chat con el vendedor.' });
-              }
-            }}
-          >
-            <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.primary} />
-            <Text style={[styles.contactBtnText, { color: colors.primary }]}>Mensaje Privado</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-        {!isModalView && (
-          <View style={styles.actionsRow}>
-            <TouchableOpacity style={styles.actionBtn} onPress={handleLikePress} activeOpacity={0.7}>
-              <Ionicons
-                name={localLiked ? 'heart' : 'heart-outline'}
-                size={21}
-                color={localLiked ? '#FF3B30' : colors.textSecondary}
-              />
-              {localCount > 0 && (
-                <Text style={[styles.actionCount, localLiked && { color: '#FF3B30' }]}>
-                  {localCount}
-                </Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtn} onPress={onCommentPress ?? onPress} activeOpacity={0.7}>
-              <Ionicons name="chatbubble-outline" size={19} color={colors.textSecondary} />
-              {(item.commentsCount ?? 0) > 0 && (
-                <Text style={styles.actionCount}>{item.commentsCount}</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-
-        <Modal visible={menuVisible} transparent animationType="slide" onRequestClose={() => setMenuVisible(false)} statusBarTranslucent>
-          <TouchableWithoutFeedback onPress={() => setMenuVisible(false)}>
-            <View style={styles.menuBackdrop}>
-              <TouchableWithoutFeedback>
-                <View style={[styles.menuBox, { backgroundColor: colors.surface, paddingBottom: insets.bottom + 20 }]}>
-                  <View style={[styles.menuHandle, { backgroundColor: isDark ? '#444' : '#DDD' }]} />
-                  <Text style={[styles.menuTitle, { color: colors.text }]}>Opciones</Text>
-
-                  {isOwner ? (
-                    <>
-                      {onEdit && (
-                        <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); onEdit(item); }}>
-                          <View style={[styles.menuIconWrap, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
-                            <Ionicons name="pencil" size={20} color={colors.text} />
-                          </View>
-                          <Text style={[styles.menuLabel, { color: colors.text }]}>Editar producto</Text>
-                        </TouchableOpacity>
+            <View style={styles.mediaContainer}>
+              {item.media && item.media.length > 0 ? (
+                <ImageCarousel 
+                  ref={carouselRef}
+                  media={item.media} 
+                  containerWidth={cardWidth ?? innerCardWidth} 
+                  customAspectRatio={0.8} 
+                  onPress={onPress} 
+                  disableFullscreen={!!onPress && !isModalView} 
+                  disablePressToFullscreen={isModalView}
+                  muteButtonStyle={{ top: muteTop, right: 12 }}
+                  onIndexChange={setActiveIndex}
+                  hidePagination={false}
+                  showBottomCounter={true}
+                  isInteractive={isModalView}
+                  sliderBottomOffset={dynamicSliderOffset}
+                  hideExpand={isModalView}
+                  isViewable={isViewable}
+                  overlay={
+                    <View style={styles.bottomActionStrip}>
+                      {/* 1. Integrated Counter (Replaces Dots) */}
+                      {item.media && item.media.length > 1 && (
+                        <View style={styles.integratedCounter}>
+                          <Text style={styles.integratedCounterText}>
+                            {activeIndex + 1} / {item.media.length}
+                          </Text>
+                        </View>
                       )}
 
-                      <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); setTimeout(() => setConfirmDelete(true), 150); }}>
-                        <View style={[styles.menuIconWrap, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
-                          <Ionicons name="trash" size={20} color="#FF3B30" />
-                        </View>
-                        <Text style={[styles.menuLabel, { color: '#FF3B30' }]}>Eliminar producto</Text>
+                      {/* 2. Contact Buttons */}
+                      <View style={styles.contactButtonsRow}>
+                        <TouchableOpacity 
+                          style={[styles.contactBtnTransparent, { borderColor: '#25D366' }]} 
+                          onPress={async () => {
+                            const rawPhone = item.contactPhone?.replace(/\s+/g, '').replace(/[^+\d]/g, '');
+                            if (rawPhone) {
+                              const { Linking } = await import('react-native');
+                              Linking.openURL(`https://wa.me/${rawPhone}?text=Hola, me interesa: ${item.title}`);
+                            }
+                          }}
+                        >
+                          <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+                          <Text style={[styles.contactBtnText, { color: '#25D366' }]}>WhatsApp</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity 
+                          style={[styles.contactBtnTransparent, { borderColor: '#2196F3' }]} 
+                          onPress={async () => {
+                            if (!item.seller?.id) return;
+                            const { data } = await getOrCreateChat({ variables: { targetUserId: item.seller.id } });
+                            if (data?.getOrCreateOneOnOneChat?.id) {
+                              router.push({ pathname: '/chatRoom', params: { conversationId: data.getOrCreateOneOnOneChat.id } });
+                            }
+                          }}
+                        >
+                          <Ionicons name="mail-outline" size={18} color="#2196F3" />
+                          <Text style={[styles.contactBtnText, { color: '#2196F3' }]}>Mensaje Privado</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  }
+                />
+              ) : (
+                <View style={[styles.noImage, { height: 450, backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5' }]}>
+                  <Ionicons name="image-outline" size={54} color={colors.textSecondary} style={{ opacity: 0.3 }} />
+                </View>
+              )}
+
+              {/* Botón de Expandir (Solo en Modal) */}
+              {isModalView && (
+                <TouchableOpacity 
+                  style={[styles.glassCirclePure, { position: 'absolute', top: expandTop, right: 12, zIndex: 30 }]}
+                  onPress={() => carouselRef.current?.openViewer?.()}
+                >
+                  <Ionicons name="expand" size={20} color="white" />
+                </TouchableOpacity>
+              )}
+
+              {/* Single Integrated Seller + Follow Overlay */}
+              {!hideSellerRow && (
+                <TouchableOpacity 
+                  style={styles.sellerOverlay}
+                  onPress={() => router.push({ pathname: '/profile', params: { userId: item.seller?.id } })}
+                >
+                  <View style={styles.avatarMiniOverlay}>
+                    {item.seller?.photoUrl ? (
+                      <Image source={{ uri: item.seller.photoUrl }} style={styles.avatarImg} />
+                    ) : (
+                      <Text style={{ color: '#FFF', fontSize: 10 }}>{item.seller?.firstName?.[0]}</Text>
+                    )}
+                  </View>
+                  <View style={styles.sellerTextColumn}>
+                    <Text style={styles.sellerNameOverlay} numberOfLines={1}>
+                      {item.seller?.firstName} {item.seller?.lastName}
+                    </Text>
+                    <Text style={styles.sellerNicknameOverlay} numberOfLines={1}>
+                      @{item.seller?.username}
+                    </Text>
+                  </View>
+
+                  {!isOwner && (
+                    <>
+                      <View style={styles.sellerDivider} />
+                      <TouchableOpacity style={styles.followBtnMini} onPress={() => {}}>
+                        <Text style={styles.followTextMini}>Seguir</Text>
                       </TouchableOpacity>
                     </>
-                  ) : (
-                    <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); setReportVisible(true); }}>
-                      <View style={[styles.menuIconWrap, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
-                        <Ionicons name="flag" size={20} color={colors.text} />
-                      </View>
-                      <Text style={[styles.menuLabel, { color: colors.text }]}>Reportar producto</Text>
-                    </TouchableOpacity>
                   )}
+                </TouchableOpacity>
+              )}
+              
+              {/* Condition Badge - TOP RIGHT (Dynamic position) */}
+              {item.condition && (
+                <View style={[styles.conditionOverlayTop, { backgroundColor: conditionColor(item.condition), top: conditionTop }]}>
+                  <Text style={styles.conditionTextPremium}>{conditionLabel(item.condition).toUpperCase()}</Text>
+                </View>
+              )}
 
-                  <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={() => { setMenuVisible(false); onToggleSave?.(item); }}>
-                    <View style={[styles.menuIconWrap, { backgroundColor: isDark ? '#333' : '#F0F0F0' }]}>
-                      <Ionicons name={displayIsSaved ? "bookmark" : "bookmark-outline"} size={20} color={displayIsSaved ? colors.primary : colors.text} />
-                    </View>
-                    <Text style={[styles.menuLabel, { color: displayIsSaved ? colors.primary : colors.text }]}>
-                      {displayIsSaved ? 'Quitar de guardados' : 'Guardar producto'}
-                    </Text>
-                  </TouchableOpacity>
 
-                  <TouchableOpacity style={[styles.menuItem, { marginTop: 10, borderBottomWidth: 0 }]} onPress={() => setMenuVisible(false)}>
-                    <View style={[styles.menuIconWrap, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>
-                      <Ionicons name="close" size={20} color={colors.textSecondary} />
-                    </View>
-                    <Text style={[styles.menuLabel, { color: colors.textSecondary }]}>Cancelar</Text>
+              {/* Top Right Actions (Menu only) - Hidden in modal to avoid overlap */}
+              {!isModalView && (
+                <View style={styles.topRightActions}>
+                  <TouchableOpacity 
+                    style={styles.glassCircleHeader} 
+                    onPress={() => setMenuVisible(true)}
+                  >
+                    <Ionicons name="ellipsis-horizontal" size={20} color="#FFF" />
                   </TouchableOpacity>
                 </View>
-              </TouchableWithoutFeedback>
-            </View>
-          </TouchableWithoutFeedback>
-        </Modal>
+              )}
 
-        <Modal visible={confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(false)} statusBarTranslucent>
-          <View style={styles.confirmBackdrop}>
-            <View style={[styles.confirmBox, { backgroundColor: colors.surface }]}>
-              <View style={styles.confirmIcon}>
-                <Ionicons name="trash" size={32} color="#F44336" />
-              </View>
-              <Text style={[styles.confirmTitle, { color: colors.text }]}>¿Eliminar publicación?</Text>
-              <Text style={[styles.confirmMsg, { color: colors.textSecondary }]}>
-                Esta acción no se puede deshacer. El producto dejará de aparecer en la tienda.
+            </View>
+
+        {/* 1.5 INSTAGRAM STYLE ACTIONS (Under image) */}
+        <View style={styles.instagramActionsRow}>
+            <TouchableOpacity style={styles.instaBtn} onPress={handleLikePress}>
+              <Feather 
+                name="heart" 
+                size={22} 
+                color={localLiked ? "#FF3B30" : colors.text} 
+              />
+              {localCount > 0 && (
+                <Text style={[styles.instaCount, { color: colors.text }]}>{localCount}</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.instaBtn} onPress={onCommentPress ?? onPress}>
+              <Feather name="message-circle" size={22} color={colors.text} />
+              {(item.commentsCount ?? 0) > 0 && (
+                <Text style={[styles.instaCount, { color: colors.text }]}>{item.commentsCount}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+        {/* 2. BODY CONTENT (Pro Grid Style) */}
+        <View style={styles.contentPaddingPro}>
+          <View style={styles.proHeaderGrid}>
+            <View style={styles.proTitleCol}>
+              <Text style={[styles.proTitle, { color: colors.text }]} numberOfLines={2}>
+                {item.title}
               </Text>
-              <View style={styles.confirmBtns}>
-                <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: colors.border }]} onPress={() => setConfirmDelete(false)} disabled={deleting}>
-                  <Text style={[styles.confirmBtnText, { color: colors.text }]}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: '#F44336' }]} onPress={() => deleteProduct({ variables: { id: item.id } })} disabled={deleting}>
-                  <Text style={[styles.confirmBtnText, { color: '#FFF' }]}>Eliminar</Text>
-                </TouchableOpacity>
-              </View>
+              {item.location && (
+                <View style={styles.proLocationRow}>
+                  <Ionicons name="location-sharp" size={12} color={colors.textSecondary} />
+                  <Text style={[styles.proLocation, { color: colors.textSecondary }]}>
+                    {item.location}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.proInfoCol}>
+              <Text style={styles.proPriceGreen}>
+                ${parseFloat(String(item.price)).toLocaleString()}
+              </Text>
             </View>
           </View>
-        </Modal>
+
+          <Text 
+            style={[styles.proDescription, { color: colors.textSecondary }]} 
+            numberOfLines={isDescExpanded ? undefined : 3}
+          >
+            {item.description}
+          </Text>
+
+          {item.description.length > 100 && (
+            <TouchableOpacity onPress={() => setIsDescExpanded(!isDescExpanded)} style={{ marginTop: 8 }}>
+              <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 13 }}>
+                {isDescExpanded ? 'Ver menos' : 'Leer más...'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <Text style={[styles.dateTextPro, { color: colors.textSecondary }]}>
+            {formatDate(item.createdAt)}
+          </Text>
+        </View>
+
+        </View>
       </TouchableOpacity>
 
-      <ReportModal
-        visible={reportVisible}
-        onClose={() => setReportVisible(false)}
-        reportedItemId={item.id}
-        reportedItemType="PRODUCT"
-        onContentDeleted={() => {
-          client.cache.evict({ id: client.cache.identify({ __typename: 'StoreProduct', id: item.id }) });
-          client.cache.gc();
-          setReportVisible(false);
-        }}
-      />
-      <CopyTextModal
-        visible={isCopyModalVisible}
-        textToCopy={getFullCopyText()}
-        onClose={() => setIsCopyModalVisible(false)}
-      />
+
+      {/* MODALS */}
+      <Modal visible={menuVisible} transparent animationType="slide" onRequestClose={() => setMenuVisible(false)} statusBarTranslucent>
+        <TouchableWithoutFeedback onPress={() => setMenuVisible(false)}>
+          <View style={styles.menuBackdrop}>
+            <TouchableWithoutFeedback>
+              <View style={[styles.menuBox, { backgroundColor: colors.surface, paddingBottom: insets.bottom + 20 }]}>
+                <View style={[styles.menuHandle, { backgroundColor: isDark ? '#444' : '#DDD' }]} />
+                <Text style={[styles.menuTitle, { color: colors.text }]}>Opciones</Text>
+                
+                <TouchableOpacity 
+                  style={styles.menuItem} 
+                  onPress={() => {
+                    setMenuVisible(false);
+                    onToggleSave?.(item);
+                  }}
+                >
+                  <Ionicons 
+                    name={displayIsSaved ? "bookmark" : "bookmark-outline"} 
+                    size={20} 
+                    color={displayIsSaved ? colors.primary : colors.text} 
+                    style={styles.menuIcon} 
+                  />
+                  <Text style={[styles.menuLabel, { color: colors.text }]}>
+                    {displayIsSaved ? 'Quitar de guardados' : 'Guardar producto'}
+                  </Text>
+                </TouchableOpacity>
+
+                {isOwner ? (
+                  <>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); onEdit?.(item); }}>
+                      <Ionicons name="pencil" size={20} color={colors.text} style={styles.menuIcon} />
+                      <Text style={[styles.menuLabel, { color: colors.text }]}>Editar producto</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); setConfirmDelete(true); }}>
+                      <Ionicons name="trash" size={20} color="#FF3B30" style={styles.menuIcon} />
+                      <Text style={[styles.menuLabel, { color: '#FF3B30' }]}>Eliminar producto</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); setReportVisible(true); }}>
+                    <Ionicons name="flag" size={20} color={colors.text} style={styles.menuIcon} />
+                    <Text style={[styles.menuLabel, { color: colors.text }]}>Reportar producto</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      <Modal visible={confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(false)}>
+        <View style={styles.confirmBackdrop}>
+          <View style={[styles.confirmBox, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.confirmTitle, { color: colors.text }]}>¿Eliminar producto?</Text>
+            <View style={styles.confirmBtns}>
+              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: colors.border }]} onPress={() => setConfirmDelete(false)}>
+                <Text style={{ color: colors.text }}>No</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: '#FF3B30' }]} onPress={() => deleteProduct({ variables: { id: item.id } })}>
+                <Text style={{ color: '#FFF' }}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <ReportModal visible={reportVisible} onClose={() => setReportVisible(false)} reportedItemId={item.id} reportedItemType="PRODUCT" onContentDeleted={() => setReportVisible(false)} />
+      <CopyTextModal visible={isCopyModalVisible} textToCopy={getFullCopyText()} onClose={() => setIsCopyModalVisible(false)} />
     </>
   );
-}
+});
+
+export default StoreProductCard;
 
 const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   card: {
-    // borderBottomWidth: StyleSheet.hairlineWidth, // Removed as per remodeling request
-    borderRadius: 12,
+    marginVertical: 0,
+    borderRadius: 20,
     overflow: 'hidden',
-    marginHorizontal: 8,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    marginBottom: 0, 
   },
-  header: {
+  mediaContainer: {
+    width: '100%',
+    position: 'relative',
+    backgroundColor: '#000',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    overflow: 'hidden',
+  },
+  noImage: {
+    height: 300,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sellerOverlay: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    gap: 6,
+    zIndex: 20,
+  },
+  sellerDivider: {
+    width: 1,
+    height: 18,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    marginHorizontal: 4,
+  },
+  followBtnMini: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  followTextMini: {
+    color: '#2196F3',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  avatarMiniOverlay: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  avatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  sellerTextColumn: {
+    flexDirection: 'column',
+    justifyContent: 'center',
+    marginLeft: 4,
+  },
+  sellerNameOverlay: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 15,
+  },
+  sellerNicknameOverlay: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  conditionOverlayTop: {
+    position: 'absolute',
+    top: 144, // 12 + 38 + 6 + 38 + 6 + 38 + 6
+    right: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    zIndex: 10,
+    alignSelf: 'flex-end',
+  },
+  // ── Head Badge Style ──
+  cardHead: {
     paddingHorizontal: 16,
     paddingTop: 12,
+    paddingBottom: 14,
   },
-  headerRow: {
+  typeBadgeHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
-  },
-  storeBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: isDark ? 'rgba(173, 110, 27, 0.12)' : 'rgba(0,179,65,0.08)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginBottom: 10,
     alignSelf: 'flex-start',
-    borderLeftWidth: 4,
-    borderLeftColor: colors.primary,
-    borderTopRightRadius: 8,
-    borderBottomRightRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 6,
   },
-  storeBannerText: { color: colors.primary, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-  sellerRow: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  avatarWrap: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center', marginRight: 10,
-    overflow: 'hidden',
+  typeBadgeTextHead: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
-  avatarImg: { width: 38, height: 38, borderRadius: 19 },
-  avatarInitials: { color: colors.textSecondary, fontWeight: '700', fontSize: 14 },
-  sellerName: { fontWeight: '700', fontSize: 14 },
-  sellerDate: { fontSize: 12, marginTop: 1 },
-  ellipsis: { padding: 4 },
-  body: { paddingHorizontal: 14, paddingTop: 6, paddingBottom: 8 },
-  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginBottom: 0 },
-  title: { fontSize: 17, fontWeight: '800', lineHeight: 22 },
-  priceBadge: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6, alignItems: 'center', justifyContent: 'center', minWidth: 72 },
-  price: { fontSize: 16, fontWeight: '900' },
-  conditionBadge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, marginBottom: 8, gap: 5 },
-  conditionDot: { width: 7, height: 7, borderRadius: 4 },
-  conditionText: { fontSize: 12, fontWeight: '700' },
-  description: { fontSize: 14, lineHeight: 20, marginBottom: 8 },
-  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
-  locationText: { fontSize: 13 },
-  contactRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 8, paddingBottom: 4, paddingTop: 2 },
-  contactBtn: {
+  contentPaddingIndustrial: {
+    padding: 16,
+  },
+  industrialTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    marginBottom: 12,
+  },
+  industrialDivider: {
+    width: '100%',
+    height: 1,
+    marginVertical: 12,
+  },
+  contentPaddingPro: {
+    padding: 16,
+    paddingTop: 12,
+  },
+  proHeaderGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 16,
+    marginBottom: 14,
+  },
+  proTitleCol: {
+    flex: 1,
+  },
+  proTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    lineHeight: 22,
+  },
+  proInfoCol: {
+    alignItems: 'flex-end',
+  },
+  proPriceGreen: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#27ae60',
+    marginBottom: 2,
+  },
+  proLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  proLocation: {
+    fontSize: 12,
+    fontWeight: '600',
+    opacity: 0.7,
+  },
+  proDescription: {
+    fontSize: 14.5,
+    lineHeight: 21,
+  },
+  dateTextPro: {
+    fontSize: 11,
+    marginTop: 12,
+    opacity: 0.7,
+    textAlign: 'left',
+  },
+  fullWidthDivider: {
+    height: 0.6,
+    backgroundColor: '#BDBDBD',
+    marginTop: 0, 
+    marginBottom: 2, 
+    width: '120%', 
+    marginLeft: -40, 
+    opacity: 0.35,
+    zIndex: 10,
+    elevation: 5,
+  },
+  conditionTextPremium: {
+    color: '#FFF',
+    fontWeight: '800',
+    fontSize: 10,
+    letterSpacing: 0.5,
+  },
+  glassEllipsis: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  contentPadding: {
+    padding: 16,
+    paddingBottom: 4,
+  },
+  titleLocationRow: {
+    marginBottom: 6,
+  },
+  descriptionPremium: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '400',
+  },
+  interactionPill: {
+    position: 'absolute',
+    bottom: 70, // Just above the bottom action strip (approx 60-64 height)
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 10,
+    zIndex: 20,
+  },
+  pillAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  pillActionText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pillDivider: {
+    width: 1,
+    height: 14,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  actionIcons: {
+    flexDirection: 'row',
+    gap: 16,
+    alignItems: 'center',
+  },
+  iconBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  iconCount: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  bottomActionStrip: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingTop: 10,
+    paddingBottom: 14,
+    alignItems: 'center',
+    zIndex: 15,
+  },
+  integratedCounter: {
+    marginBottom: 8,
+    backgroundColor: 'transparent',
+  },
+  integratedCounterText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  instagramActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 2,
+    gap: 18,
+  },
+  followBadgeOverlay: {
+    position: 'absolute',
+    bottom: 52, // Just above the contact bar
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+    zIndex: 20,
+  },
+  followBadgeText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  instaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  instaCount: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  dateText: {
+    fontSize: 12,
+    marginTop: 16,
+    opacity: 0.4,
+  },
+  titlePriceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 8,
+  },
+  topRightActions: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 25,
+  },
+  glassCircleHeader: {
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    paddingHorizontal: 8,
+    minWidth: 36,
+    gap: 4,
+  },
+  glassCirclePure: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerCount: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  contactButtonsRow: {
+    flexDirection: 'row',
+    width: '100%',
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  contactBtnTransparent: {
     flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 6,
+    alignItems: 'center',
+    height: 36,
     borderRadius: 12,
-    backgroundColor: '#000000ff',
-    borderWidth: 1,
+    borderWidth: 1.5,
+    gap: 8,
   },
-  whatsappBtn: {
-    borderColor: '#25D366',
+  contactBtnText: {
+    fontWeight: '800',
+    fontSize: 13,
   },
-  privateMessageBtn: {
-    borderColor: colors.primary,
-  },
-  contactBtnText: { fontWeight: '800', fontSize: 13 },
-  // Menu
+  // Modals Styles
   menuBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  menuBox: { borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 12, elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 10 },
-  menuHandle: { width: 40, height: 5, borderRadius: 3, alignSelf: 'center', marginBottom: 16 },
-  menuTitle: { fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 16 },
-  menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1 },
-  menuIconWrap: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  menuLabel: { fontSize: 16, fontWeight: '500' },
-  // Confirm
-  confirmBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  confirmBox: { width: '100%', maxWidth: 340, borderRadius: 16, padding: 24, alignItems: 'center' },
-  confirmIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(244,67,54,0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
-  confirmTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
-  confirmMsg: { fontSize: 15, lineHeight: 22, textAlign: 'center', marginBottom: 24 },
-  confirmBtns: { flexDirection: 'row', gap: 12, width: '100%' },
-  confirmBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  confirmBtnText: { fontSize: 16, fontWeight: '600' },
-  divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 14, marginBottom: 2, marginTop: 4 },
-  actionsRow: { flexDirection: 'row', paddingHorizontal: 6, paddingVertical: 2 },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8 },
-  actionCount: { fontSize: 13, fontWeight: '500', marginLeft: 5, color: '#888' },
+  menuBox: { borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 24, paddingTop: 12 },
+  menuHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  menuTitle: { fontSize: 18, fontWeight: '900', textAlign: 'center', marginBottom: 20 },
+  menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16 },
+  menuIcon: { marginRight: 16 },
+  menuLabel: { fontSize: 16, fontWeight: '600' },
+  confirmBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
+  confirmBox: { width: '80%', padding: 24, borderRadius: 24, alignItems: 'center' },
+  confirmTitle: { fontSize: 18, fontWeight: '800', marginBottom: 20 },
+  confirmBtns: { flexDirection: 'row', gap: 12 },
+  confirmBtn: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 16 },
 });

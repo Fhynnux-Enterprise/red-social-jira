@@ -31,9 +31,17 @@ interface ProfessionalCardProps {
     isModalView?: boolean;
     onToggleSave?: (item: any) => void;
     isSaved?: boolean;
+    isFocused?: boolean;
+    isViewable?: boolean;
+    isOverlayActive?: boolean;
+    showTopDivider?: boolean;
 }
 
-export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit, isModalView, onToggleSave, isSaved: propIsSaved }: ProfessionalCardProps) {
+export default function ProfessionalCard({ 
+    item, onPress, hideAuthorRow, onEdit, isModalView, 
+    onToggleSave, isSaved: propIsSaved, showTopDivider,
+    isFocused = true, isViewable = true, isOverlayActive = false 
+}: ProfessionalCardProps) {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
     const router = useRouter();
@@ -48,6 +56,7 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
     const [reportVisible, setReportVisible] = useState(false);
     const [isDescExpanded, setIsDescExpanded] = useState(false);
     const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
+    const [activeIndex, setActiveIndex] = useState(0);
 
     const isModeratorOrAdmin = authContext?.user?.role === 'ADMIN' || authContext?.user?.role === 'MODERATOR';
     const client = useApolloClient();
@@ -163,75 +172,163 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
         }
     };
 
+    const hasMedia = item.media && item.media.length > 0;
+
     return (
         <>
+            {showTopDivider && (
+                <View style={[styles.fullWidthDivider, { marginTop: 0, marginBottom: 12 }]} />
+            )}
             <TouchableOpacity
-                style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                style={hasMedia ? styles.cardWithMedia : styles.cardWithoutMedia}
                 onPress={onPress}
                 onLongPress={() => setIsCopyModalVisible(true)}
                 delayLongPress={250}
-                activeOpacity={0.7}
+                activeOpacity={1}
             >
-                {!hideAuthorRow && (
-                    <View style={[styles.postHeader, { borderBottomColor: colors.border, flexDirection: 'column', alignItems: 'flex-start' }]}>
-                        {/* Badge de tipo arriba */}
-                        <View style={[styles.typeBadge, { marginBottom: 10 }]}>
-                            <Ionicons name="person-circle-outline" size={12} color={colors.primary} style={{ marginRight: 6 }} />
-                            <Text style={styles.typeBadgeText}>SERVICIO PROFESIONAL</Text>
-                        </View>
+                {/* ── Card Head (Estilo Oferta) ── */}
+                <View style={styles.cardHead}>
+                    <View style={[styles.typeBadgeHead, { backgroundColor: '#2196F315' }]}>
+                        <Ionicons name="ribbon" size={12} color="#2196F3" />
+                        <Text style={[styles.typeBadgeTextHead, { color: '#2196F3' }]}>PERFIL PROFESIONAL</Text>
+                    </View>
+                </View>
 
-                        <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}>
+                {/* ── Media con Overlay de Autor (Modern Style) ── */}
+                {hasMedia ? (
+                    <View style={styles.mediaWrapper}>
+                        <ImageCarousel
+                            media={item.media}
+                            containerWidth={cardWidth}
+                            customAspectRatio={1}
+                            disableFullscreen={!!onPress && !isModalView}
+                            onPress={onPress}
+                            isFocused={isFocused}
+                            isViewable={isViewable}
+                            isOverlayActive={isOverlayActive}
+                            onIndexChange={setActiveIndex}
+                            hidePagination={true}
+                            overlay={
+                                <View style={styles.bottomActionStrip}>
+                                    {/* Contador integrado */}
+                                    {item.media && item.media.length > 1 && (
+                                        <View style={styles.integratedCounter}>
+                                            <Text style={styles.integratedCounterText}>
+                                                {activeIndex + 1} / {item.media.length}
+                                            </Text>
+                                        </View>
+                                    )}
+
+                                    {/* Botones de contacto sobre la imagen */}
+                                    <View style={styles.contactButtonsRow}>
+                                        {/* WhatsApp */}
+                                        {!!item.contactPhone && (
+                                            <TouchableOpacity
+                                                style={[styles.contactBtnTransparent, styles.whatsappBtnTransparent]}
+                                                onPress={handleWhatsApp}
+                                                activeOpacity={0.8}
+                                            >
+                                                <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
+                                                <Text style={[styles.contactBtnTextOverlay, { color: '#25D366' }]}>WhatsApp</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                        {/* Chat */}
+                                        <TouchableOpacity
+                                            style={[styles.contactBtnTransparent, styles.privateMessageBtnTransparent]}
+                                            onPress={handlePrivateMessage}
+                                            activeOpacity={0.8}
+                                        >
+                                            <Ionicons name="chatbubble-ellipses" size={16} color="#2196F3" />
+                                            <Text style={[styles.contactBtnTextOverlay, { color: '#2196F3' }]}>Mensaje Privado</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            }
+                        />
+
+                        {!hideAuthorRow && (
                             <TouchableOpacity
-                                style={styles.postAuthorRow}
+                                style={styles.authorOverlay}
                                 onPress={goToProfile}
-                                activeOpacity={0.7}
+                                activeOpacity={0.85}
                             >
-                                <View style={styles.postAvatarWrap}>
+                                <View style={styles.avatarMini}>
                                     {item.user?.photoUrl ? (
                                         <Image source={{ uri: item.user.photoUrl }} style={styles.postAvatarImg} />
                                     ) : (
-                                        <Text style={styles.postAvatarInitials}>
+                                        <Text style={styles.avatarMiniInitials}>
                                             {item.user?.firstName?.charAt(0) || ''}{item.user?.lastName?.charAt(0) || ''}
                                         </Text>
                                     )}
                                 </View>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={[styles.postAuthorName, { color: colors.text }]} numberOfLines={1}>
+                                <View style={styles.overlayTextCol}>
+                                    <Text style={styles.overlayAuthorName} numberOfLines={1}>
                                         {`${item.user?.firstName ?? ''} ${item.user?.lastName ?? ''}`.trim() || 'Usuario'}
                                     </Text>
-                                    <Text style={[styles.postDate, { color: colors.textSecondary }]}>
-                                        {formatDate(item.createdAt)}
-                                        {!!item.editedAt && " • Editado"}
+                                    {item.user?.username && (
+                                        <Text style={styles.overlayNickname} numberOfLines={1}>
+                                            @{item.user.username}
+                                        </Text>
+                                    )}
+                                </View>
+                            </TouchableOpacity>
+                        )}
+
+                        {/* Botón ⋯ esquina superior derecha */}
+                        <TouchableOpacity
+                            onPress={() => setMenuVisible(true)}
+                            style={styles.overlayOptionsBtn}
+                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                        >
+                            <Ionicons name="ellipsis-horizontal" size={20} color="#FFF" />
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    /* Header clásico para cuando NO hay media */
+                    !hideAuthorRow && (
+                        <View style={styles.header}>
+                            <TouchableOpacity style={styles.authorRow} onPress={goToProfile} activeOpacity={0.75}>
+                                <View style={styles.avatarWrap}>
+                                    {item.user?.photoUrl ? (
+                                        <Image source={{ uri: item.user.photoUrl }} style={styles.postAvatarImg} />
+                                    ) : (
+                                        <Text style={styles.avatarInitials}>
+                                            {item.user?.firstName?.[0] || ''}{item.user?.lastName?.[0] || ''}
+                                        </Text>
+                                    )}
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.authorName} numberOfLines={1}>
+                                        {`${item.user?.firstName ?? ''} ${item.user?.lastName ?? ''}`.trim() || 'Usuario'}
                                     </Text>
+                                    {item.user?.username && (
+                                        <Text style={styles.nicknameText}>@{item.user.username}</Text>
+                                    )}
                                 </View>
                             </TouchableOpacity>
 
-                            {/* Ellipsis siempre visible */}
-                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <TouchableOpacity
-                                    onPress={() => setMenuVisible(true)}
-                                    style={styles.postEllipsis}
-                                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                                >
-                                    <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-                                </TouchableOpacity>
-                            </View>
+                            <TouchableOpacity
+                                onPress={() => setMenuVisible(true)}
+                                style={styles.moreBtn}
+                                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                            >
+                                <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                            </TouchableOpacity>
                         </View>
-                    </View>
+                    )
                 )}
 
-                <View 
-                    style={styles.body}
-                >
-                    <Text style={[styles.profession, { color: colors.text }]} numberOfLines={hideAuthorRow ? 2 : 1}>
+                {/* ── Contenido ── */}
+                <View style={styles.body}>
+                    <Text style={[styles.profession, { color: colors.text }]} numberOfLines={2}>
                         {item.profession || ''}
                     </Text>
 
-                    {/* Badge de experiencia debajo del título */}
+                    {/* Badge de experiencia */}
                     {!!item.experienceYears && (
-                        <View style={styles.experienceInBodyRow}>
-                            <Ionicons name="ribbon-outline" size={13} color={colors.primary} />
-                            <Text style={[styles.experienceInBodyText, { color: colors.primary }]}>
+                        <View style={styles.experienceRow}>
+                            <Ionicons name="ribbon" size={14} color={colors.primary} />
+                            <Text style={[styles.experienceTextInBody, { color: colors.primary }]}>
                                 {item.experienceYears} año{item.experienceYears !== 1 ? 's' : ''} de experiencia
                             </Text>
                         </View>
@@ -240,53 +337,23 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
                     {item.description && item.description.length > 150 && !isDescExpanded ? (
                         <Text style={[styles.description, { color: colors.textSecondary }]}>
                             {item.description.slice(0, 150)}
-                            <Text style={{ color: colors.primary, fontWeight: 'bold' }} onPress={() => setIsDescExpanded(true)}> ...más</Text>
+                            <Text style={{ color: colors.primary, fontWeight: '700' }} onPress={() => setIsDescExpanded(true)}> ...más</Text>
                         </Text>
                     ) : (
                         <Text style={[styles.description, { color: colors.textSecondary }]}>
                             {item.description || ''}
                             {item.description && item.description.length > 150 && isDescExpanded && (
-                                <Text style={{ color: colors.primary, fontWeight: 'bold' }} onPress={() => setIsDescExpanded(false)}> Ver menos.</Text>
+                                <Text style={{ color: colors.primary, fontWeight: '700' }} onPress={() => setIsDescExpanded(false)}> Ver menos.</Text>
                             )}
                         </Text>
                     )}
                 </View>
 
-                {!!(item.media && item.media.length > 0) && (
-                    <View style={{ width: '100%', backgroundColor: colors.surface }}>
-                        <ImageCarousel
-                            media={item.media}
-                            containerWidth={cardWidth}
-                            customAspectRatio={1}
-                            disableFullscreen={!!onPress && !isModalView}
-                            onPress={onPress}
-                        />
-                    </View>
-                )}
-
-                {/* ── Botones de contacto ── */}
-                <View style={styles.contactRow}>
-                    {/* WhatsApp — solo si hay teléfono */}
-                    {!!item.contactPhone && (
-                        <TouchableOpacity
-                            style={[styles.contactBtn, styles.whatsappBtn]}
-                            onPress={handleWhatsApp}
-                            activeOpacity={0.8}
-                        >
-                            <Ionicons name="logo-whatsapp" size={15} color="#25D366" />
-                            <Text style={[styles.contactBtnText, { color: '#25D366' }]}>WhatsApp</Text>
-                        </TouchableOpacity>
-                    )}
-                    {/* Mensaje Privado */}
-                    <TouchableOpacity
-                        style={[styles.contactBtn, styles.privateMessageBtn]}
-                        onPress={handlePrivateMessage}
-                        activeOpacity={0.8}
-                    >
-                        <Ionicons name="chatbubble-ellipses-outline" size={15} color={colors.primary} />
-                        <Text style={[styles.contactBtnText, { color: colors.primary }]}>Mensaje Privado</Text>
-                    </TouchableOpacity>
-                </View>
+                {/* Fecha al final (fuera de la descripción para mejor lectura) */}
+                <Text style={styles.dateTextBottom}>
+                    {formatDate(item.createdAt)}
+                    {!!item.editedAt && " • Editado"}
+                </Text>
 
             </TouchableOpacity>
 
@@ -403,178 +470,330 @@ export default function ProfessionalCard({ item, onPress, hideAuthorRow, onEdit,
 }
 
 const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
-    card: {
-        borderBottomWidth: StyleSheet.hairlineWidth,
+    cardWithMedia: {
+        backgroundColor: colors.surface,
+        marginVertical: 6,
+        borderRadius: 20,
         overflow: 'hidden',
-        backgroundColor: 'transparent',
-        marginVertical: 8,
-        borderRadius: 16,
-        marginHorizontal: 4,
+        paddingBottom: 4,
+        ...Platform.select({
+            ios: {
+                shadowColor: isDark ? '#000' : '#00000022',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: isDark ? 0.4 : 0.08,
+                shadowRadius: 8,
+            },
+            android: {
+                elevation: isDark ? 6 : 3,
+            },
+        }),
     },
-    divider: {
-        height: StyleSheet.hairlineWidth,
-        marginHorizontal: 14,
-        marginBottom: 2,
-        marginTop: 4,
+    cardWithoutMedia: {
+        backgroundColor: colors.surface,
+        marginVertical: 6,
+        borderRadius: 20,
+        overflow: 'hidden',
+        paddingBottom: 4,
+        ...Platform.select({
+            ios: {
+                shadowColor: isDark ? '#000' : '#00000022',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: isDark ? 0.4 : 0.08,
+                shadowRadius: 8,
+            },
+            android: {
+                elevation: isDark ? 6 : 3,
+            },
+        }),
     },
-    actionsRow: {
-        flexDirection: 'row',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-    },
-    actionBtn: {
+    // ── Header (solo sin media) ──
+    header: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 8,
-        borderRadius: 8,
-    },
-    postHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
         paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderBottomWidth: StyleSheet.hairlineWidth,
+        paddingBottom: 12,
     },
-    postAuthorRow: {
+    authorRow: {
         flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
     },
-    postAvatarWrap: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
+    avatarWrap: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 10,
+        marginRight: 12,
         overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: colors.border,
     },
-    postAvatarImg: { width: '100%', height: '100%' },
-    postAvatarInitials: {
-        color: colors.textSecondary,
-        fontSize: 14,
+    authorName: {
+        fontSize: 15,
         fontWeight: '700',
+        color: colors.text,
     },
-    postAuthorName: {
-        fontSize: 14,
-        fontWeight: '700',
-    },
-    postDate: {
+    nicknameText: {
         fontSize: 12,
-        marginTop: 1,
+        color: colors.textSecondary,
+        opacity: 0.7,
     },
-    typeBadge: {
+    moreBtn: {
+        padding: 4,
+    },
+    fullWidthDivider: {
+        height: 0.6,
+        backgroundColor: '#BDBDBD',
+        marginTop: 0, 
+        marginBottom: 2, 
+        width: '120%', 
+        marginLeft: -40, 
+        opacity: 0.35,
+        zIndex: 10,
+        elevation: 5,
+    },
+    // ── Head Badge Style ──
+    cardHead: {
+        paddingHorizontal: 16,
+        paddingTop: 12,
+        paddingBottom: 14,
+    },
+    typeBadgeHead: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: isDark ? 'rgba(0,179,65,0.12)' : 'rgba(0,179,65,0.08)',
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        marginBottom: 8,
         alignSelf: 'flex-start',
-        borderLeftWidth: 4,
-        borderLeftColor: colors.primary,
-        borderTopRightRadius: 8,
-        borderBottomRightRadius: 8,
-    },
-    typeBadgeText: {
-        color: colors.primary,
-        fontSize: 10,
-        fontWeight: '800',
-        letterSpacing: 1,
-    },
-    experienceBadge: {
-        paddingHorizontal: 8,
+        paddingHorizontal: 10,
         paddingVertical: 4,
-        borderRadius: 8,
-        marginLeft: 8,
+        borderRadius: 6,
+        gap: 6,
     },
-    experienceText: {
+    typeBadgeTextHead: {
+        fontSize: 10,
+        fontWeight: '900',
+        letterSpacing: 0.5,
+    },
+    postAvatarImg: {
+        width: '100%',
+        height: '100%',
+    },
+    avatarInitials: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: colors.text,
+    },
+    // ── Media Wrapper & Overlays ──
+    mediaWrapper: {
+        width: '100%',
+        position: 'relative',
+        backgroundColor: '#000',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        overflow: 'hidden',
+    },
+    authorOverlay: {
+        position: 'absolute',
+        top: 12,
+        left: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        paddingVertical: 5,
+        paddingHorizontal: 10,
+        borderRadius: 20,
+        zIndex: 20,
+    },
+    overlayTextCol: {
+        flexDirection: 'column',
+        justifyContent: 'center',
+        marginLeft: 2,
+    },
+    avatarMini: {
+        width: 34,
+        height: 34,
+        borderRadius: 17,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+    },
+    avatarMiniInitials: {
         color: '#FFF',
         fontSize: 11,
         fontWeight: '700',
     },
-    postEllipsis: {
-        paddingLeft: 12,
+    overlayAuthorName: {
+        color: '#FFF',
+        fontSize: 13,
+        fontWeight: '800',
+        lineHeight: 15,
     },
+    overlayNickname: {
+        color: 'rgba(255,255,255,0.7)',
+        fontSize: 10,
+        fontWeight: '600',
+    },
+    overlayOptionsBtn: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 25,
+    },
+    overlayTypeBadge: {
+        position: 'absolute',
+        top: 56,
+        right: 12,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        zIndex: 20,
+    },
+    overlayTypeBadgeText: {
+        color: '#FFF',
+        fontSize: 9,
+        fontWeight: '900',
+        letterSpacing: 0.5,
+    },
+    // ── Body ──
     body: {
-        paddingTop: 6,
-        paddingBottom: 12,
         paddingHorizontal: 16,
+        paddingTop: 14,
+        paddingBottom: 8,
     },
     profession: {
-        fontSize: 16,
+        fontSize: 18,
         fontWeight: '800',
         marginBottom: 6,
+        lineHeight: 24,
     },
-    description: {
-        fontSize: 14,
-        lineHeight: 20,
-        marginBottom: 8,
-        fontStyle: 'italic',
-    },
-    experienceInBodyRow: {
+    experienceRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 5,
+        gap: 6,
         marginBottom: 8,
     },
-    experienceInBodyText: {
-        fontSize: 12,
+    experienceTextInBody: {
+        fontSize: 13,
         fontWeight: '700',
+    },
+    description: {
+        fontSize: 15,
+        lineHeight: 22,
     },
     // ── Contacto ──
     contactRow: {
         flexDirection: 'row',
-        gap: 8,
-        paddingHorizontal: 8,
-        paddingBottom: 14,
-        paddingTop: 4,
+        gap: 10,
+        paddingHorizontal: 16,
+        paddingTop: 8,
+        paddingBottom: 12,
     },
     contactBtn: {
         flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 6,
-        paddingVertical: 13,
-        borderRadius: 12,
-        backgroundColor: '#000000',
-        borderWidth: 2,
+        gap: 8,
+        paddingVertical: 12,
+        borderRadius: 14,
+        borderWidth: 1.5,
     },
     whatsappBtn: {
         borderColor: '#25D366',
+        backgroundColor: 'rgba(37, 211, 102, 0.05)',
     },
     privateMessageBtn: {
         borderColor: colors.primary,
+        backgroundColor: colors.primary + '08',
     },
     contactBtnText: {
-        fontWeight: '800',
-        fontSize: 13,
+        fontWeight: '700',
+        fontSize: 14,
     },
-    // ── Menú de opciones ──
+    dateTextBottom: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        paddingHorizontal: 16,
+        paddingBottom: 16,
+        opacity: 0.5,
+        marginTop: 4,
+    },
+    // ── Overlay Actions (Bottom Strip) ──
+    bottomActionStrip: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        paddingTop: 10,
+        paddingBottom: 14,
+        alignItems: 'center',
+        zIndex: 15,
+    },
+    integratedCounter: {
+        marginBottom: 8,
+    },
+    integratedCounterText: {
+        color: '#FFFFFF',
+        fontSize: 12,
+        fontWeight: '900',
+        letterSpacing: 0.5,
+    },
+    contactButtonsRow: {
+        flexDirection: 'row',
+        width: '100%',
+        paddingHorizontal: 16,
+        gap: 12,
+    },
+    contactBtnTransparent: {
+        flex: 1,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: 38,
+        borderRadius: 12,
+        borderWidth: 1.5,
+        backgroundColor: 'transparent',
+        gap: 8,
+    },
+    whatsappBtnTransparent: {
+        borderColor: '#25D366',
+    },
+    privateMessageBtnTransparent: {
+        borderColor: '#2196F3',
+    },
+    contactBtnTextOverlay: {
+        fontWeight: '800',
+        fontSize: 12,
+        textTransform: 'uppercase',
+    },
+    // ── Modales ──
     menuOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
         justifyContent: 'flex-end',
     },
     menuSheet: {
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
         paddingHorizontal: 20,
         paddingTop: 12,
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 10,
     },
     menuHandle: {
         width: 40,
         height: 5,
         borderRadius: 3,
         alignSelf: 'center',
-        marginBottom: 16,
+        marginBottom: 20,
     },
     menuTitle: {
         fontSize: 18,
@@ -586,38 +805,23 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 14,
-        borderBottomWidth: 1,
+        borderBottomWidth: StyleSheet.hairlineWidth,
     },
     menuItemIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        width: 38,
+        height: 38,
+        borderRadius: 19,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 12,
+        marginRight: 14,
     },
     menuItemTitle: {
         fontSize: 16,
-        fontWeight: '500',
+        fontWeight: '600',
     },
-    menuItemSub: {
-        fontSize: 12,
-        marginTop: 2,
-    },
-    cancelBtn: {
-        marginTop: 16,
-        borderRadius: 14,
-        paddingVertical: 15,
-        alignItems: 'center',
-    },
-    cancelText: {
-        fontSize: 15,
-        fontWeight: '700',
-    },
-    // ── Confirm delete modal ──
     confirmOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.6)',
+        backgroundColor: 'rgba(0,0,0,0.7)',
         justifyContent: 'center',
         alignItems: 'center',
         padding: 24,
@@ -632,7 +836,7 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         width: 64,
         height: 64,
         borderRadius: 32,
-        backgroundColor: 'rgba(244,67,54,0.12)',
+        backgroundColor: 'rgba(244,67,54,0.1)',
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 16,
@@ -643,20 +847,19 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         marginBottom: 10,
     },
     confirmMessage: {
-        fontSize: 14,
+        fontSize: 15,
         textAlign: 'center',
-        lineHeight: 21,
-        marginBottom: 20,
+        lineHeight: 22,
+        marginBottom: 24,
     },
     confirmDivider: {
         width: '100%',
         height: StyleSheet.hairlineWidth,
-        marginBottom: 20,
+        marginBottom: 24,
     },
     confirmButtons: {
         flexDirection: 'row',
         gap: 12,
-        width: '100%',
     },
     confirmBtn: {
         flex: 1,

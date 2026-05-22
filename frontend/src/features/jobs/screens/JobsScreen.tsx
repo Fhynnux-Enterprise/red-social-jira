@@ -18,7 +18,7 @@ import Toast from 'react-native-toast-message';
 import { LinearGradient } from 'expo-linear-gradient';
 import CommentsModal from '../../comments/components/CommentsModal';
 import ListFooter from '../../../components/ListFooter';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { GET_AD_FREQUENCY } from '../../ads/graphql/ads.operations';
 import NativeAdCard from '../../ads/components/NativeAdCard';
 
@@ -58,6 +58,18 @@ export default function JobsScreen() {
     const [isOptionsVisible, setIsOptionsVisible] = useState(false);
     const [selectedItemForOptions, setSelectedItemForOptions] = useState<any>(null);
     const resumeCommentsRef = useRef<any>(null);
+    const isFocused = useIsFocused();
+    const [visibleItemId, setVisibleItemId] = useState<string | null>(null);
+
+    const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+        if (viewableItems.length > 0) {
+            setVisibleItemId(viewableItems[0].item.id);
+        }
+    }).current;
+
+    const viewabilityConfig = useRef({
+        itemVisiblePercentThreshold: 50,
+    }).current;
 
     const { data: offersData, loading: loadingOffers, refetch: refetchOffers } = useQuery<{jobOffers: any[]}>(GET_JOB_OFFERS, {
         variables: { limit: 20, offset: 0 },
@@ -482,7 +494,7 @@ export default function JobsScreen() {
         );
     };
 
-    const renderItem = ({ item }: { item: any }) => {
+    const renderItem = ({ item, index }: { item: any; index: number }) => {
         if (item.isAd) {
             const cachedAdData = loadedAds[item.id];
             const adDataToPass = cachedAdData
@@ -492,6 +504,7 @@ export default function JobsScreen() {
                 <View style={{ marginBottom: 12 }}>
                     <NativeAdCard 
                         adData={adDataToPass}
+                        showTopDivider={index !== 0}
                         onAdLoaded={(adData) => {
                             if (!loadedAds[item.id]) {
                                 setLoadedAds(prev => ({ ...prev, [item.id]: adData }));
@@ -512,8 +525,32 @@ export default function JobsScreen() {
 
         const openInModal = () => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' });
 
-        if (activeTab === 'offers') return <JobOfferCard item={item} onPress={openInModal} onEdit={handleEdit} onToggleSave={() => handleToggleSave(item)} isSaved={item.isSaved} />;
-        if (activeTab === 'services') return <ProfessionalCard item={item} onPress={openInModal} onEdit={handleEdit} onToggleSave={() => handleToggleSave(item)} isSaved={item.isSaved} />;
+        if (activeTab === 'offers') return (
+            <JobOfferCard 
+                item={item} 
+                onPress={openInModal} 
+                onEdit={handleEdit} 
+                onToggleSave={() => handleToggleSave(item)} 
+                isSaved={item.isSaved} 
+                showTopDivider={index !== 0}
+                isFocused={isFocused}
+                isViewable={item.id === visibleItemId}
+                isOverlayActive={!!selectedPostForComments}
+            />
+        );
+        if (activeTab === 'services') return (
+            <ProfessionalCard 
+                item={item} 
+                onPress={openInModal} 
+                onEdit={handleEdit} 
+                onToggleSave={() => handleToggleSave(item)} 
+                isSaved={item.isSaved}
+                showTopDivider={index !== 0}
+                isFocused={isFocused}
+                isViewable={item.id === visibleItemId}
+                isOverlayActive={!!selectedPostForComments}
+            />
+        );
         if (activeTab === 'results') {
             if (resultsTab === 'my_applications') {
                 const getStatusColor = (status: string) => {
@@ -583,12 +620,28 @@ export default function JobsScreen() {
                         onEdit={handleEdit}
                         onToggleSave={() => handleToggleSave(item)}
                         isSaved={item.isSaved}
+                        showTopDivider={index !== 0}
+                        isFocused={isFocused}
+                        isViewable={item.id === visibleItemId}
+                        isOverlayActive={!!selectedPostForComments}
                     />
                 );
             }
 
             if (resultsTab === 'my_services') {
-                return <ProfessionalCard item={item} onPress={openInModal} onEdit={handleEdit} onToggleSave={() => handleToggleSave(item)} isSaved={item.isSaved} />;
+                return (
+                    <ProfessionalCard 
+                        item={item} 
+                        onPress={openInModal} 
+                        onEdit={handleEdit} 
+                        onToggleSave={() => handleToggleSave(item)} 
+                        isSaved={item.isSaved}
+                        showTopDivider={index !== 0}
+                        isFocused={isFocused}
+                        isViewable={item.id === visibleItemId}
+                        isOverlayActive={!!selectedPostForComments}
+                    />
+                );
             }
         }
         return null;
@@ -672,6 +725,8 @@ export default function JobsScreen() {
                     refreshing={isRefreshing}
                     onRefresh={handleRefresh}
                     showsVerticalScrollIndicator={false}
+                    onViewableItemsChanged={onViewableItemsChanged}
+                    viewabilityConfig={viewabilityConfig}
                     initialNumToRender={4}
                     maxToRenderPerBatch={4}
                     windowSize={7}

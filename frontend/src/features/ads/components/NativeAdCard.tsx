@@ -23,6 +23,7 @@ import {
   NativeAsset,
   NativeAssetType,
 } from 'react-native-google-mobile-ads';
+import ImageCarousel from '../../feed/components/ImageCarousel';
 import { useTheme } from '../../../theme/ThemeContext';
 import { GET_NEXT_AD, REGISTER_AD_CLICK } from '../graphql/ads.operations';
 import { Ionicons } from '@expo/vector-icons';
@@ -50,6 +51,7 @@ interface NativeAdCardProps {
   onMediaLayout?: (layout: { y: number; height: number }) => void;
   /** Callback cuando se elimina u oculta el anuncio */
   onDelete?: () => void;
+  showTopDivider?: boolean;
 }
 
 export interface NativeAdCardRef {
@@ -65,7 +67,7 @@ export interface NativeAdCardRef {
  * - El prop onMediaLayout permite que CommentsModal ponga un overlay de swipe sobre la imagen.
  */
 const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
-  ({ isImmersive = false, adData, onPress, onAdLoaded, onMediaLayout, onDelete }, ref) => {
+  ({ isImmersive = false, adData, onPress, onAdLoaded, onMediaLayout, onDelete, showTopDivider }, ref) => {
     const { colors, isDark } = useTheme();
     const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const { user } = useAuth() as any;
@@ -350,6 +352,9 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
 
       return (
         <View style={{ position: 'relative' }}>
+          {showTopDivider && (
+            <View style={[styles.fullWidthDivider, { marginTop: 0, marginBottom: 12 }]} />
+          )}
           <NativeAdView
             nativeAd={nativeAd}
             style={[
@@ -503,6 +508,9 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
 
       return (
         <>
+          {showTopDivider && (
+            <View style={[styles.fullWidthDivider, { marginTop: 0, marginBottom: 12 }]} />
+          )}
           <View
             style={[
               styles.card,
@@ -510,92 +518,103 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
               isImmersive && styles.cardImmersive,
             ]}
           >
-            {/* ─ Header estilo Post ─ */}
-            <View style={styles.header}>
-              <View style={styles.authorInfo}>
-                {advertiser?.photoUrl ? (
-                  <Image source={{ uri: advertiser.photoUrl }} style={styles.advertiserIcon} />
-                ) : (
-                  <View style={[styles.advertiserIconFallback, { backgroundColor: colors.surface }]}>
-                    <Ionicons name="megaphone" size={16} color={colors.primary} />
-                  </View>
-                )}
-                <View style={styles.authorTextBlock}>
-                  <Text style={[styles.advertiserName, { color: colors.text }]} numberOfLines={1}>
-                    {displayName}
-                  </Text>
-                  <View style={styles.adBadgeRow}>
-                    <View style={styles.adBadge}>
-                      <Ionicons name="megaphone" size={9} color="white" />
-                      <Text style={styles.adBadgeText}>Publicidad</Text>
-                    </View>
-                  </View>
+            {/* ── 1. Cabecera con Etiqueta (Estilo Tienda) ── */}
+            <View style={styles.cardHead}>
+              <View style={[styles.typeBadgeHead, { backgroundColor: 'rgba(33, 150, 243, 0.1)' }]}>
+                <Ionicons name="megaphone" size={12} color="#2196F3" />
+                <Text style={[styles.typeBadgeTextHead, { color: '#2196F3' }]}>PUBLICIDAD</Text>
+              </View>
+            </View>
+
+            {/* ── 2. Contenedor de Media con Overlays ── */}
+            <View style={styles.mediaWrapper}>
+              {currentAdData.media && currentAdData.media.length > 0 ? (
+                <ImageCarousel
+                  media={currentAdData.media}
+                  onPress={() => onPress?.({ ...currentAdData, isAd: true })}
+                  disableFullscreen={true}
+                  containerWidth={undefined}
+                  customAspectRatio={3 / 4}
+                  counterStyle={{ top: 12, right: 12, left: undefined }}
+                />
+              ) : (
+                <View style={[styles.noImage, { backgroundColor: isDark ? '#1A1A1A' : '#F5F5F5' }]}>
+                  <Ionicons name="megaphone-outline" size={48} color={colors.textSecondary} style={{ opacity: 0.2 }} />
+                </View>
+              )}
+
+              {/* Overlay de Autor (Anunciante) */}
+              <View style={styles.sellerOverlay}>
+                <View style={styles.avatarMiniOverlay}>
+                  {advertiser?.photoUrl ? (
+                    <Image source={{ uri: advertiser.photoUrl }} style={styles.avatarImg} />
+                  ) : (
+                    <Ionicons name="megaphone" size={14} color="#FFF" />
+                  )}
+                </View>
+                <View style={styles.sellerTextColumn}>
+                  <Text style={styles.sellerNameOverlay} numberOfLines={1}>{displayName}</Text>
+                  <Text style={styles.sellerNicknameOverlay} numberOfLines={1}>@{advertiser?.username || 'anunciante'}</Text>
                 </View>
               </View>
+
+              {/* ── Franja de Acción Inferior (Estilo Tienda) ── */}
+              <View style={styles.bottomActionStrip}>
+                {/* Contador Integrado (si aplica) */}
+                {currentAdData.media && currentAdData.media.length > 1 && (
+                  <View style={styles.integratedCounter}>
+                    <Text style={styles.integratedCounterText}>
+                      {/* Aquí el ImageCarousel ya maneja su propio contador, 
+                          pero si quisiéramos uno manual iría aquí */}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Botones de Contacto en Franja */}
+                <View style={styles.contactButtonsRow}>
+                  {currentAdData.whatsappPhone && (
+                    <TouchableOpacity
+                      style={[styles.contactBtnTransparent, { borderColor: '#25D366' }]}
+                      onPress={handleWhatsApp}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
+                      <Text style={[styles.contactBtnTextOverlay, { color: '#25D366' }]}>WhatsApp</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={[styles.contactBtnTransparent, { borderColor: '#2196F3' }]}
+                    onPress={() => handleLocalAdPress(currentAdData.actionUrl)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="open-outline" size={16} color="#2196F3" />
+                    <Text style={[styles.contactBtnTextOverlay, { color: '#2196F3' }]}>
+                      {currentAdData.actionLabel || 'Ver más'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Opciones (Ellipsis) */}
               {!isImmersive && (
-                <TouchableOpacity onPress={handleAdOptions} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                <TouchableOpacity 
+                  onPress={handleAdOptions} 
+                  style={styles.overlayOptionsBtnLeft}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="ellipsis-horizontal" size={20} color="#FFF" />
                 </TouchableOpacity>
               )}
             </View>
 
-            <TouchableOpacity
-              activeOpacity={0.95}
-              onPress={() => onPress?.({ ...currentAdData, isAd: true })}
-              onLayout={(e: LayoutChangeEvent) => {
-                if (isImmersive && onMediaLayout) {
-                  onMediaLayout({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height });
-                }
-              }}
-            >
-              <Text style={[styles.headline, { color: colors.text }]}>{currentAdData.title}</Text>
+            {/* ── 3. Información debajo de la imagen ── */}
+            <View style={styles.belowMediaContent}>
+              <Text style={[styles.headline, { color: colors.text, marginTop: 12 }]}>
+                {currentAdData.title}
+              </Text>
               <Text style={[styles.body, { color: colors.textSecondary }]} numberOfLines={isImmersive ? undefined : 3}>
                 {currentAdData.description}
               </Text>
-
-              {/* ─ Imagen en formato 3:4 ─ */}
-              {coverImage && (
-                <View style={styles.localAdMedia}>
-                  <Image
-                    source={{ uri: coverImage }}
-                    style={StyleSheet.absoluteFill}
-                    resizeMode="cover"
-                  />
-                </View>
-              )}
-            </TouchableOpacity>
-
-            {/* ─ Botones de acción ─ */}
-            <View style={styles.footer}>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                {currentAdData.whatsappPhone && (
-                  <TouchableOpacity
-                    style={[styles.ctaButton, styles.whatsappCta, { flex: 1 }]}
-                    onPress={handleWhatsApp}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
-                    <Text style={[styles.ctaText, { color: '#25D366' }]}>WhatsApp</Text>
-                  </TouchableOpacity>
-                )}
-                {currentAdData.actionUrl && (
-                  <TouchableOpacity
-                    style={[styles.ctaButton, { flex: 1 }]}
-                    onPress={() => handleLocalAdPress(currentAdData.actionUrl)}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={[styles.ctaText, { color: colors.primary }]}>{currentAdData.actionLabel || 'Ver más'}</Text>
-                    <Ionicons name="arrow-forward" size={16} color={colors.primary} />
-                  </TouchableOpacity>
-                )}
-                {/* Si no hay ni whatsapp ni url, mostrar botón genérico */}
-                {!currentAdData.whatsappPhone && !currentAdData.actionUrl && (
-                  <TouchableOpacity style={[styles.ctaButton, { flex: 1 }]} onPress={() => handleLocalAdPress()} activeOpacity={0.85}>
-                    <Text style={[styles.ctaText, { color: colors.primary }]}>Ver más</Text>
-                    <Ionicons name="arrow-forward" size={16} color={colors.primary} />
-                  </TouchableOpacity>
-                )}
-              </View>
             </View>
           </View>
           {renderAdOptionsModal()}
@@ -605,15 +624,24 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
 
     return null;
   });
-
 const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
+  fullWidthDivider: {
+    height: 0.6,
+    backgroundColor: '#BDBDBD',
+    marginTop: 0, 
+    marginBottom: 2, 
+    width: '120%', 
+    marginLeft: -40, 
+    opacity: 0.35,
+    zIndex: 10,
+    elevation: 5,
+  },
   card: {
     marginHorizontal: 8,
     marginVertical: 10,
     borderRadius: 20,
+    backgroundColor: colors.surface,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(128, 128, 128, 0.2)',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -623,6 +651,146 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
       },
       android: { elevation: 5 },
     }),
+  },
+  cardHead: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 14,
+  },
+  typeBadgeHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 6,
+  },
+  typeBadgeTextHead: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  mediaWrapper: {
+    width: '100%',
+    position: 'relative',
+    backgroundColor: '#000',
+    overflow: 'hidden',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    marginBottom: 0,
+  },
+  sellerOverlay: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    gap: 6,
+    zIndex: 20,
+  },
+  avatarMiniOverlay: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  avatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  sellerTextColumn: {
+    flexDirection: 'column',
+    justifyContent: 'center',
+    marginLeft: 2,
+  },
+  sellerNameOverlay: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 15,
+  },
+  sellerNicknameOverlay: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  bottomActionStrip: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingTop: 10,
+    paddingBottom: 14,
+    alignItems: 'center',
+    zIndex: 15,
+  },
+  integratedCounter: {
+    marginBottom: 8,
+    backgroundColor: 'transparent',
+  },
+  integratedCounterText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  contactButtonsRow: {
+    flexDirection: 'row',
+    width: '100%',
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  contactBtnTransparent: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    gap: 8,
+  },
+  contactBtnTextOverlay: {
+    fontWeight: '800',
+    fontSize: 11,
+    textTransform: 'uppercase',
+  },
+  whatsappBtnTransparent: {
+    borderColor: '#25D366',
+  },
+  privateMessageBtnTransparent: {
+    borderColor: '#2196F3',
+  },
+  overlayOptionsBtnLeft: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 25,
+  },
+  belowMediaContent: {
+    paddingBottom: 16,
+  },
+  noImage: {
+    width: '100%',
+    aspectRatio: 3 / 4,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   cardImmersive: {
     marginHorizontal: 0,

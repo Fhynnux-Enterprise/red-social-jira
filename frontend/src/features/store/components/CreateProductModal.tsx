@@ -176,6 +176,9 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
     if (!price.trim() || isNaN(priceNum) || priceNum <= 0)
       return Alert.alert('Precio inválido', 'Por favor ingresa un precio válido mayor a 0.');
     if (!description.trim()) return Alert.alert('Descripción requerida', 'Por favor describe tu producto.');
+    if (!editItem && localMedia.length === 0) {
+      return Alert.alert('Multimedia requerida', 'Por favor sube al menos una foto o video del producto.');
+    }
 
     setSubmitting(true);
     try {
@@ -252,7 +255,7 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
     }
   };
 
-  const canSubmit = title.trim() && price.trim() && description.trim() && !submitting;
+  const canSubmit = title.trim() && price.trim() && description.trim() && !submitting && (editItem || localMedia.length > 0);
   const selectedCountry = COUNTRY_CODES.find(c => c.code === countryCode) ?? COUNTRY_CODES[0];
   const isUploading = localMedia.some(m => m.status === 'uploading');
 
@@ -396,7 +399,9 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
           </View>
 
           {/* ── Selector de fotos/videos ── */}
-          <Text style={[styles.label, { color: colors.textSecondary, marginTop: 16 }]}>Multimedia (Opcional)</Text>
+          <Text style={[styles.label, { color: colors.textSecondary, marginTop: 16 }]}>
+            Multimedia {!editItem && <Text style={{ color: '#FF6524' }}>*</Text>}
+          </Text>
           {!editItem ? (
             <TouchableOpacity
               style={[styles.mediaButton, { borderColor: colors.border }]}

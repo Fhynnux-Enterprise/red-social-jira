@@ -422,6 +422,9 @@ export default function FeedScreen() {
                 }}
                 onToggleSave={() => handleToggleSave(mappedItem)}
                 isSaved={item.isSaved}
+                isFocused={isFocused}
+                isViewable={item.id === visiblePostId}
+                isOverlayActive={!!selectedPostForComments || isModalVisible}
             />;
         }
         if (item.__typename === 'ProfessionalProfile') {
@@ -445,6 +448,9 @@ export default function FeedScreen() {
                 }}
                 onToggleSave={() => handleToggleSave(mappedItem)}
                 isSaved={item.isSaved}
+                isFocused={isFocused}
+                isViewable={item.id === visiblePostId}
+                isOverlayActive={!!selectedPostForComments || isModalVisible}
             />;
         }
         if (item.__typename === 'StoreProduct') {
@@ -465,6 +471,7 @@ export default function FeedScreen() {
                 }}
                 onToggleSave={() => handleToggleSave(mappedItem)}
                 isSaved={item.isSaved}
+                isViewable={item.id === visiblePostId && isFocused && !selectedPostForComments}
             />;
         }
         
@@ -490,7 +497,7 @@ export default function FeedScreen() {
                 isOverlayActive={!!selectedPostForComments || isModalVisible}
             />
         );
-    }, [currentUser?.id, handleOptionsPress, visiblePostId, isFocused, selectedPostForComments, isModalVisible, loadedAds]);
+    }, [currentUser?.id, handleOptionsPress, visiblePostId, isFocused, selectedPostForComments, isModalVisible, loadedAds, handleToggleSave]);
 
     return (
         <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -611,6 +618,7 @@ export default function FeedScreen() {
                         }}
                         onEndReached={loadMorePosts}
                         onEndReachedThreshold={0.5}
+                        ItemSeparatorComponent={() => <View style={styles.feedDivider} />}
                         ListFooterComponent={renderFooter}
                         ListEmptyComponent={renderEmpty}
                         onViewableItemsChanged={onViewableItemsChanged}
@@ -1142,4 +1150,11 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         marginBottom: 20, marginTop: 10,
     },
     logoutText: { color: colors.error, fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
+    feedDivider: {
+        height: 0.6,
+        backgroundColor: '#BDBDBD',
+        opacity: 0.35,
+        marginTop: 4,
+        marginBottom: 20,
+    },
 });

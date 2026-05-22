@@ -11,7 +11,7 @@ import {
 
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { GET_COMMENTS, CREATE_COMMENT, DELETE_COMMENT, UPDATE_COMMENT } from '../graphql/comments.operations';
 import { TOGGLE_LIKE, TOGGLE_SAVE_POST } from '../../feed/graphql/posts.operations';
 import { 
@@ -97,6 +97,7 @@ export default function CommentsModal({
     const [content, setContent] = useState('');
     const [selectedCommentData, setSelectedCommentData] = useState<{ id: string, isMine: boolean, isReply: boolean } | null>(null);
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+    const storeCardRef = useRef<any>(null);
     const [isOptionsModalVisible, setIsOptionsModalVisible] = useState(false);
     const [isAdOptionsVisible, setIsAdOptionsVisible] = useState(false);
     const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
@@ -125,6 +126,7 @@ export default function CommentsModal({
     // El item puede ser un Post, JobOffer o ProfessionalProfile
     const isPost = !post?.__typename || post.__typename === 'Post';
     const isStore = post?.__typename === 'StoreProduct';
+    const isJobOffer = post?.__typename === 'JobOffer';
     const isAd = post?.isAd;
     const isCommentable = (isPost || isStore) && !isAd;
     const isEdited = !!post?.editedAt;
@@ -777,7 +779,7 @@ export default function CommentsModal({
         },
         onPanResponderRelease: (_, g) => {
             const currentAxis = currentGestureAxis.current;
-            currentAxis.current = 'none';
+            currentGestureAxis.current = 'none';
 
             const vy = g.vy; const dy = g.dy; const dx = g.dx; const vx = g.vx;
             if (currentAxis === 'horizontal' && ((dx < -(SCREEN_WIDTH * 0.45)) || (vx < -0.9 && dx < -50))) {
@@ -879,30 +881,31 @@ export default function CommentsModal({
         },
     })).current;
 
-    // ── Likes ──────────────────────────────────────────────────────────────
-    const displayLiked = (isCommentable && post?.likes?.some((l: any) => l.user?.id === currentUser?.id)) || false;
-    const [localLiked, setLocalLiked] = useState(displayLiked);
-    const [localCount, setLocalCount] = useState<number>(isCommentable ? (post?.likes?.length || 0) : 0);
-    
+    // ── Likes (mismo patrón que PostCard) ──────────────────────────────────
+    const displayLiked = (isCommentable && post?.likes?.some((l: any) => l?.user?.id === currentUser?.id)) || false;
+    const displayCount = isCommentable ? (post?.likes?.length || 0) : 0;
+    const [localLiked, setLocalLiked] = useState<boolean>(displayLiked);
+    const [localCount, setLocalCount] = useState<number>(displayCount);
+
     const [togglePostLikeMutation] = useMutation(TOGGLE_LIKE);
     const [toggleStoreLikeMutation] = useMutation(TOGGLE_STORE_PRODUCT_LIKE);
     const toggleLikeMutation = isStore ? toggleStoreLikeMutation : togglePostLikeMutation;
 
+    // Igual que PostCard: se sincroniza cuando Apollo actualiza el caché
     useEffect(() => {
-        if (!isCommentable) return;
-        setLocalLiked(post?.likes?.some((l: any) => l.user?.id === currentUser?.id) || false);
-        setLocalCount(post?.likes?.length || 0);
-    }, [post?.likes, isCommentable]);
+        setLocalLiked(displayLiked);
+        setLocalCount(displayCount);
+    }, [displayLiked, displayCount]);
 
     const handleLike = () => {
         if (!currentUser?.id || !postId) return;
-        const next = !localLiked;
-        setLocalLiked(next);
-        setLocalCount((c) => next ? c + 1 : Math.max(0, c - 1));
+        const nextLiked = !localLiked;
+        setLocalLiked(nextLiked);
+        setLocalCount((c) => nextLiked ? c + 1 : Math.max(0, c - 1));
 
         let optimisticLikes = [...(post?.likes || [])];
-        if (localLiked) {
-            optimisticLikes = optimisticLikes.filter((l: any) => l.user?.id !== currentUser.id);
+        if (displayLiked) {
+            optimisticLikes = optimisticLikes.filter((l: any) => l?.user?.id !== currentUser.id);
         } else {
             optimisticLikes.push({
                 __typename: isStore ? 'StoreProductLike' : 'PostLike',
@@ -918,14 +921,23 @@ export default function CommentsModal({
         }
 
         const variables = isStore ? { productId: postId } : { postId };
-        const opResponseFields = isStore ? { toggleStoreProductLike: { __typename: 'StoreProduct', id: postId, commentsCount: post?.commentsCount ?? post?.comments?.length ?? 0, likes: optimisticLikes }} : { toggleLike: { __typename: 'Post', id: postId, commentsCount: post?.commentsCount ?? post?.comments?.length ?? 0, likes: optimisticLikes } };
+        const typename = isStore ? 'StoreProduct' : 'Post';
+        const mutationField = isStore ? 'toggleStoreProductLike' : 'toggleLike';
 
         toggleLikeMutation({
-            variables: variables,
-            optimisticResponse: opResponseFields as any,
+            variables,
+            refetchQueries: ['GetLikedItems'],
+            optimisticResponse: {
+                [mutationField]: {
+                    __typename: typename,
+                    id: postId,
+                    commentsCount: post?.commentsCount ?? post?.comments?.length ?? 0,
+                    likes: optimisticLikes,
+                }
+            }
         }).catch(() => {
-            setLocalLiked(!next);
-            setLocalCount((c) => !next ? c + 1 : Math.max(0, c - 1));
+            setLocalLiked(displayLiked);
+            setLocalCount(displayCount);
         });
     };
 
@@ -1313,113 +1325,97 @@ export default function CommentsModal({
                             </View>
                         ) : (
                             <>
-                            <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
-                                <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
-                                
-                                {!isPost && (
-                                    <View style={{ width: '100%', marginBottom: 6, paddingLeft: 0 }}>
-                                        <View style={{
-                                            flexDirection: 'row',
-                                            alignItems: 'center',
-                                            backgroundColor: 'rgba(255,101,36,0.08)',
-                                            paddingHorizontal: 10,
-                                            paddingVertical: 6,
-                                            alignSelf: 'flex-start',
-                                            borderLeftWidth: 4,
-                                            borderLeftColor: '#FF6524',
-                                            borderTopRightRadius: 8,
-                                            borderBottomRightRadius: 8,
-                                        }}>
-                                            <Text style={{ 
-                                                color: '#FF6524', 
-                                                fontSize: 10, 
-                                                fontWeight: '800',
-                                                letterSpacing: 1,
-                                            }}>
-                                                {post.__typename === 'JobOffer' ? 'OFERTA DE EMPLEO' : (post.__typename === 'StoreProduct' ? 'TIENDA' : 'SERVICIO PROFESIONAL')}
-                                            </Text>
+                            {(!isStore && !isJobOffer) ? (
+                                <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
+                                    <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
+
+                                    {/* Author row */}
+                                    <TouchableOpacity
+                                        style={styles.postAuthorRow}
+                                        onPress={() => {
+                                            const profileId = isPost
+                                                ? post.author?.id
+                                                : (post.author?.id ?? post.user?.id ?? post.seller?.id);
+                                            if (profileId) navigateToProfile(profileId);
+                                        }}
+                                        activeOpacity={0.7}
+                                    >
+                                        <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
+                                            {(() => {
+                                                const photoUrl = isPost
+                                                    ? post.author?.photoUrl
+                                                    : (post.author?.photoUrl ?? post.user?.photoUrl ?? post.seller?.photoUrl);
+                                                const firstName = isPost ? post.author?.firstName : (post.author?.firstName ?? post.user?.firstName ?? post.seller?.firstName);
+                                                const lastName = isPost ? post.author?.lastName : (post.author?.lastName ?? post.user?.lastName ?? post.seller?.lastName);
+                                                const initials = `${firstName?.[0] || ''}${lastName?.[0] || ''}`;
+                                                return photoUrl
+                                                    ? <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
+                                                    : <Text style={styles.avatarText}>{initials}</Text>;
+                                            })()}
                                         </View>
-                                    </View>
-                                )}
-
-                                <TouchableOpacity
-                                    style={styles.postAuthorRow}
-                                    onPress={() => {
-                                        const profileId = isPost
-                                            ? post.author?.id
-                                            : (post.author?.id ?? post.user?.id ?? post.seller?.id);
-                                        if (profileId) navigateToProfile(profileId);
-                                    }}
-                                    activeOpacity={0.7}
-                                >
-                                    {/* Avatar — usa author para Post/JobOffer, user para ProfessionalProfile */}
-                                    <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
-                                        {(() => {
-                                            const photoUrl = isPost
-                                                ? post.author?.photoUrl
-                                                : (post.author?.photoUrl ?? post.user?.photoUrl ?? post.seller?.photoUrl);
-                                            const firstName = isPost ? post.author?.firstName : (post.author?.firstName ?? post.user?.firstName ?? post.seller?.firstName);
-                                            const lastName = isPost ? post.author?.lastName : (post.author?.lastName ?? post.user?.lastName ?? post.seller?.lastName);
-
-                                            const initials = `${firstName?.[0] || ''}${lastName?.[0] || ''}`;
-                                            return photoUrl
-                                                ? <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
-                                                : <Text style={styles.avatarText}>{initials}</Text>;
-                                        })()}
-                                    </View>
-                                    <View style={{ flex: 1 }}>
-                                        {/* Nombre + badge de tipo */}
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                        <View style={{ flex: 1 }}>
                                             <Text style={[styles.postAuthorName, { color: colors.text }]}>
                                                 {isPost
                                                     ? `${post.author?.firstName ?? ''} ${post.author?.lastName ?? ''}`
                                                     : `${(post.author?.firstName ?? post.user?.firstName ?? post.seller?.firstName) ?? ''} ${(post.author?.lastName ?? post.user?.lastName ?? post.seller?.lastName) ?? ''}`
                                                 }
                                             </Text>
+                                            <Text style={[styles.postDate, { color: colors.textSecondary }]}>
+                                                {formatDate(post.createdAt)}{isPost && isEdited ? ' · Editado' : ''}
+                                            </Text>
                                         </View>
-                                        <Text style={[styles.postDate, { color: colors.textSecondary }]}>
-                                            {formatDate(post.createdAt)}{isPost && isEdited ? ' · Editado' : ''}
-                                        </Text>
-                                    </View>
-                                </TouchableOpacity>
-
-                                <View style={{ flexDirection: 'row', alignItems: 'center', position: 'absolute', right: 14, top: 14, zIndex: 10 }}>
-                                    {(() => {
-                                        const profileId = isPost
-                                            ? post.author?.id
-                                            : (post.author?.id ?? post.user?.id ?? post.seller?.id);
-                                        const isOwner = profileId === currentUser?.id;
-                                        
-                                        return (
-                                            <>
-                                                {isOwner && (
-                                                    <TouchableOpacity
-                                                        onPress={() => onOptionsPress?.(post)}
-                                                        style={{ marginRight: 16 }}
-                                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                                                    >
-                                                        <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-                                                    </TouchableOpacity>
-                                                )}
-                                                {!isOwner && (
-                                                    <TouchableOpacity
-                                                        onPress={() => setIsPostOptionsMenuVisible(true)}
-                                                        style={{ marginRight: 16 }}
-                                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                                                    >
-                                                        <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-                                                    </TouchableOpacity>
-                                                )}
-                                            </>
-                                        );
-                                    })()}
-
-                                    <TouchableOpacity onPress={closeWithAnimation}
-                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                                        <Ionicons name="close" size={24} color={colors.textSecondary} />
                                     </TouchableOpacity>
+
+                                    {/* Glass circle buttons — mismo estilo que Store */}
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 8 }}>
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                const profileId = isPost
+                                                    ? post.author?.id
+                                                    : (post.author?.id ?? post.user?.id ?? post.seller?.id);
+                                                const isOwner = profileId === currentUser?.id;
+                                                if (isOwner) onOptionsPress?.(post);
+                                                else setIsPostOptionsMenuVisible(true);
+                                            }}
+                                            style={styles.glassCircleBtn}
+                                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                        >
+                                            <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity
+                                            onPress={closeWithAnimation}
+                                            style={styles.glassCircleBtn}
+                                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                        >
+                                            <Ionicons name="close" size={18} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                    </View>
                                 </View>
-                            </View>
+                            ) : (
+                                <View style={{ position: 'absolute', right: 24, top: 12, zIndex: 200, flexDirection: 'column', gap: 8, alignItems: 'center' }}>
+                                    <TouchableOpacity 
+                                        onPress={closeWithAnimation}
+                                        style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
+                                    >
+                                        <Ionicons name="close" size={20} color="white" />
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity 
+                                        onPress={() => {
+                                            const profileId = post.author?.id ?? post.user?.id ?? post.seller?.id;
+                                            const isOwner = profileId === currentUser?.id;
+                                            if (isOwner) onOptionsPress?.(post);
+                                            else setIsPostOptionsMenuVisible(true);
+                                        }}
+                                        style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
+                                    >
+                                        <Ionicons name="ellipsis-horizontal" size={20} color="white" />
+                                    </TouchableOpacity>
+
+                                </View>
+                            )}
+
 
                             <ScrollView
                                 ref={scrollViewRef}
@@ -1492,13 +1488,33 @@ export default function CommentsModal({
                                         style={{ flex: 1 }}
                                     >
                                         {post.__typename === 'JobOffer' && (
-                                            <JobOfferCard item={normalizedItem} onPress={undefined} hideAuthorRow isModalView={true} />
+                                            <>
+                                                {/* Badge head — igual al diseño de la JobOfferCard en feed */}
+                                                <View style={[styles.jobOfferHeadBadge, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+                                                    <View style={[styles.jobOfferHeadBadgeInner, { backgroundColor: colors.primary + '15' }]}>
+                                                        <Ionicons name="briefcase" size={12} color={colors.primary} />
+                                                        <Text style={[styles.jobOfferHeadBadgeText, { color: colors.primary }]}>OFERTA DE EMPLEO</Text>
+                                                    </View>
+                                                </View>
+                                                <JobOfferCard item={normalizedItem} onPress={undefined} hideAuthorRow isModalView={true} />
+                                            </>
                                         )}
                                         {post.__typename === 'ProfessionalProfile' && (
                                             <ProfessionalCard item={normalizedItem} onPress={undefined} hideAuthorRow isModalView={true} />
                                         )}
                                         {post.__typename === 'StoreProduct' && (
-                                            <StoreProductCard item={normalizedItem} onPress={undefined} hideSellerRow isModalView={true} />
+                                            <StoreProductCard 
+                                                ref={storeCardRef}
+                                                item={normalizedItem} 
+                                                onPress={undefined} 
+                                                hideSellerRow={false} 
+                                                isModalView={true} 
+                                                isViewable={visible}
+                                                onCommentPress={() => {
+                                                    setActiveTab('comments');
+                                                    if (isMinimized) toggleMinimize();
+                                                }}
+                                            />
                                         )}
                                     </Animated.View>
                                 ) : (
@@ -1563,7 +1579,7 @@ export default function CommentsModal({
                             </ScrollView>
 
                             {/* Footer con Like/Comentar */}
-                            {isCommentable && (
+                            {isCommentable && !isStore && (
                             <Animated.View {...footerSwipePan.panHandlers} style={[styles.postFooterFixed, { borderTopColor: colors.border }]}>
                                 {(localCount > 0 || commentsCount > 0) && (
                                     <TouchableOpacity activeOpacity={1} style={styles.statsRow}>
@@ -1590,8 +1606,11 @@ export default function CommentsModal({
                                 {/* actionsRow como TouchableOpacity para capturar gestos en huecos */}
                                 <TouchableOpacity activeOpacity={1} style={[styles.actionsRow, { borderTopColor: colors.border }]}>
                                     <TouchableOpacity style={styles.actionBtn} onPress={handleLike}>
-                                        <Ionicons name={localLiked ? 'heart' : 'heart-outline'} size={20}
-                                            color={localLiked ? '#FF3B30' : colors.textSecondary} />
+                                        <Feather 
+                                            name="heart" 
+                                            size={18}
+                                            color={localLiked ? '#FF3B30' : colors.textSecondary} 
+                                        />
                                         <Text style={[styles.actionText, { color: localLiked ? '#FF3B30' : colors.textSecondary },
                                         localLiked && { fontWeight: 'bold' }]}>Like</Text>
                                     </TouchableOpacity>
@@ -1599,9 +1618,34 @@ export default function CommentsModal({
                                         setActiveTab('comments');
                                         if (isMinimized) toggleMinimize();
                                     }}>
-                                        <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
+                                        <Feather name="message-circle" size={18} color={colors.textSecondary} />
                                         <Text style={[styles.actionText, { color: colors.textSecondary }]}>Comentar</Text>
                                     </TouchableOpacity>
+
+                                    {isStore && (
+                                        <>
+                                            <View style={{ flex: 1 }} />
+                                            <View style={{
+                                                flexDirection: 'row',
+                                                alignItems: 'center',
+                                                gap: 4,
+                                                paddingHorizontal: 8,
+                                                paddingVertical: 3,
+                                                backgroundColor: isDark ? 'rgba(0,150,255,0.15)' : 'rgba(0,122,255,0.08)',
+                                                borderRadius: 6,
+                                                borderWidth: 0.5,
+                                                borderColor: isDark ? 'rgba(0,150,255,0.3)' : 'rgba(0,122,255,0.2)',
+                                            }}>
+                                                <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: '#007AFF' }} />
+                                                <Text style={{ 
+                                                    color: '#007AFF', 
+                                                    fontSize: 9, 
+                                                    fontWeight: '800',
+                                                    letterSpacing: 0.5
+                                                }}>TIENDA</Text>
+                                            </View>
+                                        </>
+                                    )}
                                 </TouchableOpacity>
                             </Animated.View>
                             )}
@@ -2148,6 +2192,34 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         paddingVertical: 12,
         paddingHorizontal: 16,
         borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    glassCircleBtn: {
+        width: 34,
+        height: 34,
+        borderRadius: 17,
+        backgroundColor: 'rgba(128,128,128,0.12)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    jobOfferHeadBadge: {
+        paddingHorizontal: 16,
+        paddingTop: 12,
+        paddingBottom: 14,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    jobOfferHeadBadgeInner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        alignSelf: 'flex-start',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 6,
+        gap: 6,
+    },
+    jobOfferHeadBadgeText: {
+        fontSize: 10,
+        fontWeight: '900',
+        letterSpacing: 0.5,
     },
     likeAvatarWrap: {
         width: 44,

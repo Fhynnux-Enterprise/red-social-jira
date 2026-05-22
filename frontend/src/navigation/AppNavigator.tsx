@@ -177,7 +177,7 @@ function MainTabNavigator() {
             })}
         >
             <Tab.Screen name="Feed" component={FeedScreen} options={{ tabBarLabel: 'Inicio' }} />
-            <Tab.Screen name="Jobs" component={JobsScreen} options={{ tabBarLabel: 'Empleos' }} />
+            <Tab.Screen name="Jobs" component={JobsScreen} options={{ tabBarLabel: 'Empleo' }} />
             <Tab.Screen name="Store" component={StoreScreen} options={{ tabBarLabel: 'Tienda' }} />
             <Tab.Screen 
                 name="ChatList" 

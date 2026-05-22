@@ -1003,7 +1003,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     }, [selectedPostForComments, userData, hasMore, tabData, activeTab]);
 
     // ── Render items ──────────────────────────────────────────────────────────
-    const renderItem = useCallback(({ item }: any) => {
+    const renderItem = useCallback(({ item, index }: any) => {
         const type = item.__itemType;
 
         // Mapear los alias de GraphQL para que las tarjetas reciban los nombres estándar
@@ -1034,6 +1034,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 onEdit={stableHandleEdit}
                 onToggleSave={handleToggleSave}
                 isSaved={mappedItem.isSaved}
+                showTopDivider={index !== 0}
             />;
         }
         if (type === 'job') {
@@ -1043,6 +1044,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 onEdit={stableHandleEdit}
                 onToggleSave={handleToggleSave}
                 isSaved={mappedItem.isSaved}
+                showTopDivider={index !== 0}
             />;
         }
         if (type === 'professional') {
@@ -1052,6 +1054,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 onEdit={stableHandleEdit}
                 onToggleSave={handleToggleSave}
                 isSaved={mappedItem.isSaved}
+                showTopDivider={index !== 0}
             />;
         }
         if (type === 'post') {
@@ -1068,6 +1071,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                     isFocused={isFocused}
                     isOverlayActive={overlayActiveRef.current}
                     isModalView={false}
+                    showTopDivider={index !== 0}
                 />
             );
         }
@@ -1078,6 +1082,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                         adData={item}
                         onPress={(ad) => openInModal(false)}
                         onDelete={onRefresh}
+                        showTopDivider={index !== 0}
                     />
                 </View>
             );

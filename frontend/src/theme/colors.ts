@@ -40,7 +40,7 @@ export const colors = {
     },
     dark: {
         background: '#000000',
-        surface: '#060606ff',
+        surface: 'rgba(9, 9, 9, 1)',
         text: '#FFFFFF',
         textSecondary: '#808080',
         border: '#121212',

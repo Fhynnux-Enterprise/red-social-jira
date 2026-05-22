@@ -43,29 +43,60 @@ interface ImageCarouselProps {
     isInteractive?: boolean; // Habilita controles avanzados (Play/Pause inmediato, Slider, Fullscreen)
     /** Llamado cuando el índice activo cambia (útil para el padre) */
     onIndexChange?: (index: number) => void;
-    /**
-     * Llamado cuando el usuario hace swipe-to-close desde la imagen.
-     * - En imagen única: al arrastrar hacia la izquierda con suficiente recorrido.
-     * - En carrusel: solo si ya está en la última imagen.
-     */
+    /** Llamado cuando el usuario hace swipe-to-close desde la imagen. */
     onSwipeClose?: (panX: Animated.Value) => void;
+    /** Estilo personalizado para el contador de fotos */
+    counterStyle?: any;
+    /** Estilo personalizado para los puntos de paginación */
+    paginationStyle?: any;
+    /** Estilo personalizado para el botón de mute */
+    muteButtonStyle?: any;
+    /** Ocultar los puntos de paginación internos */
+    hidePagination?: boolean;
+    /** Desactiva que el toque principal abra pantalla completa (para usar botón externo) */
+    /** Mostrar contador de páginas en la parte inferior en lugar de puntos */
+    showBottomCounter?: boolean;
+    /** Offset inferior para la barra de progreso del video */
+    sliderBottomOffset?: number;
+    children?: React.ReactNode;
+    overlay?: React.ReactNode;
 }
 
-export default function ImageCarousel({
-    media,
-    onPress,
-    containerWidth,
-    imageResizeMode = 'cover',
-    customAspectRatio,
-    disableFullscreen = false,
-    dynamicAspectRatio = false,
-    isViewable = true,
-    isFocused = true,
-    isOverlayActive = false,
-    isInteractive = false,
-    onIndexChange,
-    onSwipeClose,
-}: ImageCarouselProps) {
+const ImageCarousel = React.forwardRef((props: ImageCarouselProps, ref: any) => {
+    const {
+        media,
+        onPress,
+        containerWidth,
+        imageResizeMode = 'cover',
+        customAspectRatio,
+        disableFullscreen = false,
+        dynamicAspectRatio = false,
+        isViewable = true,
+        isFocused = true,
+        isOverlayActive = false,
+        isInteractive = false,
+        onIndexChange,
+        onSwipeClose,
+        counterStyle,
+        paginationStyle,
+        muteButtonStyle,
+        hidePagination = false,
+        hideExpand = false,
+        disablePressToFullscreen = false,
+        showBottomCounter = false,
+        sliderBottomOffset = 0,
+        children,
+        overlay,
+    } = props;
+    
+    React.useImperativeHandle(ref, () => ({
+        openViewer: (index = 0) => {
+            viewerTranslateY.setValue(0);
+            setViewerInitialIndex(index);
+            setViewerActiveIndex(index);
+            setViewerVisible(true);
+        }
+    }));
     // Garantizamos el orden desde el frontend para evitar que la normalización de caché 
     // de Apollo altere el carrusel cuando falta el OrderBy en la BD en consultas viejas.
     const sortedMedia = React.useMemo(() => {
@@ -176,6 +207,12 @@ export default function ImageCarousel({
 
     // ── Press ──
     const handleMainPress = useCallback((index: number) => {
+        if (disablePressToFullscreen) {
+            // No hacemos nada aquí, dejamos que los controles internos del video (Play/Pause) actúen
+            // o si el padre pasó un onPress, lo llamamos.
+            onPress?.();
+            return;
+        }
         if (!disableFullscreen) {
             viewerTranslateY.setValue(0);
             setViewerInitialIndex(index);
@@ -184,7 +221,7 @@ export default function ImageCarousel({
         } else {
             onPress?.();
         }
-    }, [disableFullscreen, onPress, viewerTranslateY]);
+    }, [disablePressToFullscreen, disableFullscreen, onPress, viewerTranslateY]);
 
     // ── PanResponder para imagen ÚNICA ──
     const singleImagePan = useRef(PanResponder.create({
@@ -244,22 +281,30 @@ export default function ImageCarousel({
                         height={itemHeight}
                         isMuted={isGlobalMuted}
                         shouldPlay={isViewable && isFocused && activeIndex === index && !isOverlayActive && !viewerVisible}
+                        isViewable={isViewable}
                         toggleMute={toggleGlobalMute}
                         isInteractive={isInteractive}
                         onExpand={() => handleMainPress(index)}
+                        muteButtonStyle={muteButtonStyle}
+                        sliderBottomOffset={sliderBottomOffset}
+                        overlay={overlay}
+                        hideExpand={hideExpand}
                     />
                 ) : (
-                    <TouchableOpacity activeOpacity={1} onPress={() => handleMainPress(index)}>
-                        <Image
-                            source={{ uri: item.url }}
-                            style={[styles.mediaItem, { width: ITEM_WIDTH, height: itemHeight, backgroundColor: colors.surface }]}
-                            resizeMode="cover"
-                        />
-                    </TouchableOpacity>
+                    <>
+                        <TouchableOpacity activeOpacity={1} onPress={() => handleMainPress(index)} style={StyleSheet.absoluteFill}>
+                            <Image
+                                source={{ uri: item.url }}
+                                style={[styles.mediaItem, { width: ITEM_WIDTH, height: itemHeight, backgroundColor: colors.surface }]}
+                                resizeMode="cover"
+                            />
+                        </TouchableOpacity>
+                        {overlay}
+                    </>
                 )}
             </View>
         );
-    }, [ITEM_WIDTH, activeAspectRatio, colors, handleMainPress, activeIndex, isGlobalMuted, isViewable, isFocused, toggleGlobalMute, isOverlayActive, isInteractive, viewerVisible]);
+    }, [ITEM_WIDTH, activeAspectRatio, colors, handleMainPress, activeIndex, isGlobalMuted, isViewable, isFocused, toggleGlobalMute, isOverlayActive, isInteractive, viewerVisible, muteButtonStyle, sliderBottomOffset, overlay, hideExpand]);
 
 
     return (
@@ -317,23 +362,25 @@ export default function ImageCarousel({
                 )}
             </View>
 
-            {sortedMedia.length > 1 && (
-                <View style={styles.counter} pointerEvents="none">
+            {sortedMedia.length > 1 && !showBottomCounter && (
+                <View style={[styles.counter, counterStyle]} pointerEvents="none">
                     <Text style={styles.counterText}>{activeIndex + 1}/{sortedMedia.length}</Text>
                 </View>
             )}
 
-            {sortedMedia.length > 1 && (
-                <View style={styles.pagination} pointerEvents="none">
-                    {sortedMedia.map((_, index) => (
-                        <View
-                            key={index}
-                            style={[
-                                styles.dot,
-                                { backgroundColor: index === activeIndex ? colors.primary : 'rgba(255,255,255,0.5)' },
-                            ]}
-                        />
-                    ))}
+            {sortedMedia.length > 1 && !hidePagination && (
+                <View style={[styles.pagination, paginationStyle]} pointerEvents="none">
+                    {showBottomCounter ? null : (
+                        sortedMedia.map((_, index) => (
+                            <View
+                                key={index}
+                                style={[
+                                    styles.dot,
+                                    { backgroundColor: index === activeIndex ? colors.primary : 'rgba(255,255,255,0.5)' },
+                                ]}
+                            />
+                        ))
+                    )}
                 </View>
             )}
 
@@ -425,13 +472,11 @@ export default function ImageCarousel({
             </Modal>
         </View>
     );
-}
+});
 
 const styles = StyleSheet.create({
     container: {
         width: '100%',
-        marginTop: 6,
-        marginBottom: 8,
         position: 'relative',
     },
     mediaItem: { width: '100%', height: '100%' },
@@ -451,20 +496,29 @@ const styles = StyleSheet.create({
         borderRadius: 3.5,
         marginHorizontal: 3,
     },
+    bottomCounterPill: {
+        backgroundColor: 'transparent',
+    },
+    bottomCounterText: {
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '900',
+    },
     counter: {
         position: 'absolute',
         top: 10,
         left: 24,
-        backgroundColor: 'rgba(0,0,0,0.55)',
-        borderRadius: 12,
-        paddingHorizontal: 10,
-        paddingVertical: 4,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     counterText: {
         color: '#FFFFFF',
-        fontSize: 13,
-        fontWeight: '600',
-        letterSpacing: 0.5,
+        fontSize: 11,
+        fontWeight: '800',
     },
     viewerContainer: {
         flex: 1,
@@ -485,14 +539,13 @@ const styles = StyleSheet.create({
     muteButtonContainer: {
         position: 'absolute',
         right: 12,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        width: 38,
-        height: 38,
-        borderRadius: 19,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 25,
-        elevation: 5,
     },
     videoOverlay: {
         ...StyleSheet.absoluteFillObject,
@@ -520,20 +573,17 @@ const styles = StyleSheet.create({
     },
     timeDisplay: {
         position: 'absolute',
-        bottom: 120,
-        left: 0,
-        right: 0,
+        width: '100%',
         alignItems: 'center',
         zIndex: 25,
     },
     timeText: {
-        color: '#FFF',
-        fontSize: 22,
-        fontWeight: '700',
-        letterSpacing: 0.5,
-        textShadowColor: 'rgba(0,0,0,0.6)',
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '900',
+        textShadowColor: 'rgba(0,0,0,0.75)',
         textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 4,
+        textShadowRadius: 3,
     },
 });
 
@@ -578,8 +628,15 @@ const FullscreenVideoModal = React.forwardRef(({
  * El REPRODUCTOR REAL que contiene useVideoPlayer.
  * Aislado del hook de caché para evitar Race Conditions.
  */
+const formatTime = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+};
+
 const ActualVideoPlayer = ({ 
-    source, width, height, isMuted, shouldPlay, toggleMute, isInteractive, onExpand, hideExpand, contentFit = 'cover', insets, colors, urlOriginal 
+    source, width, height, isMuted, shouldPlay, toggleMute, isInteractive, onExpand, hideExpand, contentFit = 'cover', insets, colors, urlOriginal, muteButtonStyle, sliderBottomOffset = 0, overlay, isViewable = true
 }: any) => {
     const [showControls, setShowControls] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -590,6 +647,8 @@ const ActualVideoPlayer = ({
     const controlsTimeout = useRef<any>(null);
     const [isReady, setIsReady] = useState(true);
     const isMounted = useRef(true);
+    const isViewableRef = useRef(isViewable);
+    useEffect(() => { isViewableRef.current = isViewable; }, [isViewable]);
 
     useEffect(() => {
         isMounted.current = true;
@@ -613,6 +672,8 @@ const ActualVideoPlayer = ({
         try {
             sub = player.addListener('playToEnd', () => {
                 if (!isMounted.current) return;
+                // No reiniciar si el video ya no está visible
+                if (!isViewableRef.current) return;
                 try {
                     // replay() reinicia desde el principio sin pantalla negra
                     if (typeof player.replay === 'function') {
@@ -644,7 +705,7 @@ const ActualVideoPlayer = ({
         };
     }, [player]);
 
-    // Controlar play/pause según la visibilidad del post
+    // Controlar play/pause según shouldPlay (visibilidad + foco + posición en carrusel)
     useEffect(() => {
         if (!player) return;
         try {
@@ -655,6 +716,14 @@ const ActualVideoPlayer = ({
             }
         } catch (e) {}
     }, [shouldPlay, player, showFullscreenLocal]);
+
+    // Control adicional: si el item sale del viewport, pausar inmediatamente
+    useEffect(() => {
+        if (!player) return;
+        if (!isViewable) {
+            try { player.pause(); } catch (e) {}
+        }
+    }, [isViewable, player]);
 
     // Sincronizar mute
     useEffect(() => {
@@ -740,11 +809,9 @@ const ActualVideoPlayer = ({
                 </View>
             )}
 
-            {!hideExpand && (
-                <TouchableOpacity style={[styles.muteButtonContainer, { top: 16, right: 16 }]} activeOpacity={0.7} onPress={toggleMute}>
-                    <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={18} color="white" />
-                </TouchableOpacity>
-            )}
+            <TouchableOpacity style={[styles.muteButtonContainer, muteButtonStyle]} activeOpacity={0.7} onPress={toggleMute}>
+                <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={20} color="white" />
+            </TouchableOpacity>
 
             {isInteractive && (
                 <>
@@ -752,7 +819,7 @@ const ActualVideoPlayer = ({
                         <TouchableOpacity style={[styles.muteButtonContainer, { top: 60, right: 16 }]} activeOpacity={0.7} onPress={() => {
                             if (onExpand) onExpand(); else fsModalRef.current?.open();
                         }}>
-                            <Ionicons name="expand" size={18} color="white" />
+                            <Ionicons name="expand" size={20} color="white" />
                         </TouchableOpacity>
                     )}
                     <FullscreenVideoModal 
@@ -760,11 +827,26 @@ const ActualVideoPlayer = ({
                         onOpen={async () => { setShowFullscreenLocal(true); player?.pause(); }} 
                         onClose={() => { setShowFullscreenLocal(false); if (shouldPlay) player?.play(); }} 
                     />
-                    <View style={[styles.sliderContainer, { bottom: bottomOffset + 16 }]}>
-                        <Slider style={{ width: width - 32, height: 40 }} minimumValue={0} maximumValue={duration || 1} value={position} minimumTrackTintColor={colors.primary} maximumTrackTintColor="rgba(255,255,255,0.3)" thumbTintColor="#FFF" onSlidingComplete={(v) => { if (player) player.currentTime = v / 1000; }} />
-                    </View>
+
+                    {/* Solo mostrar slider y tiempo cuando está pausado */}
+                    {!isPlaying && (
+                      <>
+                        <View style={[styles.timeDisplay, { bottom: (bottomOffset + 60) + sliderBottomOffset }]}>
+                          <Text style={styles.timeText}>
+                            {formatTime(position)} / {formatTime(duration)}
+                          </Text>
+                        </View>
+                        <View style={[styles.sliderContainer, { bottom: (bottomOffset + 16) + sliderBottomOffset }]}>
+                          <Slider style={{ width: width - 32, height: 40 }} minimumValue={0} maximumValue={duration || 1} value={position} minimumTrackTintColor={colors.primary} maximumTrackTintColor="rgba(255,255,255,0.3)" thumbTintColor="#FFF" onSlidingComplete={(v) => { if (player) player.currentTime = v / 1000; }} />
+                        </View>
+                      </>
+                    )}
                 </>
             )}
+
+            {/* Overlay siempre visible (botones WhatsApp/Consultar) */}
+            {overlay}
+
         </View>
         </GestureDetector>
     );
@@ -785,5 +867,7 @@ export function InteractiveVideoPlayer(props: any) {
         );
     }
 
-    return <ActualVideoPlayer {...props} source={cachedSource} colors={colors} urlOriginal={props.url} />;
+    return <ActualVideoPlayer {...props} source={cachedSource} colors={colors} urlOriginal={props.url} overlay={props.overlay} />;
 }
+
+export default ImageCarousel;
