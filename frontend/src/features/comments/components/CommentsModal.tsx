@@ -100,6 +100,7 @@ export default function CommentsModal({
     const storeCardRef = useRef<any>(null);
     const postCarouselRef = useRef<any>(null);
     const [postActiveIndex, setPostActiveIndex] = useState(0);
+    const [postCardWidth, setPostCardWidth] = useState(SCREEN_WIDTH - 8);
     const [isOptionsModalVisible, setIsOptionsModalVisible] = useState(false);
     const [isAdOptionsVisible, setIsAdOptionsVisible] = useState(false);
     const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
@@ -134,7 +135,6 @@ export default function CommentsModal({
     const isCommentable = (isPost || isStore) && !isAd;
     const isEdited = !!post?.editedAt;
     const effectiveIsMinimized = isMinimized || !isCommentable;
-    const hasPostMedia = isPost && (normalizedItem?.media?.length ?? 0) > 0;
     // Layout del área superior del anuncio (sin el botón CTA) para el overlay de gestos
     const [adMediaLayout, setAdMediaLayout] = React.useState<{ y: number; height: number } | null>(null);
 
@@ -159,6 +159,8 @@ export default function CommentsModal({
         // Post: remap postMedia alias
         return { ...post, media: post.postMedia ?? post.media ?? [] };
     }, [post]);
+
+    const hasPostMedia = isPost && (normalizedItem?.media?.length ?? 0) > 0;
 
     // Resetear scroll al cambiar de post
     useEffect(() => {
@@ -1358,16 +1360,29 @@ export default function CommentsModal({
                                                             : <Text style={styles.avatarText}>{initials}</Text>;
                                                     })()}
                                                 </View>
-                                                <View style={{ flex: 1 }}>
-                                                    <Text style={[styles.postAuthorName, { color: colors.text }]}>
-                                                        {isPost
-                                                            ? `${post.author?.firstName ?? ''} ${post.author?.lastName ?? ''}`
-                                                            : `${(post.author?.firstName ?? post.user?.firstName ?? post.seller?.firstName) ?? ''} ${(post.author?.lastName ?? post.user?.lastName ?? post.seller?.lastName) ?? ''}`
-                                                        }
+                                                <View style={{ flex: 1, overflow: 'hidden' }}>
+                                                    <Text 
+                                                        style={[styles.postAuthorName, { color: colors.text, flexShrink: 1 }]}
+                                                        numberOfLines={1}
+                                                        ellipsizeMode="tail"
+                                                    >
+                                                        {(() => {
+                                                            const authorName = isPost
+                                                                ? `${post.author?.firstName ?? ''} ${post.author?.lastName ?? ''}`
+                                                                : `${(post.author?.firstName ?? post.user?.firstName ?? post.seller?.firstName) ?? ''} ${(post.author?.lastName ?? post.user?.lastName ?? post.seller?.lastName) ?? ''}`;
+                                                            return authorName.length > 40 ? `${authorName.substring(0, 40)}...` : authorName;
+                                                        })()}
                                                     </Text>
-                                                    <Text style={[styles.postDate, { color: colors.textSecondary }]}>
-                                                        {formatDate(post.createdAt)}{isPost && isEdited ? ' · Editado' : ''}
-                                                    </Text>
+                                                    {(() => {
+                                                        const username = isPost
+                                                            ? post.author?.username
+                                                            : (post.author?.username ?? post.user?.username ?? post.seller?.username);
+                                                        return username ? (
+                                                            <Text style={{ fontSize: 12, color: colors.textSecondary, opacity: 0.7 }} numberOfLines={1}>
+                                                                @{username}
+                                                            </Text>
+                                                        ) : null;
+                                                    })()}
                                                 </View>
                                             </TouchableOpacity>
 
@@ -1439,6 +1454,7 @@ export default function CommentsModal({
                                         scrollEventThrottle={8}
                                         onLayout={(e) => {
                                             postScrollHeight.current = e.nativeEvent.layout.height;
+                                            setPostCardWidth(e.nativeEvent.layout.width);
                                         }}
                                         onContentSizeChange={(_, h) => {
                                             postScrollContentHeight.current = h;
@@ -1548,185 +1564,236 @@ export default function CommentsModal({
                                             </Animated.View>
                                         ) : (
                                             <>
-                                                <Animated.View collapsable={false} {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 8, overflow: 'hidden', zIndex: 1 }}>
-                                                    <View style={{ marginBottom: 1 }}>
-                                                        <TouchableOpacity
-                                                            activeOpacity={0.8}
-                                                            onPress={() => isTextLong && setIsExpanded(!isExpanded)}
-                                                            onLongPress={() => setIsCopyModalVisible(true)}
-                                                            delayLongPress={250}
-                                                        >
-                                                            {post.title && (
-                                                                <Text style={[styles.postTitleTitle, { color: colors.text }]}>{post.title}</Text>
-                                                            )}
-                                                            <Text style={[styles.postContent, { color: colors.text }]}>
-                                                                {displayContent}
-                                                                {isTextLong && !isExpanded && (
-                                                                    <Text
-                                                                        onPress={() => setIsExpanded(true)}
-                                                                        style={[styles.seeMoreText, { color: colors.primary }]}
-                                                                    >
-                                                                        ... más
-                                                                    </Text>
-                                                                )}
-                                                            </Text>
-                                                        </TouchableOpacity>
-
-                                                        {isTextLong && isExpanded && (
+                                                {!hasPostMedia ? (
+                                                    <Animated.View collapsable={false} {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 8, overflow: 'hidden', zIndex: 1 }}>
+                                                        <View style={{ marginBottom: 1 }}>
                                                             <TouchableOpacity
-                                                                onPress={() => setIsExpanded(false)}
-                                                                style={styles.seeMoreBtn}
+                                                                activeOpacity={0.8}
+                                                                onPress={() => isTextLong && setIsExpanded(!isExpanded)}
+                                                                onLongPress={() => setIsCopyModalVisible(true)}
+                                                                delayLongPress={250}
                                                             >
-                                                                <Text style={[styles.seeMoreText, { color: colors.primary }]}>
-                                                                    Ver menos
+                                                                {post.title && (
+                                                                    <Text style={[styles.postTitleTitle, { color: colors.text }]}>{post.title}</Text>
+                                                                )}
+                                                                <Text style={[styles.postContent, { color: colors.text }]}>
+                                                                    {displayContent}
+                                                                    {isTextLong && !isExpanded && (
+                                                                        <Text
+                                                                            onPress={() => setIsExpanded(true)}
+                                                                            style={[styles.seeMoreText, { color: colors.primary }]}
+                                                                        >
+                                                                            ... más
+                                                                        </Text>
+                                                                    )}
                                                                 </Text>
                                                             </TouchableOpacity>
-                                                        )}
-                                                    </View>
-                                                </Animated.View>
 
-                                                {/* ── Media Adjunta (Carrusel) dentro del Modal ── */}
-                                                {normalizedItem?.media && normalizedItem.media.length > 0 && (
-                                                    <View collapsable={false} style={{ position: 'relative', marginTop: 12, marginHorizontal: -16, overflow: 'hidden', borderRadius: 0.1, zIndex: 5, backgroundColor: '#000' }}>
-                                                        <ImageCarousel
-                                                            ref={postCarouselRef}
-                                                            key={post?.id}
-                                                            media={normalizedItem.media}
-                                                            containerWidth={SCREEN_WIDTH}
-                                                            imageResizeMode="cover"
-                                                            dynamicAspectRatio={false}
-                                                            customAspectRatio={1080 / 1440}
-                                                            isInteractive={true}
-                                                            hideExpand={true}
-                                                            hidePagination={true}
-                                                            onIndexChange={setPostActiveIndex}
-                                                            disablePressToFullscreen={true}
-                                                            muteButtonStyle={{ top: 144, right: 12 }}
-                                                            onSwipeClose={(carouselPanX) => {
-                                                                carouselPanX.addListener(({ value }) => panX.setValue(value));
-                                                                closeWithXAnimation();
-                                                            }}
-                                                        />
+                                                            {isTextLong && isExpanded && (
+                                                                <TouchableOpacity
+                                                                    onPress={() => setIsExpanded(false)}
+                                                                    style={styles.seeMoreBtn}
+                                                                >
+                                                                    <Text style={[styles.seeMoreText, { color: colors.primary }]}>
+                                                                        Ver menos
+                                                                    </Text>
+                                                                </TouchableOpacity>
+                                                            )}
 
-                                                        {/* Close button */}
-                                                        <TouchableOpacity
-                                                            style={{ position: 'absolute', top: 12, right: 12, zIndex: 30, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
-                                                            onPress={closeWithAnimation}
-                                                        >
-                                                            <Ionicons name="close" size={20} color="white" />
-                                                        </TouchableOpacity>
-
-                                                        {/* Options button */}
-                                                        <TouchableOpacity
-                                                            style={{ position: 'absolute', top: 56, right: 12, zIndex: 30, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
-                                                            onPress={() => {
-                                                                const profileId = post.author?.id ?? post.user?.id ?? post.seller?.id;
-                                                                const isOwner = profileId === currentUser?.id;
-                                                                if (isOwner) onOptionsPress?.(post);
-                                                                else setIsPostOptionsMenuVisible(true);
+                                                        </View>
+                                                    </Animated.View>
+                                                ) : (
+                                                    <>
+                                                        {/* Si SÍ tiene media, la media va al tope absoluto */}
+                                                        <View 
+                                                            collapsable={false} 
+                                                            style={{ 
+                                                                position: 'relative', 
+                                                                marginTop: 0, 
+                                                                width: '100%', 
+                                                                overflow: 'hidden', 
+                                                                borderTopLeftRadius: 20, 
+                                                                borderTopRightRadius: 20, 
+                                                                zIndex: 5, 
+                                                                backgroundColor: '#000' 
                                                             }}
                                                         >
-                                                            <Ionicons name="ellipsis-horizontal" size={20} color="white" />
-                                                        </TouchableOpacity>
+                                                            <ImageCarousel
+                                                                ref={postCarouselRef}
+                                                                key={post?.id}
+                                                                media={normalizedItem.media}
+                                                                containerWidth={postCardWidth}
+                                                                imageResizeMode="cover"
+                                                                dynamicAspectRatio={false}
+                                                                customAspectRatio={1080 / 1440}
+                                                                isInteractive={true}
+                                                                hideExpand={true}
+                                                                hidePagination={true}
+                                                                onIndexChange={setPostActiveIndex}
+                                                                disablePressToFullscreen={true}
+                                                                muteButtonStyle={{ top: 144, right: 12 }}
+                                                                onSwipeClose={(carouselPanX) => {
+                                                                    carouselPanX.addListener(({ value }) => panX.setValue(value));
+                                                                    closeWithXAnimation();
+                                                                }}
+                                                            />
 
-                                                        {/* Expand button */}
-                                                        <TouchableOpacity
-                                                            style={{ position: 'absolute', top: 100, right: 12, zIndex: 30, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
-                                                            onPress={() => postCarouselRef.current?.openViewer?.(postActiveIndex)}
-                                                        >
-                                                            <Ionicons name="expand" size={20} color="white" />
-                                                        </TouchableOpacity>
+                                                            {/* Close button */}
+                                                            <TouchableOpacity 
+                                                                style={{ position: 'absolute', top: 12, right: 12, zIndex: 30, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
+                                                                onPress={closeWithAnimation}
+                                                            >
+                                                                <Ionicons name="close" size={20} color="white" />
+                                                            </TouchableOpacity>
 
-                                                        {/* Autor overlay — glassmorphism en la esquina SUPERIOR IZQUIERDA */}
-                                                        <TouchableOpacity
-                                                            style={{
-                                                                position: 'absolute',
-                                                                top: 12,
-                                                                left: 12,
-                                                                flexDirection: 'row',
-                                                                alignItems: 'center',
-                                                                gap: 8,
-                                                                backgroundColor: 'rgba(0,0,0,0.45)',
-                                                                paddingVertical: 5,
-                                                                paddingHorizontal: 10,
-                                                                borderRadius: 20,
-                                                                zIndex: 20,
-                                                            }}
-                                                            onPress={() => {
-                                                                const profileId = post.author?.id ?? post.user?.id ?? post.seller?.id;
-                                                                if (profileId) navigateToProfile(profileId);
-                                                            }}
-                                                            activeOpacity={0.85}
-                                                        >
-                                                            <View style={{
-                                                                width: 34,
-                                                                height: 34,
-                                                                borderRadius: 17,
-                                                                backgroundColor: 'rgba(255,255,255,0.2)',
-                                                                justifyContent: 'center',
-                                                                alignItems: 'center',
-                                                                overflow: 'hidden',
-                                                            }}>
-                                                                {post.author?.photoUrl ? (
-                                                                    <Image source={{ uri: post.author.photoUrl }} style={{ width: '100%', height: '100%' }} />
-                                                                ) : (
+                                                            {/* Options button */}
+                                                            <TouchableOpacity 
+                                                                style={{ position: 'absolute', top: 56, right: 12, zIndex: 30, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
+                                                                onPress={() => {
+                                                                    const profileId = post.author?.id ?? post.user?.id ?? post.seller?.id;
+                                                                    const isOwner = profileId === currentUser?.id;
+                                                                    if (isOwner) onOptionsPress?.(post);
+                                                                    else setIsPostOptionsMenuVisible(true);
+                                                                }}
+                                                            >
+                                                                <Ionicons name="ellipsis-horizontal" size={20} color="white" />
+                                                            </TouchableOpacity>
+
+                                                            {/* Expand button */}
+                                                            <TouchableOpacity 
+                                                                style={{ position: 'absolute', top: 100, right: 12, zIndex: 30, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
+                                                                onPress={() => postCarouselRef.current?.openViewer?.(postActiveIndex)}
+                                                            >
+                                                                <Ionicons name="expand" size={20} color="white" />
+                                                            </TouchableOpacity>
+
+                                                            {/* Autor overlay — glassmorphism en la esquina SUPERIOR IZQUIERDA */}
+                                                            <TouchableOpacity
+                                                                style={{
+                                                                    position: 'absolute',
+                                                                    top: 12,
+                                                                    left: 12,
+                                                                    flexDirection: 'row',
+                                                                    alignItems: 'center',
+                                                                    gap: 8,
+                                                                    backgroundColor: 'rgba(0,0,0,0.45)',
+                                                                    paddingVertical: 5,
+                                                                    paddingHorizontal: 10,
+                                                                    borderRadius: 20,
+                                                                    zIndex: 20,
+                                                                }}
+                                                                onPress={() => {
+                                                                    const profileId = post.author?.id ?? post.user?.id ?? post.seller?.id;
+                                                                    if (profileId) navigateToProfile(profileId);
+                                                                }}
+                                                                activeOpacity={0.85}
+                                                            >
+                                                                <View style={{
+                                                                    width: 34,
+                                                                    height: 34,
+                                                                    borderRadius: 17,
+                                                                    backgroundColor: 'rgba(255,255,255,0.2)',
+                                                                    justifyContent: 'center',
+                                                                    alignItems: 'center',
+                                                                    overflow: 'hidden',
+                                                                }}>
+                                                                    {post.author?.photoUrl ? (
+                                                                        <Image source={{ uri: post.author.photoUrl }} style={{ width: '100%', height: '100%' }} />
+                                                                    ) : (
+                                                                        <Text style={{
+                                                                            color: '#FFF',
+                                                                            fontSize: 11,
+                                                                            fontWeight: '700',
+                                                                        }}>
+                                                                            {post.author?.firstName?.[0] || ''}{post.author?.lastName?.[0] || ''}
+                                                                        </Text>
+                                                                    )}
+                                                                </View>
+                                                                <View style={{
+                                                                    flexDirection: 'column',
+                                                                    justifyContent: 'center',
+                                                                    marginLeft: 2,
+                                                                }}>
                                                                     <Text style={{
                                                                         color: '#FFF',
-                                                                        fontSize: 11,
-                                                                        fontWeight: '700',
-                                                                    }}>
-                                                                        {post.author?.firstName?.[0] || ''}{post.author?.lastName?.[0] || ''}
-                                                                    </Text>
-                                                                )}
-                                                            </View>
-                                                            <View style={{
-                                                                flexDirection: 'column',
-                                                                justifyContent: 'center',
-                                                                marginLeft: 2,
-                                                            }}>
-                                                                <Text style={{
-                                                                    color: '#FFF',
-                                                                    fontSize: 13,
-                                                                    fontWeight: '800',
-                                                                    lineHeight: 15,
-                                                                }} numberOfLines={1}>
-                                                                    {post.author?.firstName} {post.author?.lastName}
-                                                                </Text>
-                                                                {post.author?.username && (
-                                                                    <Text style={{
-                                                                        color: 'rgba(255,255,255,0.7)',
-                                                                        fontSize: 10,
-                                                                        fontWeight: '600',
+                                                                        fontSize: 13,
+                                                                        fontWeight: '800',
+                                                                        lineHeight: 15,
                                                                     }} numberOfLines={1}>
-                                                                        @{post.author.username}
+                                                                        {post.author?.firstName} {post.author?.lastName}
                                                                     </Text>
-                                                                )}
-                                                            </View>
-                                                        </TouchableOpacity>
+                                                                    {post.author?.username && (
+                                                                        <Text style={{
+                                                                            color: 'rgba(255,255,255,0.7)',
+                                                                            fontSize: 10,
+                                                                            fontWeight: '600',
+                                                                        }} numberOfLines={1}>
+                                                                            @{post.author.username}
+                                                                        </Text>
+                                                                    )}
+                                                                </View>
+                                                            </TouchableOpacity>
 
-                                                        {/* Integrated Counter Overlay at bottom */}
-                                                        {normalizedItem.media.length > 1 && (
-                                                            <View style={{
-                                                                position: 'absolute',
-                                                                bottom: 12,
-                                                                alignSelf: 'center',
-                                                                backgroundColor: 'rgba(0,0,0,0.4)',
-                                                                paddingHorizontal: 10,
-                                                                paddingVertical: 4,
-                                                                borderRadius: 12,
-                                                                zIndex: 15,
-                                                            }}>
-                                                                <Text style={{
-                                                                    color: '#FFFFFF',
-                                                                    fontSize: 12,
-                                                                    fontWeight: '900',
-                                                                    letterSpacing: 0.5,
+                                                            {/* Integrated Counter Overlay at bottom */}
+                                                            {normalizedItem.media.length > 1 && (
+                                                                <View style={{
+                                                                    position: 'absolute',
+                                                                    bottom: 12,
+                                                                    alignSelf: 'center',
+                                                                    backgroundColor: 'rgba(0,0,0,0.4)',
+                                                                    paddingHorizontal: 10,
+                                                                    paddingVertical: 4,
+                                                                    borderRadius: 12,
+                                                                    zIndex: 15,
                                                                 }}>
-                                                                    {postActiveIndex + 1} / {normalizedItem.media.length}
+                                                                    <Text style={{
+                                                                        color: '#FFFFFF',
+                                                                        fontSize: 12,
+                                                                        fontWeight: '900',
+                                                                        letterSpacing: 0.5,
+                                                                    }}>
+                                                                        {postActiveIndex + 1} / {normalizedItem.media.length}
+                                                                    </Text>
+                                                                </View>
+                                                            )}
+                                                        </View>
+
+                                                        {/* Descripción y fecha abajo de la media */}
+                                                        <Animated.View collapsable={false} {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14, overflow: 'hidden' }}>
+                                                            <TouchableOpacity
+                                                                activeOpacity={0.8}
+                                                                onPress={() => isTextLong && setIsExpanded(!isExpanded)}
+                                                                onLongPress={() => setIsCopyModalVisible(true)}
+                                                                delayLongPress={250}
+                                                            >
+                                                                {post.title && (
+                                                                    <Text style={[styles.postTitleTitle, { color: colors.text, marginBottom: 8 }]}>{post.title}</Text>
+                                                                )}
+                                                                <Text style={[styles.postContent, { color: colors.text }]}>
+                                                                    {displayContent}
+                                                                    {isTextLong && !isExpanded && (
+                                                                        <Text
+                                                                            onPress={() => setIsExpanded(true)}
+                                                                            style={[styles.seeMoreText, { color: colors.primary }]}
+                                                                        >
+                                                                            ... más
+                                                                        </Text>
+                                                                    )}
                                                                 </Text>
-                                                            </View>
-                                                        )}
-                                                    </View>
+                                                            </TouchableOpacity>
+
+                                                            {isTextLong && isExpanded && (
+                                                                <TouchableOpacity
+                                                                    onPress={() => setIsExpanded(false)}
+                                                                    style={styles.seeMoreBtn}
+                                                                >
+                                                                    <Text style={[styles.seeMoreText, { color: colors.primary }]}>
+                                                                        Ver menos
+                                                                    </Text>
+                                                                </TouchableOpacity>
+                                                            )}
+                                                        </Animated.View>
+                                                    </>
                                                 )}
                                             </>
                                         )}
@@ -1736,7 +1803,7 @@ export default function CommentsModal({
                                     {isCommentable && !isStore && (
                                         <Animated.View {...footerSwipePan.panHandlers} style={[styles.postFooterFixed, { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth, backgroundColor: colors.surface }]}>
                                             {/* Actions Row con el estilo de la tienda (instagramActionsRow) */}
-                                            <TouchableOpacity activeOpacity={1} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, gap: 18 }}>
+                                            <TouchableOpacity activeOpacity={1} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4, gap: 18 }}>
                                                 <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }} onPress={handleLike}>
                                                     <Feather
                                                         name="heart"
@@ -1758,6 +1825,10 @@ export default function CommentsModal({
                                                     )}
                                                 </TouchableOpacity>
                                             </TouchableOpacity>
+                                             {/* Fecha al final (mismo color y opacidad que en el feed) */}
+                                             <Text style={{ fontSize: 11, paddingHorizontal: 16, paddingBottom: 10, paddingTop: 0, opacity: 0.5, color: colors.textSecondary }}>
+                                                 {formatDate(post.createdAt)}{isPost && isEdited ? ' · Editado' : ''}
+                                             </Text>
                                         </Animated.View>
                                     )}
                                 </>
@@ -2159,14 +2230,16 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         paddingTop: 14,
         paddingBottom: 10,
         paddingHorizontal: 16,
+        flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'space-between',
     },
     postAuthorRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        width: '100%',
+        flex: 1,
         marginTop: 4,
-        paddingRight: 24,
+        marginRight: 12,
     },
     postAuthorName: { fontWeight: 'bold', fontSize: 15, marginBottom: 2 },
     postDate: { fontSize: 12 },
@@ -2221,6 +2294,8 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         borderRadius: 2,
         position: 'absolute',
         top: 7,
+        left: '50%',
+        marginLeft: -18,
         backgroundColor: colors.border,
     },
     headerTitle: { fontSize: 16, fontWeight: 'bold', marginTop: 4, color: colors.text },

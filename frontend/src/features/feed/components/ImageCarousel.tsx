@@ -454,6 +454,7 @@ const ImageCarousel = React.forwardRef((props: ImageCarouselProps, ref: any) => 
                                             toggleMute={toggleGlobalMute}
                                             isInteractive={true}
                                             hideExpand={true}
+                                            hideMute={true}
                                             contentFit="contain"
                                             insets={insets}
                                         />
@@ -638,7 +639,7 @@ const formatTime = (ms: number) => {
 };
 
 const ActualVideoPlayer = ({ 
-    source, width, height, isMuted, shouldPlay, toggleMute, isInteractive, onExpand, hideExpand, contentFit = 'cover', insets, colors, urlOriginal, muteButtonStyle, sliderBottomOffset = 0, overlay, isViewable = true
+    source, width, height, isMuted, shouldPlay, toggleMute, isInteractive, onExpand, hideExpand, hideMute = false, contentFit = 'cover', insets, colors, urlOriginal, muteButtonStyle, sliderBottomOffset = 0, overlay, isViewable = true
 }: any) => {
     const [showControls, setShowControls] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -811,9 +812,11 @@ const ActualVideoPlayer = ({
                 </View>
             )}
 
-            <TouchableOpacity style={[styles.muteButtonContainer, muteButtonStyle]} activeOpacity={0.7} onPress={toggleMute}>
-                <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={20} color="white" />
-            </TouchableOpacity>
+            {!hideMute && (
+                <TouchableOpacity style={[styles.muteButtonContainer, muteButtonStyle]} activeOpacity={0.7} onPress={toggleMute}>
+                    <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={20} color="white" />
+                </TouchableOpacity>
+            )}
 
             {isInteractive && (
                 <>

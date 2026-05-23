@@ -35,7 +35,7 @@ interface TabConfig {
 const TABS: TabConfig[] = [
     { key: 'offers',   label: 'Ofertas',    icon: 'briefcase-outline',    iconActive: 'briefcase' },
     { key: 'services', label: 'Servicios',  icon: 'construct-outline',    iconActive: 'construct' },
-    { key: 'results',  label: 'Resultados', icon: 'stats-chart-outline',  iconActive: 'stats-chart' },
+        { key: 'results',  label: 'Mis publicaciones', icon: 'stats-chart-outline',  iconActive: 'stats-chart' },
 ];
 
 export default function JobsScreen() {
@@ -45,7 +45,7 @@ export default function JobsScreen() {
     const apolloClient = useApolloClient();
     const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const [activeTab, setActiveTab] = useState<TabKey>('offers');
-    const [resultsTab, setResultsTab] = useState<ResultsTabKey>('my_applications');
+    const [resultsTab, setResultsTab] = useState<ResultsTabKey>('my_offers');
     const [fabOpen, setFabOpen] = useState(false);
     const fabAnim = useRef(new Animated.Value(0)).current;
     const [tabWidths, setTabWidths] = useState<number[]>([]);
@@ -451,10 +451,9 @@ export default function JobsScreen() {
         if (activeTab !== 'results') return null;
         
         const RESULT_TABS = [
-            { key: 'my_applications', label: 'Mis Postulaciones', icon: 'paper-plane-outline' },
-            { key: 'my_offers', label: 'Mis Ofertas', icon: 'briefcase-outline' },
-            { key: 'my_services', label: 'Mis Servicios', icon: 'construct-outline' }
-        ];
+        { key: 'my_offers', label: 'Mis Ofertas', icon: 'briefcase-outline' },
+        { key: 'my_services', label: 'Mis Servicios', icon: 'construct-outline' }
+    ];
 
         return (
             <View style={styles.subTabBarContainer}>
