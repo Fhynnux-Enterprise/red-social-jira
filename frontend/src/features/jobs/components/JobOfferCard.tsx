@@ -37,12 +37,15 @@ interface JobOfferCardProps {
     isFocused?: boolean;
     isViewable?: boolean;
     isOverlayActive?: boolean;
+    onClose?: () => void;
+    onOptionsPress?: () => void;
 }
 
 export default function JobOfferCard({ 
     item, onPress, onEdit, hideAuthorRow, isModalView, 
     onToggleSave, isSaved: propIsSaved, showTopDivider,
-    isFocused = true, isViewable = true, isOverlayActive = false 
+    isFocused = true, isViewable = true, isOverlayActive = false,
+    onClose, onOptionsPress
 }: JobOfferCardProps) {
     const { colors, isDark } = useTheme();
     const router = useRouter();
@@ -309,6 +312,36 @@ export default function JobOfferCard({
                         </TouchableOpacity>
                     )}
 
+
+                    {/* Botón de Cerrar (Solo en Modal) */}
+                    {isModalView && onClose && (
+                        <TouchableOpacity 
+                            style={[styles.glassCirclePure, { position: 'absolute', top: 12, right: 12, zIndex: 30 }]}
+                            onPress={onClose}
+                        >
+                            <Ionicons name="close" size={20} color="white" />
+                        </TouchableOpacity>
+                    )}
+
+                    {/* Botón de Opciones (Solo en Modal) */}
+                    {isModalView && onOptionsPress && (
+                        <TouchableOpacity 
+                            style={[styles.glassCirclePure, { position: 'absolute', top: 56, right: 12, zIndex: 30 }]}
+                            onPress={onOptionsPress}
+                        >
+                            <Ionicons name="ellipsis-horizontal" size={20} color="white" />
+                        </TouchableOpacity>
+                    )}
+
+                    {/* Botón de Expandir (Solo en Modal) */}
+                    {isModalView && (
+                        <TouchableOpacity 
+                            style={[styles.glassCirclePure, { position: 'absolute', top: expandTop, right: 12, zIndex: 30 }]}
+                            onPress={() => carouselRef.current?.openViewer?.(activeIndex)}
+                        >
+                            <Ionicons name="expand" size={20} color="white" />
+                        </TouchableOpacity>
+                    )}
 
                     {/* Menu Button Overlay (Top Right) */}
                     {!isModalView && (
@@ -682,6 +715,14 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 8,
         minWidth: 36,
+    },
+    glassCirclePure: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 
     // Bottom Action Strip (Inside Carousel)

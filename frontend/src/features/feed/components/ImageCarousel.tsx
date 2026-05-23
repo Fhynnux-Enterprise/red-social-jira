@@ -54,6 +54,8 @@ interface ImageCarouselProps {
     /** Ocultar los puntos de paginación internos */
     hidePagination?: boolean;
     /** Desactiva que el toque principal abra pantalla completa (para usar botón externo) */
+    disablePressToFullscreen?: boolean;
+    hideExpand?: boolean;
     /** Mostrar contador de páginas en la parte inferior en lugar de puntos */
     showBottomCounter?: boolean;
     /** Offset inferior para la barra de progreso del video */

@@ -35,18 +35,22 @@ interface ProfessionalCardProps {
     isViewable?: boolean;
     isOverlayActive?: boolean;
     showTopDivider?: boolean;
+    onClose?: () => void;
+    onOptionsPress?: () => void;
 }
 
 export default function ProfessionalCard({ 
     item, onPress, hideAuthorRow, onEdit, isModalView, 
     onToggleSave, isSaved: propIsSaved, showTopDivider,
-    isFocused = true, isViewable = true, isOverlayActive = false 
+    isFocused = true, isViewable = true, isOverlayActive = false,
+    onClose, onOptionsPress
 }: ProfessionalCardProps) {
     const { colors, isDark } = useTheme();
     const navigation = useNavigation();
     const router = useRouter();
     const authContext = useAuth() as any;
-    const { width: cardWidth } = useWindowDimensions();
+    const { width: windowWidth } = useWindowDimensions();
+    const [cardWidth, setCardWidth] = useState(windowWidth - 32);
     const insets = useSafeAreaInsets();
     const isOwnCard = item.user?.id === authContext?.user?.id;
     const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
@@ -57,6 +61,9 @@ export default function ProfessionalCard({
     const [isDescExpanded, setIsDescExpanded] = useState(false);
     const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
     const [activeIndex, setActiveIndex] = useState(0);
+    const carouselRef = React.useRef<any>(null);
+    const expandTop = 100;
+    const muteTop = isModalView ? (expandTop + 44) : 56;
 
     const isModeratorOrAdmin = authContext?.user?.role === 'ADMIN' || authContext?.user?.role === 'MODERATOR';
     const client = useApolloClient();
@@ -180,11 +187,12 @@ export default function ProfessionalCard({
                 <View style={[styles.fullWidthDivider, { marginTop: 0, marginBottom: 12 }]} />
             )}
             <TouchableOpacity
-                style={hasMedia ? styles.cardWithMedia : styles.cardWithoutMedia}
+                style={(hasMedia || isModalView) ? styles.cardWithMedia : styles.cardWithoutMedia}
                 onPress={onPress}
                 onLongPress={() => setIsCopyModalVisible(true)}
                 delayLongPress={250}
                 activeOpacity={1}
+                onLayout={(e) => setCardWidth(e.nativeEvent.layout.width)}
             >
                 {/* ── Card Head (Estilo Oferta) ── */}
                 <View style={styles.cardHead}>
@@ -194,57 +202,65 @@ export default function ProfessionalCard({
                     </View>
                 </View>
 
-                {/* ── Media con Overlay de Autor (Modern Style) ── */}
-                {hasMedia ? (
+                {/* ── Media con Overlay de Autor (Modern Style) o Vista de Modal sin Media ── */}
+                {(hasMedia || isModalView) ? (
                     <View style={styles.mediaWrapper}>
-                        <ImageCarousel
-                            media={item.media}
-                            containerWidth={cardWidth}
-                            customAspectRatio={1}
-                            disableFullscreen={!!onPress && !isModalView}
-                            onPress={onPress}
-                            isFocused={isFocused}
-                            isViewable={isViewable}
-                            isOverlayActive={isOverlayActive}
-                            onIndexChange={setActiveIndex}
-                            hidePagination={true}
-                            overlay={
-                                <View style={styles.bottomActionStrip}>
-                                    {/* Contador integrado */}
-                                    {item.media && item.media.length > 1 && (
-                                        <View style={styles.integratedCounter}>
-                                            <Text style={styles.integratedCounterText}>
-                                                {activeIndex + 1} / {item.media.length}
-                                            </Text>
-                                        </View>
-                                    )}
+                        {hasMedia ? (
+                            <ImageCarousel
+                                ref={carouselRef}
+                                media={item.media}
+                                containerWidth={cardWidth}
+                                customAspectRatio={1}
+                                disableFullscreen={!!onPress && !isModalView}
+                                onPress={onPress}
+                                isFocused={isFocused}
+                                isViewable={isViewable}
+                                isOverlayActive={isOverlayActive}
+                                onIndexChange={setActiveIndex}
+                                hidePagination={true}
+                                muteButtonStyle={{ top: muteTop, right: 12 }}
+                                overlay={
+                                    <View style={styles.bottomActionStrip}>
+                                        {/* Contador integrado */}
+                                        {item.media && item.media.length > 1 && (
+                                            <View style={styles.integratedCounter}>
+                                                <Text style={styles.integratedCounterText}>
+                                                    {activeIndex + 1} / {item.media.length}
+                                                </Text>
+                                            </View>
+                                        )}
 
-                                    {/* Botones de contacto sobre la imagen */}
-                                    <View style={styles.contactButtonsRow}>
-                                        {/* WhatsApp */}
-                                        {!!item.contactPhone && (
+                                        {/* Botones de contacto sobre la imagen */}
+                                        <View style={styles.contactButtonsRow}>
+                                            {/* WhatsApp */}
+                                            {!!item.contactPhone && (
+                                                <TouchableOpacity
+                                                    style={[styles.contactBtnTransparent, styles.whatsappBtnTransparent]}
+                                                    onPress={handleWhatsApp}
+                                                    activeOpacity={0.8}
+                                                >
+                                                    <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
+                                                    <Text style={[styles.contactBtnTextOverlay, { color: '#25D366' }]}>WhatsApp</Text>
+                                                </TouchableOpacity>
+                                            )}
+                                            {/* Chat */}
                                             <TouchableOpacity
-                                                style={[styles.contactBtnTransparent, styles.whatsappBtnTransparent]}
-                                                onPress={handleWhatsApp}
+                                                style={[styles.contactBtnTransparent, styles.privateMessageBtnTransparent]}
+                                                onPress={handlePrivateMessage}
                                                 activeOpacity={0.8}
                                             >
-                                                <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
-                                                <Text style={[styles.contactBtnTextOverlay, { color: '#25D366' }]}>WhatsApp</Text>
+                                                <Ionicons name="chatbubble-ellipses" size={16} color="#2196F3" />
+                                                <Text style={[styles.contactBtnTextOverlay, { color: '#2196F3' }]}>Mensaje Privado</Text>
                                             </TouchableOpacity>
-                                        )}
-                                        {/* Chat */}
-                                        <TouchableOpacity
-                                            style={[styles.contactBtnTransparent, styles.privateMessageBtnTransparent]}
-                                            onPress={handlePrivateMessage}
-                                            activeOpacity={0.8}
-                                        >
-                                            <Ionicons name="chatbubble-ellipses" size={16} color="#2196F3" />
-                                            <Text style={[styles.contactBtnTextOverlay, { color: '#2196F3' }]}>Mensaje Privado</Text>
-                                        </TouchableOpacity>
+                                        </View>
                                     </View>
-                                </View>
-                            }
-                        />
+                                }
+                            />
+                        ) : (
+                            <View style={[styles.noImage, { height: 350, backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5' }]}>
+                                <Ionicons name="ribbon-outline" size={54} color={colors.textSecondary} style={{ opacity: 0.3 }} />
+                            </View>
+                        )}
 
                         {!hideAuthorRow && (
                             <TouchableOpacity
@@ -274,17 +290,49 @@ export default function ProfessionalCard({
                             </TouchableOpacity>
                         )}
 
+                        {/* Botón de Cerrar (Solo en Modal) */}
+                        {isModalView && onClose && (
+                            <TouchableOpacity 
+                                style={[styles.glassCirclePure, { position: 'absolute', top: 12, right: 12, zIndex: 30 }]}
+                                onPress={onClose}
+                            >
+                                <Ionicons name="close" size={20} color="white" />
+                            </TouchableOpacity>
+                        )}
+
+                        {/* Botón de Opciones (Solo en Modal) */}
+                        {isModalView && onOptionsPress && (
+                            <TouchableOpacity 
+                                style={[styles.glassCirclePure, { position: 'absolute', top: 56, right: 12, zIndex: 30 }]}
+                                onPress={onOptionsPress}
+                            >
+                                <Ionicons name="ellipsis-horizontal" size={20} color="white" />
+                            </TouchableOpacity>
+                        )}
+
+                        {/* Botón de Expandir (Solo en Modal) */}
+                        {isModalView && hasMedia && (
+                            <TouchableOpacity 
+                                style={[styles.glassCirclePure, { position: 'absolute', top: expandTop, right: 12, zIndex: 30 }]}
+                                onPress={() => carouselRef.current?.openViewer?.(activeIndex)}
+                            >
+                                <Ionicons name="expand" size={20} color="white" />
+                            </TouchableOpacity>
+                        )}
+
                         {/* Botón ⋯ esquina superior derecha */}
-                        <TouchableOpacity
-                            onPress={() => setMenuVisible(true)}
-                            style={styles.overlayOptionsBtn}
-                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                        >
-                            <Ionicons name="ellipsis-horizontal" size={20} color="#FFF" />
-                        </TouchableOpacity>
+                        {!isModalView && (
+                            <TouchableOpacity
+                                onPress={() => setMenuVisible(true)}
+                                style={styles.overlayOptionsBtn}
+                                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                            >
+                                <Ionicons name="ellipsis-horizontal" size={20} color="#FFF" />
+                            </TouchableOpacity>
+                        )}
                     </View>
                 ) : (
-                    /* Header clásico para cuando NO hay media */
+                    /* Header clásico para cuando NO hay media y NO es vista modal */
                     !hideAuthorRow && (
                         <View style={styles.header}>
                             <TouchableOpacity style={styles.authorRow} onPress={goToProfile} activeOpacity={0.75}>
@@ -592,6 +640,13 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         borderTopRightRadius: 20,
         overflow: 'hidden',
     },
+    noImage: {
+        width: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+    },
     authorOverlay: {
         position: 'absolute',
         top: 12,
@@ -646,6 +701,14 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 25,
+    },
+    glassCirclePure: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     overlayTypeBadge: {
         position: 'absolute',

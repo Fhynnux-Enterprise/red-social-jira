@@ -14,11 +14,11 @@ import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { GET_COMMENTS, CREATE_COMMENT, DELETE_COMMENT, UPDATE_COMMENT } from '../graphql/comments.operations';
 import { TOGGLE_LIKE, TOGGLE_SAVE_POST } from '../../feed/graphql/posts.operations';
-import { 
-    TOGGLE_STORE_PRODUCT_LIKE, 
-    CREATE_STORE_PRODUCT_COMMENT, 
-    GET_STORE_PRODUCT_COMMENTS, 
-    DELETE_STORE_PRODUCT_COMMENT 
+import {
+    TOGGLE_STORE_PRODUCT_LIKE,
+    CREATE_STORE_PRODUCT_COMMENT,
+    GET_STORE_PRODUCT_COMMENTS,
+    DELETE_STORE_PRODUCT_COMMENT
 } from '../../store/graphql/store.operations';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -98,6 +98,8 @@ export default function CommentsModal({
     const [selectedCommentData, setSelectedCommentData] = useState<{ id: string, isMine: boolean, isReply: boolean } | null>(null);
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const storeCardRef = useRef<any>(null);
+    const postCarouselRef = useRef<any>(null);
+    const [postActiveIndex, setPostActiveIndex] = useState(0);
     const [isOptionsModalVisible, setIsOptionsModalVisible] = useState(false);
     const [isAdOptionsVisible, setIsAdOptionsVisible] = useState(false);
     const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
@@ -127,10 +129,12 @@ export default function CommentsModal({
     const isPost = !post?.__typename || post.__typename === 'Post';
     const isStore = post?.__typename === 'StoreProduct';
     const isJobOffer = post?.__typename === 'JobOffer';
+    const isProfessional = post?.__typename === 'ProfessionalProfile';
     const isAd = post?.isAd;
     const isCommentable = (isPost || isStore) && !isAd;
     const isEdited = !!post?.editedAt;
     const effectiveIsMinimized = isMinimized || !isCommentable;
+    const hasPostMedia = isPost && (normalizedItem?.media?.length ?? 0) > 0;
     // Layout del área superior del anuncio (sin el botón CTA) para el overlay de gestos
     const [adMediaLayout, setAdMediaLayout] = React.useState<{ y: number; height: number } | null>(null);
 
@@ -167,6 +171,7 @@ export default function CommentsModal({
         // Iniciar con scroll desactivado para que el primer toque en y=0
         // sea capturado por tiktokSwipePan (prev post desde el primer drag).
         setScrollEnabled(false);
+        setPostActiveIndex(0);
     }, [postId]);
 
     // Lógica para determinar si el texto es largo
@@ -202,9 +207,9 @@ export default function CommentsModal({
 
         const itemId = post.realId || post.id;
         const itemType = post.__typename === 'JobOffer' ? 'JOB_OFFER' :
-                         post.__typename === 'ProfessionalProfile' ? 'PROFESSIONAL_PROFILE' :
-                         post.__typename === 'StoreProduct' ? 'STORE_PRODUCT' :
-                         post.isAd || post.__typename === 'Ad' ? 'AD' : 'POST';
+            post.__typename === 'ProfessionalProfile' ? 'PROFESSIONAL_PROFILE' :
+                post.__typename === 'StoreProduct' ? 'STORE_PRODUCT' :
+                    post.isAd || post.__typename === 'Ad' ? 'AD' : 'POST';
 
         const wasSaved = !!post.isSaved;
 
@@ -708,10 +713,10 @@ export default function CommentsModal({
         onMoveShouldSetPanResponder: (_, g) => {
             // Caso vertical (TikTok) - solo si no necesita scroll
             const isVertical = Math.abs(g.dy) > 12 && Math.abs(g.dy) > Math.abs(g.dx) &&
-                               postScrollContentHeight.current <= postScrollHeight.current + 5;
+                postScrollContentHeight.current <= postScrollHeight.current + 5;
             // Caso horizontal (Cierre) - siempre permitido
             const isHorizontal = g.dx < -15 && Math.abs(g.dx) > Math.abs(g.dy);
-            
+
             return isVertical || isHorizontal;
         },
         onPanResponderGrant: () => {
@@ -948,7 +953,7 @@ export default function CommentsModal({
         skip: !postId || !isPost,
         fetchPolicy: 'cache-and-network',
     });
-    
+
     const storeQuery = useQuery(GET_STORE_PRODUCT_COMMENTS, {
         variables: { productId: postId || '', limit: COMMENTS_PAGE_SIZE, offset: 0 },
         skip: !postId || !isStore,
@@ -973,7 +978,7 @@ export default function CommentsModal({
 
         setIsFetchingMoreComments(true);
         const fetchVars = isStore ? { productId: postId, limit: COMMENTS_PAGE_SIZE, offset: currentComments.length } : { postId, limit: COMMENTS_PAGE_SIZE, offset: currentComments.length };
-        
+
         currentQuery.fetchMore({
             variables: fetchVars,
         }).then((result: any) => {
@@ -982,7 +987,7 @@ export default function CommentsModal({
                 setHasMoreComments(false);
             }
         }).finally(() => setIsFetchingMoreComments(false));
-    }, [currentDataList, isFetchingMoreComments, hasMoreComments, postId, currentQuery, isStore]); 
+    }, [currentDataList, isFetchingMoreComments, hasMoreComments, postId, currentQuery, isStore]);
 
     // Preferimos post.commentsCount (total con respuestas, viene del feed)
     // Si no está disponible, contamos los comentarios raíz de la query local
@@ -1264,393 +1269,499 @@ export default function CommentsModal({
                             ]}
                             {...tiktokSwipePan.panHandlers}
                         >
-                        {isAd ? (
-                            <View style={{ backgroundColor: colors.surface }}>
-                                {/* Contenedor con margen superior para apartar el anuncio de los botones flotantes.
+                            {isAd ? (
+                                <View style={{ backgroundColor: colors.surface }}>
+                                    {/* Contenedor con margen superior para apartar el anuncio de los botones flotantes.
                                     Esto evita que el toque en los botones (X y Opciones) atraviese hasta AdMob 
                                     y se registre como un clic falso. */}
-                                <View style={{ marginTop: 56 }}>
-                                    <NativeAdCard
-                                        ref={nativeAdRef}
-                                        isImmersive={true}
-                                        adData={post}
-                                        onMediaLayout={(layout) => setAdMediaLayout(layout)}
-                                        onDelete={() => {
-                                            // Notificar al FeedScreen para que quite el anuncio en tiempo real
-                                            callbacksRef.current.onDelete?.();
-                                            // Navegar al siguiente post o cerrar si no hay más
-                                            if (navRef.current.nextPost || callbacksRef.current.hasMorePosts) {
-                                                lastSwipeDir.current = 'up';
-                                                callbacksRef.current.onNextPost?.();
-                                            } else {
-                                                closeWithAnimation();
-                                            }
-                                        }}
-                                    />
-
-                                    {/* Overlay transparente sobre el área superior para capturar swipes.
-                                        Evita que AdMob bloquee el gesto, pero deja libre el botón CTA para clics. */}
-                                    {adMediaLayout && (
-                                        <View
-                                            style={{
-                                                position: 'absolute',
-                                                left: 0,
-                                                right: 0,
-                                                top: adMediaLayout.y,
-                                                height: adMediaLayout.height,
-                                                zIndex: 50,
-                                                elevation: 100, // Fuerza que Android le dé prioridad a este View sobre AdMob
-                                            }}
-                                            {...adSwipePan.panHandlers}
-                                        />
-                                    )}
-                                </View>
-
-                                {/* Controles flotantes superiores */}
-                                <View style={{ position: 'absolute', right: 16, top: 16, zIndex: 100, flexDirection: 'row', gap: 12 }}>
-                                    <TouchableOpacity 
-                                        onPress={handleAdOptions}
-                                        style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 20, padding: 4 }}
-                                    >
-                                        <Ionicons name="ellipsis-horizontal" size={24} color="white" />
-                                    </TouchableOpacity>
-
-                                    <TouchableOpacity 
-                                        onPress={closeWithAnimation}
-                                        style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 20, padding: 4 }}
-                                    >
-                                        <Ionicons name="close" size={24} color="white" />
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        ) : (
-                            <>
-                            {(!isStore && !isJobOffer) ? (
-                                <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
-                                    <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
-
-                                    {/* Author row */}
-                                    <TouchableOpacity
-                                        style={styles.postAuthorRow}
-                                        onPress={() => {
-                                            const profileId = isPost
-                                                ? post.author?.id
-                                                : (post.author?.id ?? post.user?.id ?? post.seller?.id);
-                                            if (profileId) navigateToProfile(profileId);
-                                        }}
-                                        activeOpacity={0.7}
-                                    >
-                                        <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
-                                            {(() => {
-                                                const photoUrl = isPost
-                                                    ? post.author?.photoUrl
-                                                    : (post.author?.photoUrl ?? post.user?.photoUrl ?? post.seller?.photoUrl);
-                                                const firstName = isPost ? post.author?.firstName : (post.author?.firstName ?? post.user?.firstName ?? post.seller?.firstName);
-                                                const lastName = isPost ? post.author?.lastName : (post.author?.lastName ?? post.user?.lastName ?? post.seller?.lastName);
-                                                const initials = `${firstName?.[0] || ''}${lastName?.[0] || ''}`;
-                                                return photoUrl
-                                                    ? <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
-                                                    : <Text style={styles.avatarText}>{initials}</Text>;
-                                            })()}
-                                        </View>
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={[styles.postAuthorName, { color: colors.text }]}>
-                                                {isPost
-                                                    ? `${post.author?.firstName ?? ''} ${post.author?.lastName ?? ''}`
-                                                    : `${(post.author?.firstName ?? post.user?.firstName ?? post.seller?.firstName) ?? ''} ${(post.author?.lastName ?? post.user?.lastName ?? post.seller?.lastName) ?? ''}`
+                                    <View style={{ marginTop: 56 }}>
+                                        <NativeAdCard
+                                            ref={nativeAdRef}
+                                            isImmersive={true}
+                                            adData={post}
+                                            onMediaLayout={(layout) => setAdMediaLayout(layout)}
+                                            onDelete={() => {
+                                                // Notificar al FeedScreen para que quite el anuncio en tiempo real
+                                                callbacksRef.current.onDelete?.();
+                                                // Navegar al siguiente post o cerrar si no hay más
+                                                if (navRef.current.nextPost || callbacksRef.current.hasMorePosts) {
+                                                    lastSwipeDir.current = 'up';
+                                                    callbacksRef.current.onNextPost?.();
+                                                } else {
+                                                    closeWithAnimation();
                                                 }
-                                            </Text>
-                                            <Text style={[styles.postDate, { color: colors.textSecondary }]}>
-                                                {formatDate(post.createdAt)}{isPost && isEdited ? ' · Editado' : ''}
-                                            </Text>
-                                        </View>
-                                    </TouchableOpacity>
-
-                                    {/* Glass circle buttons — mismo estilo que Store */}
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 8 }}>
-                                        <TouchableOpacity
-                                            onPress={() => {
-                                                const profileId = isPost
-                                                    ? post.author?.id
-                                                    : (post.author?.id ?? post.user?.id ?? post.seller?.id);
-                                                const isOwner = profileId === currentUser?.id;
-                                                if (isOwner) onOptionsPress?.(post);
-                                                else setIsPostOptionsMenuVisible(true);
                                             }}
-                                            style={styles.glassCircleBtn}
-                                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                        />
+
+                                        {/* Overlay transparente sobre el área superior para capturar swipes.
+                                        Evita que AdMob bloquee el gesto, pero deja libre el botón CTA para clics. */}
+                                        {adMediaLayout && (
+                                            <View
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: 0,
+                                                    right: 0,
+                                                    top: adMediaLayout.y,
+                                                    height: adMediaLayout.height,
+                                                    zIndex: 50,
+                                                    elevation: 100, // Fuerza que Android le dé prioridad a este View sobre AdMob
+                                                }}
+                                                {...adSwipePan.panHandlers}
+                                            />
+                                        )}
+                                    </View>
+
+                                    {/* Controles flotantes superiores */}
+                                    <View style={{ position: 'absolute', right: 16, top: 16, zIndex: 100, flexDirection: 'row', gap: 12 }}>
+                                        <TouchableOpacity
+                                            onPress={handleAdOptions}
+                                            style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 20, padding: 4 }}
                                         >
-                                            <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
+                                            <Ionicons name="ellipsis-horizontal" size={24} color="white" />
                                         </TouchableOpacity>
 
                                         <TouchableOpacity
                                             onPress={closeWithAnimation}
-                                            style={styles.glassCircleBtn}
-                                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                            style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 20, padding: 4 }}
                                         >
-                                            <Ionicons name="close" size={18} color={colors.textSecondary} />
+                                            <Ionicons name="close" size={24} color="white" />
                                         </TouchableOpacity>
                                     </View>
                                 </View>
                             ) : (
-                                <View style={{ position: 'absolute', right: 24, top: 12, zIndex: 200, flexDirection: 'column', gap: 8, alignItems: 'center' }}>
-                                    <TouchableOpacity 
-                                        onPress={closeWithAnimation}
-                                        style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
-                                    >
-                                        <Ionicons name="close" size={20} color="white" />
-                                    </TouchableOpacity>
+                                <>
+                                    {(!isStore && !isJobOffer && !isProfessional && !hasPostMedia) ? (
+                                        <View style={[styles.postHeader, { borderBottomColor: colors.border }]} {...postHeaderPan.panHandlers}>
+                                            <View style={[styles.dragHandle, { backgroundColor: colors.border }]} />
 
-                                    <TouchableOpacity 
-                                        onPress={() => {
-                                            const profileId = post.author?.id ?? post.user?.id ?? post.seller?.id;
-                                            const isOwner = profileId === currentUser?.id;
-                                            if (isOwner) onOptionsPress?.(post);
-                                            else setIsPostOptionsMenuVisible(true);
-                                        }}
-                                        style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
-                                    >
-                                        <Ionicons name="ellipsis-horizontal" size={20} color="white" />
-                                    </TouchableOpacity>
-
-                                </View>
-                            )}
-
-
-                            <ScrollView
-                                ref={scrollViewRef}
-                                showsVerticalScrollIndicator={!isPost}
-                                persistentScrollbar={true}
-                                indicatorStyle={isDark ? 'white' : 'black'}
-                                nestedScrollEnabled={true}
-                                scrollEnabled={postScrollEnabled}
-                                bounces={false}
-                                alwaysBounceVertical={false}
-                                overScrollMode="never"
-                                contentContainerStyle={{ paddingBottom: 0 }}
-                                style={styles.postScrollView}
-                                scrollEventThrottle={8}
-                                onLayout={(e) => {
-                                    postScrollHeight.current = e.nativeEvent.layout.height;
-                                }}
-                                onContentSizeChange={(_, h) => {
-                                    postScrollContentHeight.current = h;
-                                }}
-                                onScroll={(e) => {
-                                    const y = e.nativeEvent.contentOffset.y;
-                                    currentScrollY.current = y;
-                                    if (y > 10) hasScrolledDown.current = true;
-                                }}
-                                onScrollBeginDrag={(e) => {
-                                    postScrollDragStartY.current = e.nativeEvent.contentOffset.y;
-                                    setScrollEnabled(true);
-                                }}
-                                onMomentumScrollEnd={(e) => {
-                                    const y = e.nativeEvent.contentOffset.y;
-                                    currentScrollY.current = y;
-                                    const atTop = y <= 2;
-                                    const atBottom = y + postScrollHeight.current >= postScrollContentHeight.current - 2;
-                                    if (atTop || atBottom) setScrollEnabled(false);
-                                    else setScrollEnabled(true);
-                                }}
-                                onScrollEndDrag={(e) => {
-                                    const endY = e.nativeEvent.contentOffset.y;
-                                    const vy = e.nativeEvent.velocity?.y ?? 0;
-                                    const atTop = endY <= 3;
-                                    const atBottom = endY + postScrollHeight.current >= postScrollContentHeight.current - 3;
-                                    if (atTop && vy >= -0.1) setScrollEnabled(false);
-                                    else if (atBottom && vy <= 0.1) setScrollEnabled(false);
-                                    else if (!atTop && !atBottom) setScrollEnabled(true);
-                                    if (postScrollDragStartY.current <= 5 && endY <= 5 && vy > 0.5) {
-                                        Animated.timing(panYPost, { toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
-                                            .start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
-                                    } else if (
-                                        postScrollDragStartY.current + postScrollHeight.current >= postScrollContentHeight.current - 5 &&
-                                        endY + postScrollHeight.current >= postScrollContentHeight.current - 5 &&
-                                        vy < -0.5
-                                    ) {
-                                        if (navRef.current.nextPost) {
-                                            Animated.timing(panYPost, { toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
-                                                .start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
-                                        } else if (callbacksRef.current.hasMorePosts) {
-                                            Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
-                                            callbacksRef.current.onNextPost?.();
-                                        }
-                                    }
-                                }}
-                            >
-                                {/* ── Contenido según tipo ── */}
-                                {!isPost ? (
-                                    // JobOffer o ProfessionalProfile: tarjeta completa con gestos de cierre
-                                    <Animated.View
-                                        collapsable={false}
-                                        {...shortContentPan.panHandlers}
-                                        style={{ flex: 1 }}
-                                    >
-                                        {post.__typename === 'JobOffer' && (
-                                            <>
-                                                {/* Badge head — igual al diseño de la JobOfferCard en feed */}
-                                                <View style={[styles.jobOfferHeadBadge, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-                                                    <View style={[styles.jobOfferHeadBadgeInner, { backgroundColor: colors.primary + '15' }]}>
-                                                        <Ionicons name="briefcase" size={12} color={colors.primary} />
-                                                        <Text style={[styles.jobOfferHeadBadgeText, { color: colors.primary }]}>OFERTA DE EMPLEO</Text>
-                                                    </View>
+                                            {/* Author row */}
+                                            <TouchableOpacity
+                                                style={styles.postAuthorRow}
+                                                onPress={() => {
+                                                    const profileId = isPost
+                                                        ? post.author?.id
+                                                        : (post.author?.id ?? post.user?.id ?? post.seller?.id);
+                                                    if (profileId) navigateToProfile(profileId);
+                                                }}
+                                                activeOpacity={0.7}
+                                            >
+                                                <View style={[styles.avatarPlaceholder, { marginRight: 12 }]}>
+                                                    {(() => {
+                                                        const photoUrl = isPost
+                                                            ? post.author?.photoUrl
+                                                            : (post.author?.photoUrl ?? post.user?.photoUrl ?? post.seller?.photoUrl);
+                                                        const firstName = isPost ? post.author?.firstName : (post.author?.firstName ?? post.user?.firstName ?? post.seller?.firstName);
+                                                        const lastName = isPost ? post.author?.lastName : (post.author?.lastName ?? post.user?.lastName ?? post.seller?.lastName);
+                                                        const initials = `${firstName?.[0] || ''}${lastName?.[0] || ''}`;
+                                                        return photoUrl
+                                                            ? <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
+                                                            : <Text style={styles.avatarText}>{initials}</Text>;
+                                                    })()}
                                                 </View>
-                                                <JobOfferCard item={normalizedItem} onPress={undefined} hideAuthorRow isModalView={true} />
+                                                <View style={{ flex: 1 }}>
+                                                    <Text style={[styles.postAuthorName, { color: colors.text }]}>
+                                                        {isPost
+                                                            ? `${post.author?.firstName ?? ''} ${post.author?.lastName ?? ''}`
+                                                            : `${(post.author?.firstName ?? post.user?.firstName ?? post.seller?.firstName) ?? ''} ${(post.author?.lastName ?? post.user?.lastName ?? post.seller?.lastName) ?? ''}`
+                                                        }
+                                                    </Text>
+                                                    <Text style={[styles.postDate, { color: colors.textSecondary }]}>
+                                                        {formatDate(post.createdAt)}{isPost && isEdited ? ' · Editado' : ''}
+                                                    </Text>
+                                                </View>
+                                            </TouchableOpacity>
+
+                                            {/* Glass circle buttons — mismo estilo que Store */}
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 8 }}>
+                                                <TouchableOpacity
+                                                    onPress={() => {
+                                                        const profileId = isPost
+                                                            ? post.author?.id
+                                                            : (post.author?.id ?? post.user?.id ?? post.seller?.id);
+                                                        const isOwner = profileId === currentUser?.id;
+                                                        if (isOwner) onOptionsPress?.(post);
+                                                        else setIsPostOptionsMenuVisible(true);
+                                                    }}
+                                                    style={styles.glassCircleBtn}
+                                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                                >
+                                                    <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity
+                                                    onPress={closeWithAnimation}
+                                                    style={styles.glassCircleBtn}
+                                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                                >
+                                                    <Ionicons name="close" size={18} color={colors.textSecondary} />
+                                                </TouchableOpacity>
+                                            </View>
+                                        </View>
+                                    ) : (
+                                        !(isStore || isJobOffer || isProfessional || hasPostMedia) && (
+                                            <View style={{ position: 'absolute', right: 24, top: 12, zIndex: 200, flexDirection: 'column', gap: 8, alignItems: 'center' }}>
+                                                <TouchableOpacity
+                                                    onPress={closeWithAnimation}
+                                                    style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
+                                                >
+                                                    <Ionicons name="close" size={20} color="white" />
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity
+                                                    onPress={() => {
+                                                        const profileId = post.author?.id ?? post.user?.id ?? post.seller?.id;
+                                                        const isOwner = profileId === currentUser?.id;
+                                                        if (isOwner) onOptionsPress?.(post);
+                                                        else setIsPostOptionsMenuVisible(true);
+                                                    }}
+                                                    style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
+                                                >
+                                                    <Ionicons name="ellipsis-horizontal" size={20} color="white" />
+                                                </TouchableOpacity>
+
+                                            </View>
+                                        )
+                                    )}
+
+
+                                    <ScrollView
+                                        ref={scrollViewRef}
+                                        showsVerticalScrollIndicator={!isPost}
+                                        persistentScrollbar={true}
+                                        indicatorStyle={isDark ? 'white' : 'black'}
+                                        nestedScrollEnabled={true}
+                                        scrollEnabled={postScrollEnabled}
+                                        bounces={false}
+                                        alwaysBounceVertical={false}
+                                        overScrollMode="never"
+                                        contentContainerStyle={{ paddingBottom: 0 }}
+                                        style={styles.postScrollView}
+                                        scrollEventThrottle={8}
+                                        onLayout={(e) => {
+                                            postScrollHeight.current = e.nativeEvent.layout.height;
+                                        }}
+                                        onContentSizeChange={(_, h) => {
+                                            postScrollContentHeight.current = h;
+                                        }}
+                                        onScroll={(e) => {
+                                            const y = e.nativeEvent.contentOffset.y;
+                                            currentScrollY.current = y;
+                                            if (y > 10) hasScrolledDown.current = true;
+                                        }}
+                                        onScrollBeginDrag={(e) => {
+                                            postScrollDragStartY.current = e.nativeEvent.contentOffset.y;
+                                            setScrollEnabled(true);
+                                        }}
+                                        onMomentumScrollEnd={(e) => {
+                                            const y = e.nativeEvent.contentOffset.y;
+                                            currentScrollY.current = y;
+                                            const atTop = y <= 2;
+                                            const atBottom = y + postScrollHeight.current >= postScrollContentHeight.current - 2;
+                                            if (atTop || atBottom) setScrollEnabled(false);
+                                            else setScrollEnabled(true);
+                                        }}
+                                        onScrollEndDrag={(e) => {
+                                            const endY = e.nativeEvent.contentOffset.y;
+                                            const vy = e.nativeEvent.velocity?.y ?? 0;
+                                            const atTop = endY <= 3;
+                                            const atBottom = endY + postScrollHeight.current >= postScrollContentHeight.current - 3;
+                                            if (atTop && vy >= -0.1) setScrollEnabled(false);
+                                            else if (atBottom && vy <= 0.1) setScrollEnabled(false);
+                                            else if (!atTop && !atBottom) setScrollEnabled(true);
+                                            if (postScrollDragStartY.current <= 5 && endY <= 5 && vy > 0.5) {
+                                                Animated.timing(panYPost, { toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                                                    .start(() => { lastSwipeDir.current = 'down'; callbacksRef.current.onPrevPost?.(); });
+                                            } else if (
+                                                postScrollDragStartY.current + postScrollHeight.current >= postScrollContentHeight.current - 5 &&
+                                                endY + postScrollHeight.current >= postScrollContentHeight.current - 5 &&
+                                                vy < -0.5
+                                            ) {
+                                                if (navRef.current.nextPost) {
+                                                    Animated.timing(panYPost, { toValue: -SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+                                                        .start(() => { lastSwipeDir.current = 'up'; callbacksRef.current.onNextPost?.(); });
+                                                } else if (callbacksRef.current.hasMorePosts) {
+                                                    Animated.spring(panYPost, { toValue: 0, useNativeDriver: true, bounciness: 8 }).start();
+                                                    callbacksRef.current.onNextPost?.();
+                                                }
+                                            }
+                                        }}
+                                    >
+                                        {/* ── Contenido según tipo ── */}
+                                        {!isPost ? (
+                                            // JobOffer o ProfessionalProfile: tarjeta completa con gestos de cierre
+                                            <Animated.View
+                                                collapsable={false}
+                                                {...shortContentPan.panHandlers}
+                                                style={{ flex: 1 }}
+                                            >
+                                                {post.__typename === 'JobOffer' && (
+                                                    <JobOfferCard
+                                                        item={normalizedItem}
+                                                        onPress={undefined}
+                                                        hideAuthorRow={false}
+                                                        isModalView={true}
+                                                        onClose={closeWithAnimation}
+                                                        onOptionsPress={() => {
+                                                            const profileId = post.author?.id ?? post.user?.id ?? post.seller?.id;
+                                                            const isOwner = profileId === currentUser?.id;
+                                                            if (isOwner) onOptionsPress?.(post);
+                                                            else setIsPostOptionsMenuVisible(true);
+                                                        }}
+                                                    />
+                                                )}
+                                                {post.__typename === 'ProfessionalProfile' && (
+                                                    <ProfessionalCard
+                                                        item={normalizedItem}
+                                                        onPress={undefined}
+                                                        hideAuthorRow={false}
+                                                        isModalView={true}
+                                                        onClose={closeWithAnimation}
+                                                        onOptionsPress={() => {
+                                                            const profileId = post.author?.id ?? post.user?.id ?? post.seller?.id;
+                                                            const isOwner = profileId === currentUser?.id;
+                                                            if (isOwner) onOptionsPress?.(post);
+                                                            else setIsPostOptionsMenuVisible(true);
+                                                        }}
+                                                    />
+                                                )}
+                                                {post.__typename === 'StoreProduct' && (
+                                                    <StoreProductCard
+                                                        ref={storeCardRef}
+                                                        item={normalizedItem}
+                                                        onPress={undefined}
+                                                        hideSellerRow={false}
+                                                        isModalView={true}
+                                                        isViewable={visible}
+                                                        onCommentPress={() => {
+                                                            setActiveTab('comments');
+                                                            if (isMinimized) toggleMinimize();
+                                                        }}
+                                                        onClose={closeWithAnimation}
+                                                        onOptionsPress={() => {
+                                                            const profileId = post.author?.id ?? post.user?.id ?? post.seller?.id;
+                                                            const isOwner = profileId === currentUser?.id;
+                                                            if (isOwner) onOptionsPress?.(post);
+                                                            else setIsPostOptionsMenuVisible(true);
+                                                        }}
+                                                    />
+                                                )}
+                                            </Animated.View>
+                                        ) : (
+                                            <>
+                                                <Animated.View collapsable={false} {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 8, overflow: 'hidden', zIndex: 1 }}>
+                                                    <View style={{ marginBottom: 1 }}>
+                                                        <TouchableOpacity
+                                                            activeOpacity={0.8}
+                                                            onPress={() => isTextLong && setIsExpanded(!isExpanded)}
+                                                            onLongPress={() => setIsCopyModalVisible(true)}
+                                                            delayLongPress={250}
+                                                        >
+                                                            {post.title && (
+                                                                <Text style={[styles.postTitleTitle, { color: colors.text }]}>{post.title}</Text>
+                                                            )}
+                                                            <Text style={[styles.postContent, { color: colors.text }]}>
+                                                                {displayContent}
+                                                                {isTextLong && !isExpanded && (
+                                                                    <Text
+                                                                        onPress={() => setIsExpanded(true)}
+                                                                        style={[styles.seeMoreText, { color: colors.primary }]}
+                                                                    >
+                                                                        ... más
+                                                                    </Text>
+                                                                )}
+                                                            </Text>
+                                                        </TouchableOpacity>
+
+                                                        {isTextLong && isExpanded && (
+                                                            <TouchableOpacity
+                                                                onPress={() => setIsExpanded(false)}
+                                                                style={styles.seeMoreBtn}
+                                                            >
+                                                                <Text style={[styles.seeMoreText, { color: colors.primary }]}>
+                                                                    Ver menos
+                                                                </Text>
+                                                            </TouchableOpacity>
+                                                        )}
+                                                    </View>
+                                                </Animated.View>
+
+                                                {/* ── Media Adjunta (Carrusel) dentro del Modal ── */}
+                                                {normalizedItem?.media && normalizedItem.media.length > 0 && (
+                                                    <View collapsable={false} style={{ position: 'relative', marginTop: 12, marginHorizontal: -16, overflow: 'hidden', borderRadius: 0.1, zIndex: 5, backgroundColor: '#000' }}>
+                                                        <ImageCarousel
+                                                            ref={postCarouselRef}
+                                                            key={post?.id}
+                                                            media={normalizedItem.media}
+                                                            containerWidth={SCREEN_WIDTH}
+                                                            imageResizeMode="cover"
+                                                            dynamicAspectRatio={false}
+                                                            customAspectRatio={1080 / 1440}
+                                                            isInteractive={true}
+                                                            hideExpand={true}
+                                                            hidePagination={true}
+                                                            onIndexChange={setPostActiveIndex}
+                                                            disablePressToFullscreen={true}
+                                                            muteButtonStyle={{ top: 144, right: 12 }}
+                                                            onSwipeClose={(carouselPanX) => {
+                                                                carouselPanX.addListener(({ value }) => panX.setValue(value));
+                                                                closeWithXAnimation();
+                                                            }}
+                                                        />
+
+                                                        {/* Close button */}
+                                                        <TouchableOpacity
+                                                            style={{ position: 'absolute', top: 12, right: 12, zIndex: 30, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
+                                                            onPress={closeWithAnimation}
+                                                        >
+                                                            <Ionicons name="close" size={20} color="white" />
+                                                        </TouchableOpacity>
+
+                                                        {/* Options button */}
+                                                        <TouchableOpacity
+                                                            style={{ position: 'absolute', top: 56, right: 12, zIndex: 30, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
+                                                            onPress={() => {
+                                                                const profileId = post.author?.id ?? post.user?.id ?? post.seller?.id;
+                                                                const isOwner = profileId === currentUser?.id;
+                                                                if (isOwner) onOptionsPress?.(post);
+                                                                else setIsPostOptionsMenuVisible(true);
+                                                            }}
+                                                        >
+                                                            <Ionicons name="ellipsis-horizontal" size={20} color="white" />
+                                                        </TouchableOpacity>
+
+                                                        {/* Expand button */}
+                                                        <TouchableOpacity
+                                                            style={{ position: 'absolute', top: 100, right: 12, zIndex: 30, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
+                                                            onPress={() => postCarouselRef.current?.openViewer?.(postActiveIndex)}
+                                                        >
+                                                            <Ionicons name="expand" size={20} color="white" />
+                                                        </TouchableOpacity>
+
+                                                        {/* Autor overlay — glassmorphism en la esquina SUPERIOR IZQUIERDA */}
+                                                        <TouchableOpacity
+                                                            style={{
+                                                                position: 'absolute',
+                                                                top: 12,
+                                                                left: 12,
+                                                                flexDirection: 'row',
+                                                                alignItems: 'center',
+                                                                gap: 8,
+                                                                backgroundColor: 'rgba(0,0,0,0.45)',
+                                                                paddingVertical: 5,
+                                                                paddingHorizontal: 10,
+                                                                borderRadius: 20,
+                                                                zIndex: 20,
+                                                            }}
+                                                            onPress={() => {
+                                                                const profileId = post.author?.id ?? post.user?.id ?? post.seller?.id;
+                                                                if (profileId) navigateToProfile(profileId);
+                                                            }}
+                                                            activeOpacity={0.85}
+                                                        >
+                                                            <View style={{
+                                                                width: 34,
+                                                                height: 34,
+                                                                borderRadius: 17,
+                                                                backgroundColor: 'rgba(255,255,255,0.2)',
+                                                                justifyContent: 'center',
+                                                                alignItems: 'center',
+                                                                overflow: 'hidden',
+                                                            }}>
+                                                                {post.author?.photoUrl ? (
+                                                                    <Image source={{ uri: post.author.photoUrl }} style={{ width: '100%', height: '100%' }} />
+                                                                ) : (
+                                                                    <Text style={{
+                                                                        color: '#FFF',
+                                                                        fontSize: 11,
+                                                                        fontWeight: '700',
+                                                                    }}>
+                                                                        {post.author?.firstName?.[0] || ''}{post.author?.lastName?.[0] || ''}
+                                                                    </Text>
+                                                                )}
+                                                            </View>
+                                                            <View style={{
+                                                                flexDirection: 'column',
+                                                                justifyContent: 'center',
+                                                                marginLeft: 2,
+                                                            }}>
+                                                                <Text style={{
+                                                                    color: '#FFF',
+                                                                    fontSize: 13,
+                                                                    fontWeight: '800',
+                                                                    lineHeight: 15,
+                                                                }} numberOfLines={1}>
+                                                                    {post.author?.firstName} {post.author?.lastName}
+                                                                </Text>
+                                                                {post.author?.username && (
+                                                                    <Text style={{
+                                                                        color: 'rgba(255,255,255,0.7)',
+                                                                        fontSize: 10,
+                                                                        fontWeight: '600',
+                                                                    }} numberOfLines={1}>
+                                                                        @{post.author.username}
+                                                                    </Text>
+                                                                )}
+                                                            </View>
+                                                        </TouchableOpacity>
+
+                                                        {/* Integrated Counter Overlay at bottom */}
+                                                        {normalizedItem.media.length > 1 && (
+                                                            <View style={{
+                                                                position: 'absolute',
+                                                                bottom: 12,
+                                                                alignSelf: 'center',
+                                                                backgroundColor: 'rgba(0,0,0,0.4)',
+                                                                paddingHorizontal: 10,
+                                                                paddingVertical: 4,
+                                                                borderRadius: 12,
+                                                                zIndex: 15,
+                                                            }}>
+                                                                <Text style={{
+                                                                    color: '#FFFFFF',
+                                                                    fontSize: 12,
+                                                                    fontWeight: '900',
+                                                                    letterSpacing: 0.5,
+                                                                }}>
+                                                                    {postActiveIndex + 1} / {normalizedItem.media.length}
+                                                                </Text>
+                                                            </View>
+                                                        )}
+                                                    </View>
+                                                )}
                                             </>
                                         )}
-                                        {post.__typename === 'ProfessionalProfile' && (
-                                            <ProfessionalCard item={normalizedItem} onPress={undefined} hideAuthorRow isModalView={true} />
-                                        )}
-                                        {post.__typename === 'StoreProduct' && (
-                                            <StoreProductCard 
-                                                ref={storeCardRef}
-                                                item={normalizedItem} 
-                                                onPress={undefined} 
-                                                hideSellerRow={false} 
-                                                isModalView={true} 
-                                                isViewable={visible}
-                                                onCommentPress={() => {
+                                    </ScrollView>
+
+                                    {/* Footer con Like/Comentar */}
+                                    {isCommentable && !isStore && (
+                                        <Animated.View {...footerSwipePan.panHandlers} style={[styles.postFooterFixed, { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth, backgroundColor: colors.surface }]}>
+                                            {/* Actions Row con el estilo de la tienda (instagramActionsRow) */}
+                                            <TouchableOpacity activeOpacity={1} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, gap: 18 }}>
+                                                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }} onPress={handleLike}>
+                                                    <Feather
+                                                        name="heart"
+                                                        size={22}
+                                                        color={localLiked ? '#FF3B30' : colors.text}
+                                                    />
+                                                    {localCount > 0 && (
+                                                        <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text }}>{localCount}</Text>
+                                                    )}
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }} onPress={() => {
                                                     setActiveTab('comments');
                                                     if (isMinimized) toggleMinimize();
-                                                }}
-                                            />
-                                        )}
-                                    </Animated.View>
-                                ) : (
-                                    <>
-                                    <Animated.View collapsable={false} {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 8, overflow: 'hidden', zIndex: 1 }}>
-                                    <View style={{ marginBottom: 1 }}>
-                                        <TouchableOpacity
-                                            activeOpacity={0.8}
-                                            onPress={() => isTextLong && setIsExpanded(!isExpanded)}
-                                            onLongPress={() => setIsCopyModalVisible(true)}
-                                            delayLongPress={250}
-                                        >
-                                            {post.title && (
-                                                <Text style={[styles.postTitleTitle, { color: colors.text }]}>{post.title}</Text>
-                                            )}
-                                            <Text style={[styles.postContent, { color: colors.text }]}>
-                                                {displayContent}
-                                                {isTextLong && !isExpanded && (
-                                                    <Text
-                                                        onPress={() => setIsExpanded(true)}
-                                                        style={[styles.seeMoreText, { color: colors.primary }]}
-                                                    >
-                                                        ... más
-                                                    </Text>
-                                                )}
-                                            </Text>
-                                        </TouchableOpacity>
-
-                                        {isTextLong && isExpanded && (
-                                            <TouchableOpacity
-                                                onPress={() => setIsExpanded(false)}
-                                                style={styles.seeMoreBtn}
-                                            >
-                                                <Text style={[styles.seeMoreText, { color: colors.primary }]}>
-                                                    Ver menos
-                                                </Text>
+                                                }}>
+                                                    <Feather name="message-circle" size={22} color={colors.text} />
+                                                    {commentsCount > 0 && (
+                                                        <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text }}>{commentsCount}</Text>
+                                                    )}
+                                                </TouchableOpacity>
                                             </TouchableOpacity>
-                                        )}
-                                    </View>
-                                    </Animated.View>
-
-                                    {/* ── Media Adjunta (Carrusel) dentro del Modal ── */}
-                                    {normalizedItem?.media && normalizedItem.media.length > 0 && (
-                                        <View collapsable={false} style={{ marginTop: 12, marginHorizontal: -16, overflow: 'hidden', borderRadius: 0.1, zIndex: 5, backgroundColor: '#000' }}>
-                                            <ImageCarousel
-                                                key={post?.id}
-                                                media={normalizedItem.media}
-                                                containerWidth={SCREEN_WIDTH}
-                                                imageResizeMode="cover"
-                                                dynamicAspectRatio={false}
-                                                customAspectRatio={1080 / 1440}
-                                                isInteractive={true}
-                                                onSwipeClose={(carouselPanX) => {
-                                                    carouselPanX.addListener(({ value }) => panX.setValue(value));
-                                                    closeWithXAnimation();
-                                                }}
-                                            />
-                                        </View>
+                                        </Animated.View>
                                     )}
-                                    </>
-                                )}
-                            </ScrollView>
-
-                            {/* Footer con Like/Comentar */}
-                            {isCommentable && !isStore && (
-                            <Animated.View {...footerSwipePan.panHandlers} style={[styles.postFooterFixed, { borderTopColor: colors.border }]}>
-                                {(localCount > 0 || commentsCount > 0) && (
-                                    <TouchableOpacity activeOpacity={1} style={styles.statsRow}>
-                                        {/* Comentarios a la izquierda */}
-                                        <TouchableOpacity onPress={() => { setActiveTab('comments'); if (isMinimized) toggleMinimize(); }}>
-                                            {commentsCount > 0 && (
-                                                <Text style={[styles.statsText, { color: colors.textSecondary }]}>
-                                                    {commentsCount} {commentsCount === 1 ? 'comentario' : 'comentarios'}
-                                                </Text>
-                                            )}
-                                        </TouchableOpacity>
-
-                                        {/* Likes a la derecha */}
-                                        <TouchableOpacity onPress={() => { setActiveTab('likes'); if (isMinimized) toggleMinimize(); }}>
-                                            {localCount > 0 && (
-                                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                                    <Ionicons name="heart" size={15} color="#FF3B30" />
-                                                    <Text style={[styles.statsText, { color: colors.textSecondary, marginLeft: 4 }]}>{localCount}</Text>
-                                                </View>
-                                            )}
-                                        </TouchableOpacity>
-                                    </TouchableOpacity>
-                                )}
-                                {/* actionsRow como TouchableOpacity para capturar gestos en huecos */}
-                                <TouchableOpacity activeOpacity={1} style={[styles.actionsRow, { borderTopColor: colors.border }]}>
-                                    <TouchableOpacity style={styles.actionBtn} onPress={handleLike}>
-                                        <Feather 
-                                            name="heart" 
-                                            size={18}
-                                            color={localLiked ? '#FF3B30' : colors.textSecondary} 
-                                        />
-                                        <Text style={[styles.actionText, { color: localLiked ? '#FF3B30' : colors.textSecondary },
-                                        localLiked && { fontWeight: 'bold' }]}>Like</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity style={styles.actionBtn} onPress={() => {
-                                        setActiveTab('comments');
-                                        if (isMinimized) toggleMinimize();
-                                    }}>
-                                        <Feather name="message-circle" size={18} color={colors.textSecondary} />
-                                        <Text style={[styles.actionText, { color: colors.textSecondary }]}>Comentar</Text>
-                                    </TouchableOpacity>
-
-                                    {isStore && (
-                                        <>
-                                            <View style={{ flex: 1 }} />
-                                            <View style={{
-                                                flexDirection: 'row',
-                                                alignItems: 'center',
-                                                gap: 4,
-                                                paddingHorizontal: 8,
-                                                paddingVertical: 3,
-                                                backgroundColor: isDark ? 'rgba(0,150,255,0.15)' : 'rgba(0,122,255,0.08)',
-                                                borderRadius: 6,
-                                                borderWidth: 0.5,
-                                                borderColor: isDark ? 'rgba(0,150,255,0.3)' : 'rgba(0,122,255,0.2)',
-                                            }}>
-                                                <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: '#007AFF' }} />
-                                                <Text style={{ 
-                                                    color: '#007AFF', 
-                                                    fontSize: 9, 
-                                                    fontWeight: '800',
-                                                    letterSpacing: 0.5
-                                                }}>TIENDA</Text>
-                                            </View>
-                                        </>
-                                    )}
-                                </TouchableOpacity>
-                            </Animated.View>
+                                </>
                             )}
-                            </>
-                        )}
                         </Animated.View>
                     )}
 
@@ -1755,8 +1866,8 @@ export default function CommentsModal({
                                                 <Text style={[styles.errorSubTitle, { color: colors.textSecondary }]}>
                                                     Verifica tu internet e inténtalo de nuevo.
                                                 </Text>
-                                                <TouchableOpacity 
-                                                    onPress={() => refetch()} 
+                                                <TouchableOpacity
+                                                    onPress={() => refetch()}
                                                     style={[styles.retryButton, { backgroundColor: colors.primary }]}
                                                     activeOpacity={0.8}
                                                 >
@@ -1931,12 +2042,12 @@ export default function CommentsModal({
                 visible={isPostOptionsMenuVisible}
                 onClose={() => setIsPostOptionsMenuVisible(false)}
                 isOwner={
-                    post?.author?.id === currentUser?.id || 
+                    post?.author?.id === currentUser?.id ||
                     post?.seller?.id === currentUser?.id ||
                     post?.user?.id === currentUser?.id
                 }
-                onEdit={() => {}} // TODO: implementar edición desde modal si es necesario
-                onDelete={() => {}} // TODO: implementar borrado desde modal si es necesario
+                onEdit={() => { }} // TODO: implementar edición desde modal si es necesario
+                onDelete={() => { }} // TODO: implementar borrado desde modal si es necesario
                 onReport={() => {
                     setIsPostOptionsMenuVisible(false);
                     setPostReportVisible(true);
@@ -1977,29 +2088,29 @@ export default function CommentsModal({
                             <TouchableWithoutFeedback>
                                 <View style={{ width: '85%', borderRadius: 20, paddingVertical: 10, backgroundColor: colors.surface, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4 }}>
                                     <Text style={{ fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginVertical: 15, color: colors.text }}>Opciones del anuncio</Text>
-                                    
-                                    <TouchableOpacity 
+
+                                    <TouchableOpacity
                                         style={{ paddingVertical: 16, alignItems: 'center', justifyContent: 'center', borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }}
                                         onPress={() => { Linking.openURL('https://support.google.com/ads/answer/1634057'); setIsAdOptionsVisible(false); }}
                                     >
                                         <Text style={{ fontSize: 16, color: colors.text }}>¿Por qué veo esto?</Text>
                                     </TouchableOpacity>
 
-                                    <TouchableOpacity 
+                                    <TouchableOpacity
                                         style={{ paddingVertical: 16, alignItems: 'center', justifyContent: 'center', borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }}
                                         onPress={() => { setIsAdOptionsVisible(false); Toast.show({ type: 'success', text1: 'Gracias', text2: 'Tu reporte ha sido enviado.' }); }}
                                     >
                                         <Text style={{ fontSize: 16, color: colors.text }}>Ocultar este anuncio</Text>
                                     </TouchableOpacity>
 
-                                    <TouchableOpacity 
+                                    <TouchableOpacity
                                         style={{ paddingVertical: 16, alignItems: 'center', justifyContent: 'center', borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }}
                                         onPress={() => { Linking.openURL('https://support.google.com/ads/troubleshooter/4578507'); setIsAdOptionsVisible(false); }}
                                     >
                                         <Text style={{ fontSize: 16, color: '#FF9500' }}>Reportar anuncio</Text>
                                     </TouchableOpacity>
 
-                                    <TouchableOpacity 
+                                    <TouchableOpacity
                                         style={{ paddingVertical: 16, alignItems: 'center', justifyContent: 'center' }}
                                         onPress={() => setIsAdOptionsVisible(false)}
                                     >
@@ -2070,7 +2181,7 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         fontSize: 14,
         fontWeight: '700',
     },
-    postFooterFixed: { },
+    postFooterFixed: {},
     statsRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',

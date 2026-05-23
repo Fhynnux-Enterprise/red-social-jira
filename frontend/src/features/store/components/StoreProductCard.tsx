@@ -80,7 +80,7 @@ function conditionColor(c?: string) {
 }
 
 const StoreProductCard = React.forwardRef((props: any, ref: any) => {
-  const { item, cardWidth, hideSellerRow, onEdit, onPress, onCommentPress, isModalView, onToggleSave, isSaved: propIsSaved, showTopDivider, isViewable } = props;
+  const { item, cardWidth, hideSellerRow, onEdit, onPress, onCommentPress, isModalView, onToggleSave, isSaved: propIsSaved, showTopDivider, isViewable, onClose, onOptionsPress } = props;
   const carouselRef = React.useRef<any>(null);
 
   React.useImperativeHandle(ref, () => ({
@@ -279,11 +279,31 @@ const StoreProductCard = React.forwardRef((props: any, ref: any) => {
                 </View>
               )}
 
+              {/* Botón de Cerrar (Solo en Modal) */}
+              {isModalView && onClose && (
+                <TouchableOpacity 
+                  style={[styles.glassCirclePure, { position: 'absolute', top: 12, right: 12, zIndex: 30 }]}
+                  onPress={onClose}
+                >
+                  <Ionicons name="close" size={20} color="white" />
+                </TouchableOpacity>
+              )}
+
+              {/* Botón de Opciones (Solo en Modal) */}
+              {isModalView && onOptionsPress && (
+                <TouchableOpacity 
+                  style={[styles.glassCirclePure, { position: 'absolute', top: 56, right: 12, zIndex: 30 }]}
+                  onPress={onOptionsPress}
+                >
+                  <Ionicons name="ellipsis-horizontal" size={20} color="white" />
+                </TouchableOpacity>
+              )}
+
               {/* Botón de Expandir (Solo en Modal) */}
               {isModalView && (
                 <TouchableOpacity 
                   style={[styles.glassCirclePure, { position: 'absolute', top: expandTop, right: 12, zIndex: 30 }]}
-                  onPress={() => carouselRef.current?.openViewer?.()}
+                  onPress={() => carouselRef.current?.openViewer?.(activeIndex)}
                 >
                   <Ionicons name="expand" size={20} color="white" />
                 </TouchableOpacity>

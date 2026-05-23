@@ -73,6 +73,7 @@ export default function PostCard({
     const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
     const [reportVisible, setReportVisible] = useState(false);
     const [cardWidth, setCardWidth] = useState(SCREEN_WIDTH);
+    const [activeIndex, setActiveIndex] = useState(0);
 
     const isTruncatable = !isModalView && (item.content?.length ?? 0) > MAX_CHARS;
     const displayContent = isTruncatable && !isExpanded
@@ -153,6 +154,8 @@ export default function PostCard({
     };
 
     const hasMedia = item.media && item.media.length > 0;
+    const expandTop = 100;
+    const muteTop = isModalView ? (expandTop + 44) : 56;
 
     return (
         <>
@@ -244,6 +247,20 @@ export default function PostCard({
                         isOverlayActive={isOverlayActive}
                         containerWidth={cardWidth}
                         customAspectRatio={1080 / 1485}
+                        muteButtonStyle={{ top: muteTop, right: 12 }}
+                        hidePagination={true}
+                        onIndexChange={setActiveIndex}
+                        overlay={
+                            item.media && item.media.length > 1 && (
+                                <View style={styles.bottomActionStrip}>
+                                    <View style={styles.integratedCounter}>
+                                        <Text style={styles.integratedCounterText}>
+                                            {activeIndex + 1} / {item.media.length}
+                                        </Text>
+                                    </View>
+                                </View>
+                            )
+                        }
                     />
 
                     {/* Autor overlay — glassmorphism en la esquina SUPERIOR IZQUIERDA */}
@@ -593,7 +610,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     },
     authorOverlay: {
         position: 'absolute',
-        top: 24,
+        top: 12,
         left: 12,
         flexDirection: 'row',
         alignItems: 'center',
@@ -667,5 +684,24 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         opacity: 0.35,
         zIndex: 10,
         elevation: 5,
+    },
+    bottomActionStrip: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        paddingVertical: 8,
+        alignItems: 'center',
+        zIndex: 15,
+    },
+    integratedCounter: {
+        backgroundColor: 'transparent',
+    },
+    integratedCounterText: {
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '900',
+        letterSpacing: 0.5,
     },
 });
