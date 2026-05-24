@@ -864,12 +864,14 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     // ── FlatList config ───────────────────────────────────────────────────────
     // onViewableItemsChanged DEBE ser una ref estable — no puede cambiar entre renders
     const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
-        if (viewableItems.length > 0) {
-            const firstId = viewableItems[0].item.id;
-            setVisiblePostId(prev => (prev === firstId ? prev : firstId));
-        } else {
-            setVisiblePostId(prev => (prev === null ? prev : null));
+        if (!viewableItems || viewableItems.length === 0) {
+            setVisiblePostId(null);
+            return;
         }
+        const mostVisible = viewableItems.reduce((best: any, cur: any) => {
+            return (cur.percentVisible ?? 0) > (best.percentVisible ?? 0) ? cur : best;
+        }, viewableItems[0]);
+        setVisiblePostId(mostVisible?.item?.id ?? null);
     }, []);
 
     // Ref para el estado de comentarios, para usar en callbacks sin dependencias y evitar re-renders del FlatList
@@ -884,8 +886,13 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     // viewabilityConfig DEBE ser una ref estable, nunca recreada ni condicional
     const viewabilityConfig = useRef({
         itemVisiblePercentThreshold: 50,
-        minimumViewTime: 200,
+        minimumViewTime: 0,
     }).current;
+
+    const handleTabChange = useCallback((tab: 'all' | 'store' | 'jobs' | 'saved' | 'likes') => {
+        setVisiblePostId(null);
+        setActiveTab(tab);
+    }, []);
 
     // ListHeaderComponent DEBE ser una función estable, nunca JSX inline
     // Si se pasa JSX inline, FlatList crea un nuevo elemento en cada render → bucle infinito
@@ -902,10 +909,10 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
             onEditProfile={handleEditProfile}
             onOpenMenu={handleOpenMenu}
             onGoBack={handleGoBack}
-            onTabChange={setActiveTab as any}
+            onTabChange={handleTabChange}
             onOpenContextMenu={handleOpenContextMenu}
         />
-    ), [userData, isMyProfile, isFollowing, activeTab, colors, toggleFollow, handleMessagePress, handleEditProfile, handleOpenMenu, handleGoBack, handleOpenContextMenu]);
+    ), [userData, isMyProfile, isFollowing, activeTab, colors, toggleFollow, handleMessagePress, handleEditProfile, handleOpenMenu, handleGoBack, handleTabChange, handleOpenContextMenu]);
 
     // Determinar qué datos para cada tab
     // IMPORTANTE: siempre marcar __itemType para que renderItem sepa qué componente usar
@@ -914,6 +921,13 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         if (activeTab === 'saved') refetchSaved();
         if (activeTab === 'likes') refetchLiked();
     }, [activeTab]);
+
+    useEffect(() => {
+        const unsubscribe = navigation.addListener('blur', () => {
+            setVisiblePostId(null);
+        });
+        return unsubscribe;
+    }, [navigation]);
 
     const savedTabData = useMemo(
         () => (savedData?.getSavedPosts || []).map((p: any) => {
@@ -1035,6 +1049,8 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 onToggleSave={handleToggleSave}
                 isSaved={mappedItem.isSaved}
                 showTopDivider={index !== 0}
+                isFocused={isFocused}
+                isViewable={mappedItem.id === visiblePostId}
             />;
         }
         if (type === 'job') {
@@ -1045,6 +1061,8 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 onToggleSave={handleToggleSave}
                 isSaved={mappedItem.isSaved}
                 showTopDivider={index !== 0}
+                isFocused={isFocused}
+                isViewable={mappedItem.id === visiblePostId}
             />;
         }
         if (type === 'professional') {
@@ -1055,6 +1073,8 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 onToggleSave={handleToggleSave}
                 isSaved={mappedItem.isSaved}
                 showTopDivider={index !== 0}
+                isFocused={isFocused}
+                isViewable={mappedItem.id === visiblePostId}
             />;
         }
         if (type === 'post') {
@@ -1184,6 +1204,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 initialNumToRender={5}
                 maxToRenderPerBatch={5}
                 windowSize={10}
+                scrollEventThrottle={16}
                 removeClippedSubviews={Platform.OS === 'android'}
             />
 

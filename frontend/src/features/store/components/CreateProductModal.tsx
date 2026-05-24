@@ -1,3 +1,4 @@
+import * as ImageManipulator from 'expo-image-manipulator';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
@@ -8,12 +9,13 @@ import ConfirmModal from '../../../components/ConfirmModal';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMutation } from '@apollo/client/react';
+import { useMutation, useQuery } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
 import {
   CREATE_STORE_PRODUCT, UPDATE_STORE_PRODUCT,
   GET_STORE_PRODUCTS, GET_MY_STORE_PRODUCTS,
 } from '../graphql/store.operations';
+import { GET_ME } from '../../profile/graphql/profile.operations';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { Video as Compressor } from 'react-native-compressor';
 import Toast from 'react-native-toast-message';
@@ -70,6 +72,11 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
   const [submitting, setSubmitting] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
 
+  const { data: meData } = useQuery<any>(GET_ME, {
+    fetchPolicy: 'cache-only',
+  });
+  const currentUser = meData?.me;
+
   useEffect(() => {
     if (visible) {
       if (editItem) {
@@ -110,6 +117,34 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
   }, [visible, editItem]);
 
   const [createProduct] = useMutation(CREATE_STORE_PRODUCT, {
+    optimisticResponse: (vars) => ({
+      createStoreProduct: {
+        __typename: 'StoreProduct',
+        id: `temp-${Date.now()}`,
+        title: vars.input.title,
+        description: vars.input.description,
+        price: vars.input.price,
+        currency: vars.input.currency,
+        location: vars.input.location || null,
+        contactPhone: vars.input.contactPhone || null,
+        condition: null,
+        category: null,
+        isAvailable: true,
+        media: vars.input.media?.map((m: any, idx: number) => ({ __typename: 'Media', url: m.url, type: m.type, order: idx })) ?? [],
+        commentsCount: 0,
+        likes: [],
+        createdAt: new Date().toISOString(),
+        editedAt: null,
+        seller: {
+          __typename: 'User',
+          id: currentUser?.id || 'temp-user',
+          username: currentUser?.username || 'temp-user',
+          firstName: currentUser?.firstName || 'Tú',
+          lastName: currentUser?.lastName || '',
+          photoUrl: currentUser?.photoUrl || null,
+        },
+      },
+    }),
     update(cache, { data }) {
       const newProduct = data?.createStoreProduct;
       if (!newProduct) return;
@@ -182,41 +217,35 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
 
     setSubmitting(true);
     try {
-      // Upload pending media
+      // Upload pending media in parallel for faster response
       const uploadedMedia: { url: string; type: string; order: number }[] = [];
-      for (let i = 0; i < localMedia.length; i++) {
-        const m = localMedia[i];
+      const uploadPromises = localMedia.map(async (m, i) => {
         if (m.status === 'done' && m.remoteUrl) {
           uploadedMedia.push({ url: m.remoteUrl, type: m.type, order: i });
-          continue;
+          return;
         }
-        setLocalMedia(prev => prev.map((item, idx) => idx === i ? { ...item, status: 'uploading' } : item));
+        setLocalMedia(prev => prev.map((item, idx) => (idx === i ? { ...item, status: 'uploading' } : item)));
         const folder = m.type === 'VIDEO' ? 'store-videos' : 'store-images';
-        try {
-          let uploadUri = m.uri;
-          let uploadMimeType = m.mimeType;
-
-          // Comprimir video antes de subir
-          if (m.type === 'VIDEO') {
-            try {
-              uploadUri = await Compressor.compress(m.uri, {
-                compressionMethod: 'manual',
-                bitrate: 3000000,
-                maxSize: 720
-              });
-              // El compresor siempre produce MP4
-              uploadMimeType = 'video/mp4';
-            } catch (compErr) {
-              console.warn('Compresión de video falló, usando original:', compErr);
-            }
+        let uploadUri = m.uri;
+        let uploadMimeType = m.mimeType;
+        if (m.type === 'VIDEO') {
+          try {
+            uploadUri = await Compressor.compress(m.uri, {
+              compressionMethod: 'manual',
+              bitrate: 3000000,
+              maxSize: 720,
+            });
+            uploadMimeType = 'video/mp4';
+          } catch (compErr) {
+            console.warn('Compresión de video falló, usando original:', compErr);
           }
-
+        }
+        try {
           const remoteUrl = await uploadMedia(uploadUri, uploadMimeType, folder);
-          setLocalMedia(prev => prev.map((item, idx) => idx === i ? { ...item, status: 'done', remoteUrl } : item));
+          setLocalMedia(prev => prev.map((item, idx) => (idx === i ? { ...item, status: 'done', remoteUrl } : item)));
           uploadedMedia.push({ url: remoteUrl, type: m.type, order: i });
         } catch (uploadErr: any) {
-          // Marcar como error pero continuar con los demás archivos
-          setLocalMedia(prev => prev.map((item, idx) => idx === i ? { ...item, status: 'error' } : item));
+          setLocalMedia(prev => prev.map((item, idx) => (idx === i ? { ...item, status: 'error' } : item)));
           Toast.show({
             type: 'error',
             text1: 'Error al subir archivo',
@@ -225,7 +254,8 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
           });
           console.error(`[MediaUpload] Error on file ${i}:`, uploadErr);
         }
-      }
+      });
+      await Promise.all(uploadPromises);
 
       const contactPhone = phone.trim() ? countryCode + phone.trim() : undefined;
       const input = {

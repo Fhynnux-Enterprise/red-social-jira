@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
 import {
     View, Text, Image, StyleSheet, Dimensions, FlatList,
     TouchableOpacity, Modal, BackHandler, PanResponder, Animated,
@@ -90,7 +90,7 @@ const ImageCarousel = React.forwardRef((props: ImageCarouselProps, ref: any) => 
         children,
         overlay,
     } = props;
-    
+
     React.useImperativeHandle(ref, () => ({
         openViewer: (index = 0) => {
             viewerTranslateY.setValue(0);
@@ -177,7 +177,7 @@ const ImageCarousel = React.forwardRef((props: ImageCarouselProps, ref: any) => 
     // ── GESTO SWIPE-TO-CLOSE para el VISOR ──
     const viewerTranslateY = useRef(new Animated.Value(0)).current;
     const viewerPan = useRef(PanResponder.create({
-        onMoveShouldSetPanResponder: (_, g) => 
+        onMoveShouldSetPanResponder: (_, g) =>
             !isZoomed && Math.abs(g.dy) > 15 && Math.abs(g.dy) > Math.abs(g.dx) * 2,
         onPanResponderMove: (_, g) => viewerTranslateY.setValue(g.dy),
         onPanResponderRelease: (_, g) => {
@@ -207,7 +207,19 @@ const ImageCarousel = React.forwardRef((props: ImageCarouselProps, ref: any) => 
         extrapolate: 'clamp'
     });
 
-    // ── Press ──
+    // ── Press para imágenes: siempre abre el visor inmersivo (ignora disablePressToFullscreen) ──
+    const handleImagePress = useCallback((index: number) => {
+        if (!disableFullscreen) {
+            viewerTranslateY.setValue(0);
+            setViewerInitialIndex(index);
+            setViewerActiveIndex(index);
+            setViewerVisible(true);
+        } else {
+            onPress?.();
+        }
+    }, [disableFullscreen, onPress, viewerTranslateY]);
+
+    // ── Press para videos: respeta disablePressToFullscreen (solo expand button) ──
     const handleMainPress = useCallback((index: number) => {
         if (disablePressToFullscreen) {
             // No hacemos nada aquí, dejamos que los controles internos del video (Play/Pause) actúen
@@ -294,7 +306,7 @@ const ImageCarousel = React.forwardRef((props: ImageCarouselProps, ref: any) => 
                     />
                 ) : (
                     <>
-                        <TouchableOpacity activeOpacity={1} onPress={() => handleMainPress(index)} style={StyleSheet.absoluteFill}>
+                        <TouchableOpacity activeOpacity={1} onPress={() => handleImagePress(index)} style={StyleSheet.absoluteFill}>
                             <Image
                                 source={{ uri: item.url }}
                                 style={[styles.mediaItem, { width: ITEM_WIDTH, height: itemHeight, backgroundColor: colors.surface }]}
@@ -306,7 +318,7 @@ const ImageCarousel = React.forwardRef((props: ImageCarouselProps, ref: any) => 
                 )}
             </View>
         );
-    }, [ITEM_WIDTH, activeAspectRatio, colors, handleMainPress, activeIndex, isGlobalMuted, isViewable, isFocused, toggleGlobalMute, isOverlayActive, isInteractive, viewerVisible, muteButtonStyle, sliderBottomOffset, overlay, hideExpand]);
+    }, [ITEM_WIDTH, activeAspectRatio, colors, handleMainPress, handleImagePress, activeIndex, isGlobalMuted, isViewable, isFocused, toggleGlobalMute, isOverlayActive, isInteractive, viewerVisible, muteButtonStyle, sliderBottomOffset, overlay, hideExpand]);
 
 
     return (
@@ -407,15 +419,15 @@ const ImageCarousel = React.forwardRef((props: ImageCarouselProps, ref: any) => 
                             activeOpacity={0.7}
                             hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
                         >
-                            <Ionicons 
-                                name={isGlobalMuted ? 'volume-mute' : 'volume-high'} 
-                                size={24} 
-                                color="#FFF" 
+                            <Ionicons
+                                name={isGlobalMuted ? 'volume-mute' : 'volume-high'}
+                                size={24}
+                                color="#FFF"
                             />
                         </TouchableOpacity>
                     )}
 
-                    <Animated.View 
+                    <Animated.View
                         style={{ flex: 1, transform: [{ translateY: viewerTranslateY }, { scale: viewerScale }] }}
                         {...viewerPan.panHandlers}
                     >
@@ -459,11 +471,11 @@ const ImageCarousel = React.forwardRef((props: ImageCarouselProps, ref: any) => 
                                             insets={insets}
                                         />
                                     ) : (
-                                        <ZoomableImageViewer 
+                                        <ZoomableImageViewer
                                             url={item.url}
                                             mediaType="image"
                                             onClose={() => setViewerVisible(false)}
-                                            onZoomChange={setIsZoomed} 
+                                            onZoomChange={setIsZoomed}
                                         />
                                     )}
                                 </View>
@@ -609,14 +621,14 @@ const FullscreenVideoModal = React.forwardRef(({
     return (
         <Modal visible={visible} transparent={true} animationType="none" onRequestClose={() => setVisible(false)} statusBarTranslucent>
             {cachedSource ? (
-                <ActualFullscreenVideo 
-                    url={cachedSource} 
-                    isMuted={isMuted} 
-                    toggleMute={toggleMute} 
-                    colors={colors} 
-                    insets={insets} 
+                <ActualFullscreenVideo
+                    url={cachedSource}
+                    isMuted={isMuted}
+                    toggleMute={toggleMute}
+                    colors={colors}
+                    insets={insets}
                     isVisible={visible}
-                    onClose={() => { setVisible(false); onClose(); }} 
+                    onClose={() => { setVisible(false); onClose(); }}
                 />
             ) : (
                 <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
@@ -638,7 +650,7 @@ const formatTime = (ms: number) => {
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 };
 
-const ActualVideoPlayer = ({ 
+const ActualVideoPlayer = ({
     source, width, height, isMuted, shouldPlay, toggleMute, isInteractive, onExpand, hideExpand, hideMute = false, contentFit = 'cover', insets, colors, urlOriginal, muteButtonStyle, sliderBottomOffset = 0, overlay, isViewable = true
 }: any) => {
     const [showControls, setShowControls] = useState(false);
@@ -685,11 +697,11 @@ const ActualVideoPlayer = ({
                         player.currentTime = 0;
                         player.play();
                     }
-                } catch (e) {}
+                } catch (e) { }
             });
-        } catch (e) {}
+        } catch (e) { }
         return () => {
-            try { sub?.remove?.(); } catch (e) {}
+            try { sub?.remove?.(); } catch (e) { }
         };
     }, [player]);
 
@@ -702,29 +714,30 @@ const ActualVideoPlayer = ({
                 if (!isMounted.current) return;
                 setIsPlaying(status === 'readyToPlay' && player.playing);
             });
-        } catch (e) {}
+        } catch (e) { }
         return () => {
-            try { sub?.remove?.(); } catch (e) {}
+            try { sub?.remove?.(); } catch (e) { }
         };
     }, [player]);
 
-    // Controlar play/pause según shouldPlay (visibilidad + foco + posición en carrusel)
-    useEffect(() => {
+    // Controlar play/pause según shouldPlay — useLayoutEffect para respuesta INMEDIATA sin render cycle delay
+    useLayoutEffect(() => {
         if (!player) return;
         try {
             if (shouldPlay && !showFullscreenLocal) {
                 player.play();
             } else {
+                // Pausa inmediata: no esperar al siguiente frame
                 player.pause();
             }
-        } catch (e) {}
+        } catch (e) { }
     }, [shouldPlay, player, showFullscreenLocal]);
 
     // Control adicional: si el item sale del viewport, pausar inmediatamente
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!player) return;
         if (!isViewable) {
-            try { player.pause(); } catch (e) {}
+            try { player.pause(); } catch (e) { }
         }
     }, [isViewable, player]);
 
@@ -743,7 +756,7 @@ const ActualVideoPlayer = ({
                     setPosition(player.currentTime * 1000);
                     if (player.duration) setDuration(player.duration * 1000);
                 }
-            } catch (e) {}
+            } catch (e) { }
         }, 250);
         return () => clearInterval(interval);
     }, [player]);
@@ -761,7 +774,7 @@ const ActualVideoPlayer = ({
                     setShowControls(false);
                 }
             }
-        } catch (e) {}
+        } catch (e) { }
     };
 
     const bottomOffset = insets?.bottom ?? 0;
@@ -802,57 +815,57 @@ const ActualVideoPlayer = ({
                 {player && isReady && isMounted.current && (
                     <AnimatedVideoView key={source} player={player} style={[StyleSheet.absoluteFill, animatedStyle]} contentFit={contentFit} nativeControls={false} surfaceType="textureView" />
                 )}
-            <TouchableOpacity activeOpacity={1} onPress={handlePress} style={StyleSheet.absoluteFill} />
-            
-            {isInteractive && (showControls || !isPlaying) && (
-                <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center' }]} pointerEvents="none">
-                    <View style={styles.centerControl}>
-                        <Ionicons name={isPlaying ? 'pause' : 'play'} size={50} color="white" style={{ marginLeft: isPlaying ? 0 : 5 }} />
+                <TouchableOpacity activeOpacity={1} onPress={handlePress} style={StyleSheet.absoluteFill} />
+
+                {isInteractive && (showControls || !isPlaying) && (
+                    <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center' }]} pointerEvents="none">
+                        <View style={styles.centerControl}>
+                            <Ionicons name={isPlaying ? 'pause' : 'play'} size={50} color="white" style={{ marginLeft: isPlaying ? 0 : 5 }} />
+                        </View>
                     </View>
-                </View>
-            )}
+                )}
 
-            {!hideMute && (
-                <TouchableOpacity style={[styles.muteButtonContainer, muteButtonStyle]} activeOpacity={0.7} onPress={toggleMute}>
-                    <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={20} color="white" />
-                </TouchableOpacity>
-            )}
+                {!hideMute && (
+                    <TouchableOpacity style={[styles.muteButtonContainer, muteButtonStyle]} activeOpacity={0.7} onPress={toggleMute}>
+                        <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={20} color="white" />
+                    </TouchableOpacity>
+                )}
 
-            {isInteractive && (
-                <>
-                    {!hideExpand && (
-                        <TouchableOpacity style={[styles.muteButtonContainer, { top: 60, right: 16 }]} activeOpacity={0.7} onPress={() => {
-                            if (onExpand) onExpand(); else fsModalRef.current?.open();
-                        }}>
-                            <Ionicons name="expand" size={20} color="white" />
-                        </TouchableOpacity>
-                    )}
-                    <FullscreenVideoModal 
-                        ref={fsModalRef} url={urlOriginal} isMuted={isMuted} toggleMute={toggleMute} colors={colors} insets={insets} 
-                        onOpen={async () => { setShowFullscreenLocal(true); player?.pause(); }} 
-                        onClose={() => { setShowFullscreenLocal(false); if (shouldPlay) player?.play(); }} 
-                    />
+                {isInteractive && (
+                    <>
+                        {!hideExpand && (
+                            <TouchableOpacity style={[styles.muteButtonContainer, { top: 60, right: 16 }]} activeOpacity={0.7} onPress={() => {
+                                if (onExpand) onExpand(); else fsModalRef.current?.open();
+                            }}>
+                                <Ionicons name="expand" size={20} color="white" />
+                            </TouchableOpacity>
+                        )}
+                        <FullscreenVideoModal
+                            ref={fsModalRef} url={urlOriginal} isMuted={isMuted} toggleMute={toggleMute} colors={colors} insets={insets}
+                            onOpen={async () => { setShowFullscreenLocal(true); player?.pause(); }}
+                            onClose={() => { setShowFullscreenLocal(false); if (shouldPlay) player?.play(); }}
+                        />
 
-                    {/* Solo mostrar slider y tiempo cuando está pausado */}
-                    {!isPlaying && (
-                      <>
-                        <View style={[styles.timeDisplay, { bottom: (bottomOffset + 60) + sliderBottomOffset }]}>
-                          <Text style={styles.timeText}>
-                            {formatTime(position)} / {formatTime(duration)}
-                          </Text>
-                        </View>
-                        <View style={[styles.sliderContainer, { bottom: (bottomOffset + 16) + sliderBottomOffset }]}>
-                          <Slider style={{ width: width - 32, height: 40 }} minimumValue={0} maximumValue={duration || 1} value={position} minimumTrackTintColor={colors.primary} maximumTrackTintColor="rgba(255,255,255,0.3)" thumbTintColor="#FFF" onSlidingComplete={(v) => { if (player) player.currentTime = v / 1000; }} />
-                        </View>
-                      </>
-                    )}
-                </>
-            )}
+                        {/* Solo mostrar slider y tiempo cuando está pausado */}
+                        {!isPlaying && (
+                            <>
+                                <View style={[styles.timeDisplay, { bottom: (bottomOffset + 60) + sliderBottomOffset }]}>
+                                    <Text style={styles.timeText}>
+                                        {formatTime(position)} / {formatTime(duration)}
+                                    </Text>
+                                </View>
+                                <View style={[styles.sliderContainer, { bottom: (bottomOffset + 16) + sliderBottomOffset }]}>
+                                    <Slider style={{ width: width - 32, height: 40 }} minimumValue={0} maximumValue={duration || 1} value={position} minimumTrackTintColor="#FFFFFF" maximumTrackTintColor="rgba(255,255,255,0.4)" thumbTintColor="#FFFFFF" onSlidingComplete={(v) => { if (player) player.currentTime = v / 1000; }} />
+                                </View>
+                            </>
+                        )}
+                    </>
+                )}
 
-            {/* Overlay siempre visible (botones WhatsApp/Consultar) */}
-            {overlay}
+                {/* Overlay siempre visible (botones WhatsApp/Consultar) */}
+                {overlay}
 
-        </View>
+            </View>
         </GestureDetector>
     );
 };

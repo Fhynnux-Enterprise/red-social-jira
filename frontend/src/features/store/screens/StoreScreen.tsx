@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   ActivityIndicator, Animated, Pressable, Platform
@@ -18,7 +18,7 @@ import PostOptionsModal from '../../feed/components/PostOptionsModal';
 import Toast from 'react-native-toast-message';
 import { GET_AD_FREQUENCY } from '../../ads/graphql/ads.operations';
 import NativeAdCard from '../../ads/components/NativeAdCard';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useIsFocused } from '@react-navigation/native';
 
 interface TabConfig {
   key: TabKey;
@@ -43,6 +43,7 @@ export default function StoreScreen() {
 
   const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
   const [activeTab, setActiveTab] = useState<TabKey>('all');
+  const isFocused = useIsFocused();
   const [createVisible, setCreateVisible] = useState(false);
   const [editItem, setEditItem] = useState<any>(null);
   const [fabOpen, setFabOpen] = useState(false);
@@ -59,25 +60,55 @@ export default function StoreScreen() {
   const indicatorAnim = useRef(new Animated.Value(0)).current;
   const indicatorWidth = useRef(new Animated.Value(0)).current;
 
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
   // ── Control de Visibilidad para Videos: solo UN video activo a la vez ──
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
-  const onViewableItemsChanged = useRef(({ viewableItems: vItems }: any) => {
+
+  const onViewableItemsChangedAll = useCallback(({ viewableItems: vItems }: any) => {
+    if (activeTabRef.current !== 'all') return;
     if (!vItems || vItems.length === 0) {
       setActiveVideoId(null);
       return;
     }
-    // Solo el item más visible (mayor percentVisible) tiene permiso de sonar
     const mostVisible = vItems.reduce((best: any, cur: any) => {
       return (cur.percentVisible ?? 0) > (best.percentVisible ?? 0) ? cur : best;
     }, vItems[0]);
     setActiveVideoId(mostVisible?.item?.id ?? null);
-  }).current;
+  }, []);
+
+  const onViewableItemsChangedMine = useCallback(({ viewableItems: vItems }: any) => {
+    if (activeTabRef.current !== 'mine') return;
+    if (!vItems || vItems.length === 0) {
+      setActiveVideoId(null);
+      return;
+    }
+    const mostVisible = vItems.reduce((best: any, cur: any) => {
+      return (cur.percentVisible ?? 0) > (best.percentVisible ?? 0) ? cur : best;
+    }, vItems[0]);
+    setActiveVideoId(mostVisible?.item?.id ?? null);
+  }, []);
+
   const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 40,
-    minimumViewTime: 100,
+    itemVisiblePercentThreshold: 50,
+    minimumViewTime: 0,
   }).current;
 
+  const navigation = useNavigation();
+
+  // ── Pausar todos los videos al salir de esta pantalla ──
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('blur', () => {
+      setActiveVideoId(null);
+    });
+    return unsubscribe;
+  }, [navigation]);
+
   const handleTabPress = (key: TabKey, index: number) => {
+    setActiveVideoId(null);
     setActiveTab(key);
     if (tabOffsets[index] !== undefined && tabWidths[index] !== undefined) {
       Animated.spring(indicatorAnim, {
@@ -152,15 +183,15 @@ export default function StoreScreen() {
     return result;
   }, []);
 
-  const rawProducts = activeTab === 'all' ? (allData?.storeProducts ?? []) : (mineData?.myStoreProducts ?? []);
-  const products = React.useMemo(() => {
-      if (activeTab === 'all') {
-          const freq = configData?.getAdFrequency ?? adFrequency;
-          return injectAds(rawProducts, freq, loadedAds);
-      }
-      return rawProducts;
-  }, [activeTab, rawProducts, configData, adFrequency, injectAds, loadedAds]);
+  const productsAll = React.useMemo(() => {
+    const raw = allData?.storeProducts ?? [];
+    const freq = configData?.getAdFrequency ?? adFrequency;
+    return injectAds(raw, freq, loadedAds);
+  }, [allData?.storeProducts, configData, adFrequency, injectAds, loadedAds]);
 
+  const productsMine = mineData?.myStoreProducts ?? [];
+
+  const products = activeTab === 'all' ? productsAll : productsMine;
   const loading = activeTab === 'all' ? loadingAll : loadingMine;
 
   const commentsModalData = React.useMemo(() => {
@@ -347,75 +378,122 @@ export default function StoreScreen() {
       </View>
 
       {/* ── CONTENT ── */}
-      {loading && products.length === 0 ? (
+      {(activeTab === 'all' ? (loadingAll && productsAll.length === 0) : (loadingMine && productsMine.length === 0)) ? (
         <View style={styles.loaderContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
-        <FlatList
-          data={products}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item, index }) => {
-            if (item.isAd) {
-              const cachedAdData = loadedAds[item.id];
-              const adDataToPass = cachedAdData
-                  ? { ...cachedAdData, id: cachedAdData.realId || cachedAdData.id }
-                  : (item.type || item.title ? { ...item, id: item.realId || item.id } : undefined);
-              return (
-                <View>
-                  <View style={{ marginHorizontal: 8 }}>
-                    <NativeAdCard 
-                        adData={adDataToPass}
-                        onAdLoaded={(adData) => {
-                            if (!loadedAds[item.id]) {
-                                setLoadedAds(prev => ({ ...prev, [item.id]: adData }));
-                            }
-                        }}
-                        onDelete={() => {
-                            setLoadedAds(prev => ({ ...prev, [item.id]: { ...prev[item.id], isDeleted: true } }));
-                        }}
-                        onPress={(ad) => setSelectedPostForComments({ 
-                            post: { ...ad, id: item.id, realId: ad.realId || ad.id }, 
-                            minimize: true, 
-                            initialTab: 'comments' 
-                        })} 
-                    />
-                  </View>
-                  <View style={styles.feedDivider} />
-                </View>
-              );
-            }
+        <>
+          {/* List for Todos */}
+          <View style={{ flex: 1, display: activeTab === 'all' ? 'flex' : 'none' }}>
+            <FlatList
+              data={productsAll}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item, index }) => {
+                if (item.isAd) {
+                  const cachedAdData = loadedAds[item.id];
+                  const adDataToPass = cachedAdData
+                      ? { ...cachedAdData, id: cachedAdData.realId || cachedAdData.id }
+                      : (item.type || item.title ? { ...item, id: item.realId || item.id } : undefined);
+                  return (
+                    <View>
+                      <View style={{ marginHorizontal: 8 }}>
+                        <NativeAdCard 
+                            adData={adDataToPass}
+                            onAdLoaded={(adData) => {
+                                if (!loadedAds[item.id]) {
+                                    setLoadedAds(prev => ({ ...prev, [item.id]: adData }));
+                                }
+                            }}
+                            onDelete={() => {
+                                setLoadedAds(prev => ({ ...prev, [item.id]: { ...prev[item.id], isDeleted: true } }));
+                            }}
+                            onPress={(ad) => setSelectedPostForComments({ 
+                                post: { ...ad, id: item.id, realId: ad.realId || ad.id }, 
+                                minimize: true, 
+                                initialTab: 'comments' 
+                            })} 
+                        />
+                      </View>
+                      <View style={styles.feedDivider} />
+                    </View>
+                  );
+                }
 
-            return (
-              <View>
-                <StoreProductCard
-                  item={item}
-                  cardWidth={undefined}
-                  onEdit={handleEdit}
-                  onPress={() => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' })}
-                  onCommentPress={() => setSelectedPostForComments({ post: item, minimize: false, initialTab: 'comments' })}
-                  onToggleSave={() => handleToggleSave(item)}
-                  isSaved={item.isSaved}
-                  isViewable={!selectedPostForComments && activeVideoId === item.id}
-                />
-                <View style={styles.feedDivider} />
-              </View>
-            );
-          }}
-          ItemSeparatorComponent={null}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={renderEmpty}
-          ListFooterComponent={products.length > 0 ? <ListFooter /> : null}
-          onRefresh={() => { refetchAll(); refetchMine(); }}
-          refreshing={false}
-          initialNumToRender={4}
-          maxToRenderPerBatch={4}
-          windowSize={7}
-          removeClippedSubviews={Platform.OS === 'android'}
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={viewabilityConfig}
-        />
+                return (
+                  <View>
+                    <StoreProductCard
+                      item={item}
+                      cardWidth={undefined}
+                      onEdit={handleEdit}
+                      onPress={() => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' })}
+                      onCommentPress={() => setSelectedPostForComments({ post: item, minimize: false, initialTab: 'comments' })}
+                      onToggleSave={() => handleToggleSave(item)}
+                      isSaved={item.isSaved}
+                      isViewable={activeTab === 'all' && !selectedPostForComments && activeVideoId === item.id}
+                      isFocused={isFocused}
+                    />
+                    <View style={styles.feedDivider} />
+                  </View>
+                );
+              }}
+              ItemSeparatorComponent={null}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={renderEmpty}
+              ListFooterComponent={productsAll.length > 0 ? <ListFooter /> : null}
+              onRefresh={refetchAll}
+              refreshing={false}
+              initialNumToRender={4}
+              maxToRenderPerBatch={4}
+              windowSize={7}
+              removeClippedSubviews={Platform.OS === 'android'}
+              scrollEventThrottle={16}
+              onViewableItemsChanged={onViewableItemsChangedAll}
+              viewabilityConfig={viewabilityConfig}
+            />
+          </View>
+
+          {/* List for Mis Productos */}
+          <View style={{ flex: 1, display: activeTab === 'mine' ? 'flex' : 'none' }}>
+            <FlatList
+              data={productsMine}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item, index }) => {
+                return (
+                  <View>
+                    <StoreProductCard
+                      item={item}
+                      cardWidth={undefined}
+                      onEdit={handleEdit}
+                      onPress={() => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' })}
+                      onCommentPress={() => setSelectedPostForComments({ post: item, minimize: false, initialTab: 'comments' })}
+                      onToggleSave={() => handleToggleSave(item)}
+                      isSaved={item.isSaved}
+                      isViewable={activeTab === 'mine' && !selectedPostForComments && activeVideoId === item.id}
+                      isFocused={isFocused}
+                    />
+                    <View style={styles.feedDivider} />
+                  </View>
+                );
+              }}
+              ItemSeparatorComponent={null}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={renderEmpty}
+              ListFooterComponent={productsMine.length > 0 ? <ListFooter /> : null}
+              onRefresh={refetchMine}
+              refreshing={false}
+              initialNumToRender={4}
+              maxToRenderPerBatch={4}
+              windowSize={7}
+              removeClippedSubviews={Platform.OS === 'android'}
+              scrollEventThrottle={16}
+              onViewableItemsChanged={onViewableItemsChangedMine}
+              viewabilityConfig={viewabilityConfig}
+            />
+          </View>
+        </>
       )}
 
       {/* ── FAB Overlay (cierra el menú al tocar fuera) ── */}

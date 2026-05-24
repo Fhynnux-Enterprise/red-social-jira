@@ -80,7 +80,7 @@ function conditionColor(c?: string) {
 }
 
 const StoreProductCard = React.forwardRef((props: any, ref: any) => {
-  const { item, cardWidth, hideSellerRow, onEdit, onPress, onCommentPress, isModalView, onToggleSave, isSaved: propIsSaved, showTopDivider, isViewable, onClose, onOptionsPress } = props;
+  const { item, cardWidth, hideSellerRow, onEdit, onPress, onCommentPress, isModalView, onToggleSave, isSaved: propIsSaved, showTopDivider, isViewable, isFocused, onClose, onOptionsPress } = props;
   const carouselRef = React.useRef<any>(null);
 
   React.useImperativeHandle(ref, () => ({
@@ -229,6 +229,7 @@ const StoreProductCard = React.forwardRef((props: any, ref: any) => {
                   sliderBottomOffset={dynamicSliderOffset}
                   hideExpand={isModalView}
                   isViewable={isViewable}
+                  isFocused={isFocused}
                   overlay={
                     <View style={styles.bottomActionStrip}>
                       {/* 1. Integrated Counter (Replaces Dots) */}

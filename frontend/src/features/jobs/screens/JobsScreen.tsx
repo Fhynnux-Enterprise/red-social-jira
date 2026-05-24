@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     Platform, FlatList, ActivityIndicator, Animated, ScrollView, Pressable, Modal
@@ -59,16 +59,66 @@ export default function JobsScreen() {
     const [selectedItemForOptions, setSelectedItemForOptions] = useState<any>(null);
     const resumeCommentsRef = useRef<any>(null);
     const isFocused = useIsFocused();
+    const activeTabRef = useRef(activeTab);
+    const resultsTabRef = useRef(resultsTab);
+    useEffect(() => {
+        activeTabRef.current = activeTab;
+        resultsTabRef.current = resultsTab;
+    }, [activeTab, resultsTab]);
+
     const [visibleItemId, setVisibleItemId] = useState<string | null>(null);
 
-    const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-        if (viewableItems.length > 0) {
-            setVisibleItemId(viewableItems[0].item.id);
+    const onViewableOffersChanged = useCallback(({ viewableItems }: any) => {
+        if (activeTabRef.current !== 'offers') return;
+        if (!viewableItems || viewableItems.length === 0) {
+            setVisibleItemId(null);
+            return;
         }
-    }).current;
+        const mostVisible = viewableItems.reduce((best: any, cur: any) => {
+            return (cur.percentVisible ?? 0) > (best.percentVisible ?? 0) ? cur : best;
+        }, viewableItems[0]);
+        setVisibleItemId(mostVisible?.item?.id ?? null);
+    }, []);
+
+    const onViewableServicesChanged = useCallback(({ viewableItems }: any) => {
+        if (activeTabRef.current !== 'services') return;
+        if (!viewableItems || viewableItems.length === 0) {
+            setVisibleItemId(null);
+            return;
+        }
+        const mostVisible = viewableItems.reduce((best: any, cur: any) => {
+            return (cur.percentVisible ?? 0) > (best.percentVisible ?? 0) ? cur : best;
+        }, viewableItems[0]);
+        setVisibleItemId(mostVisible?.item?.id ?? null);
+    }, []);
+
+    const onViewableMyOffersChanged = useCallback(({ viewableItems }: any) => {
+        if (activeTabRef.current !== 'results' || resultsTabRef.current !== 'my_offers') return;
+        if (!viewableItems || viewableItems.length === 0) {
+            setVisibleItemId(null);
+            return;
+        }
+        const mostVisible = viewableItems.reduce((best: any, cur: any) => {
+            return (cur.percentVisible ?? 0) > (best.percentVisible ?? 0) ? cur : best;
+        }, viewableItems[0]);
+        setVisibleItemId(mostVisible?.item?.id ?? null);
+    }, []);
+
+    const onViewableMyServicesChanged = useCallback(({ viewableItems }: any) => {
+        if (activeTabRef.current !== 'results' || resultsTabRef.current !== 'my_services') return;
+        if (!viewableItems || viewableItems.length === 0) {
+            setVisibleItemId(null);
+            return;
+        }
+        const mostVisible = viewableItems.reduce((best: any, cur: any) => {
+            return (cur.percentVisible ?? 0) > (best.percentVisible ?? 0) ? cur : best;
+        }, viewableItems[0]);
+        setVisibleItemId(mostVisible?.item?.id ?? null);
+    }, []);
 
     const viewabilityConfig = useRef({
         itemVisiblePercentThreshold: 50,
+        minimumViewTime: 0,
     }).current;
 
     const { data: offersData, loading: loadingOffers, refetch: refetchOffers } = useQuery<{jobOffers: any[]}>(GET_JOB_OFFERS, {
@@ -126,25 +176,32 @@ export default function JobsScreen() {
         return result;
     }, []);
 
-    const getRawListData = useCallback(() => {
-        if (activeTab === 'offers') return offersData?.jobOffers ?? [];
-        if (activeTab === 'services') return profsData?.professionalProfiles ?? [];
-        if (activeTab === 'results') {
-            if (resultsTab === 'my_applications') return myAppsData?.myApplications ?? [];
-            if (resultsTab === 'my_offers') return myOffersData?.myJobOffers ?? [];
-            if (resultsTab === 'my_services') return myServicesData?.myProfessionalProfile ?? [];
-        }
-        return [];
-    }, [activeTab, resultsTab, offersData, profsData, myAppsData, myOffersData, myServicesData]);
+    const offersList = React.useMemo(() => {
+        const raw = offersData?.jobOffers ?? [];
+        const freq = configData?.getAdFrequency ?? adFrequency;
+        return injectAds(raw, freq, loadedAds);
+    }, [offersData?.jobOffers, configData, adFrequency, injectAds, loadedAds]);
+
+    const servicesList = React.useMemo(() => {
+        const raw = profsData?.professionalProfiles ?? [];
+        const freq = configData?.getAdFrequency ?? adFrequency;
+        return injectAds(raw, freq, loadedAds);
+    }, [profsData?.professionalProfiles, configData, adFrequency, injectAds, loadedAds]);
+
+    const myApplicationsList = myAppsData?.myApplications ?? [];
+    const myOffersList = myOffersData?.myJobOffers ?? [];
+    const myServicesList = myServicesData?.myProfessionalProfile ?? [];
 
     const getListData = useCallback(() => {
-        const raw = getRawListData();
-        if (activeTab === 'offers' || activeTab === 'services') {
-            const freq = configData?.getAdFrequency ?? adFrequency;
-            return injectAds(raw, freq, loadedAds);
+        if (activeTab === 'offers') return offersList;
+        if (activeTab === 'services') return servicesList;
+        if (activeTab === 'results') {
+            if (resultsTab === 'my_applications') return myApplicationsList;
+            if (resultsTab === 'my_offers') return myOffersList;
+            if (resultsTab === 'my_services') return myServicesList;
         }
-        return raw;
-    }, [getRawListData, activeTab, configData, adFrequency, injectAds, loadedAds]);
+        return [];
+    }, [activeTab, resultsTab, offersList, servicesList, myApplicationsList, myOffersList, myServicesList]);
 
     const [appMenuVisible, setAppMenuVisible] = useState<any>(null);
     const [editAppVisible, setEditAppVisible] = useState<any>(null);
@@ -306,6 +363,7 @@ export default function JobsScreen() {
 
 
     const handleTabPress = (key: TabKey, index: number) => {
+        setVisibleItemId(null);
         setActiveTab(key);
         if (tabOffsets[index] !== undefined && tabWidths[index] !== undefined) {
             Animated.spring(indicatorAnim, {
@@ -359,6 +417,14 @@ export default function JobsScreen() {
     };
 
     const isLoading = loadingOffers || loadingProfs || loadingMyOffers || loadingMyApps || loadingMyServices;
+    const isCurrentTabLoading = 
+        activeTab === 'offers' ? (loadingOffers && offersList.length === 0) :
+        activeTab === 'services' ? (loadingProfs && servicesList.length === 0) :
+        activeTab === 'results' ? (
+            resultsTab === 'my_applications' ? (loadingMyApps && myApplicationsList.length === 0) :
+            resultsTab === 'my_offers' ? (loadingMyOffers && myOffersList.length === 0) :
+            resultsTab === 'my_services' ? (loadingMyServices && myServicesList.length === 0) : false
+        ) : false;
 
     const renderEmpty = () => (
         <View style={styles.emptyContainer}>
@@ -471,7 +537,10 @@ export default function JobsScreen() {
                                     styles.chip,
                                     isActive ? styles.chipActive : [styles.chipInactive, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]
                                 ]}
-                                onPress={() => setResultsTab(tab.key as ResultsTabKey)}
+                                onPress={() => {
+                                    setVisibleItemId(null);
+                                    setResultsTab(tab.key as ResultsTabKey);
+                                }}
                                 activeOpacity={0.8}
                             >
                                 <Ionicons 
@@ -493,7 +562,7 @@ export default function JobsScreen() {
         );
     };
 
-    const renderItem = ({ item, index }: { item: any; index: number }) => {
+    const renderOfferItem = ({ item, index }: { item: any; index: number }) => {
         if (item.isAd) {
             const cachedAdData = loadedAds[item.id];
             const adDataToPass = cachedAdData
@@ -522,128 +591,156 @@ export default function JobsScreen() {
             );
         }
 
-        const openInModal = () => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' });
-
-        if (activeTab === 'offers') return (
+        return (
             <JobOfferCard 
                 item={item} 
-                onPress={openInModal} 
+                onPress={() => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' })} 
                 onEdit={handleEdit} 
                 onToggleSave={() => handleToggleSave(item)} 
                 isSaved={item.isSaved} 
                 showTopDivider={index !== 0}
                 isFocused={isFocused}
-                isViewable={item.id === visibleItemId}
+                isViewable={activeTab === 'offers' && item.id === visibleItemId}
                 isOverlayActive={!!selectedPostForComments}
             />
         );
-        if (activeTab === 'services') return (
+    };
+
+    const renderServiceItem = ({ item, index }: { item: any; index: number }) => {
+        if (item.isAd) {
+            const cachedAdData = loadedAds[item.id];
+            const adDataToPass = cachedAdData
+                ? { ...cachedAdData, id: cachedAdData.realId || cachedAdData.id }
+                : (item.type || item.title ? { ...item, id: item.realId || item.id } : undefined);
+            return (
+                <View style={{ marginBottom: 12 }}>
+                    <NativeAdCard 
+                        adData={adDataToPass}
+                        showTopDivider={index !== 0}
+                        onAdLoaded={(adData) => {
+                            if (!loadedAds[item.id]) {
+                                setLoadedAds(prev => ({ ...prev, [item.id]: adData }));
+                            }
+                        }}
+                        onDelete={() => {
+                            setLoadedAds(prev => ({ ...prev, [item.id]: { ...prev[item.id], isDeleted: true } }));
+                        }}
+                        onPress={(ad) => setSelectedPostForComments({ 
+                            post: { ...ad, id: item.id, realId: ad.realId || ad.id }, 
+                            minimize: true, 
+                            initialTab: 'comments' 
+                        })} 
+                    />
+                </View>
+            );
+        }
+
+        return (
             <ProfessionalCard 
                 item={item} 
-                onPress={openInModal} 
+                onPress={() => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' })} 
                 onEdit={handleEdit} 
                 onToggleSave={() => handleToggleSave(item)} 
-                isSaved={item.isSaved}
+                isSaved={item.isSaved} 
                 showTopDivider={index !== 0}
                 isFocused={isFocused}
-                isViewable={item.id === visibleItemId}
+                isViewable={activeTab === 'services' && item.id === visibleItemId}
                 isOverlayActive={!!selectedPostForComments}
             />
         );
-        if (activeTab === 'results') {
-            if (resultsTab === 'my_applications') {
-                const getStatusColor = (status: string) => {
-                    if (status === 'ACCEPTED') return '#4CAF50';
-                    if (status === 'REJECTED') return '#F44336';
-                    return '#FF9800'; // PENDING
-                };
-                const getStatusLabel = (status: string) => {
-                    if (status === 'ACCEPTED') return 'Aceptada';
-                    if (status === 'REJECTED') return 'Rechazada';
-                    return 'Pendiente';
-                };
-                return (
-                    <TouchableOpacity 
-                        style={[styles.appCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                        activeOpacity={0.7}
-                        onPress={() => item.jobOffer && setSelectedApplication(item)}
-                    >
-                        <View style={styles.appCardHeader}>
-                            <View style={{ flex: 1 }}>
-                                <Text style={[styles.appJobTitle, { color: colors.text }]} numberOfLines={1}>
-                                    {item.jobOffer?.title || 'Oferta Eliminada'}
-                                </Text>
-                                {item.jobOffer?.author && (
-                                    <Text style={[styles.appJobCompany, { color: colors.textSecondary }]} numberOfLines={1}>
-                                        {item.jobOffer.author.firstName} {item.jobOffer.author.lastName}
-                                    </Text>
-                                )}
-                            </View>
-                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <View style={[styles.appStatusBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
-                                    <Text style={[styles.appStatusText, { color: getStatusColor(item.status) }]}>
-                                        {getStatusLabel(item.status)}
-                                    </Text>
-                                </View>
-                                {item.status === 'PENDING' && (
-                                    <TouchableOpacity
-                                        style={{ padding: 4, marginLeft: 8 }}
-                                        onPress={(e) => {
-                                            e.stopPropagation();
-                                            setAppMenuVisible(item);
-                                        }}
-                                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                    >
-                                        <Ionicons name="ellipsis-vertical" size={20} color={colors.textSecondary} />
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                        </View>
-                        <View style={[styles.appCardFooter, { borderTopColor: colors.border }]}>
-                            <View style={styles.appCardDateRow}>
-                                <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
-                                <Text style={[styles.appCardDate, { color: colors.textSecondary }]}>
-                                    Postulado el {new Date(item.createdAt).toLocaleDateString()}
-                                </Text>
-                            </View>
-                            <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
-                        </View>
-                    </TouchableOpacity>
-                );
-            }
-            if (resultsTab === 'my_offers') {
-                return (
-                    <JobOfferCard
-                        item={item}
-                        onPress={openInModal}
-                        onEdit={handleEdit}
-                        onToggleSave={() => handleToggleSave(item)}
-                        isSaved={item.isSaved}
-                        showTopDivider={index !== 0}
-                        isFocused={isFocused}
-                        isViewable={item.id === visibleItemId}
-                        isOverlayActive={!!selectedPostForComments}
-                    />
-                );
-            }
+    };
 
-            if (resultsTab === 'my_services') {
-                return (
-                    <ProfessionalCard 
-                        item={item} 
-                        onPress={openInModal} 
-                        onEdit={handleEdit} 
-                        onToggleSave={() => handleToggleSave(item)} 
-                        isSaved={item.isSaved}
-                        showTopDivider={index !== 0}
-                        isFocused={isFocused}
-                        isViewable={item.id === visibleItemId}
-                        isOverlayActive={!!selectedPostForComments}
-                    />
-                );
-            }
-        }
-        return null;
+    const renderMyOfferItem = ({ item, index }: { item: any; index: number }) => {
+        return (
+            <JobOfferCard 
+                item={item} 
+                onPress={() => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' })} 
+                onEdit={handleEdit} 
+                onToggleSave={() => handleToggleSave(item)} 
+                isSaved={item.isSaved} 
+                showTopDivider={index !== 0}
+                isFocused={isFocused}
+                isViewable={activeTab === 'results' && resultsTab === 'my_offers' && item.id === visibleItemId}
+                isOverlayActive={!!selectedPostForComments}
+            />
+        );
+    };
+
+    const renderMyServiceItem = ({ item, index }: { item: any; index: number }) => {
+        return (
+            <ProfessionalCard 
+                item={item} 
+                onPress={() => setSelectedPostForComments({ post: item, minimize: true, initialTab: 'comments' })} 
+                onEdit={handleEdit} 
+                onToggleSave={() => handleToggleSave(item)} 
+                isSaved={item.isSaved} 
+                showTopDivider={index !== 0}
+                isFocused={isFocused}
+                isViewable={activeTab === 'results' && resultsTab === 'my_services' && item.id === visibleItemId}
+                isOverlayActive={!!selectedPostForComments}
+            />
+        );
+    };
+
+    const renderMyApplicationItem = ({ item, index }: { item: any; index: number }) => {
+        const getStatusColor = (status: string) => {
+            if (status === 'ACCEPTED') return '#4CAF50';
+            if (status === 'REJECTED') return '#F44336';
+            return '#FF9800';
+        };
+        const getStatusLabel = (status: string) => {
+            if (status === 'ACCEPTED') return 'Aceptada';
+            if (status === 'REJECTED') return 'Rechazada';
+            return 'Pendiente';
+        };
+        return (
+            <TouchableOpacity 
+                style={[styles.appCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                activeOpacity={0.7}
+                onPress={() => item.jobOffer && setSelectedApplication(item)}
+            >
+                <View style={styles.appCardHeader}>
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.appJobTitle, { color: colors.text }]} numberOfLines={1}>
+                            {item.jobOffer?.title || 'Oferta Eliminada'}
+                        </Text>
+                        {item.jobOffer?.author && (
+                            <Text style={[styles.appJobCompany, { color: colors.textSecondary }]} numberOfLines={1}>
+                                {item.jobOffer.author.firstName} {item.jobOffer.author.lastName}
+                            </Text>
+                        )}
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <View style={[styles.appStatusBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
+                            <Text style={[styles.appStatusText, { color: getStatusColor(item.status) }]}>
+                                {getStatusLabel(item.status)}
+                            </Text>
+                        </View>
+                        {item.status === 'PENDING' && (
+                            <TouchableOpacity
+                                style={{ padding: 4, marginLeft: 8 }}
+                                onPress={(e) => {
+                                    e.stopPropagation();
+                                    setAppMenuVisible(item);
+                                }}
+                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            >
+                                <Ionicons name="ellipsis-vertical" size={20} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                </View>
+                <View style={[styles.appCardFooter, { borderTopColor: colors.border }]}>
+                    <View style={styles.appCardDateRow}>
+                        <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
+                        <Text style={[styles.appCardDate, { color: colors.textSecondary }]}>
+                            Postulado el {new Date(item.createdAt).toLocaleDateString()}
+                        </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                </View>
+            </TouchableOpacity>
+        );
     };
 
     return (
@@ -705,32 +802,137 @@ export default function JobsScreen() {
             </View>
 
             {/* ── Content ── */}
-            {isLoading && !offersData && !profsData && !myOffersData ? (
+            {isCurrentTabLoading ? (
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color={colors.primary} />
                 </View>
             ) : (
-                <FlatList
-                    data={getListData()}
-                    keyExtractor={(item) => item.id}
-                    renderItem={renderItem}
-                    ListHeaderComponent={renderListHeader}
-                    contentContainerStyle={[
-                        styles.listContent,
-                        getListData().length === 0 ? { flex: 1 } : null,
-                    ]}
-                    ListFooterComponent={getListData().length > 0 ? <ListFooter /> : null}
-                    ListEmptyComponent={renderEmpty}
-                    refreshing={isRefreshing}
-                    onRefresh={handleRefresh}
-                    showsVerticalScrollIndicator={false}
-                    onViewableItemsChanged={onViewableItemsChanged}
-                    viewabilityConfig={viewabilityConfig}
-                    initialNumToRender={4}
-                    maxToRenderPerBatch={4}
-                    windowSize={7}
-                    removeClippedSubviews={Platform.OS === 'android'}
-                />
+                <>
+                    {/* Offers Tab */}
+                    <View style={{ flex: 1, display: activeTab === 'offers' ? 'flex' : 'none' }}>
+                        <FlatList
+                            data={offersList}
+                            keyExtractor={(item) => item.id}
+                            renderItem={renderOfferItem}
+                            contentContainerStyle={[
+                                styles.listContent,
+                                offersList.length === 0 ? { flex: 1 } : null,
+                            ]}
+                            ListFooterComponent={offersList.length > 0 ? <ListFooter /> : null}
+                            ListEmptyComponent={renderEmpty}
+                            refreshing={loadingOffers}
+                            onRefresh={refetchOffers}
+                            showsVerticalScrollIndicator={false}
+                            onViewableItemsChanged={onViewableOffersChanged}
+                            viewabilityConfig={viewabilityConfig}
+                            initialNumToRender={4}
+                            maxToRenderPerBatch={4}
+                            windowSize={7}
+                            scrollEventThrottle={16}
+                            removeClippedSubviews={Platform.OS === 'android'}
+                        />
+                    </View>
+
+                    {/* Services Tab */}
+                    <View style={{ flex: 1, display: activeTab === 'services' ? 'flex' : 'none' }}>
+                        <FlatList
+                            data={servicesList}
+                            keyExtractor={(item) => item.id}
+                            renderItem={renderServiceItem}
+                            contentContainerStyle={[
+                                styles.listContent,
+                                servicesList.length === 0 ? { flex: 1 } : null,
+                            ]}
+                            ListFooterComponent={servicesList.length > 0 ? <ListFooter /> : null}
+                            ListEmptyComponent={renderEmpty}
+                            refreshing={loadingProfs}
+                            onRefresh={refetchProfs}
+                            showsVerticalScrollIndicator={false}
+                            onViewableItemsChanged={onViewableServicesChanged}
+                            viewabilityConfig={viewabilityConfig}
+                            initialNumToRender={4}
+                            maxToRenderPerBatch={4}
+                            windowSize={7}
+                            scrollEventThrottle={16}
+                            removeClippedSubviews={Platform.OS === 'android'}
+                        />
+                    </View>
+
+                    {/* My Applications Tab */}
+                    <View style={{ flex: 1, display: (activeTab === 'results' && resultsTab === 'my_applications') ? 'flex' : 'none' }}>
+                        <FlatList
+                            data={myApplicationsList}
+                            keyExtractor={(item) => item.id}
+                            renderItem={renderMyApplicationItem}
+                            ListHeaderComponent={renderListHeader}
+                            contentContainerStyle={[
+                                styles.listContent,
+                                myApplicationsList.length === 0 ? { flex: 1 } : null,
+                            ]}
+                            ListFooterComponent={myApplicationsList.length > 0 ? <ListFooter /> : null}
+                            ListEmptyComponent={renderEmpty}
+                            refreshing={loadingMyApps}
+                            onRefresh={refetchMyApps}
+                            showsVerticalScrollIndicator={false}
+                            initialNumToRender={4}
+                            maxToRenderPerBatch={4}
+                            windowSize={7}
+                            removeClippedSubviews={Platform.OS === 'android'}
+                        />
+                    </View>
+
+                    {/* My Offers Tab */}
+                    <View style={{ flex: 1, display: (activeTab === 'results' && resultsTab === 'my_offers') ? 'flex' : 'none' }}>
+                        <FlatList
+                            data={myOffersList}
+                            keyExtractor={(item) => item.id}
+                            renderItem={renderMyOfferItem}
+                            ListHeaderComponent={renderListHeader}
+                            contentContainerStyle={[
+                                styles.listContent,
+                                myOffersList.length === 0 ? { flex: 1 } : null,
+                            ]}
+                            ListFooterComponent={myOffersList.length > 0 ? <ListFooter /> : null}
+                            ListEmptyComponent={renderEmpty}
+                            refreshing={loadingMyOffers}
+                            onRefresh={refetchMyOffers}
+                            showsVerticalScrollIndicator={false}
+                            onViewableItemsChanged={onViewableMyOffersChanged}
+                            viewabilityConfig={viewabilityConfig}
+                            initialNumToRender={4}
+                            maxToRenderPerBatch={4}
+                            windowSize={7}
+                            scrollEventThrottle={16}
+                            removeClippedSubviews={Platform.OS === 'android'}
+                        />
+                    </View>
+
+                    {/* My Services Tab */}
+                    <View style={{ flex: 1, display: (activeTab === 'results' && resultsTab === 'my_services') ? 'flex' : 'none' }}>
+                        <FlatList
+                            data={myServicesList}
+                            keyExtractor={(item) => item.id}
+                            renderItem={renderMyServiceItem}
+                            ListHeaderComponent={renderListHeader}
+                            contentContainerStyle={[
+                                styles.listContent,
+                                myServicesList.length === 0 ? { flex: 1 } : null,
+                            ]}
+                            ListFooterComponent={myServicesList.length > 0 ? <ListFooter /> : null}
+                            ListEmptyComponent={renderEmpty}
+                            refreshing={loadingMyServices}
+                            onRefresh={refetchMyServices}
+                            showsVerticalScrollIndicator={false}
+                            onViewableItemsChanged={onViewableMyServicesChanged}
+                            viewabilityConfig={viewabilityConfig}
+                            initialNumToRender={4}
+                            maxToRenderPerBatch={4}
+                            windowSize={7}
+                            scrollEventThrottle={16}
+                            removeClippedSubviews={Platform.OS === 'android'}
+                        />
+                    </View>
+                </>
             )}
 
             {/* ── FAB Overlay (cierra el menú al tocar fuera) ── */}
