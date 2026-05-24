@@ -64,6 +64,9 @@ export default function ProfessionalCard({
     const carouselRef = React.useRef<any>(null);
     const expandTop = 100;
     const muteTop = isModalView ? (expandTop + 44) : 56;
+    // Offset for the playback slider when the video is paused
+    const hasCounter = item.media && item.media.length > 1;
+    const dynamicSliderOffset = isModalView ? (hasCounter ? 58 : 32) : 0;
 
     const isModeratorOrAdmin = authContext?.user?.role === 'ADMIN' || authContext?.user?.role === 'MODERATOR';
     const client = useApolloClient();
@@ -210,15 +213,19 @@ export default function ProfessionalCard({
                                 ref={carouselRef}
                                 media={item.media}
                                 containerWidth={cardWidth}
-                                customAspectRatio={1}
+                                customAspectRatio={0.8}
                                 disableFullscreen={!!onPress && !isModalView}
+                                disablePressToFullscreen={true}
                                 onPress={onPress}
                                 isFocused={isFocused}
                                 isViewable={isViewable}
                                 isOverlayActive={isOverlayActive}
+                                isInteractive={isModalView}
                                 onIndexChange={setActiveIndex}
                                 hidePagination={true}
+                                hideExpand={isModalView}
                                 muteButtonStyle={{ top: muteTop, right: 12 }}
+                                sliderBottomOffset={dynamicSliderOffset}
                                 overlay={
                                     <View style={styles.bottomActionStrip}>
                                         {/* Contador integrado */}

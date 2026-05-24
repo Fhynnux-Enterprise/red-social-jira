@@ -205,6 +205,8 @@ export default function JobOfferCard({
     const expandTop = 100;
     const muteTop = isModalView ? (expandTop + 44) : 56;
     const typeTop = isModalView ? (isVideo ? (muteTop + 44) : (expandTop + 44)) : (isVideo ? (muteTop + 44) : 56);
+    const hasCounter = item.media && item.media.length > 1;
+    const dynamicSliderOffset = isModalView ? (hasCounter ? 58 : 32) : 0;
 
     return (
         <>
@@ -239,6 +241,8 @@ export default function JobOfferCard({
                             onPress={onPress}
                             onIndexChange={setActiveIndex}
                             muteButtonStyle={{ top: muteTop, right: 12 }}
+                        sliderBottomOffset={dynamicSliderOffset}
+
                             isInteractive={isModalView}
                             hideExpand={isModalView}
                             hidePagination={true}
