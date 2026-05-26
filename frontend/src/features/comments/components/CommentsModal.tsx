@@ -11,6 +11,7 @@ import {
 
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
+import { gql } from '@apollo/client';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { GET_COMMENTS, CREATE_COMMENT, DELETE_COMMENT, UPDATE_COMMENT } from '../graphql/comments.operations';
 import { TOGGLE_LIKE, TOGGLE_SAVE_POST } from '../../feed/graphql/posts.operations';
@@ -37,6 +38,21 @@ import PostOptionsModal from '../../feed/components/PostOptionsModal';
 
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Fragmentos para leer likes frescos desde el caché de Apollo
+const STORE_LIKES_FRAGMENT = gql`
+    fragment StoreFreshLikes on StoreProduct {
+        likes { id user { id firstName lastName photoUrl } }
+    }
+`;
+const POST_LIKES_FRAGMENT = gql`
+    fragment PostFreshLikes on Post {
+        likes { id user { id firstName lastName photoUrl } }
+    }
+`;
+const STORE_LIKE_FRAGMENT = gql`fragment SLikeFrag on StoreProductLike { id user { id firstName lastName photoUrl } }`;
+const POST_LIKE_FRAGMENT = gql`fragment PLikeFrag on PostLike { id user { id firstName lastName photoUrl } }`;
+
 
 const formatTimeAgo = (date: Date) => {
     const now = new Date();
@@ -80,12 +96,14 @@ export interface CommentsModalProps {
     initialExpanded?: boolean;
     /** Callback cuando se elimina un anuncio local, para que el Feed lo quite en tiempo real */
     onDelete?: () => void;
+    onRefreshPost?: () => void;
 }
 export default function CommentsModal({
     visible, post, onClose,
     initialMinimized = false, initialTab = 'comments',
     onNextPost, onPrevPost, nextPost, prevPost, hasMorePosts = false,
-    onOptionsPress, initialExpanded = false, onDelete
+    onOptionsPress, initialExpanded = false, onDelete,
+    onRefreshPost
 }: CommentsModalProps) {
     const isFocused = useIsFocused();
     const { colors, isDark } = useTheme();
@@ -894,8 +912,16 @@ export default function CommentsModal({
     const [localLiked, setLocalLiked] = useState<boolean>(displayLiked);
     const [localCount, setLocalCount] = useState<number>(displayCount);
 
-    const [togglePostLikeMutation] = useMutation(TOGGLE_LIKE);
-    const [toggleStoreLikeMutation] = useMutation(TOGGLE_STORE_PRODUCT_LIKE);
+    const [togglePostLikeMutation] = useMutation(TOGGLE_LIKE, {
+        onCompleted() {
+            onRefreshPost?.();
+        }
+    });
+    const [toggleStoreLikeMutation] = useMutation(TOGGLE_STORE_PRODUCT_LIKE, {
+        onCompleted() {
+            onRefreshPost?.();
+        }
+    });
     const toggleLikeMutation = isStore ? toggleStoreLikeMutation : togglePostLikeMutation;
 
     // Igual que PostCard: se sincroniza cuando Apollo actualiza el caché
@@ -906,30 +932,50 @@ export default function CommentsModal({
 
     const handleLike = () => {
         if (!currentUser?.id || !postId) return;
+
+        // Capturar valores previos para revertir en caso de error
+        const prevLiked = localLiked;
+        const prevCount = localCount;
+
         const nextLiked = !localLiked;
         setLocalLiked(nextLiked);
         setLocalCount((c) => nextLiked ? c + 1 : Math.max(0, c - 1));
 
-        let optimisticLikes = [...(post?.likes || [])];
-        if (displayLiked) {
-            optimisticLikes = optimisticLikes.filter((l: any) => l?.user?.id !== currentUser.id);
+        const typename = isStore ? 'StoreProduct' : 'Post';
+        const likeTypename = isStore ? 'StoreProductLike' : 'PostLike';
+        const mutationField = isStore ? 'toggleStoreProductLike' : 'toggleLike';
+
+        // Leer likes frescos desde el caché de Apollo (no del prop estático)
+        const cachedData = apolloClient.cache.readFragment<{ likes: any[] }>({
+            id: apolloClient.cache.identify({ __typename: typename, id: postId }),
+            fragment: isStore ? STORE_LIKES_FRAGMENT : POST_LIKES_FRAGMENT,
+        });
+        const freshLikes: any[] = cachedData?.likes ?? post?.likes ?? [];
+
+        // Construir optimisticLikes a partir de los likes frescos del caché
+        let optimisticLikes: any[];
+        if (localLiked) {
+            // Quitar like
+            optimisticLikes = freshLikes.filter((l: any) => l?.user?.id !== currentUser.id);
         } else {
-            optimisticLikes.push({
-                __typename: isStore ? 'StoreProductLike' : 'PostLike',
-                id: `temp-${Date.now()}`,
-                user: {
-                    __typename: 'User',
-                    id: currentUser.id,
-                    firstName: currentUser.firstName || '',
-                    lastName: currentUser.lastName || '',
-                    photoUrl: currentUser.photoUrl || null,
+            // Agregar like
+            optimisticLikes = [
+                ...freshLikes,
+                {
+                    __typename: likeTypename,
+                    id: `temp-${Date.now()}`,
+                    user: {
+                        __typename: 'User',
+                        id: currentUser.id,
+                        firstName: currentUser.firstName || '',
+                        lastName: currentUser.lastName || '',
+                        photoUrl: currentUser.photoUrl || null,
+                    }
                 }
-            });
+            ];
         }
 
         const variables = isStore ? { productId: postId } : { postId };
-        const typename = isStore ? 'StoreProduct' : 'Post';
-        const mutationField = isStore ? 'toggleStoreProductLike' : 'toggleLike';
 
         toggleLikeMutation({
             variables,
@@ -941,12 +987,36 @@ export default function CommentsModal({
                     commentsCount: post?.commentsCount ?? post?.comments?.length ?? 0,
                     likes: optimisticLikes,
                 }
-            }
+            },
+            update: (cache, { data }) => {
+                const result = data?.[mutationField];
+                if (!result?.likes) return;
+                const cacheId = cache.identify({ __typename: typename, id: postId });
+                if (!cacheId) return;
+                // Escribir cada like como referencia en el caché para normalización correcta
+                const likeRefs = result.likes.map((like: any) => {
+                    return cache.writeFragment({
+                        data: like,
+                        fragment: isStore ? STORE_LIKE_FRAGMENT : POST_LIKE_FRAGMENT,
+                    });
+                });
+                cache.modify({
+                    id: cacheId,
+                    fields: {
+                        likes() {
+                            return likeRefs;
+                        }
+                    }
+                });
+            },
         }).catch(() => {
-            setLocalLiked(displayLiked);
-            setLocalCount(displayCount);
+            // Revertir al estado previo en error
+            setLocalLiked(prevLiked);
+            setLocalCount(prevCount);
         });
     };
+
+
 
     // ── Comments query ─────────────────────────────────────────────────────
     const COMMENTS_PAGE_SIZE = 10;
@@ -1006,6 +1076,9 @@ export default function CommentsModal({
                 }
             });
         },
+        onCompleted() {
+            onRefreshPost?.();
+        }
     });
 
     const [createStoreCommentMutation, { loading: creatingStore }] = useMutation(CREATE_STORE_PRODUCT_COMMENT, {
@@ -1019,6 +1092,9 @@ export default function CommentsModal({
                 }
             });
         },
+        onCompleted() {
+            onRefreshPost?.();
+        }
     });
 
     const creating = creatingPost || creatingStore;
@@ -1036,6 +1112,9 @@ export default function CommentsModal({
                     fields: { commentsCount(current = 0) { return Math.max(0, current - 1); } }
                 });
             }
+        },
+        onCompleted() {
+            onRefreshPost?.();
         }
     });
 
@@ -1051,6 +1130,9 @@ export default function CommentsModal({
                     fields: { commentsCount(current = 0) { return Math.max(0, current - 1); } }
                 });
             }
+        },
+        onCompleted() {
+            onRefreshPost?.();
         }
     });
 
@@ -1559,6 +1641,9 @@ export default function CommentsModal({
                                                             if (isOwner) onOptionsPress?.(post);
                                                             else setIsPostOptionsMenuVisible(true);
                                                         }}
+                                                        onLikePress={handleLike}
+                                                        externalLiked={localLiked}
+                                                        externalLikeCount={localCount}
                                                     />
                                                 )}
                                             </Animated.View>

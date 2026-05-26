@@ -222,6 +222,16 @@ export const apolloClient = new ApolloClient({
                     },
                 },
             },
+            StoreProduct: {
+                fields: {
+                    likes: {
+                        merge(existing, incoming) {
+                            // Siempre tomamos la lista más reciente del servidor
+                            return incoming;
+                        },
+                    },
+                },
+            },
         },
     }),
 });

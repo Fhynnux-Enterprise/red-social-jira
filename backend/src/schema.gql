@@ -398,6 +398,7 @@ type Notification {
   type: NotificationType!
   isRead: Boolean!
   user: User!
+  data: String
   createdAt: DateTime!
 }
 
@@ -806,6 +807,7 @@ input UpdateLocalAdInput {
 }
 
 type Subscription {
+  notificationAdded(userId: String!): Notification!
   messageAdded(conversationId: String!): Message!
   messagesRead(conversationId: String!): ReadMessagesPayload!
   inboxUpdate: Message!

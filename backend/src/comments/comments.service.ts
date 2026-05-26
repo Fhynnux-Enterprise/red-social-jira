@@ -3,6 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import { Comment } from './entities/comment.entity';
 import { CommentLike } from './entities/comment-like.entity';
+import { Post } from '../posts/entities/post.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/enums/notification.enums';
 
 @Injectable()
 export class CommentsService {
@@ -11,9 +14,17 @@ export class CommentsService {
         private commentRepository: Repository<Comment>,
         @InjectRepository(CommentLike)
         private commentLikeRepository: Repository<CommentLike>,
+        @InjectRepository(Post)
+        private postRepository: Repository<Post>,
+        private readonly notificationsService: NotificationsService,
     ) {}
 
     async createComment(postId: string, content: string, userId: string, cityId: string, parentId?: string): Promise<Comment> {
+        const post = await this.postRepository.findOne({ where: { id: postId } });
+        if (!post) {
+            throw new NotFoundException('Publicación no encontrada');
+        }
+
         const comment = this.commentRepository.create({
             postId,
             content,
@@ -26,6 +37,41 @@ export class CommentsService {
             where: { id: saved.id },
             relations: ['user', 'likes'],
         });
+
+        // Golden rule: Do not send auto-notifications
+        if (post.authorId !== userId) {
+            const commenterName = result?.user ? `${result.user.firstName} ${result.user.lastName}`.trim() : 'Un usuario';
+            const title = commenterName ? `${commenterName} comentó en tu publicación` : '¡Nuevo comentario!';
+            const body = content.length > 40 ? `${content.substring(0, 40)}...` : content;
+            const payload = {
+                type: 'POST_DETAIL',
+                postId: post.id,
+                senderAvatar: result?.user?.photoUrl || null,
+                senderName: commenterName
+            };
+
+            // Save in-app notification in DB
+            this.notificationsService.createNotification(
+                post.authorId,
+                title,
+                body,
+                NotificationType.SOCIAL,
+                JSON.stringify(payload)
+            ).catch(err => {
+                console.error('[CommentsService] Error saving in-app notification:', err);
+            });
+
+            // Send Push Notification
+            this.notificationsService.sendPushNotification(
+                post.authorId,
+                title,
+                body,
+                payload
+            ).catch(err => {
+                console.error('[CommentsService] Error sending push notification:', err);
+            });
+        }
+
         return this.mapComment(result!, userId);
     }
 

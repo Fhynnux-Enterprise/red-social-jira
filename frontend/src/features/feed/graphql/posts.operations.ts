@@ -441,3 +441,40 @@ export const GET_LIKED_POSTS = gql`
         }
     }
 `;
+
+export const GET_POST_BY_ID = gql`
+    query GetPostById($id: String!) {
+        getPostById(id: $id) {
+            id
+            content
+            title
+            media {
+                id
+                url
+                type
+                order
+            }
+            createdAt
+            updatedAt
+            editedAt
+            commentsCount
+            likes {
+                id
+                user {
+                    id
+                    firstName
+                    lastName
+                    username
+                    photoUrl
+                }
+            }
+            author {
+                id
+                firstName
+                lastName
+                username
+                photoUrl
+            }
+        }
+    }
+`;

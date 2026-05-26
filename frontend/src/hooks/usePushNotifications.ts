@@ -5,6 +5,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { useMutation } from '@apollo/client/react';
 import { gql } from '@apollo/client';
+import { router } from 'expo-router';
 
 const REGISTER_PUSH_TOKEN_MUTATION = gql`
     mutation RegisterPushToken($token: String!, $platform: String) {
@@ -109,6 +110,20 @@ export const usePushNotifications = (isAuthenticated: boolean) => {
 
         responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
             console.log('Usuario interactuó con la notificación:', response);
+            try {
+                const data = response?.notification?.request?.content?.data as any;
+                if (data && data.postId) {
+                    if (data.type === 'POST_DETAIL' || data.type === 'STORE_DETAIL') {
+                        console.log('Deep linking to postDetail with ID:', data.postId, 'isStore:', data.type === 'STORE_DETAIL');
+                        router.push({
+                            pathname: '/postDetail',
+                            params: { postId: data.postId, isStore: data.type === 'STORE_DETAIL' ? 'true' : 'false' }
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error('Error handling notification press:', err);
+            }
         });
 
         return () => {

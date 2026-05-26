@@ -1,7 +1,5 @@
 import { Resolver, Query, Mutation, Args, ResolveField, Parent, Subscription, ObjectType, Field, Int } from '@nestjs/graphql';
-import { PubSub } from 'graphql-subscriptions';
-
-const pubSub = new PubSub();
+import { pubSub } from '../common/pubsub';
 import { UseGuards } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { Conversation } from './entities/conversation.entity';

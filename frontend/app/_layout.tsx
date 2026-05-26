@@ -20,6 +20,7 @@ export default function RootLayout() {
                 <Stack.Screen name="index" options={{ headerShown: false }} />
                 <Stack.Screen name="search" options={{ headerShown: false }} />
                 <Stack.Screen name="profile" options={{ headerShown: false }} />
+                <Stack.Screen name="postDetail" options={{ headerShown: false }} />
                 <Stack.Screen 
                   name="jobs/create" 
                   options={{ 

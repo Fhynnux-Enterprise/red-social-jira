@@ -14,6 +14,8 @@ import { CreateStoreProductInput } from './dto/create-store-product.input';
 import { UpdateStoreProductInput } from './dto/update-store-product.input';
 import { UserBlocksService } from '../user-blocks/user-blocks.service';
 import { UserBlock } from '../user-blocks/entities/user-block.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/enums/notification.enums';
 
 @Injectable()
 export class StoreService {
@@ -29,6 +31,7 @@ export class StoreService {
     @InjectRepository(StoreProductCommentLike)
     private readonly commentLikeRepo: Repository<StoreProductCommentLike>,
     private readonly userBlocksService: UserBlocksService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(data: CreateStoreProductInput, userId: string, cityId: string): Promise<StoreProduct> {
@@ -59,6 +62,8 @@ export class StoreService {
     const query = this.productRepo.createQueryBuilder('product')
       .where('product.isAvailable = true')
       .leftJoinAndSelect('product.seller', 'seller')
+      .leftJoinAndSelect('product.likes', 'likes')
+      .leftJoinAndSelect('likes.user', 'likeUser')
       .leftJoinAndSelect('product.media', 'media');
 
     // ── Multi-tenant filter ───────────────────────────────────────────────
@@ -186,10 +191,46 @@ export class StoreService {
     const comment = this.commentRepo.create({ storeProductId: productId, userId, content, parentId, cityId });
     const saved = await this.commentRepo.save(comment);
 
-    return this.commentRepo.findOne({
+    const result = await this.commentRepo.findOne({
       where: { id: saved.id },
       relations: ['user'],
-    }) as Promise<StoreProductComment>;
+    });
+
+    // Golden rule: Do not send auto-notifications
+    if (product.sellerId !== userId) {
+      const commenterName = result?.user ? `${result.user.firstName} ${result.user.lastName}`.trim() : 'Un usuario';
+      const title = commenterName ? `${commenterName} comentó en tu producto` : '¡Nuevo comentario en tu producto!';
+      const body = content.length > 40 ? `${content.substring(0, 40)}...` : content;
+      const payload = {
+        type: 'STORE_DETAIL',
+        postId: product.id,
+        senderAvatar: result?.user?.photoUrl || null,
+        senderName: commenterName
+      };
+
+      // Save in-app notification in DB
+      this.notificationsService.createNotification(
+        product.sellerId,
+        title,
+        body,
+        NotificationType.SOCIAL,
+        JSON.stringify(payload)
+      ).catch(err => {
+        console.error('[StoreService] Error saving in-app notification:', err);
+      });
+
+      // Send Push Notification
+      this.notificationsService.sendPushNotification(
+        product.sellerId,
+        title,
+        body,
+        payload
+      ).catch(err => {
+        console.error('[StoreService] Error sending push notification:', err);
+      });
+    }
+
+    return result as StoreProductComment;
   }
 
   async getComments(productId: string, limit = 10, offset = 0): Promise<StoreProductComment[]> {

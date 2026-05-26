@@ -5,6 +5,7 @@ import { Notification } from './entities/notification.entity';
 import { DeviceToken } from './entities/device-token.entity';
 import { NotificationType } from './enums/notification.enums';
 import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
+import { pubSub } from '../common/pubsub';
 
 @Injectable()
 export class NotificationsService {
@@ -17,15 +18,18 @@ export class NotificationsService {
         private readonly deviceTokenRepository: Repository<DeviceToken>,
     ) {}
 
-    async createNotification(userId: string, title: string, message: string, type: NotificationType): Promise<Notification | null> {
+    async createNotification(userId: string, title: string, message: string, type: NotificationType, data?: string): Promise<Notification | null> {
         try {
             const notification = this.notificationRepository.create({
                 userId,
                 title,
                 message,
                 type,
+                data,
             });
-            return await this.notificationRepository.save(notification);
+            const savedNotification = await this.notificationRepository.save(notification);
+            pubSub.publish('NOTIFICATION_ADDED', { notificationAdded: savedNotification });
+            return savedNotification;
         } catch (error) {
             console.error('[NotificationsService] Error creating notification:', error);
             // Non-blocking for the main flow

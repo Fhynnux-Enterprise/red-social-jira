@@ -161,6 +161,18 @@ export class PostsService {
         return post;
     }
 
+    async countComments(postId: string): Promise<number> {
+        const result = await this.postsRepository.manager.query(
+            `SELECT COUNT(c.id) as "count"
+             FROM comments c
+             LEFT JOIN comments p ON c.parent_id = p.id AND p.deleted_at IS NULL
+             WHERE c.post_id = $1 AND c.deleted_at IS NULL
+               AND (c.parent_id IS NULL OR p.id IS NOT NULL)`,
+            [postId],
+        );
+        return parseInt(result[0]?.count || '0', 10);
+    }
+
     async searchPosts(query: string, limit: number = 5, offset: number = 0, cityId?: string): Promise<Post[]> {
         const term = `%${query}%`;
         const qb = this.postsRepository.createQueryBuilder('post')

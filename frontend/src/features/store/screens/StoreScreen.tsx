@@ -151,6 +151,11 @@ export default function StoreScreen() {
     fetchPolicy: 'network-only',
   });
 
+  const handleRefreshStore = () => {
+    refetchAll();
+    refetchMine();
+  };
+
   React.useEffect(() => {
     if (configData?.getAdFrequency != null) {
       setAdFrequency(configData.getAdFrequency);
@@ -574,7 +579,11 @@ export default function StoreScreen() {
       <CommentsModal
         visible={!!selectedPostForComments}
         post={commentsModalData.post}
-        onClose={() => setSelectedPostForComments(null)}
+        onClose={() => {
+            setSelectedPostForComments(null);
+            handleRefreshStore();
+        }}
+        onRefreshPost={handleRefreshStore}
         initialMinimized={selectedPostForComments?.minimize ?? false}
         initialTab={selectedPostForComments?.initialTab ?? 'comments'}
         onNextPost={() => {

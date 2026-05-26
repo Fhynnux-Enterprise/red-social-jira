@@ -1,10 +1,11 @@
-import { Resolver, Query, Mutation, Args, Int, ID, Context } from '@nestjs/graphql';
+import { Resolver, Query, Mutation, Args, Int, ID, Context, Subscription } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { Notification } from './entities/notification.entity';
 import { GqlAuthGuard } from '../auth/guards/gql-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User } from '../auth/entities/user.entity';
+import { pubSub } from '../common/pubsub';
 
 @Resolver(() => Notification)
 export class NotificationsResolver {
@@ -67,5 +68,12 @@ export class NotificationsResolver {
         const title = "¡Hola desde FynnuX! 🚀";
         const body = "Tu arquitectura Multi-tenant está enviando notificaciones reales.";
         return this.notificationsService.sendPushNotification(user.id, title, body);
+    }
+
+    @Subscription(() => Notification, {
+        filter: (payload, variables) => payload.notificationAdded.userId === variables.userId,
+    })
+    notificationAdded(@Args('userId', { type: () => String }) userId: string) {
+        return pubSub.asyncIterableIterator('NOTIFICATION_ADDED');
     }
 }

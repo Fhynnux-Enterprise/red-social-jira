@@ -33,6 +33,9 @@ export const GET_STORE_PRODUCTS = gql`
         id
         user {
           id
+          firstName
+          lastName
+          photoUrl
         }
       }
     }
@@ -71,6 +74,9 @@ export const GET_MY_STORE_PRODUCTS = gql`
         id
         user {
           id
+          firstName
+          lastName
+          photoUrl
         }
       }
     }
@@ -109,6 +115,9 @@ export const CREATE_STORE_PRODUCT = gql`
         id
         user {
           id
+          firstName
+          lastName
+          photoUrl
         }
       }
     }
@@ -147,6 +156,9 @@ export const UPDATE_STORE_PRODUCT = gql`
         id
         user {
           id
+          firstName
+          lastName
+          photoUrl
         }
       }
     }
@@ -184,6 +196,9 @@ export const GET_STORE_PRODUCTS_BY_USER = gql`
         id
         user {
           id
+          firstName
+          lastName
+          photoUrl
         }
       }
     }
@@ -289,6 +304,47 @@ export const TOGGLE_STORE_PRODUCT_COMMENT_LIKE = gql`
       id
       likesCount
       isLikedByMe
+      likes {
+        id
+        user {
+          id
+          firstName
+          lastName
+          photoUrl
+        }
+      }
+    }
+  }
+`;
+
+export const GET_STORE_PRODUCT_BY_ID = gql`
+  query GetStoreProductById($id: ID!) {
+    getStoreProductById(id: $id) {
+      id
+      title
+      description
+      price
+      currency
+      location
+      contactPhone
+      condition
+      category
+      isAvailable
+      createdAt
+      editedAt
+      seller {
+        id
+        username
+        firstName
+        lastName
+        photoUrl
+      }
+      media {
+        url
+        type
+        order
+      }
+      commentsCount
       likes {
         id
         user {

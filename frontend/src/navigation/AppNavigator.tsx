@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import MaskedView from '@react-native-masked-view/masked-view';
 import FeedScreen from '../features/feed/screens/FeedScreen';
+import PostDetailScreen from '../features/feed/screens/PostDetailScreen';
 import ProfileScreen from '../features/profile/screens/ProfileScreen';
 import EditProfileScreen from '../features/profile/screens/EditProfileScreen';
 import ChatListScreen from '../features/chat/screens/ChatListScreen';
@@ -23,6 +24,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery, useSubscription } from '@apollo/client/react';
 import { GET_USER_CONVERSATIONS, INBOX_UPDATE_SUBSCRIPTION } from '../features/chat/graphql/chat.operations';
+import { GET_UNREAD_NOTIFICATIONS_COUNT, NOTIFICATION_ADDED_SUBSCRIPTION } from '../features/notifications/graphql/notifications.operations';
 import { useAuth } from '../features/auth/context/AuthContext';
 
 export type AppStackParamList = {
@@ -35,6 +37,7 @@ export type AppStackParamList = {
     StoryViewer: { userId: string; initialStoryId?: string };
     Moderation: { initialTab?: string } | undefined;
     Admin: undefined;
+    PostDetail: { postId: string; isStore?: boolean };
 };
 
 export type AppTabParamList = {
@@ -72,6 +75,22 @@ function MainTabNavigator() {
         if (!convData?.getUserConversations) return 0;
         return convData.getUserConversations.reduce((acc: number, conv: any) => acc + (conv.unreadCount || 0), 0);
     }, [convData]);
+
+    const { data: notifData, refetch: refetchNotifCount } = useQuery<any>(GET_UNREAD_NOTIFICATIONS_COUNT, {
+        skip: !user,
+        pollInterval: 15000, // Refrescar cada 15 segundos
+        fetchPolicy: 'cache-and-network',
+    });
+
+    useSubscription(NOTIFICATION_ADDED_SUBSCRIPTION, {
+        skip: !user || !user?.id,
+        variables: { userId: user?.id },
+        onData: () => {
+            refetchNotifCount();
+        }
+    });
+
+    const unreadNotificationsCount = notifData?.getUnreadNotificationsCount || 0;
 
     return (
         <Tab.Navigator
@@ -200,7 +219,27 @@ function MainTabNavigator() {
                     }
                 }} 
             />
-            <Tab.Screen name="Notifications" component={NotificationsScreen} options={{ tabBarLabel: 'Avisos' }} />
+            <Tab.Screen 
+                name="Notifications" 
+                component={NotificationsScreen} 
+                options={{ 
+                    tabBarLabel: 'Avisos',
+                    tabBarBadge: unreadNotificationsCount > 0 ? unreadNotificationsCount : undefined,
+                    tabBarBadgeStyle: {
+                        backgroundColor: '#FF3B30',
+                        color: 'white',
+                        fontSize: 10,
+                        fontWeight: 'bold',
+                        minWidth: 18,
+                        height: 18,
+                        borderRadius: 9,
+                        textAlign: 'center',
+                        textAlignVertical: 'center',
+                        lineHeight: Platform.OS === 'ios' ? 18 : 16,
+                        padding: 0,
+                    }
+                }} 
+            />
             <Tab.Screen
                 name="Profile"
                 component={ProfileScreen}
@@ -239,6 +278,7 @@ export default function AppNavigator() {
             <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
             <Stack.Screen name="ChatDetails" component={ChatDetailsScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="PostDetail" component={PostDetailScreen} />
             <Stack.Screen 
                 name="NewChat" 
                 component={NewChatScreen} 

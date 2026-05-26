@@ -198,8 +198,46 @@ export default function SavedPostsScreen() {
             {selectedPostForComments && (
                 <CommentsModal
                     visible={!!selectedPostForComments}
-                    post={selectedPostForComments.post}
-                    onClose={() => setSelectedPostForComments(null)}
+                    post={(() => {
+                        if (!selectedPostForComments) return null;
+                        const original = savedPosts.find((p: any) => p.id === selectedPostForComments.post?.id);
+                        if (!original) return selectedPostForComments.post;
+                        if (original.__typename === 'StoreProduct') {
+                            return {
+                                ...original,
+                                title: original.storeTitle ?? original.postTitle ?? original.title,
+                                media: original.storeMedia ?? original.postMedia ?? original.media ?? [],
+                                location: original.storeLocation ?? original.location,
+                                contactPhone: original.storeContactPhone ?? original.contactPhone,
+                            };
+                        }
+                        if (original.__typename === 'JobOffer') {
+                            return {
+                                ...original,
+                                title: original.jobTitle ?? original.postTitle ?? original.title,
+                                media: original.jobMedia ?? original.postMedia ?? original.media ?? [],
+                                location: original.jobLocation ?? original.location,
+                                contactPhone: original.jobContactPhone ?? original.contactPhone,
+                            };
+                        }
+                        if (original.__typename === 'ProfessionalProfile') {
+                            return {
+                                ...original,
+                                media: original.profMedia ?? original.postMedia ?? original.media ?? [],
+                                contactPhone: original.profContactPhone ?? original.contactPhone,
+                            };
+                        }
+                        return {
+                            ...original,
+                            title: original.postTitle ?? original.title,
+                            media: original.postMedia ?? original.media ?? []
+                        };
+                    })()}
+                    onClose={() => {
+                        setSelectedPostForComments(null);
+                        refetch();
+                    }}
+                    onRefreshPost={refetch}
                     initialMinimized={selectedPostForComments.minimize}
                 />
             )}

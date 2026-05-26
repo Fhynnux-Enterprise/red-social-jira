@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import ImageCarousel from '../../feed/components/ImageCarousel';
 import Toast from 'react-native-toast-message';
 import { useMutation } from '@apollo/client/react';
+import { gql } from '@apollo/client';
 import { DELETE_STORE_PRODUCT, GET_STORE_PRODUCTS, GET_MY_STORE_PRODUCTS, TOGGLE_STORE_PRODUCT_LIKE } from '../graphql/store.operations';
 import { GET_OR_CREATE_CHAT } from '../../chat/graphql/chat.operations';
 import { useApolloClient } from '@apollo/client/react';
@@ -18,6 +19,9 @@ import CopyTextModal from '../../../components/CopyTextModal';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
+
+const STORE_LIKE_WRITE_FRAGMENT = gql`fragment SLikeCardFrag on StoreProductLike { id user { id firstName lastName photoUrl } }`;
+
 
 interface StoreProduct {
   id: string;
@@ -50,6 +54,12 @@ interface Props {
   isSaved?: boolean;
   isViewable?: boolean;
   showTopDivider?: boolean;
+  /** Cuando el modal controla el like, pasa su handler aquí para evitar sistemas de like paralelos */
+  onLikePress?: () => void;
+  /** Like state controlado externamente (desde CommentsModal) */
+  externalLiked?: boolean;
+  /** Conteo de likes controlado externamente (desde CommentsModal) */
+  externalLikeCount?: number;
 }
 
 function formatDate(isoString: string) {
@@ -80,7 +90,7 @@ function conditionColor(c?: string) {
 }
 
 const StoreProductCard = React.forwardRef((props: any, ref: any) => {
-  const { item, cardWidth, hideSellerRow, onEdit, onPress, onCommentPress, isModalView, onToggleSave, isSaved: propIsSaved, showTopDivider, isViewable, isFocused, onClose, onOptionsPress } = props;
+  const { item, cardWidth, hideSellerRow, onEdit, onPress, onCommentPress, isModalView, onToggleSave, isSaved: propIsSaved, showTopDivider, isViewable, isFocused, onClose, onOptionsPress, onLikePress, externalLiked, externalLikeCount } = props;
   const carouselRef = React.useRef<any>(null);
 
   React.useImperativeHandle(ref, () => ({
@@ -109,6 +119,10 @@ const StoreProductCard = React.forwardRef((props: any, ref: any) => {
   const displayCount = item.likes?.length || 0;
   const [localLiked, setLocalLiked] = useState<boolean>(displayLiked);
   const [localCount, setLocalCount] = useState<number>(displayCount);
+
+  // Si hay control externo (CommentsModal), usar esos valores en vez del estado local
+  const effectiveLiked = externalLiked !== undefined ? externalLiked : localLiked;
+  const effectiveCount = externalLikeCount !== undefined ? externalLikeCount : localCount;
 
   // Igual que PostCard: sincronizar cuando Apollo actualiza el caché
   useEffect(() => {
@@ -162,6 +176,32 @@ const StoreProductCard = React.forwardRef((props: any, ref: any) => {
           id: item.id,
           likes: optimisticLikes,
         }
+      },
+      update: (cache, { data }) => {
+        const result = data?.toggleStoreProductLike;
+        if (!result?.likes) return;
+
+        const cacheId = cache.identify({
+          __typename: 'StoreProduct',
+          id: item.id,
+        });
+        if (!cacheId) return;
+
+        // Escribir cada like como referencia en el caché para normalización correcta
+        const likeRefs = result.likes.map((like: any) =>
+          cache.writeFragment({
+            data: like,
+            fragment: STORE_LIKE_WRITE_FRAGMENT,
+          })
+        );
+        cache.modify({
+          id: cacheId,
+          fields: {
+            likes() {
+              return likeRefs;
+            }
+          }
+        });
       }
     }).catch(() => {
       setLocalLiked(displayLiked);
@@ -367,14 +407,14 @@ const StoreProductCard = React.forwardRef((props: any, ref: any) => {
 
         {/* 1.5 INSTAGRAM STYLE ACTIONS (Under image) */}
         <View style={styles.instagramActionsRow}>
-            <TouchableOpacity style={styles.instaBtn} onPress={handleLikePress}>
+            <TouchableOpacity style={styles.instaBtn} onPress={onLikePress ?? handleLikePress}>
               <Feather 
                 name="heart" 
                 size={22} 
-                color={localLiked ? "#FF3B30" : colors.text} 
+                color={effectiveLiked ? "#FF3B30" : colors.text} 
               />
-              {localCount > 0 && (
-                <Text style={[styles.instaCount, { color: colors.text }]}>{localCount}</Text>
+              {effectiveCount > 0 && (
+                <Text style={[styles.instaCount, { color: colors.text }]}>{effectiveCount}</Text>
               )}
             </TouchableOpacity>
 

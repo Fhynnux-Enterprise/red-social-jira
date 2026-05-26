@@ -50,7 +50,10 @@ export class PostsResolver {
         if (post.commentsCount !== undefined) {
             return post.commentsCount;
         }
-        return post.comments?.length ?? 0;
+        if (post.comments !== undefined) {
+            return post.comments.length;
+        }
+        return this.postsService.countComments(post.id);
     }
 
     @ResolveField(() => Boolean)

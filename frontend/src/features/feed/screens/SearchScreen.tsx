@@ -156,7 +156,7 @@ export default function SearchScreen() {
         fetchPolicy: 'cache-and-network',
     });
 
-    const { data: postsData, loading: postsLoading, fetchMore: fetchMorePosts } = useQuery<any>(SEARCH_POSTS, {
+    const { data: postsData, loading: postsLoading, fetchMore: fetchMorePosts, refetch: refetchPosts } = useQuery<any>(SEARCH_POSTS, {
         variables: { query: debouncedQuery, limit: PAGE_SIZE, offset: 0 },
         skip: !debouncedQuery || searchType !== 'posts',
         fetchPolicy: 'cache-and-network',
@@ -371,7 +371,11 @@ export default function SearchScreen() {
                     const idx = posts.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     return (idx > 0) ? posts[idx - 1] : null;
                 })()}
-                onClose={() => setSelectedPostForComments(null)} 
+                onClose={() => {
+                    setSelectedPostForComments(null);
+                    refetchPosts();
+                }} 
+                onRefreshPost={refetchPosts}
                 initialMinimized={selectedPostForComments?.minimize}
                 initialTab={selectedPostForComments?.initialTab}
                 initialExpanded={selectedPostForComments?.initialExpanded}

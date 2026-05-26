@@ -9,6 +9,7 @@ export const GET_MY_NOTIFICATIONS = gql`
             type
             isRead
             createdAt
+            data
         }
     }
 `;
@@ -37,6 +38,20 @@ export const CREATE_APPEAL = gql`
             type
             referenceId
             createdAt
+        }
+    }
+`;
+
+export const NOTIFICATION_ADDED_SUBSCRIPTION = gql`
+    subscription OnNotificationAdded($userId: String!) {
+        notificationAdded(userId: $userId) {
+            id
+            title
+            message
+            type
+            isRead
+            createdAt
+            data
         }
     }
 `;

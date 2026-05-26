@@ -1476,7 +1476,11 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 nextPost={commentsModalData.nextPost}
                 hasMorePosts={hasMore}
                 prevPost={commentsModalData.prevPost}
-                onClose={() => setSelectedPostForComments(null)}
+                onClose={() => {
+                    setSelectedPostForComments(null);
+                    onRefresh();
+                }}
+                onRefreshPost={onRefresh}
                 initialMinimized={selectedPostForComments?.minimize}
                 initialTab={selectedPostForComments?.initialTab}
                 onNextPost={() => {

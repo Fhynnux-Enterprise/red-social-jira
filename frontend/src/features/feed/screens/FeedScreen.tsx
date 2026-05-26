@@ -820,7 +820,11 @@ export default function FeedScreen() {
                     const currentIndex = feed.findIndex((p: any) => p.id === selectedPostForComments?.post?.id);
                     return (currentIndex > 0) ? feed[currentIndex - 1] : null;
                 })()}
-                onClose={() => setSelectedPostForComments(null)}
+                onClose={() => {
+                    setSelectedPostForComments(null);
+                    refetch();
+                }}
+                onRefreshPost={refetch}
                 onDelete={() => {
                     if (selectedPostForComments?.post?.id) {
                         const adId = selectedPostForComments.post.id;

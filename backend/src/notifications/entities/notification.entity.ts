@@ -38,6 +38,10 @@ export class Notification {
     @Column({ name: 'user_id', type: 'uuid' })
     userId: string;
 
+    @Field(() => String, { nullable: true })
+    @Column({ type: 'text', nullable: true })
+    data?: string | null;
+
     @Field(() => Date)
     @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     createdAt: Date;

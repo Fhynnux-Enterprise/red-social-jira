@@ -13,6 +13,7 @@ import { ProfessionalProfile } from '../jobs/entities/professional-profile.entit
 
 import { StorageModule } from '../storage/storage.module';
 import { UserBlocksModule } from '../user-blocks/user-blocks.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { PostsSubscriber } from './subscribers/posts.subscriber';
 
 @Module({
@@ -20,6 +21,7 @@ import { PostsSubscriber } from './subscribers/posts.subscriber';
         TypeOrmModule.forFeature([Post, PostLike, PostMedia, SavedItem, StoreProduct, StoreProductLike, JobOffer, ProfessionalProfile]),
         StorageModule,
         UserBlocksModule,
+        NotificationsModule,
     ],
     providers: [PostsResolver, PostsService, PostsSubscriber],
     exports: [PostsService],
