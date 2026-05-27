@@ -9,6 +9,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useApolloClient } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
+import { TOGGLE_FOLLOW, IS_FOLLOWING } from '../../follows/graphql/follows.operations';
 import { useAuth } from '../../auth/context/AuthContext';
 import ApplyJobModal from './ApplyJobModal';
 import ImageCarousel from '../../feed/components/ImageCarousel';
@@ -63,6 +64,35 @@ export default function JobOfferCard({
     const client = useApolloClient();
 
     const isOwner = authContext?.user?.id === item.author?.id;
+
+    const { data: followData } = useQuery<any>(IS_FOLLOWING, {
+        variables: { followingId: item.author?.id },
+        skip: !item.author?.id || isOwner || !authContext?.user?.id,
+        fetchPolicy: 'cache-and-network',
+    });
+    const isFollowing = followData?.isFollowing || false;
+
+    const [toggleFollow] = useMutation<any>(TOGGLE_FOLLOW, {
+        variables: { followingId: item.author?.id },
+        optimisticResponse: {
+            toggleFollow: true,
+        },
+        update(cache, { data: { toggleFollow: newValue } }) {
+            cache.writeQuery({
+                query: IS_FOLLOWING,
+                variables: { followingId: item.author?.id },
+                data: { isFollowing: newValue },
+            });
+            cache.modify({
+                id: cache.identify({ __typename: 'User', id: item.author?.id }),
+                fields: {
+                    followersCount(existingCount = 0) {
+                        return newValue ? existingCount + 1 : Math.max(0, existingCount - 1);
+                    }
+                }
+            });
+        },
+    });
 
     const { data: myAppsData } = useQuery(GET_MY_APPLICATIONS, {
         fetchPolicy: 'cache-first', // Use cache first so we don't bombard the server, update on background
@@ -313,6 +343,20 @@ export default function JobOfferCard({
                                     @{item.author?.username || 'usuario'}
                                 </Text>
                             </View>
+
+                            {!isOwner && !isFollowing && (
+                                <>
+                                    <View style={styles.sellerDivider} />
+                                    <TouchableOpacity 
+                                        style={styles.followBtnMini} 
+                                        onPress={() => {
+                                            toggleFollow().catch(err => console.error('Error toggling follow in JobOfferCard:', err));
+                                        }}
+                                    >
+                                        <Text style={styles.followTextMini}>Seguir</Text>
+                                    </TouchableOpacity>
+                                </>
+                            )}
                         </TouchableOpacity>
                     )}
 
@@ -803,4 +847,19 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     confirmBtn: { flex: 1, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center', flexDirection: 'row' },
     confirmBtnDanger: { backgroundColor: '#F44336' },
     confirmBtnLabel: { fontWeight: '700', fontSize: 15 },
+    sellerDivider: {
+        width: 1,
+        height: 18,
+        backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+        marginHorizontal: 4,
+    },
+    followBtnMini: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+    },
+    followTextMini: {
+        color: '#2196F3',
+        fontSize: 12,
+        fontWeight: '800',
+    },
 });

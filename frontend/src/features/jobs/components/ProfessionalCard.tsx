@@ -9,8 +9,9 @@ import { useAuth } from '../../auth/context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../theme/ThemeContext';
 import ImageCarousel from '../../feed/components/ImageCarousel';
-import { useMutation, useApolloClient } from '@apollo/client/react';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import ReportModal from '../../reports/components/ReportModal';
+import { TOGGLE_FOLLOW, IS_FOLLOWING } from '../../follows/graphql/follows.operations';
 import CopyTextModal from '../../../components/CopyTextModal';
 import {
     GET_OR_CREATE_CHAT
@@ -72,6 +73,35 @@ export default function ProfessionalCard({
     const client = useApolloClient();
 
     const [getOrCreateChat] = useMutation(GET_OR_CREATE_CHAT);
+
+    const { data: followData } = useQuery<any>(IS_FOLLOWING, {
+        variables: { followingId: item.user?.id },
+        skip: !item.user?.id || isOwnCard || !authContext?.user?.id,
+        fetchPolicy: 'cache-and-network',
+    });
+    const isFollowing = followData?.isFollowing || false;
+
+    const [toggleFollow] = useMutation<any>(TOGGLE_FOLLOW, {
+        variables: { followingId: item.user?.id },
+        optimisticResponse: {
+            toggleFollow: true,
+        },
+        update(cache, { data: { toggleFollow: newValue } }) {
+            cache.writeQuery({
+                query: IS_FOLLOWING,
+                variables: { followingId: item.user?.id },
+                data: { isFollowing: newValue },
+            });
+            cache.modify({
+                id: cache.identify({ __typename: 'User', id: item.user?.id }),
+                fields: {
+                    followersCount(existingCount = 0) {
+                        return newValue ? existingCount + 1 : Math.max(0, existingCount - 1);
+                    }
+                }
+            });
+        },
+    });
 
     const [deleteProfile, { loading: deleting }] = useMutation(DELETE_PROFESSIONAL_PROFILE, {
         onCompleted: (_, clientOptions) => {
@@ -294,6 +324,20 @@ export default function ProfessionalCard({
                                         </Text>
                                     )}
                                 </View>
+
+                                {!isOwnCard && !isFollowing && (
+                                    <>
+                                        <View style={styles.sellerDivider} />
+                                        <TouchableOpacity 
+                                            style={styles.followBtnMini} 
+                                            onPress={() => {
+                                                toggleFollow().catch(err => console.error('Error toggling follow in ProfessionalCard overlay:', err));
+                                            }}
+                                        >
+                                            <Text style={styles.followTextMini}>Seguir</Text>
+                                        </TouchableOpacity>
+                                    </>
+                                )}
                             </TouchableOpacity>
                         )}
 
@@ -361,6 +405,17 @@ export default function ProfessionalCard({
                                     )}
                                 </View>
                             </TouchableOpacity>
+
+                            {!isOwnCard && !isFollowing && (
+                                <TouchableOpacity 
+                                    style={styles.followBtnMini} 
+                                    onPress={() => {
+                                        toggleFollow().catch(err => console.error('Error toggling follow in ProfessionalCard:', err));
+                                    }}
+                                >
+                                    <Text style={styles.followTextMini}>Seguir</Text>
+                                </TouchableOpacity>
+                            )}
 
                             <TouchableOpacity
                                 onPress={() => setMenuVisible(true)}
@@ -943,5 +998,20 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     confirmBtnLabel: {
         fontWeight: '700',
         fontSize: 15,
+    },
+    sellerDivider: {
+        width: 1,
+        height: 18,
+        backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+        marginHorizontal: 4,
+    },
+    followBtnMini: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+    },
+    followTextMini: {
+        color: '#2196F3',
+        fontSize: 12,
+        fontWeight: '800',
     },
 });

@@ -6,6 +6,8 @@ import { Participant } from './entities/participant.entity';
 import { Message } from './entities/message.entity';
 import { User } from '../auth/entities/user.entity';
 import { UserBlocksService } from '../user-blocks/user-blocks.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/enums/notification.enums';
 
 @Injectable()
 export class ChatService {
@@ -19,6 +21,7 @@ export class ChatService {
         @InjectRepository(User)
         private userRepository: Repository<User>,
         private userBlocksService: UserBlocksService,
+        private readonly notificationsService: NotificationsService,
     ) { }
 
     async getOrCreateOneOnOneChat(currentUserId: string, targetUserId: string): Promise<Conversation> {
@@ -165,6 +168,44 @@ export class ChatService {
         // Actualizar updatedAt de la conversación
         conversation.updatedAt = new Date();
         await this.conversationRepository.save(conversation);
+
+        // Send notifications asynchronously in a non-blocking way
+        (async () => {
+            try {
+                const sender = await this.userRepository.findOne({ where: { id: senderId } });
+                const senderName = sender ? `${sender.firstName} ${sender.lastName}`.trim() : 'Un usuario';
+
+                const bodyText = content || 'Te envió un archivo multimedia';
+
+                const payload = {
+                    type: 'CHAT_ROOM',
+                    conversationId,
+                    senderId,
+                    senderAvatar: sender?.photoUrl || null,
+                    senderName,
+                };
+
+                // Notify other participants
+                const otherParticipants = conversation.participants.filter(p => p.userId !== senderId);
+                for (const participant of otherParticipants) {
+                    // Send push notification
+                    this.notificationsService.sendPushNotification(
+                        participant.userId,
+                        senderName,
+                        bodyText,
+                        payload,
+                        {
+                            categoryId: 'chat-message',
+                            threadId: conversationId,
+                        }
+                    ).catch(err => {
+                        console.error('[ChatService] Error sending push notification:', err);
+                    });
+                }
+            } catch (err) {
+                console.error('[ChatService] Error handling push notifications:', err);
+            }
+        })();
 
         // Retornamos el mensaje cargando la relación 'sender' para cumplir con el esquema GraphQL
         return this.messageRepository.findOneOrFail({

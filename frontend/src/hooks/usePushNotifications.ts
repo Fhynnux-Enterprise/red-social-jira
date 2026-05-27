@@ -6,6 +6,7 @@ import Constants from 'expo-constants';
 import { useMutation } from '@apollo/client/react';
 import { gql } from '@apollo/client';
 import { router } from 'expo-router';
+import { SEND_MESSAGE } from '../features/chat/graphql/chat.operations';
 
 const REGISTER_PUSH_TOKEN_MUTATION = gql`
     mutation RegisterPushToken($token: String!, $platform: String) {
@@ -22,6 +23,23 @@ Notifications.setNotificationHandler({
     }),
 });
 
+// Configuración de la categoría de notificaciones para chat (Respuesta Rápida)
+if (Platform.OS !== 'web') {
+    Notifications.setNotificationCategoryAsync('chat-message', [
+        {
+            identifier: 'reply',
+            buttonTitle: 'Responder',
+            textInput: {
+                submitButtonTitle: 'Enviar',
+                placeholder: 'Escribe un mensaje...',
+            },
+            options: {
+                opensAppToPerformAction: false,
+            },
+        },
+    ]).catch(err => console.error('Error al configurar la categoría de notificaciones de chat:', err));
+}
+
 export const usePushNotifications = (isAuthenticated: boolean) => {
     const [expoPushToken, setExpoPushToken] = useState<string | undefined>();
     const [notification, setNotification] = useState<Notifications.Notification | undefined>();
@@ -30,6 +48,7 @@ export const usePushNotifications = (isAuthenticated: boolean) => {
     const hasRegistered = useRef(false);
 
     const [registerPushToken] = useMutation(REGISTER_PUSH_TOKEN_MUTATION);
+    const [sendMessageMutation] = useMutation(SEND_MESSAGE);
 
     useEffect(() => {
         if (!isAuthenticated) return;
@@ -112,12 +131,49 @@ export const usePushNotifications = (isAuthenticated: boolean) => {
             console.log('Usuario interactuó con la notificación:', response);
             try {
                 const data = response?.notification?.request?.content?.data as any;
-                if (data && data.postId) {
-                    if (data.type === 'POST_DETAIL' || data.type === 'STORE_DETAIL') {
+                if (data) {
+                    // 1. Manejo de Quick Reply (Respuesta Rápida)
+                    if (response.actionIdentifier === 'reply') {
+                        const userText = (response as any).userText;
+                        const conversationId = data.conversationId;
+                        if (userText && conversationId) {
+                            console.log(`[QuickReply] Enviando respuesta rápida a conversación ${conversationId}:`, userText);
+                            sendMessageMutation({
+                                variables: {
+                                    conversationId,
+                                    content: userText
+                                }
+                            }).then(() => {
+                                console.log('[QuickReply] Respuesta enviada con éxito');
+                            }).catch(err => {
+                                console.error('[QuickReply] Error al enviar respuesta rápida:', err);
+                            });
+                        }
+                        return;
+                    }
+
+                    // 2. Manejo de clic para abrir el chat room
+                    if (data.type === 'CHAT_ROOM' && data.conversationId) {
+                        console.log('Deep linking to chatRoom with ID:', data.conversationId);
+                        router.push({
+                            pathname: '/chatRoom',
+                            params: { conversationId: data.conversationId }
+                        });
+                        return;
+                    }
+
+                    // 3. Otros tipos de deep linking
+                    if (data.postId && (data.type === 'POST_DETAIL' || data.type === 'STORE_DETAIL')) {
                         console.log('Deep linking to postDetail with ID:', data.postId, 'isStore:', data.type === 'STORE_DETAIL');
                         router.push({
                             pathname: '/postDetail',
                             params: { postId: data.postId, isStore: data.type === 'STORE_DETAIL' ? 'true' : 'false' }
+                        });
+                    } else if (data.userId && data.type === 'USER_PROFILE') {
+                        console.log('Deep linking to profile with ID:', data.userId);
+                        router.push({
+                            pathname: '/profile',
+                            params: { userId: data.userId }
                         });
                     }
                 }

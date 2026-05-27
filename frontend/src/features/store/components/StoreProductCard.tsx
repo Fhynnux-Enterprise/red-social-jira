@@ -8,9 +8,10 @@ import { useAuth } from '../../auth/context/AuthContext';
 import { useRouter } from 'expo-router';
 import ImageCarousel from '../../feed/components/ImageCarousel';
 import Toast from 'react-native-toast-message';
-import { useMutation } from '@apollo/client/react';
+import { useQuery, useMutation } from '@apollo/client/react';
 import { gql } from '@apollo/client';
 import { DELETE_STORE_PRODUCT, GET_STORE_PRODUCTS, GET_MY_STORE_PRODUCTS, TOGGLE_STORE_PRODUCT_LIKE } from '../graphql/store.operations';
+import { TOGGLE_FOLLOW, IS_FOLLOWING } from '../../follows/graphql/follows.operations';
 import { GET_OR_CREATE_CHAT } from '../../chat/graphql/chat.operations';
 import { useApolloClient } from '@apollo/client/react';
 import { useNavigation } from '@react-navigation/native';
@@ -134,6 +135,35 @@ const StoreProductCard = React.forwardRef((props: any, ref: any) => {
 
   const [toggleLikeMutation] = useMutation(TOGGLE_STORE_PRODUCT_LIKE);
   const [getOrCreateChat, { loading: creatingChat }] = useMutation(GET_OR_CREATE_CHAT);
+
+  const { data: followData } = useQuery<any>(IS_FOLLOWING, {
+    variables: { followingId: item.seller?.id },
+    skip: !item.seller?.id || isOwner,
+    fetchPolicy: 'cache-and-network',
+  });
+  const isFollowing = followData?.isFollowing || false;
+
+  const [toggleFollow] = useMutation<any>(TOGGLE_FOLLOW, {
+    variables: { followingId: item.seller?.id },
+    optimisticResponse: {
+      toggleFollow: true,
+    },
+    update(cache, { data: { toggleFollow: newValue } }) {
+      cache.writeQuery({
+        query: IS_FOLLOWING,
+        variables: { followingId: item.seller?.id },
+        data: { isFollowing: newValue },
+      });
+      cache.modify({
+        id: cache.identify({ __typename: 'User', id: item.seller?.id }),
+        fields: {
+          followersCount(existingCount = 0) {
+            return newValue ? existingCount + 1 : Math.max(0, existingCount - 1);
+          }
+        }
+      });
+    },
+  });
 
   const getFullCopyText = () => {
     let text = `${item.title}\n\nPrecio: $${parseFloat(String(item.price)).toFixed(2)} ${item.currency || 'USD'}\n`;
@@ -372,10 +402,15 @@ const StoreProductCard = React.forwardRef((props: any, ref: any) => {
                     </Text>
                   </View>
 
-                  {!isOwner && (
+                  {!isOwner && !isFollowing && (
                     <>
                       <View style={styles.sellerDivider} />
-                      <TouchableOpacity style={styles.followBtnMini} onPress={() => {}}>
+                      <TouchableOpacity 
+                        style={styles.followBtnMini} 
+                        onPress={() => {
+                          toggleFollow().catch(err => console.error('Error toggling follow in StoreProductCard:', err));
+                        }}
+                      >
                         <Text style={styles.followTextMini}>Seguir</Text>
                       </TouchableOpacity>
                     </>

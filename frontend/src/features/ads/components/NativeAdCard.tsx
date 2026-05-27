@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { useQuery, useMutation } from '@apollo/client/react';
+import { TOGGLE_FOLLOW, IS_FOLLOWING } from '../../follows/graphql/follows.operations';
 import {
   TestIds,
   NativeAd,
@@ -146,6 +147,36 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
     } : undefined;
 
     const isOwner = user?.id && currentAdData?.advertiser?.id === user.id;
+
+    const { data: followData } = useQuery<any>(IS_FOLLOWING, {
+        variables: { followingId: currentAdData?.advertiser?.id },
+        skip: !currentAdData?.advertiser?.id || isOwner || !user?.id,
+        fetchPolicy: 'cache-and-network',
+    });
+    const isFollowing = followData?.isFollowing || false;
+
+    const [toggleFollow] = useMutation<any>(TOGGLE_FOLLOW, {
+        variables: { followingId: currentAdData?.advertiser?.id },
+        optimisticResponse: {
+            toggleFollow: true,
+        },
+        update(cache, { data: { toggleFollow: newValue } }) {
+            cache.writeQuery({
+                query: IS_FOLLOWING,
+                variables: { followingId: currentAdData?.advertiser?.id },
+                data: { isFollowing: newValue },
+            });
+            cache.modify({
+                id: cache.identify({ __typename: 'User', id: currentAdData?.advertiser?.id }),
+                fields: {
+                    followersCount(existingCount = 0) {
+                        return newValue ? existingCount + 1 : Math.max(0, existingCount - 1);
+                    }
+                }
+            });
+        },
+    });
+
     // IMPORTANTE: NO poner 'return null' aquí — viola la regla de hooks de React
     // ya que useCallback y useEffect vienen después. El isDeleted se maneja en el JSX.
 
@@ -556,6 +587,20 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
                   <Text style={styles.sellerNameOverlay} numberOfLines={1}>{displayName}</Text>
                   <Text style={styles.sellerNicknameOverlay} numberOfLines={1}>@{advertiser?.username || 'anunciante'}</Text>
                 </View>
+
+                {!isOwner && !isFollowing && (
+                  <>
+                    <View style={styles.sellerDivider} />
+                    <TouchableOpacity 
+                      style={styles.followBtnMini} 
+                      onPress={() => {
+                        toggleFollow().catch(err => console.error('Error toggling follow in NativeAdCard:', err));
+                      }}
+                    >
+                      <Text style={styles.followTextMini}>Seguir</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
 
               {/* ── Franja de Acción Inferior (Estilo Tienda) ── */}
@@ -692,6 +737,21 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     borderRadius: 20,
     gap: 6,
     zIndex: 20,
+  },
+  sellerDivider: {
+    width: 1,
+    height: 18,
+    backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+    marginHorizontal: 4,
+  },
+  followBtnMini: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  followTextMini: {
+    color: '#2196F3',
+    fontSize: 12,
+    fontWeight: '800',
   },
   avatarMiniOverlay: {
     width: 32,

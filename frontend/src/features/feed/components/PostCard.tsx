@@ -5,8 +5,9 @@ import { useNavigation } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import { useMutation, useApolloClient } from '@apollo/client/react';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { TOGGLE_LIKE } from '../graphql/posts.operations';
+import { TOGGLE_FOLLOW, IS_FOLLOWING } from '../../follows/graphql/follows.operations';
 import CopyTextModal from '../../../components/CopyTextModal';
 import ImageCarousel from './ImageCarousel';
 import { Dimensions } from 'react-native';
@@ -86,6 +87,37 @@ export default function PostCard({
     }, [displayCount, displayLiked]);
 
     const [toggleLikeMutation] = useMutation(TOGGLE_LIKE);
+
+    const isOwner = userId === item.author?.id;
+
+    const { data: followData } = useQuery<any>(IS_FOLLOWING, {
+        variables: { followingId: item.author?.id },
+        skip: !item.author?.id || isOwner || !userId,
+        fetchPolicy: 'cache-and-network',
+    });
+    const isFollowing = followData?.isFollowing || false;
+
+    const [toggleFollow] = useMutation<any>(TOGGLE_FOLLOW, {
+        variables: { followingId: item.author?.id },
+        optimisticResponse: {
+            toggleFollow: true,
+        },
+        update(cache, { data: { toggleFollow: newValue } }) {
+            cache.writeQuery({
+                query: IS_FOLLOWING,
+                variables: { followingId: item.author?.id },
+                data: { isFollowing: newValue },
+            });
+            cache.modify({
+                id: cache.identify({ __typename: 'User', id: item.author?.id }),
+                fields: {
+                    followersCount(existingCount = 0) {
+                        return newValue ? existingCount + 1 : Math.max(0, existingCount - 1);
+                    }
+                }
+            });
+        },
+    });
 
     const handleLikePress = () => {
         if (!userId) return;
@@ -192,6 +224,17 @@ export default function PostCard({
                         </View>
                     </TouchableOpacity>
 
+                    {!isOwner && !isFollowing && (
+                        <TouchableOpacity 
+                            style={styles.followBtnMini} 
+                            onPress={() => {
+                                toggleFollow().catch(err => console.error('Error toggling follow in PostCard:', err));
+                            }}
+                        >
+                            <Text style={styles.followTextMini}>Seguir</Text>
+                        </TouchableOpacity>
+                    )}
+
                     <TouchableOpacity
                         onPress={() => onOptionsPress?.(item)}
                         style={styles.moreBtn}
@@ -288,6 +331,20 @@ export default function PostCard({
                                 </Text>
                             )}
                         </View>
+
+                        {!isOwner && !isFollowing && (
+                            <>
+                                <View style={styles.sellerDivider} />
+                                <TouchableOpacity 
+                                    style={styles.followBtnMini} 
+                                    onPress={() => {
+                                        toggleFollow().catch(err => console.error('Error toggling follow in PostCard overlay:', err));
+                                    }}
+                                >
+                                    <Text style={styles.followTextMini}>Seguir</Text>
+                                </TouchableOpacity>
+                            </>
+                        )}
                     </TouchableOpacity>
 
                     {/* Botón ⋯ esquina superior derecha */}
@@ -703,5 +760,20 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         fontSize: 13,
         fontWeight: '900',
         letterSpacing: 0.5,
+    },
+    sellerDivider: {
+        width: 1,
+        height: 18,
+        backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+        marginHorizontal: 4,
+    },
+    followBtnMini: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+    },
+    followTextMini: {
+        color: '#2196F3',
+        fontSize: 12,
+        fontWeight: '800',
     },
 });

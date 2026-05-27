@@ -171,17 +171,61 @@ export class StoreService {
       where: { storeProductId: productId, userId },
     });
 
+    let isNewLike = false;
     if (existingLike) {
       await this.likeRepo.remove(existingLike);
     } else {
       const like = this.likeRepo.create({ storeProductId: productId, userId, cityId });
       await this.likeRepo.save(like);
+      isNewLike = true;
     }
 
-    return this.productRepo.findOne({
+    const fullyLoadedProduct = await this.productRepo.findOne({
       where: { id: productId },
       relations: ['seller', 'media', 'likes', 'likes.user'],
-    }) as Promise<StoreProduct>;
+    }) as StoreProduct;
+
+    if (!fullyLoadedProduct) {
+      throw new NotFoundException('Producto no encontrado despúes de actualizar');
+    }
+
+    if (isNewLike && fullyLoadedProduct.sellerId !== userId) {
+      // Find the user who liked
+      const likerLike = fullyLoadedProduct.likes?.find(l => l.userId === userId);
+      const likerUser = likerLike?.user;
+      const likerName = likerUser ? `${likerUser.firstName} ${likerUser.lastName}`.trim() : 'Un usuario';
+      const title = `${likerName} le dio me gusta a tu producto`;
+      const body = fullyLoadedProduct.title;
+      const payload = {
+        type: 'STORE_DETAIL',
+        postId: fullyLoadedProduct.id,
+        senderAvatar: likerUser?.photoUrl || null,
+        senderName: likerName
+      };
+
+      // Save in-app notification in DB
+      this.notificationsService.createNotification(
+        fullyLoadedProduct.sellerId,
+        title,
+        body,
+        NotificationType.SOCIAL,
+        JSON.stringify(payload)
+      ).catch(err => {
+        console.error('[StoreService] Error saving in-app notification:', err);
+      });
+
+      // Send Push Notification
+      this.notificationsService.sendPushNotification(
+        fullyLoadedProduct.sellerId,
+        title,
+        body,
+        payload
+      ).catch(err => {
+        console.error('[StoreService] Error sending push notification:', err);
+      });
+    }
+
+    return fullyLoadedProduct;
   }
 
   async createComment(productId: string, userId: string, content: string, cityId: string, parentId?: string): Promise<StoreProductComment> {

@@ -109,7 +109,13 @@ export class NotificationsService {
         }
     }
 
-    async sendPushNotification(userId: string, title: string, body: string, data?: any): Promise<boolean> {
+    async sendPushNotification(
+        userId: string, 
+        title: string, 
+        body: string, 
+        data?: any,
+        options?: { categoryId?: string; tag?: string; threadId?: string }
+    ): Promise<boolean> {
         console.log(`[NotificationsService] Intentando enviar notificación al usuario: ${userId}`);
         try {
             const deviceTokens = await this.deviceTokenRepository.find({ where: { userId } });
@@ -125,13 +131,20 @@ export class NotificationsService {
                     console.error(`Push token ${dt.token} is not a valid Expo push token`);
                     continue;
                 }
-                messages.push({
+                const messageObj: any = {
                     to: dt.token,
                     sound: 'default',
                     title,
                     body,
                     data: data || {},
-                });
+                    categoryId: options?.categoryId,
+                    tag: options?.tag,
+                    collapseId: options?.tag,
+                };
+                if (options?.threadId) {
+                    messageObj.threadId = options?.threadId;
+                }
+                messages.push(messageObj);
             }
 
             const chunks = this.expo.chunkPushNotifications(messages);

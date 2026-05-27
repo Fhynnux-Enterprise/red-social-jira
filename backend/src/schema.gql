@@ -354,6 +354,24 @@ type StoreProduct {
   isSaved: Boolean!
 }
 
+type Notification {
+  id: ID!
+  title: String!
+  message: String!
+  type: NotificationType!
+  isRead: Boolean!
+  user: User!
+  data: String
+  createdAt: DateTime!
+}
+
+"""Tipo de notificación"""
+enum NotificationType {
+  SYSTEM
+  MODERATION
+  SOCIAL
+}
+
 type UploadUrlResponse {
   signedUrl: String!
   publicUrl: String!
@@ -389,24 +407,6 @@ enum ReportedItemType {
   COMMENT
   USER
   LOCAL_AD
-}
-
-type Notification {
-  id: ID!
-  title: String!
-  message: String!
-  type: NotificationType!
-  isRead: Boolean!
-  user: User!
-  data: String
-  createdAt: DateTime!
-}
-
-"""Tipo de notificación"""
-enum NotificationType {
-  SYSTEM
-  MODERATION
-  SOCIAL
 }
 
 type ReadMessagesPayload {
@@ -496,6 +496,8 @@ type Query {
   getSavedPosts(limit: Int! = 20, offset: Int! = 0): [SavedContent!]!
   getLikedItems(limit: Int! = 20, offset: Int! = 0): [LikedContent!]!
   getMyBlockedUsers(limit: Float, offset: Float): [User!]!
+  getMyNotifications(limit: Int! = 20, offset: Int! = 0): [Notification!]!
+  getUnreadNotificationsCount: Int!
   getUserProfile(id: String!): User!
   me: User!
   searchUsers(searchTerm: String!, limit: Int = 5, offset: Int = 0): [User!]!
@@ -507,8 +509,6 @@ type Query {
   getFollowing(userId: String!): [User!]!
   getOnlineFollowing: [User!]!
   getOnlineFollowingCount: Int!
-  getMyNotifications(limit: Int! = 20, offset: Int! = 0): [Notification!]!
-  getUnreadNotificationsCount: Int!
   getCommentsByPost(postId: String!, limit: Int = 10, offset: Int = 0): [Comment!]!
   getCommentById(id: String!): Comment
   getUserConversations: [Conversation!]!
@@ -566,6 +566,10 @@ type Mutation {
   generateUploadUrl(fileName: String!, fileType: String!, folder: String!): UploadUrlResponse!
   blockUser(userId: String!): UserBlock!
   unblockUser(userId: String!): Boolean!
+  markNotificationAsRead(id: ID!): Notification
+  markAllNotificationsAsRead: Boolean!
+  registerPushToken(token: String!, platform: String): Boolean!
+  testMyPushNotification: Boolean!
   addCustomField(title: String!, value: String!): UserCustomField!
   updateCustomField(id: String!, title: String!, value: String!): UserCustomField!
   deleteCustomField(id: String!): Boolean!
@@ -582,10 +586,6 @@ type Mutation {
   """Levanta la suspensión de un usuario."""
   unbanUser(userId: String!): User!
   toggleFollow(followingId: String!): Boolean!
-  markNotificationAsRead(id: ID!): Notification
-  markAllNotificationsAsRead: Boolean!
-  registerPushToken(token: String!, platform: String): Boolean!
-  testMyPushNotification: Boolean!
   createComment(postId: String!, content: String!, parentId: String): Comment!
   deleteComment(id: String!): Boolean!
   updateComment(id: String!, content: String!): Comment!

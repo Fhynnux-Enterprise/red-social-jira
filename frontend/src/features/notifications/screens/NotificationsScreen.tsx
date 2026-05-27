@@ -100,11 +100,21 @@ export default function NotificationsScreen() {
         if (item.data) {
             try {
                 const parsedData = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
-                if (parsedData && parsedData.postId) {
-                    if (parsedData.type === 'POST_DETAIL' || parsedData.type === 'STORE_DETAIL') {
+                if (parsedData) {
+                    if (parsedData.postId && (parsedData.type === 'POST_DETAIL' || parsedData.type === 'STORE_DETAIL')) {
                         router.push({
                             pathname: '/postDetail',
                             params: { postId: parsedData.postId, isStore: parsedData.type === 'STORE_DETAIL' ? 'true' : 'false' }
+                        });
+                    } else if (parsedData.userId && parsedData.type === 'USER_PROFILE') {
+                        router.push({
+                            pathname: '/profile',
+                            params: { userId: parsedData.userId }
+                        });
+                    } else if (parsedData.conversationId && parsedData.type === 'CHAT_ROOM') {
+                        router.push({
+                            pathname: '/chatRoom',
+                            params: { conversationId: parsedData.conversationId }
                         });
                     }
                 }
@@ -117,7 +127,7 @@ export default function NotificationsScreen() {
     const renderItem = ({ item }: { item: any }) => {
         const isUnread = !item.isRead;
         const bgColor = isUnread 
-            ? (isDark ? 'rgba(255,101,36,0.1)' : 'rgba(255,101,36,0.05)') 
+            ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.06)') 
             : colors.surface;
         
         const titleStyle = isUnread ? { fontWeight: 'bold' as const } : { fontWeight: '600' as const };
@@ -178,7 +188,7 @@ export default function NotificationsScreen() {
 
         return (
             <TouchableOpacity 
-                style={[styles.notificationCard, { backgroundColor: bgColor, borderBottomColor: colors.border }]}
+                style={[styles.notificationCard, { backgroundColor: bgColor, borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.2)' : colors.border }]}
                 onPress={() => handlePressNotification(item)}
                 activeOpacity={0.7}
             >
@@ -327,7 +337,7 @@ const styles = StyleSheet.create({
         width: 10,
         height: 10,
         borderRadius: 5,
-        backgroundColor: '#FF6524',
+        backgroundColor: '#3B82F6',
         marginTop: 6,
         marginLeft: 8,
     },

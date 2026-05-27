@@ -510,6 +510,16 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     const isFollowing = followData?.isFollowing || false;
     const storeProducts = storeData?.storeProductsByUser || [];
 
+    const handleToggleFollow = useCallback(() => {
+        toggleFollow({
+            optimisticResponse: {
+                toggleFollow: !isFollowing,
+            }
+        }).catch(err => {
+            console.error('Error toggling follow:', err);
+        });
+    }, [toggleFollow, isFollowing]);
+
     const jobOffers = useMemo(
         () => (jobOffersData?.jobOffersByUser || []).map((j: any) => ({ ...j, __itemType: 'job', __typename: j.__typename || 'JobOffer' })),
         [jobOffersData]
@@ -904,7 +914,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
             activeTab={activeTab}
             colors={colors}
             currentUserRole={authContext.user?.role}
-            onToggleFollow={toggleFollow}
+            onToggleFollow={handleToggleFollow}
             onMessage={handleMessagePress}
             onEditProfile={handleEditProfile}
             onOpenMenu={handleOpenMenu}
@@ -912,7 +922,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
             onTabChange={handleTabChange}
             onOpenContextMenu={handleOpenContextMenu}
         />
-    ), [userData, isMyProfile, isFollowing, activeTab, colors, toggleFollow, handleMessagePress, handleEditProfile, handleOpenMenu, handleGoBack, handleTabChange, handleOpenContextMenu]);
+    ), [userData, isMyProfile, isFollowing, activeTab, colors, handleToggleFollow, handleMessagePress, handleEditProfile, handleOpenMenu, handleGoBack, handleTabChange, handleOpenContextMenu]);
 
     // Determinar qué datos para cada tab
     // IMPORTANTE: siempre marcar __itemType para que renderItem sepa qué componente usar

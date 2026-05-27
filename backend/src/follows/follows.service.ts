@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { Follow } from './entities/follow.entity';
 import { User } from '../auth/entities/user.entity';
 import { UserBlock } from '../user-blocks/entities/user-block.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/enums/notification.enums';
 
 @Injectable()
 export class FollowsService {
@@ -12,6 +14,7 @@ export class FollowsService {
         private readonly followRepository: Repository<Follow>,
         @InjectRepository(User)
         private readonly userRepository: Repository<User>,
+        private readonly notificationsService: NotificationsService,
     ) { }
 
     async toggleFollow(followerId: string, followingId: string): Promise<boolean> {
@@ -32,6 +35,45 @@ export class FollowsService {
                 followingId
             });
             await this.followRepository.save(newFollow);
+
+            // Fetch follower details
+            const follower = await this.userRepository.findOne({
+                where: { id: followerId }
+            });
+
+            if (follower) {
+                const followerName = `${follower.firstName} ${follower.lastName}`.trim() || 'Un usuario';
+                const title = `¡Tienes un nuevo seguidor!`;
+                const body = `${followerName} comenzó a seguirte.`;
+                const payload = {
+                    type: 'USER_PROFILE',
+                    userId: follower.id,
+                    senderAvatar: follower.photoUrl || null,
+                    senderName: followerName
+                };
+
+                // Save in-app notification in DB
+                this.notificationsService.createNotification(
+                    followingId,
+                    title,
+                    body,
+                    NotificationType.SOCIAL,
+                    JSON.stringify(payload)
+                ).catch(err => {
+                    console.error('[FollowsService] Error saving in-app notification:', err);
+                });
+
+                // Send Push Notification
+                this.notificationsService.sendPushNotification(
+                    followingId,
+                    title,
+                    body,
+                    payload
+                ).catch(err => {
+                    console.error('[FollowsService] Error sending push notification:', err);
+                });
+            }
+
             return true;
         }
     }

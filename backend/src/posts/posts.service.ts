@@ -12,6 +12,8 @@ import { StoreProductLike } from '../store/entities/store-product-like.entity';
 import { JobOffer } from '../jobs/entities/job-offer.entity';
 import { ProfessionalProfile } from '../jobs/entities/professional-profile.entity';
 import { UserBlock } from '../user-blocks/entities/user-block.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/enums/notification.enums';
 
 @Injectable()
 export class PostsService {
@@ -34,6 +36,7 @@ export class PostsService {
         private readonly professionalProfilesRepository: Repository<ProfessionalProfile>,
         private readonly dataSource: DataSource,
         private readonly userBlocksService: UserBlocksService,
+        private readonly notificationsService: NotificationsService,
     ) { }
 
     async createPost(content: string, authorId: string, cityId: string, media?: PostMediaInput[], title?: string): Promise<Post> {
@@ -312,11 +315,13 @@ export class PostsService {
             where: { postId, userId }
         });
 
+        let isNewLike = false;
         if (existingLike) {
             await this.postLikesRepository.remove(existingLike);
         } else {
             const newLike = this.postLikesRepository.create({ postId, userId, cityId });
             await this.postLikesRepository.save(newLike);
+            isNewLike = true;
         }
 
         const fullyLoadedPost = await this.postsRepository.findOne({
@@ -326,6 +331,42 @@ export class PostsService {
 
         if (!fullyLoadedPost) {
             throw new NotFoundException('Publicación no encontrada despúes de actualizar');
+        }
+
+        if (isNewLike && fullyLoadedPost.authorId !== userId) {
+            // Find the user who liked
+            const likerLike = fullyLoadedPost.likes?.find(l => l.userId === userId);
+            const likerUser = likerLike?.user;
+            const likerName = likerUser ? `${likerUser.firstName} ${likerUser.lastName}`.trim() : 'Un usuario';
+            const title = `${likerName} le dio me gusta a tu publicación`;
+            const body = fullyLoadedPost.title || (fullyLoadedPost.content.length > 40 ? `${fullyLoadedPost.content.substring(0, 40)}...` : fullyLoadedPost.content) || '';
+            const payload = {
+                type: 'POST_DETAIL',
+                postId: fullyLoadedPost.id,
+                senderAvatar: likerUser?.photoUrl || null,
+                senderName: likerName
+            };
+
+            // Save in-app notification in DB
+            this.notificationsService.createNotification(
+                fullyLoadedPost.authorId,
+                title,
+                body,
+                NotificationType.SOCIAL,
+                JSON.stringify(payload)
+            ).catch(err => {
+                console.error('[PostsService] Error saving in-app notification:', err);
+            });
+
+            // Send Push Notification
+            this.notificationsService.sendPushNotification(
+                fullyLoadedPost.authorId,
+                title,
+                body,
+                payload
+            ).catch(err => {
+                console.error('[PostsService] Error sending push notification:', err);
+            });
         }
 
         return fullyLoadedPost;
