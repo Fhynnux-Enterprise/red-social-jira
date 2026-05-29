@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import {
     View,
     Text,
@@ -21,11 +21,10 @@ import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
 import { GET_CONVERSATION, DELETE_CONVERSATION_FOR_ME, GET_USER_CONVERSATIONS, GET_CHAT_MEDIA } from '../graphql/chat.operations';
 import Toast from 'react-native-toast-message';
-import { VideoView, useVideoPlayer } from 'expo-video';
 import ZoomableImageViewer from '../../feed/components/ZoomableImageViewer';
 import { InteractiveVideoPlayer } from '../../feed/components/ImageCarousel';
 import { BLOCK_USER, UNBLOCK_USER } from '../../user-blocks/graphql/user-blocks.operations';
-import { Dimensions, FlatList, Animated } from 'react-native';
+import { Dimensions, FlatList, Animated, PanResponder } from 'react-native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -748,29 +747,3 @@ const styles = StyleSheet.create({
         borderRadius: 20,
     },
 });
-
-/**
- * Componente para miniaturas de video visuales.
- * Muestra el primer frame del video.
- */
-const ChatMediaThumbnail = ({ url }: { url: string }) => {
-    const player = useVideoPlayer(url, (p) => {
-        p.muted = true;
-        p.loop = true;
-        p.pause(); // Mantener pausado, solo queremos el frame inicial
-    });
-
-    return (
-        <View style={styles.videoThumbnailContainer}>
-            <VideoView
-                player={player}
-                style={styles.mediaThumbnail}
-                contentFit="cover"
-                nativeControls={false}
-            />
-            <View style={styles.videoPlayOverlay}>
-                <Ionicons name="play" size={20} color="#FFF" />
-            </View>
-        </View>
-    );
-};

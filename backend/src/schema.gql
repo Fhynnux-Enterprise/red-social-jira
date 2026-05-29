@@ -570,6 +570,7 @@ type Mutation {
   markAllNotificationsAsRead: Boolean!
   registerPushToken(token: String!, platform: String): Boolean!
   testMyPushNotification: Boolean!
+  sendGlobalNotification(title: String!, body: String!, cityId: String, saveInDb: Boolean!, imageUrl: String): Boolean!
   addCustomField(title: String!, value: String!): UserCustomField!
   updateCustomField(id: String!, title: String!, value: String!): UserCustomField!
   deleteCustomField(id: String!): Boolean!

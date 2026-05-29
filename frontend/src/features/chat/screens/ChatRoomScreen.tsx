@@ -45,6 +45,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import Slider from '@react-native-community/slider';
 import * as DocumentPicker from 'expo-document-picker';
+import { ActiveChatTracker } from '../ActiveChatTracker';
 
 // Componente para manejar la miniatura de respuesta a historia (especialmente para videos)
 const StoryReplyThumbnail = ({ uri, isVideo, style }: { uri: string; isVideo: boolean; style: any }) => {
@@ -122,6 +123,16 @@ export default function ChatRoomScreen() {
     const [videoPreview, setVideoPreview] = useState<string | null>(null);
     const [documentPreview, setDocumentPreview] = useState<{ uri: string; name: string; size: number; mimeType: string } | null>(null);
     const [isMuted, setIsMuted] = useState(true);
+
+    // Registrar conversación activa para silenciar notificaciones push en primer plano
+    useEffect(() => {
+        if (conversationId) {
+            ActiveChatTracker.setActiveConversationId(conversationId);
+        }
+        return () => {
+            ActiveChatTracker.setActiveConversationId(null);
+        };
+    }, [conversationId]);
 
     // Grabación de Audio
     const { uploadAudio, isUploading: isUploadingAudio } = useAudioUpload();

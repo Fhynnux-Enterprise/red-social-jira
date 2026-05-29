@@ -377,3 +377,9 @@ export const GET_LOCAL_AD_BY_ID = gql`
         }
     }
 `;
+
+export const SEND_GLOBAL_NOTIFICATION = gql`
+    mutation SendGlobalNotification($title: String!, $body: String!, $cityId: String, $saveInDb: Boolean!, $imageUrl: String) {
+        sendGlobalNotification(title: $title, body: $body, cityId: $cityId, saveInDb: $saveInDb, imageUrl: $imageUrl)
+    }
+`;

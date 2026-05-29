@@ -7,6 +7,9 @@ import { useMutation } from '@apollo/client/react';
 import { gql } from '@apollo/client';
 import { router } from 'expo-router';
 import { SEND_MESSAGE } from '../features/chat/graphql/chat.operations';
+import notifee, { AndroidStyle } from '@notifee/react-native';
+import { updateSummaryNotification, resolveAvatarUrl } from './useChatBackgroundHandler';
+import { ActiveChatTracker } from '../features/chat/ActiveChatTracker';
 
 const REGISTER_PUSH_TOKEN_MUTATION = gql`
     mutation RegisterPushToken($token: String!, $platform: String) {
@@ -16,11 +19,21 @@ const REGISTER_PUSH_TOKEN_MUTATION = gql`
 
 // Configuración global para cómo se manejan las notificaciones cuando la app está en primer plano
 Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-    }),
+    handleNotification: async (notification) => {
+        const data = notification?.request?.content?.data as any;
+        const isChat = data?.type === 'CHAT_ROOM';
+        const isLocal = data?.isLocal === true;
+
+        // Si el usuario está dentro del mismo chat del que llega el mensaje, silenciamos la notificación por completo
+        const activeConvId = ActiveChatTracker.getActiveConversationId();
+        const isCurrentChat = isChat && activeConvId && data?.conversationId === activeConvId;
+
+        return {
+            shouldShowAlert: (!isChat || isLocal) && !isCurrentChat, // Oculta visualmente si es el chat activo
+            shouldPlaySound: !isCurrentChat,                         // Silencia el sonido si es el chat activo
+            shouldSetBadge: false,
+        };
+    },
 });
 
 // Configuración de la categoría de notificaciones para chat (Respuesta Rápida)
@@ -123,7 +136,30 @@ export const usePushNotifications = (isAuthenticated: boolean) => {
         registerForPushNotificationsAsync();
 
         // Listeners para recibir notificaciones cuando la app está abierta o interactuando
-        notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+        notificationListener.current = Notifications.addNotificationReceivedListener(async notification => {
+            const data = notification?.request?.content?.data as any;
+            const isChat = data?.type === 'CHAT_ROOM';
+            const isLocal = data?.isLocal === true;
+            const conversationId = data?.conversationId;
+
+            if (isChat && !isLocal && conversationId) {
+                // Solo disparamos la notificación si NO estamos dentro de esta misma conversación
+                const activeConvId = ActiveChatTracker.getActiveConversationId();
+                if (conversationId !== activeConvId) {
+                    // Al programar la notificación local usando 'identifier: conversationId', 
+                    // le decimos a Android/iOS que reemplace/modifique la notificación existente de ese chat,
+                    // logrando que se actualice sobre la misma tarjeta y no cree nuevas notificaciones.
+                    Notifications.scheduleNotificationAsync({
+                        identifier: conversationId,
+                        content: {
+                            title: notification.request.content.title,
+                            body: notification.request.content.body,
+                            data: { ...data, isLocal: true },
+                        },
+                        trigger: null,
+                    }).catch(err => console.error('Error al programar notificación local en primer plano:', err));
+                }
+            }
             setNotification(notification);
         });
 

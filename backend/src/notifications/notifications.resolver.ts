@@ -70,6 +70,18 @@ export class NotificationsResolver {
         return this.notificationsService.sendPushNotification(user.id, title, body);
     }
 
+    @Mutation(() => Boolean)
+    @UseGuards(GqlAuthGuard)
+    async sendGlobalNotification(
+        @Args('title', { type: () => String }) title: string,
+        @Args('body', { type: () => String }) body: string,
+        @Args('cityId', { type: () => String, nullable: true }) cityId: string | null,
+        @Args('saveInDb', { type: () => Boolean }) saveInDb: boolean,
+        @Args('imageUrl', { type: () => String, nullable: true }) imageUrl: string | null,
+    ): Promise<boolean> {
+        return this.notificationsService.sendGlobalNotification(title, body, cityId, saveInDb, imageUrl);
+    }
+
     @Subscription(() => Notification, {
         filter: (payload, variables) => payload.notificationAdded.userId === variables.userId,
     })

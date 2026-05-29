@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Notification } from './entities/notification.entity';
 import { DeviceToken } from './entities/device-token.entity';
+import { User } from '../auth/entities/user.entity';
 import { NotificationType } from './enums/notification.enums';
 import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { pubSub } from '../common/pubsub';
@@ -16,6 +17,8 @@ export class NotificationsService {
         private readonly notificationRepository: Repository<Notification>,
         @InjectRepository(DeviceToken)
         private readonly deviceTokenRepository: Repository<DeviceToken>,
+        @InjectRepository(User)
+        private readonly userRepository: Repository<User>,
     ) {}
 
     async createNotification(userId: string, title: string, message: string, type: NotificationType, data?: string): Promise<Notification | null> {
@@ -125,6 +128,7 @@ export class NotificationsService {
                 return false;
             }
 
+            const isChat = options?.categoryId === 'chat-message';
             const messages: ExpoPushMessage[] = [];
             for (const dt of deviceTokens) {
                 if (!Expo.isExpoPushToken(dt.token)) {
@@ -133,14 +137,32 @@ export class NotificationsService {
                 }
                 const messageObj: any = {
                     to: dt.token,
-                    sound: 'default',
-                    title,
-                    body,
-                    data: data || {},
+                    data: {
+                        ...(data || {}),
+                    },
                     categoryId: options?.categoryId,
-                    tag: options?.tag,
-                    collapseId: options?.tag,
                 };
+                if (isChat) {
+                    messageObj.title = title;
+                    messageObj.body = body;
+                    messageObj.sound = 'default';
+                    messageObj.priority = 'high';
+                    messageObj._contentAvailable = true;
+                    messageObj.data.title = title;
+                    messageObj.data.body = body;
+                    
+                    // Colapsar/agrupar mensajes de la misma conversación
+                    if (options?.threadId) {
+                        messageObj.tag = options.threadId;
+                        messageObj.collapseId = options.threadId;
+                    }
+                } else {
+                    messageObj.title = title;
+                    messageObj.body = body;
+                    messageObj.sound = 'default';
+                    messageObj.tag = options?.tag;
+                    messageObj.collapseId = options?.tag;
+                }
                 if (options?.threadId) {
                     messageObj.threadId = options?.threadId;
                 }
@@ -162,6 +184,99 @@ export class NotificationsService {
             return true;
         } catch (error) {
             console.error('[NotificationsService] Error sending push notification:', error);
+            return false;
+        }
+    }
+
+    async sendGlobalNotification(
+        title: string,
+        body: string,
+        cityId: string | null,
+        saveInDb: boolean,
+        imageUrl?: string | null
+    ): Promise<boolean> {
+        console.log(`[NotificationsService] Enviando notificación global: "${title}" - Ciudad: ${cityId || 'Todas'} - Guardar DB: ${saveInDb} - Imagen: ${imageUrl || 'Ninguna'}`);
+        try {
+            // 1. Obtener todos los tokens de dispositivos según el filtro de ciudad
+            let query = this.deviceTokenRepository.createQueryBuilder('deviceToken');
+            if (cityId && cityId !== 'all') {
+                query = query.where('deviceToken.cityId = :cityId', { cityId });
+            }
+            const deviceTokens = await query.getMany();
+            console.log(`[NotificationsService] Se encontraron ${deviceTokens.length} tokens para enviar.`);
+
+            // 2. Si saveInDb es true, guardar la notificación en la DB de cada usuario
+            if (saveInDb) {
+                let userQuery = this.userRepository.createQueryBuilder('user');
+                if (cityId && cityId !== 'all') {
+                    userQuery = userQuery.where('user.cityId = :cityId', { cityId });
+                }
+                const users = await userQuery.select(['user.id']).getMany();
+                console.log(`[NotificationsService] Creando alerta en DB para ${users.length} usuarios.`);
+
+                const notificationsToSave = users.map(user => {
+                    return this.notificationRepository.create({
+                        userId: user.id,
+                        title,
+                        message: body,
+                        type: NotificationType.SYSTEM,
+                        isRead: false,
+                        data: imageUrl ? JSON.stringify({ image: imageUrl }) : null,
+                    });
+                });
+
+                // Guardar en lotes de 500 para evitar desbordar SQL
+                const chunkSize = 500;
+                for (let i = 0; i < notificationsToSave.length; i += chunkSize) {
+                    const chunk = notificationsToSave.slice(i, i + chunkSize);
+                    await this.notificationRepository.save(chunk);
+                }
+
+                if (notificationsToSave.length > 0) {
+                    pubSub.publish('NOTIFICATION_ADDED', { notificationAdded: notificationsToSave[0] });
+                }
+            }
+
+            // 3. Enviar notificaciones push a través de Expo
+            if (deviceTokens.length === 0) {
+                return true;
+            }
+
+            const messages: any[] = [];
+            for (const dt of deviceTokens) {
+                if (!Expo.isExpoPushToken(dt.token)) {
+                    console.error(`Push token ${dt.token} is not a valid Expo push token`);
+                    continue;
+                }
+                const msg: any = {
+                    to: dt.token,
+                    title,
+                    body,
+                    sound: 'default',
+                    priority: 'high',
+                    data: {
+                        type: 'SYSTEM_ALERT',
+                    }
+                };
+                if (imageUrl) {
+                    msg.image = imageUrl;
+                    msg.mutableContent = true;
+                }
+                messages.push(msg);
+            }
+
+            const chunks = this.expo.chunkPushNotifications(messages as ExpoPushMessage[]);
+            for (const chunk of chunks) {
+                try {
+                    await this.expo.sendPushNotificationsAsync(chunk);
+                } catch (error) {
+                    console.error('Error sending push notification chunk:', error);
+                }
+            }
+
+            return true;
+        } catch (error) {
+            console.error('[NotificationsService] Error in sendGlobalNotification:', error);
             return false;
         }
     }

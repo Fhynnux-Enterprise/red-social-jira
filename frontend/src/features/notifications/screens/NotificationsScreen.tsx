@@ -209,6 +209,9 @@ export default function NotificationsScreen() {
                         </TouchableOpacity>
                     )}
                 </View>
+                {parsedData?.image && (
+                    <Image source={{ uri: parsedData.image }} style={styles.notificationImage} />
+                )}
                 {isUnread && (
                     <View style={styles.unreadDot} />
                 )}
@@ -352,5 +355,12 @@ const styles = StyleSheet.create({
         color: '#FF6524',
         fontSize: 13,
         fontWeight: 'bold',
+    },
+    notificationImage: {
+        width: 50,
+        height: 50,
+        borderRadius: 8,
+        marginLeft: 12,
+        backgroundColor: 'rgba(150, 150, 150, 0.1)',
     }
 });

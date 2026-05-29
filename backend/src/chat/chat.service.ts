@@ -188,10 +188,31 @@ export class ChatService {
                 // Notify other participants
                 const otherParticipants = conversation.participants.filter(p => p.userId !== senderId);
                 for (const participant of otherParticipants) {
+                    let participantTitle = senderName;
+
+                    try {
+                        // Contamos los mensajes no leídos del hilo que no haya enviado el destinatario
+                        const unreadCount = await this.messageRepository.createQueryBuilder('message')
+                            .where('message.conversationId = :conversationId', { conversationId })
+                            .andWhere('message.userId != :recipientId', { recipientId: participant.userId })
+                            .andWhere('message.isRead = false')
+                            .getCount();
+
+                        if (unreadCount <= 1) {
+                            participantTitle = `${senderName} te envió 1 mensaje`;
+                        } else if (unreadCount > 99) {
+                            participantTitle = `${senderName} te envió +99 mensajes`;
+                        } else {
+                            participantTitle = `${senderName} te envió ${unreadCount} mensajes`;
+                        }
+                    } catch (dbErr) {
+                        console.error('[ChatService] Error counting unread messages for notification title:', dbErr);
+                    }
+
                     // Send push notification
                     this.notificationsService.sendPushNotification(
                         participant.userId,
-                        senderName,
+                        participantTitle,
                         bodyText,
                         payload,
                         {

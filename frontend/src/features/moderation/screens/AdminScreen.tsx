@@ -9,8 +9,9 @@ import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../../theme/ThemeContext';
 import AdminAdsConfig from '../components/AdminAdsConfig';
 import AdminUserPermissions from '../components/AdminUserPermissions';
+import AdminGlobalNotifications from '../components/AdminGlobalNotifications';
 
-type AdminTab = 'config' | 'users';
+type AdminTab = 'config' | 'users' | 'notifications';
 
 export default function AdminScreen() {
     const { colors } = useTheme();
@@ -66,6 +67,20 @@ export default function AdminScreen() {
                         Permisos
                     </Text>
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={[styles.tabItem, activeTab === 'notifications' && { borderBottomColor: colors.primary }]}
+                    onPress={() => setActiveTab('notifications')}
+                >
+                    <Ionicons 
+                        name={activeTab === 'notifications' ? "megaphone" : "megaphone-outline"} 
+                        size={20} 
+                        color={activeTab === 'notifications' ? colors.primary : colors.textSecondary} 
+                    />
+                    <Text style={[styles.tabLabel, { color: activeTab === 'notifications' ? colors.primary : colors.textSecondary }]}>
+                        Notificaciones
+                    </Text>
+                </TouchableOpacity>
             </View>
 
             <ScrollView 
@@ -73,7 +88,9 @@ export default function AdminScreen() {
                 showsVerticalScrollIndicator={false}
             >
                 <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                    {activeTab === 'config' ? <AdminAdsConfig /> : <AdminUserPermissions />}
+                    {activeTab === 'config' && <AdminAdsConfig />}
+                    {activeTab === 'users' && <AdminUserPermissions />}
+                    {activeTab === 'notifications' && <AdminGlobalNotifications />}
                 </KeyboardAvoidingView>
             </ScrollView>
         </SafeAreaView>
