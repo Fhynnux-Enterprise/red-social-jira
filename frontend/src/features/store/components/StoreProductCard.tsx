@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import ReportModal from '../../reports/components/ReportModal';
 import CopyTextModal from '../../../components/CopyTextModal';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GenerateNotificationFromPostModal } from '../../feed/components/PostOptionsModal';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -113,6 +114,8 @@ const StoreProductCard = React.forwardRef((props: any, ref: any) => {
   const [reportVisible, setReportVisible] = useState(false);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
   const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
+  const [showNotificationForm, setShowNotificationForm] = useState(false);
+  const isModeratorOrAdmin = user?.role === 'ADMIN' || user?.role === 'MODERATOR';
 
   const client = useApolloClient();
 
@@ -517,8 +520,22 @@ const StoreProductCard = React.forwardRef((props: any, ref: any) => {
               <View style={[styles.menuBox, { backgroundColor: colors.surface, paddingBottom: insets.bottom + 20 }]}>
                 <View style={[styles.menuHandle, { backgroundColor: isDark ? '#444' : '#DDD' }]} />
                 <Text style={[styles.menuTitle, { color: colors.text }]}>Opciones</Text>
+
+                {isModeratorOrAdmin && (
+                  <TouchableOpacity 
+                    style={styles.menuItem} 
+                    onPress={() => {
+                      setMenuVisible(false);
+                      setShowNotificationForm(true);
+                    }}
+                  >
+                    <Ionicons name="megaphone" size={20} color="#ff6524" style={styles.menuIcon} />
+                    <Text style={[styles.menuLabel, { color: '#ff6524', fontWeight: 'bold' }]}>Generar notificación</Text>
+                  </TouchableOpacity>
+                )}
                 
                 <TouchableOpacity 
+
                   style={styles.menuItem} 
                   onPress={() => {
                     setMenuVisible(false);
@@ -577,6 +594,20 @@ const StoreProductCard = React.forwardRef((props: any, ref: any) => {
 
       <ReportModal visible={reportVisible} onClose={() => setReportVisible(false)} reportedItemId={item.id} reportedItemType="PRODUCT" onContentDeleted={() => setReportVisible(false)} />
       <CopyTextModal visible={isCopyModalVisible} textToCopy={getFullCopyText()} onClose={() => setIsCopyModalVisible(false)} />
+
+      {showNotificationForm && (
+        <GenerateNotificationFromPostModal
+          visible={showNotificationForm}
+          onClose={() => setShowNotificationForm(false)}
+          post={{
+            ...item,
+            title: item.title,
+            description: item.description,
+            media: item.media || item.storeMedia,
+            __typename: 'StoreProduct',
+          }}
+        />
+      )}
     </>
   );
 });

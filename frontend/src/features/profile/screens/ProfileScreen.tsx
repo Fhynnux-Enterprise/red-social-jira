@@ -1563,10 +1563,10 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 />
             )}
 
-            {isOptionsMenuVisible && (
             <PostOptionsModal
                 visible={isOptionsMenuVisible}
                 onClose={() => setIsOptionsMenuVisible(false)}
+                post={selectedPost}
                 isOwner={
                     selectedPost?.author?.id === currentUserId || 
                     selectedPost?.seller?.id === currentUserId ||
@@ -1632,7 +1632,6 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                     }
                 }}
             />
-            )}
         </SafeAreaView>
     );
 }

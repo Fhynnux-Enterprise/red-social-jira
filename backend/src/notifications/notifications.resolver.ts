@@ -78,8 +78,13 @@ export class NotificationsResolver {
         @Args('cityId', { type: () => String, nullable: true }) cityId: string | null,
         @Args('saveInDb', { type: () => Boolean }) saveInDb: boolean,
         @Args('imageUrl', { type: () => String, nullable: true }) imageUrl: string | null,
+        @Args('detailed', { type: () => Boolean, nullable: true }) detailed?: boolean,
+        @Args('badgeText', { type: () => String, nullable: true }) badgeText?: string | null,
+        @Args('postId', { type: () => String, nullable: true }) postId?: string | null,
+        @Args('postType', { type: () => String, nullable: true }) postType?: string | null,
+        @Args('authorAvatarUrl', { type: () => String, nullable: true }) authorAvatarUrl?: string | null,
     ): Promise<boolean> {
-        return this.notificationsService.sendGlobalNotification(title, body, cityId, saveInDb, imageUrl);
+        return this.notificationsService.sendGlobalNotification(title, body, cityId, saveInDb, imageUrl, detailed, badgeText, postId, postType, authorAvatarUrl);
     }
 
     @Subscription(() => Notification, {

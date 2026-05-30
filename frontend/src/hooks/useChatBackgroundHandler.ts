@@ -12,7 +12,17 @@ export const resolveAvatarUrl = (url?: string | null, username: string = 'U') =>
         return `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=E5E5EA&color=8E8E93&size=150`;
     }
     if (url.startsWith('http') || url.startsWith('file://')) return url;
-    const serverUrl = 'https://canton-enterprise-production.up.railway.app';
+    const rawApi = process.env.EXPO_PUBLIC_API_URL;
+    const serverUrl = rawApi ? rawApi.replace(/\/graphql$/, '') : 'https://canton-enterprise-production.up.railway.app';
+    return `${serverUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+};
+
+// Helper function to resolve media URLs correctly (handling relative paths)
+export const resolveMediaUrl = (url?: string | null) => {
+    if (!url) return '';
+    if (url.startsWith('http') || url.startsWith('file://')) return url;
+    const rawApi = process.env.EXPO_PUBLIC_API_URL;
+    const serverUrl = rawApi ? rawApi.replace(/\/graphql$/, '') : 'https://canton-enterprise-production.up.railway.app';
     return `${serverUrl}${url.startsWith('/') ? '' : '/'}${url}`;
 };
 
@@ -234,6 +244,48 @@ TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }: any
             await updateSummaryNotification();
         } catch (err) {
             console.error('[Background Task] Error displaying Notifee notification:', err);
+        }
+    } else if (msgData?.image || msgData?.authorAvatarUrl) {
+        // Intercept global notifications with custom images/avatars
+        const title = remoteMessage?.title || msgData?.title || 'FynnuX';
+        const body = remoteMessage?.body || msgData?.body || '';
+        const image = msgData?.image ? resolveMediaUrl(msgData.image) : undefined;
+        const authorAvatarUrl = msgData?.authorAvatarUrl ? resolveMediaUrl(msgData.authorAvatarUrl) : undefined;
+
+        try {
+            await notifee.createChannel({
+                id: 'global-notifications',
+                name: 'Notificaciones Generales',
+                importance: 4,
+            });
+
+            const androidConfig: any = {
+                channelId: 'global-notifications',
+                pressAction: {
+                    id: 'default',
+                },
+            };
+
+            if (authorAvatarUrl) {
+                androidConfig.largeIcon = authorAvatarUrl;
+            }
+
+            if (image) {
+                androidConfig.style = {
+                    type: AndroidStyle.BIGPICTURE,
+                    picture: image,
+                };
+            }
+
+            await notifee.displayNotification({
+                id: msgData.postId || 'global-alert',
+                title: title,
+                body: body,
+                data: msgData,
+                android: androidConfig,
+            });
+        } catch (err) {
+            console.error('[Background Task] Error displaying Notifee global notification:', err);
         }
     }
 });

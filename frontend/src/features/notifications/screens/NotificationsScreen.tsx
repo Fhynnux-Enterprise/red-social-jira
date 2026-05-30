@@ -101,11 +101,34 @@ export default function NotificationsScreen() {
             try {
                 const parsedData = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
                 if (parsedData) {
-                    if (parsedData.postId && (parsedData.type === 'POST_DETAIL' || parsedData.type === 'STORE_DETAIL')) {
+                    if (parsedData.postId && (
+                        parsedData.type === 'POST_DETAIL' ||
+                        parsedData.type === 'STORE_DETAIL' ||
+                        parsedData.type === 'JOB_DETAIL' ||
+                        parsedData.type === 'SERVICE_DETAIL'
+                    )) {
                         router.push({
                             pathname: '/postDetail',
-                            params: { postId: parsedData.postId, isStore: parsedData.type === 'STORE_DETAIL' ? 'true' : 'false' }
+                            params: { 
+                                postId: parsedData.postId, 
+                                isStore: parsedData.type === 'STORE_DETAIL' ? 'true' : 'false',
+                                itemType: parsedData.type
+                            }
                         });
+                        return;
+                    }
+                    if (parsedData.detailed === true || parsedData.detailed === 'true' || (!parsedData.postId && !parsedData.userId && !parsedData.conversationId)) {
+                        router.push({
+                            pathname: '/notificationDetail',
+                            params: { 
+                                title: item.title, 
+                                body: item.message, 
+                                image: parsedData.image || '',
+                                badgeText: parsedData.badgeText || 'OFICIAL',
+                                createdAt: item.createdAt
+                            }
+                        });
+                        return;
                     } else if (parsedData.userId && parsedData.type === 'USER_PROFILE') {
                         router.push({
                             pathname: '/profile',

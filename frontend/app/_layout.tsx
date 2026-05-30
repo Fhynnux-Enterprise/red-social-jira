@@ -16,19 +16,71 @@ import '../src/hooks/useChatBackgroundHandler';
 
 export default function RootLayout() {
   useEffect(() => {
+    const handleNotifeeNotificationPress = (data: any, title?: string, body?: string) => {
+      if (!data) return;
+
+      console.log('[Notifee Press] Handling data:', data);
+
+      // 1. Chat Room
+      if (data.type === 'CHAT_ROOM' && data.conversationId) {
+        router.push({
+          pathname: '/chatRoom',
+          params: { conversationId: data.conversationId }
+        });
+        return;
+      }
+
+      // 2. Post Detail deep linking
+      if (data.postId && (
+        data.type === 'POST_DETAIL' ||
+        data.type === 'STORE_DETAIL' ||
+        data.type === 'JOB_DETAIL' ||
+        data.type === 'SERVICE_DETAIL'
+      )) {
+        router.push({
+          pathname: '/postDetail',
+          params: { 
+            postId: data.postId, 
+            isStore: data.type === 'STORE_DETAIL' ? 'true' : 'false',
+            itemType: data.type
+          }
+        });
+        return;
+      }
+
+      // 3. Notification Detail
+      if (data.detailed === 'true' || data.detailed === true || (!data.postId && !data.userId && !data.conversationId)) {
+        router.push({
+          pathname: '/notificationDetail',
+          params: { 
+            title: title || '', 
+            body: body || '', 
+            image: data.image || '',
+            badgeText: data.badgeText || 'OFICIAL'
+          }
+        });
+        return;
+      }
+
+      // 4. User Profile
+      if (data.userId && data.type === 'USER_PROFILE') {
+        router.push({
+          pathname: '/profile',
+          params: { userId: data.userId }
+        });
+      }
+    };
+
     // 1. Handle app opening from a cold start via Notifee notification press
     notifee.getInitialNotification().then((initialNotif) => {
       if (initialNotif) {
         const data = initialNotif.notification.data;
-        if (data?.type === 'CHAT_ROOM' && data?.conversationId) {
-          console.log('[Notifee Initial Notification] Tapped conversation:', data.conversationId);
-          setTimeout(() => {
-            router.push({
-              pathname: '/chatRoom',
-              params: { conversationId: data.conversationId }
-            });
-          }, 500); // Small delay to allow navigation context to be ready
-        }
+        const title = initialNotif.notification.title;
+        const body = initialNotif.notification.body;
+        console.log('[Notifee Initial Notification] Tapped notification:', data);
+        setTimeout(() => {
+          handleNotifeeNotificationPress(data, title, body);
+        }, 500); // Small delay to allow navigation context to be ready
       }
     }).catch(err => console.error('Error fetching initial Notifee notification:', err));
 
@@ -36,13 +88,10 @@ export default function RootLayout() {
     const unsubscribe = notifee.onForegroundEvent(({ type, detail }) => {
       if (type === EventType.PRESS) {
         const data = detail.notification?.data;
-        if (data?.type === 'CHAT_ROOM' && data?.conversationId) {
-          console.log('[Notifee Foreground PRESS] Tapped conversation:', data.conversationId);
-          router.push({
-            pathname: '/chatRoom',
-            params: { conversationId: data.conversationId }
-          });
-        }
+        const title = detail.notification?.title;
+        const body = detail.notification?.body;
+        console.log('[Notifee Foreground PRESS] Tapped notification:', data);
+        handleNotifeeNotificationPress(data, title, body);
       }
     });
 
@@ -60,6 +109,7 @@ export default function RootLayout() {
                 <Stack.Screen name="search" options={{ headerShown: false }} />
                 <Stack.Screen name="profile" options={{ headerShown: false }} />
                 <Stack.Screen name="postDetail" options={{ headerShown: false }} />
+                <Stack.Screen name="notificationDetail" options={{ headerShown: false }} />
                 <Stack.Screen 
                   name="jobs/create" 
                   options={{ 

@@ -16,6 +16,7 @@ import CommentsModal from '../../comments/components/CommentsModal';
 import ListFooter from '../../../components/ListFooter';
 import PostOptionsModal from '../../feed/components/PostOptionsModal';
 import Toast from 'react-native-toast-message';
+import { useAuth } from '../../auth/context/AuthContext';
 import { GET_AD_FREQUENCY } from '../../ads/graphql/ads.operations';
 import NativeAdCard from '../../ads/components/NativeAdCard';
 import { useFocusEffect, useNavigation, useIsFocused } from '@react-navigation/native';
@@ -39,6 +40,7 @@ const TABS: TabConfig[] = [
 export default function StoreScreen() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const { user: currentUser } = useAuth() as any;
   const apolloClient = useApolloClient();
 
   const styles = React.useMemo(() => getStyles(colors, isDark), [colors, isDark]);
@@ -604,6 +606,10 @@ export default function StoreScreen() {
       <PostOptionsModal
         visible={isOptionsVisible}
         onClose={() => setIsOptionsVisible(false)}
+        post={selectedProductForOptions}
+        isOwner={selectedProductForOptions?.seller?.id === currentUser?.id}
+        onToggleSave={() => handleToggleSave(selectedProductForOptions)}
+        isSaved={selectedProductForOptions?.isSaved}
         onEdit={() => {
           setIsOptionsVisible(false);
           handleEdit(selectedProductForOptions);

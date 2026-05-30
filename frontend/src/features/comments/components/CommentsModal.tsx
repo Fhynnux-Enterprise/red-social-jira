@@ -2197,6 +2197,7 @@ export default function CommentsModal({
             <PostOptionsModal
                 visible={isPostOptionsMenuVisible}
                 onClose={() => setIsPostOptionsMenuVisible(false)}
+                post={post}
                 isOwner={
                     post?.author?.id === currentUser?.id ||
                     post?.seller?.id === currentUser?.id ||

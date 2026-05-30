@@ -10,6 +10,7 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '../../../theme/ThemeContext';
 import { GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS, GET_MY_APPLICATIONS, GET_MY_PROFESSIONAL_PROFILE, DELETE_APPLICATION, DELETE_JOB_OFFER, DELETE_PROFESSIONAL_PROFILE } from '../graphql/jobs.operations';
 import { TOGGLE_SAVE_POST, GET_SAVED_POSTS } from '../../feed/graphql/posts.operations';
+import { useAuth } from '../../auth/context/AuthContext';
 import JobOfferCard from '../components/JobOfferCard';
 import ProfessionalCard from '../components/ProfessionalCard';
 import ApplyJobModal from '../components/ApplyJobModal';
@@ -40,6 +41,7 @@ const TABS: TabConfig[] = [
 
 export default function JobsScreen() {
     const { colors, isDark } = useTheme();
+    const { user: currentUser } = useAuth() as any;
     const insets = useSafeAreaInsets();
     const router = useRouter();
     const apolloClient = useApolloClient();
@@ -1236,6 +1238,13 @@ export default function JobsScreen() {
                 onClose={() => setIsOptionsVisible(false)}
                 onEdit={() => handleEdit(selectedItemForOptions)}
                 onDelete={handleDelete}
+                post={selectedItemForOptions}
+                isOwner={
+                    selectedItemForOptions?.author?.id === currentUser?.id ||
+                    selectedItemForOptions?.user?.id === currentUser?.id
+                }
+                onToggleSave={() => handleToggleSave(selectedItemForOptions)}
+                isSaved={selectedItemForOptions?.isSaved}
             />
         </View>
     );

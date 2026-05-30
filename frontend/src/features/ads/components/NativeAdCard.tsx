@@ -33,6 +33,7 @@ import CreateLocalAdModal from '../../advertisers/components/CreateLocalAdModal'
 import ConfirmModal from '../../../components/ConfirmModal';
 import ReportModal from '../../reports/components/ReportModal';
 import { DELETE_LOCAL_AD } from '../../advertisers/graphql/advertisers.operations';
+import { GenerateNotificationFromPostModal } from '../../feed/components/PostOptionsModal';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -85,6 +86,7 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [isDeleteConfirmVisible, setIsDeleteConfirmVisible] = useState(false);
     const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+    const [showNotificationForm, setShowNotificationForm] = useState(false);
 
     useImperativeHandle(ref, () => ({
       openOptions: () => setIsAdOptionsVisible(true)
@@ -147,6 +149,7 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
     } : undefined;
 
     const isOwner = user?.id && currentAdData?.advertiser?.id === user.id;
+    const isModeratorOrAdmin = user?.role === 'ADMIN' || user?.role === 'MODERATOR';
 
     const { data: followData } = useQuery<any>(IS_FOLLOWING, {
         variables: { followingId: currentAdData?.advertiser?.id },
@@ -220,6 +223,22 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
         <Modal visible={isAdOptionsVisible} transparent animationType="fade" onRequestClose={() => setIsAdOptionsVisible(false)}>
           <TouchableOpacity style={styles.modalOverlay} onPress={() => setIsAdOptionsVisible(false)} activeOpacity={1}>
             <View style={[styles.optionsContainer, { backgroundColor: colors.surface }]}>
+
+              {type === 'LOCAL' && isModeratorOrAdmin && currentAdData && (
+                <>
+                  <TouchableOpacity 
+                    style={styles.optionBtn} 
+                    onPress={() => {
+                      setIsAdOptionsVisible(false);
+                      setShowNotificationForm(true);
+                    }}
+                  >
+                    <Ionicons name="megaphone-outline" size={20} color="#ff6524" />
+                    <Text style={[styles.optionText, { color: '#ff6524', fontWeight: 'bold' }]}>Generar notificación</Text>
+                  </TouchableOpacity>
+                  <View style={[styles.separator, { backgroundColor: colors.border, marginVertical: 8 }]} />
+                </>
+              )}
 
               {type === 'ADMOB' ? (
                 <>
@@ -327,6 +346,20 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
             onContentDeleted={() => {
               setIsDeleted(true);
               onDelete?.();
+            }}
+          />
+        )}
+
+        {showNotificationForm && currentAdData && (
+          <GenerateNotificationFromPostModal
+            visible={showNotificationForm}
+            onClose={() => setShowNotificationForm(false)}
+            post={{
+              ...currentAdData,
+              title: currentAdData.title,
+              description: currentAdData.description || currentAdData.content,
+              image: currentAdData.mediaUrl || currentAdData.imageUrl || (currentAdData.media && currentAdData.media[0]?.url) || (currentAdData.localAdMedia && currentAdData.localAdMedia[0]?.url),
+              __typename: 'LocalAd',
             }}
           />
         )}

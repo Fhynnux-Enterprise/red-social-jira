@@ -12,6 +12,13 @@ import { pubSub } from '../common/pubsub';
 export class NotificationsService {
     private expo = new Expo();
 
+    private resolveUrl(url?: string | null): string | undefined {
+        if (!url) return undefined;
+        if (url.startsWith('http') || url.startsWith('file://')) return url;
+        const serverUrl = process.env.SERVER_URL || 'https://canton-enterprise-production.up.railway.app';
+        return `${serverUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+    }
+
     constructor(
         @InjectRepository(Notification)
         private readonly notificationRepository: Repository<Notification>,
@@ -162,6 +169,31 @@ export class NotificationsService {
                     messageObj.sound = 'default';
                     messageObj.tag = options?.tag;
                     messageObj.collapseId = options?.tag;
+
+                    // Para notificaciones generales/sociales (likes, comentarios, etc.)
+                    // cuando la app está cerrada se implementa de esta manera para enviar la imagen
+                    const imageUrl = this.resolveUrl(data?.image || data?.senderAvatar);
+                    const authorAvatarUrl = this.resolveUrl(data?.authorAvatarUrl || data?.senderAvatar);
+
+                    if (imageUrl || authorAvatarUrl) {
+                        messageObj._contentAvailable = true;
+                        messageObj.priority = 'high';
+                        if (!messageObj.data.authorAvatarUrl) {
+                            messageObj.data.authorAvatarUrl = authorAvatarUrl || undefined;
+                        }
+                        if (!messageObj.data.image) {
+                            messageObj.data.image = imageUrl || undefined;
+                        }
+                    }
+
+                    if (imageUrl) {
+                        messageObj.image = imageUrl;
+                        messageObj.mutableContent = true;
+                        messageObj.richContent = {
+                            image: imageUrl,
+                            imageUrl: imageUrl,
+                        };
+                    }
                 }
                 if (options?.threadId) {
                     messageObj.threadId = options?.threadId;
@@ -193,9 +225,14 @@ export class NotificationsService {
         body: string,
         cityId: string | null,
         saveInDb: boolean,
-        imageUrl?: string | null
+        imageUrl?: string | null,
+        detailed?: boolean,
+        badgeText?: string | null,
+        postId?: string | null,
+        postType?: string | null,
+        authorAvatarUrl?: string | null,
     ): Promise<boolean> {
-        console.log(`[NotificationsService] Enviando notificación global: "${title}" - Ciudad: ${cityId || 'Todas'} - Guardar DB: ${saveInDb} - Imagen: ${imageUrl || 'Ninguna'}`);
+        console.log(`[NotificationsService] Enviando notificación global: "${title}" - Ciudad: ${cityId || 'Todas'} - Guardar DB: ${saveInDb} - Imagen: ${imageUrl || 'Ninguna'} - Detallada: ${detailed} - Badge: ${badgeText} - PostId: ${postId} - PostType: ${postType} - AuthorAvatarUrl: ${authorAvatarUrl}`);
         try {
             // 1. Obtener todos los tokens de dispositivos según el filtro de ciudad
             let query = this.deviceTokenRepository.createQueryBuilder('deviceToken');
@@ -221,7 +258,14 @@ export class NotificationsService {
                         message: body,
                         type: NotificationType.SYSTEM,
                         isRead: false,
-                        data: imageUrl ? JSON.stringify({ image: imageUrl }) : null,
+                        data: JSON.stringify({ 
+                            image: imageUrl || undefined, 
+                            detailed: detailed || false,
+                            badgeText: badgeText || undefined,
+                            postId: postId || undefined,
+                            type: postType || undefined,
+                            authorAvatarUrl: authorAvatarUrl || undefined,
+                        }),
                     });
                 });
 
@@ -242,6 +286,9 @@ export class NotificationsService {
                 return true;
             }
 
+            const resolvedImageUrl = this.resolveUrl(imageUrl);
+            const resolvedAuthorAvatarUrl = this.resolveUrl(authorAvatarUrl);
+
             const messages: any[] = [];
             for (const dt of deviceTokens) {
                 if (!Expo.isExpoPushToken(dt.token)) {
@@ -254,13 +301,26 @@ export class NotificationsService {
                     body,
                     sound: 'default',
                     priority: 'high',
+                    channelId: 'default',
                     data: {
-                        type: 'SYSTEM_ALERT',
+                        type: postType || 'SYSTEM_ALERT',
+                        postId: postId || undefined,
+                        image: resolvedImageUrl || undefined,
+                        detailed: (detailed && !postId) ? 'true' : 'false',
+                        badgeText: badgeText || undefined,
+                        authorAvatarUrl: resolvedAuthorAvatarUrl || undefined,
                     }
                 };
-                if (imageUrl) {
-                    msg.image = imageUrl;
+                if (resolvedImageUrl || resolvedAuthorAvatarUrl) {
+                    msg._contentAvailable = true;
+                }
+                if (resolvedImageUrl) {
+                    msg.image = resolvedImageUrl;
                     msg.mutableContent = true;
+                    msg.richContent = {
+                        image: resolvedImageUrl,
+                        imageUrl: resolvedImageUrl,
+                    };
                 }
                 messages.push(msg);
             }

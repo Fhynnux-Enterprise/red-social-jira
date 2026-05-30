@@ -8,7 +8,7 @@ import { gql } from '@apollo/client';
 import { router } from 'expo-router';
 import { SEND_MESSAGE } from '../features/chat/graphql/chat.operations';
 import notifee, { AndroidStyle } from '@notifee/react-native';
-import { updateSummaryNotification, resolveAvatarUrl } from './useChatBackgroundHandler';
+import { updateSummaryNotification, resolveAvatarUrl, resolveMediaUrl } from './useChatBackgroundHandler';
 import { ActiveChatTracker } from '../features/chat/ActiveChatTracker';
 
 const REGISTER_PUSH_TOKEN_MUTATION = gql`
@@ -23,14 +23,19 @@ Notifications.setNotificationHandler({
         const data = notification?.request?.content?.data as any;
         const isChat = data?.type === 'CHAT_ROOM';
         const isLocal = data?.isLocal === true;
+        const isCustomLayout = data?.image || data?.authorAvatarUrl;
 
         // Si el usuario está dentro del mismo chat del que llega el mensaje, silenciamos la notificación por completo
         const activeConvId = ActiveChatTracker.getActiveConversationId();
         const isCurrentChat = isChat && activeConvId && data?.conversationId === activeConvId;
 
+        // Si es local, permitimos que se muestre.
+        // Si no es chat y no tiene la visualización especial con Notifee, dejamos que Expo la muestre.
+        const shouldShow = isLocal || (!isChat && !isCustomLayout && !isCurrentChat);
+
         return {
-            shouldShowAlert: (!isChat || isLocal) && !isCurrentChat, // Oculta visualmente si es el chat activo
-            shouldPlaySound: !isCurrentChat,                         // Silencia el sonido si es el chat activo
+            shouldShowAlert: shouldShow,
+            shouldPlaySound: !isCurrentChat,
             shouldSetBadge: false,
         };
     },
@@ -159,6 +164,45 @@ export const usePushNotifications = (isAuthenticated: boolean) => {
                         trigger: null,
                     }).catch(err => console.error('Error al programar notificación local en primer plano:', err));
                 }
+            } else if (!isLocal && (data?.image || data?.authorAvatarUrl)) {
+                try {
+                    await notifee.createChannel({
+                        id: 'global-notifications',
+                        name: 'Notificaciones Generales',
+                        importance: 4,
+                    });
+
+                    const androidConfig: any = {
+                        channelId: 'global-notifications',
+                        pressAction: {
+                            id: 'default',
+                        },
+                    };
+
+                    const resolvedImage = data.image ? resolveMediaUrl(data.image) : undefined;
+                    const resolvedAvatar = data.authorAvatarUrl ? resolveMediaUrl(data.authorAvatarUrl) : undefined;
+
+                    if (resolvedAvatar) {
+                        androidConfig.largeIcon = resolvedAvatar;
+                    }
+
+                    if (resolvedImage) {
+                        androidConfig.style = {
+                            type: AndroidStyle.BIGPICTURE,
+                            picture: resolvedImage,
+                        };
+                    }
+
+                    await notifee.displayNotification({
+                        id: data.postId || 'global-alert',
+                        title: notification.request.content.title || 'FynnuX',
+                        body: notification.request.content.body || '',
+                        data: data,
+                        android: androidConfig,
+                    });
+                } catch (err) {
+                    console.error('[Foreground Notif] Error displaying custom Notifee notification:', err);
+                }
             }
             setNotification(notification);
         });
@@ -198,13 +242,38 @@ export const usePushNotifications = (isAuthenticated: boolean) => {
                         return;
                     }
 
-                    // 3. Otros tipos de deep linking
-                    if (data.postId && (data.type === 'POST_DETAIL' || data.type === 'STORE_DETAIL')) {
-                        console.log('Deep linking to postDetail with ID:', data.postId, 'isStore:', data.type === 'STORE_DETAIL');
+                    // 3. Post Detail deep linking
+                    if (data.postId && (
+                        data.type === 'POST_DETAIL' ||
+                        data.type === 'STORE_DETAIL' ||
+                        data.type === 'JOB_DETAIL' ||
+                        data.type === 'SERVICE_DETAIL'
+                    )) {
+                        console.log('Deep linking to postDetail with ID:', data.postId, 'type:', data.type);
                         router.push({
                             pathname: '/postDetail',
-                            params: { postId: data.postId, isStore: data.type === 'STORE_DETAIL' ? 'true' : 'false' }
+                            params: { 
+                                postId: data.postId, 
+                                isStore: data.type === 'STORE_DETAIL' ? 'true' : 'false',
+                                itemType: data.type
+                            }
                         });
+                        return;
+                    }
+
+                    // 4. Otros tipos de deep linking (Aviso General Detallado)
+                    if (data.detailed === 'true' || data.detailed === true || (!data.postId && !data.userId && !data.conversationId)) {
+                        console.log('Deep linking to notificationDetail with title:', response.notification.request.content.title);
+                        router.push({
+                            pathname: '/notificationDetail',
+                            params: { 
+                                title: response.notification.request.content.title, 
+                                body: response.notification.request.content.body, 
+                                image: data.image || '',
+                                badgeText: data.badgeText || 'OFICIAL'
+                            }
+                        });
+                        return;
                     } else if (data.userId && data.type === 'USER_PROFILE') {
                         console.log('Deep linking to profile with ID:', data.userId);
                         router.push({

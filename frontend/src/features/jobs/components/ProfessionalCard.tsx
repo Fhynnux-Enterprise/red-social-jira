@@ -23,6 +23,7 @@ import {
 } from '../graphql/jobs.operations';
 import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GenerateNotificationFromPostModal } from '../../feed/components/PostOptionsModal';
 
 interface ProfessionalCardProps {
     item: any;
@@ -61,6 +62,7 @@ export default function ProfessionalCard({
     const [reportVisible, setReportVisible] = useState(false);
     const [isDescExpanded, setIsDescExpanded] = useState(false);
     const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
+    const [showNotificationForm, setShowNotificationForm] = useState(false);
     const [activeIndex, setActiveIndex] = useState(0);
     const carouselRef = React.useRef<any>(null);
     const expandTop = 100;
@@ -475,6 +477,21 @@ export default function ProfessionalCard({
                                 <View style={[styles.menuHandle, { backgroundColor: isDark ? '#444' : '#DDD' }]} />
                                 <Text style={[styles.menuTitle, { color: colors.text }]}>Opciones</Text>
                                 
+                                {isModeratorOrAdmin && (
+                                    <TouchableOpacity 
+                                        style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} 
+                                        onPress={() => {
+                                            setMenuVisible(false);
+                                            setShowNotificationForm(true);
+                                        }}
+                                    >
+                                        <View style={[styles.menuItemIcon, { backgroundColor: 'rgba(255, 101, 36, 0.1)' }]}>
+                                            <Ionicons name="megaphone" size={20} color="#ff6524" />
+                                        </View>
+                                        <Text style={[styles.menuItemTitle, { color: '#ff6524', fontWeight: 'bold' }]}>Generar notificación</Text>
+                                    </TouchableOpacity>
+                                )}
+
                                 {isOwnCard ? (
                                     <>
                                         <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={handleEdit}>
@@ -575,6 +592,20 @@ export default function ProfessionalCard({
                 textToCopy={getFullCopyText()}
                 onClose={() => setIsCopyModalVisible(false)}
             />
+
+            {showNotificationForm && (
+                <GenerateNotificationFromPostModal
+                    visible={showNotificationForm}
+                    onClose={() => setShowNotificationForm(false)}
+                    post={{
+                        ...item,
+                        title: item.profession || item.title,
+                        description: item.description,
+                        media: item.media || item.professionalMedia,
+                        __typename: 'ProfessionalProfile',
+                    }}
+                />
+            )}
         </>
     );
 }

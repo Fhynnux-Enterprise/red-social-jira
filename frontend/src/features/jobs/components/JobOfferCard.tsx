@@ -25,6 +25,7 @@ import { GET_OR_CREATE_CHAT } from '../../chat/graphql/chat.operations';
 import { Linking } from 'react-native';
 import { DIRECT_MODERATE_CONTENT } from '../../moderation/graphql/moderation.operations';
 import Toast from 'react-native-toast-message';
+import { GenerateNotificationFromPostModal } from '../../feed/components/PostOptionsModal';
 
 interface JobOfferCardProps {
     item: any;
@@ -33,6 +34,7 @@ interface JobOfferCardProps {
     onEdit?: (item: any) => void;
     isModalView?: boolean;
     onToggleSave?: (item: any) => void;
+    isSaved?: boolean;
     showTopDivider?: boolean;
     hideAuthorRow?: boolean;
     isFocused?: boolean;
@@ -59,6 +61,7 @@ export default function JobOfferCard({
     const [reportVisible, setReportVisible] = useState(false);
     const [isDescExpanded, setIsDescExpanded] = useState(false);
     const [isCopyModalVisible, setIsCopyModalVisible] = useState(false);
+    const [showNotificationForm, setShowNotificationForm] = useState(false);
 
     const isModeratorOrAdmin = authContext?.user?.role === 'ADMIN' || authContext?.user?.role === 'MODERATOR';
     const client = useApolloClient();
@@ -465,6 +468,21 @@ export default function JobOfferCard({
                                 <View style={[styles.menuHandle, { backgroundColor: isDark ? '#444' : '#DDD' }]} />
                                 <Text style={[styles.menuTitle, { color: colors.text }]}>Opciones</Text>
                                 
+                                {isModeratorOrAdmin && (
+                                    <TouchableOpacity 
+                                        style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} 
+                                        onPress={() => {
+                                            setMenuVisible(false);
+                                            setShowNotificationForm(true);
+                                        }}
+                                    >
+                                        <View style={[styles.menuItemIcon, { backgroundColor: 'rgba(255, 101, 36, 0.1)' }]}>
+                                            <Ionicons name="megaphone" size={20} color="#ff6524" />
+                                        </View>
+                                        <Text style={[styles.menuItemTitle, { color: '#ff6524', fontWeight: 'bold' }]}>Generar notificación</Text>
+                                    </TouchableOpacity>
+                                )}
+
                                 {isOwner ? (
                                     <>
                                         <TouchableOpacity style={[styles.menuItem, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]} onPress={handleEdit}>
@@ -584,6 +602,20 @@ export default function JobOfferCard({
                 textToCopy={getFullCopyText()}
                 onClose={() => setIsCopyModalVisible(false)}
             />
+
+            {showNotificationForm && (
+                <GenerateNotificationFromPostModal
+                    visible={showNotificationForm}
+                    onClose={() => setShowNotificationForm(false)}
+                    post={{
+                        ...item,
+                        title: item.title,
+                        description: item.description,
+                        media: item.media || item.jobMedia,
+                        __typename: 'JobOffer',
+                    }}
+                />
+            )}
         </>
     );
 }

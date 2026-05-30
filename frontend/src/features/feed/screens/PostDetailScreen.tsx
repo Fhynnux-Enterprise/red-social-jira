@@ -17,8 +17,11 @@ import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
 import { GET_POST_BY_ID } from '../graphql/posts.operations';
 import { GET_STORE_PRODUCT_BY_ID } from '../../store/graphql/store.operations';
+import { GET_JOB_OFFER_BY_ID, GET_PROFESSIONAL_PROFILE_BY_ID } from '../../moderation/graphql/moderation.operations';
 import PostCard from '../components/PostCard';
 import StoreProductCard from '../../store/components/StoreProductCard';
+import JobOfferCard from '../../jobs/components/JobOfferCard';
+import ProfessionalCard from '../../jobs/components/ProfessionalCard';
 import CommentsModal from '../../comments/components/CommentsModal';
 import PostOptionsModal from '../components/PostOptionsModal';
 import ReportModal from '../../reports/components/ReportModal';
@@ -36,13 +39,21 @@ export default function PostDetailScreen() {
 
     const postId = (route.params?.postId || localParams?.postId) as string;
     const isStore = localParams.isStore === 'true' || route.params?.isStore === true;
+    const itemType = (localParams?.itemType || route.params?.itemType) as string | undefined;
 
     const [selectedPostForComments, setSelectedPostForComments] = React.useState<any>(null);
     const [isOptionsMenuVisible, setIsOptionsMenuVisible] = React.useState(false);
     const [selectedPost, setSelectedPost] = React.useState<any>(null);
     const [isReportModalVisible, setIsReportModalVisible] = React.useState(false);
 
-    const queryToUse = isStore ? GET_STORE_PRODUCT_BY_ID : GET_POST_BY_ID;
+    let queryToUse = GET_POST_BY_ID;
+    if (itemType === 'STORE_DETAIL' || isStore) {
+        queryToUse = GET_STORE_PRODUCT_BY_ID;
+    } else if (itemType === 'JOB_DETAIL') {
+        queryToUse = GET_JOB_OFFER_BY_ID;
+    } else if (itemType === 'SERVICE_DETAIL') {
+        queryToUse = GET_PROFESSIONAL_PROFILE_BY_ID;
+    }
 
     // Query single post / product detail
     const { data, loading, error, refetch } = useQuery<any>(queryToUse, {
@@ -55,9 +66,22 @@ export default function PostDetailScreen() {
 
     const handleToggleSave = async (post: any) => {
         if (!post) return;
+        let typeToUse = 'POST';
+        if (itemType === 'STORE_DETAIL' || isStore) {
+            typeToUse = 'STORE_PRODUCT';
+        } else if (itemType === 'JOB_DETAIL') {
+            typeToUse = 'JOB_OFFER';
+        } else if (itemType === 'SERVICE_DETAIL') {
+            typeToUse = 'PROFESSIONAL_PROFILE';
+        } else {
+            typeToUse = post.__typename === 'StoreProduct' ? 'STORE_PRODUCT' : 
+                        post.__typename === 'JobOffer' ? 'JOB_OFFER' :
+                        post.__typename === 'ProfessionalProfile' ? 'PROFESSIONAL_PROFILE' : 'POST';
+        }
+
         try {
             await toggleSavePost({
-                variables: { postId: post.id, itemType: isStore ? 'STORE_PRODUCT' : 'POST' },
+                variables: { postId: post.id, itemType: typeToUse },
                 refetchQueries: ['GetSavedPosts'],
             });
             Toast.show({
@@ -81,7 +105,16 @@ export default function PostDetailScreen() {
         setIsOptionsMenuVisible(true);
     };
 
-    const post = isStore ? data?.getStoreProductById : data?.getPostById;
+    let post = null;
+    if (itemType === 'STORE_DETAIL' || isStore) {
+        post = data?.getStoreProductById;
+    } else if (itemType === 'JOB_DETAIL') {
+        post = data?.getJobOfferById;
+    } else if (itemType === 'SERVICE_DETAIL') {
+        post = data?.getProfessionalProfileById;
+    } else {
+        post = data?.getPostById;
+    }
 
     if (loading && !post) {
         return (
@@ -111,7 +144,8 @@ export default function PostDetailScreen() {
     }
 
     // Map fields dynamically based on item type
-    const mappedPost = post ? (isStore
+    const mappedPost = post ? (
+        (itemType === 'STORE_DETAIL' || isStore)
         ? {
             ...post,
             __typename: 'StoreProduct',
@@ -120,11 +154,27 @@ export default function PostDetailScreen() {
             location: post.storeLocation ?? post.location,
             contactPhone: post.storeContactPhone ?? post.contactPhone,
           }
+        : itemType === 'JOB_DETAIL'
+        ? {
+            ...post,
+            __typename: 'JobOffer',
+            title: post.title,
+            media: post.media ?? [],
+          }
+        : itemType === 'SERVICE_DETAIL'
+        ? {
+            ...post,
+            __typename: 'ProfessionalProfile',
+            profession: post.profession,
+            media: post.media ?? [],
+          }
         : {
             ...post,
+            __typename: 'Post',
             title: post.postTitle ?? post.title,
             media: post.postMedia ?? post.media ?? []
-          }) : null;
+          }
+    ) : null;
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
@@ -150,13 +200,33 @@ export default function PostDetailScreen() {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
             >
-                {isStore ? (
+                {itemType === 'STORE_DETAIL' || isStore ? (
                     <StoreProductCard
                         item={mappedPost}
                         onPress={() => {}}
                         onCommentPress={() =>
                             setSelectedPostForComments({ post: mappedPost, minimize: false })
                         }
+                        isViewable={true}
+                        isFocused={true}
+                    />
+                ) : itemType === 'JOB_DETAIL' ? (
+                    <JobOfferCard
+                        item={mappedPost}
+                        onPress={() => {}}
+                        onOptionsPress={() => handleOptionsPress(mappedPost)}
+                        onToggleSave={() => handleToggleSave(mappedPost)}
+                        isSaved={mappedPost?.isSaved}
+                        isViewable={true}
+                        isFocused={true}
+                    />
+                ) : itemType === 'SERVICE_DETAIL' ? (
+                    <ProfessionalCard
+                        item={mappedPost}
+                        onPress={() => {}}
+                        onOptionsPress={() => handleOptionsPress(mappedPost)}
+                        onToggleSave={() => handleToggleSave(mappedPost)}
+                        isSaved={mappedPost?.isSaved}
                         isViewable={true}
                         isFocused={true}
                     />
@@ -196,7 +266,16 @@ export default function PostDetailScreen() {
             <PostOptionsModal
                 visible={isOptionsMenuVisible}
                 onClose={() => setIsOptionsMenuVisible(false)}
-                isOwner={isStore ? selectedPost?.seller?.id === currentUser?.id : selectedPost?.author?.id === currentUser?.id}
+                post={selectedPost}
+                isOwner={
+                    itemType === 'STORE_DETAIL' || isStore
+                        ? selectedPost?.seller?.id === currentUser?.id
+                        : itemType === 'JOB_DETAIL'
+                        ? selectedPost?.author?.id === currentUser?.id
+                        : itemType === 'SERVICE_DETAIL'
+                        ? selectedPost?.user?.id === currentUser?.id
+                        : selectedPost?.author?.id === currentUser?.id
+                }
                 onReport={() => {
                     setIsOptionsMenuVisible(false);
                     setIsReportModalVisible(true);
@@ -222,7 +301,15 @@ export default function PostDetailScreen() {
                 visible={isReportModalVisible}
                 onClose={() => setIsReportModalVisible(false)}
                 reportedItemId={selectedPost?.id}
-                reportedItemType={isStore ? 'STORE_PRODUCT' : 'POST'}
+                reportedItemType={
+                    itemType === 'STORE_DETAIL' || isStore
+                        ? 'STORE_PRODUCT'
+                        : itemType === 'JOB_DETAIL'
+                        ? 'JOB_OFFER'
+                        : itemType === 'SERVICE_DETAIL'
+                        ? 'PROFESSIONAL_PROFILE'
+                        : 'POST'
+                }
             />
         </View>
     );

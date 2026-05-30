@@ -654,6 +654,7 @@ export default function FeedScreen() {
             <PostOptionsModal
                 visible={isOptionsMenuVisible}
                 onClose={() => setIsOptionsMenuVisible(false)}
+                post={selectedPost}
                 isOwner={
                     selectedPost?.author?.id === currentUser?.id ||
                     selectedPost?.seller?.id === currentUser?.id ||

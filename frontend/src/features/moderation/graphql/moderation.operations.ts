@@ -152,6 +152,12 @@ export const GET_JOB_OFFER_BY_ID = gql`
                 lastName
                 photoUrl
             }
+            media {
+                url
+                type
+                order
+            }
+            isSaved
         }
     }
 `;
@@ -262,6 +268,7 @@ export const GET_PROFESSIONAL_PROFILE_BY_ID = gql`
                 type
                 order
             }
+            isSaved
         }
     }
 `;
@@ -379,7 +386,17 @@ export const GET_LOCAL_AD_BY_ID = gql`
 `;
 
 export const SEND_GLOBAL_NOTIFICATION = gql`
-    mutation SendGlobalNotification($title: String!, $body: String!, $cityId: String, $saveInDb: Boolean!, $imageUrl: String) {
-        sendGlobalNotification(title: $title, body: $body, cityId: $cityId, saveInDb: $saveInDb, imageUrl: $imageUrl)
+    mutation SendGlobalNotification($title: String!, $body: String!, $cityId: String, $saveInDb: Boolean!, $imageUrl: String, $detailed: Boolean, $badgeText: String, $postId: String, $postType: String, $authorAvatarUrl: String) {
+        sendGlobalNotification(title: $title, body: $body, cityId: $cityId, saveInDb: $saveInDb, imageUrl: $imageUrl, detailed: $detailed, badgeText: $badgeText, postId: $postId, postType: $postType, authorAvatarUrl: $authorAvatarUrl)
+    }
+`;
+
+export const GET_CITIES = gql`
+    query GetCities {
+        getCities {
+            id
+            name
+            isActive
+        }
     }
 `;
