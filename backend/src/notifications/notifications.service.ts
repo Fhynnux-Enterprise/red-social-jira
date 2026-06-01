@@ -19,6 +19,15 @@ export class NotificationsService {
         return `${serverUrl}${url.startsWith('/') ? '' : '/'}${url}`;
     }
 
+    private getOptimizedImageUrl(url?: string | null, width = 1000): string | undefined {
+        const resolved = this.resolveUrl(url);
+        if (!resolved) return undefined;
+        if (!resolved.startsWith('http') || resolved.includes('localhost') || resolved.includes('127.0.0.1')) {
+            return resolved;
+        }
+        return `https://wsrv.nl/?url=${encodeURIComponent(resolved)}&w=${width}&q=85&output=jpg`;
+    }
+
     constructor(
         @InjectRepository(Notification)
         private readonly notificationRepository: Repository<Notification>,
@@ -167,31 +176,34 @@ export class NotificationsService {
                     messageObj.title = title;
                     messageObj.body = body;
                     messageObj.sound = 'default';
+                    messageObj.priority = 'high';
+                    messageObj._contentAvailable = true;
                     messageObj.tag = options?.tag;
                     messageObj.collapseId = options?.tag;
 
-                    // Para notificaciones generales/sociales (likes, comentarios, etc.)
-                    // cuando la app está cerrada se implementa de esta manera para enviar la imagen
-                    const imageUrl = this.resolveUrl(data?.image || data?.senderAvatar);
-                    const authorAvatarUrl = this.resolveUrl(data?.authorAvatarUrl || data?.senderAvatar);
+                    // Separar imagen del post/producto del avatar del remitente
+                    // data.image  → primera imagen del producto/post (BigPicture en Notifee)
+                    // data.authorAvatarUrl / data.senderAvatar → avatar del remitente (largeIcon)
+                    const postImageUrl = this.getOptimizedImageUrl(data?.image ?? null, 1000);
+                    const avatarUrl = this.getOptimizedImageUrl(data?.authorAvatarUrl || data?.senderAvatar, 150);
 
-                    if (imageUrl || authorAvatarUrl) {
-                        messageObj._contentAvailable = true;
-                        messageObj.priority = 'high';
-                        if (!messageObj.data.authorAvatarUrl) {
-                            messageObj.data.authorAvatarUrl = authorAvatarUrl || undefined;
-                        }
-                        if (!messageObj.data.image) {
-                            messageObj.data.image = imageUrl || undefined;
-                        }
+                    // Siempre propagar ambos campos resueltos al data payload
+                    // para que el background task (Notifee) los consuma correctamente
+                    if (postImageUrl && !messageObj.data.image) {
+                        messageObj.data.image = postImageUrl;
+                    }
+                    if (avatarUrl && !messageObj.data.authorAvatarUrl) {
+                        messageObj.data.authorAvatarUrl = avatarUrl;
+                    }
+                    if (avatarUrl && !messageObj.data.senderAvatar) {
+                        messageObj.data.senderAvatar = avatarUrl;
                     }
 
-                    if (imageUrl) {
-                        messageObj.image = imageUrl;
+                    // richContent.image → imagen del producto (la que muestra el OS nativamente)
+                    if (postImageUrl) {
                         messageObj.mutableContent = true;
                         messageObj.richContent = {
-                            image: imageUrl,
-                            imageUrl: imageUrl,
+                            image: postImageUrl,
                         };
                     }
                 }
@@ -286,8 +298,8 @@ export class NotificationsService {
                 return true;
             }
 
-            const resolvedImageUrl = this.resolveUrl(imageUrl);
-            const resolvedAuthorAvatarUrl = this.resolveUrl(authorAvatarUrl);
+            const resolvedImageUrl = this.getOptimizedImageUrl(imageUrl, 1000);
+            const resolvedAuthorAvatarUrl = this.getOptimizedImageUrl(authorAvatarUrl, 150);
 
             const messages: any[] = [];
             for (const dt of deviceTokens) {
@@ -315,11 +327,9 @@ export class NotificationsService {
                     msg._contentAvailable = true;
                 }
                 if (resolvedImageUrl) {
-                    msg.image = resolvedImageUrl;
                     msg.mutableContent = true;
                     msg.richContent = {
                         image: resolvedImageUrl,
-                        imageUrl: resolvedImageUrl,
                     };
                 }
                 messages.push(msg);

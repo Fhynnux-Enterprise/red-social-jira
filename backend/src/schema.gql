@@ -97,6 +97,28 @@ type UserBadge {
   theme: String!
 }
 
+type VerificationType {
+  id: ID!
+  name: String!
+  iconUrl: String
+  description: String
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type UserTier {
+  id: ID!
+  name: String!
+  maxCarouselItems: Int!
+  maxVideos: Int!
+  maxVideoDuration: Int!
+  maxVideoQuality: String!
+  maxVideoBitrateKbps: Int!
+  maxUploadSizeMb: Float!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
 type Message {
   id: ID!
   content: String!
@@ -251,6 +273,10 @@ type User {
   posts(limit: Int = 5, offset: Int = 0): [Post!]
   customFields: [UserCustomField!]
   badge: UserBadge
+  verificationTypeId: String
+  verificationType: VerificationType
+  tierId: String
+  tier: UserTier
   comments: [Comment!]
   participations: [Participant!]
   sentMessages: [Message!]
@@ -504,6 +530,15 @@ type Query {
 
   """Lista todos los usuarios actualmente baneados."""
   getBannedUsers(limit: Int = 15, offset: Int = 0, searchTerm: String): [User!]!
+
+  """Lista todos los tipos de verificación disponibles."""
+  getVerificationTypes: [VerificationType!]!
+
+  """Lista todos los usuarios actualmente verificados."""
+  getVerifiedUsers(limit: Int = 15, offset: Int = 0, searchTerm: String): [User!]!
+
+  """Lista todos los rangos de límites de publicación."""
+  getUserTiers: [UserTier!]!
   isFollowing(followingId: String!): Boolean!
   getFollowers(userId: String!): [User!]!
   getFollowing(userId: String!): [User!]!
@@ -587,6 +622,24 @@ type Mutation {
 
   """Levanta la suspensión de un usuario."""
   unbanUser(userId: String!): User!
+
+  """Verifica a un usuario asignándole un rango de verificación."""
+  verifyUser(userId: String!, verificationTypeId: String!): User!
+
+  """Remueve la verificación de un usuario."""
+  unverifyUser(userId: String!): User!
+
+  """Crea un nuevo rango con límites específicos."""
+  createUserTier(input: CreateUserTierInput!): UserTier!
+
+  """Actualiza los límites de un rango existente."""
+  updateUserTier(input: UpdateUserTierInput!): UserTier!
+
+  """Elimina un rango de límites."""
+  deleteUserTier(id: String!): Boolean!
+
+  """Asigna a un usuario un rango de límites específico."""
+  assignUserTier(userId: String!, tierId: String!): User!
   toggleFollow(followingId: String!): Boolean!
   createComment(postId: String!, content: String!, parentId: String): Comment!
   deleteComment(id: String!): Boolean!
@@ -651,6 +704,28 @@ enum SavedItemType {
   PROFESSIONAL_PROFILE
   STORE_PRODUCT
   AD
+}
+
+input CreateUserTierInput {
+  id: String!
+  name: String!
+  maxCarouselItems: Int! = 10
+  maxVideos: Int! = 3
+  maxVideoDuration: Int! = 60
+  maxVideoQuality: String! = "720p"
+  maxVideoBitrateKbps: Int! = 3000
+  maxUploadSizeMb: Float! = 50
+}
+
+input UpdateUserTierInput {
+  id: String!
+  name: String
+  maxCarouselItems: Int
+  maxVideos: Int
+  maxVideoDuration: Int
+  maxVideoQuality: String
+  maxVideoBitrateKbps: Int
+  maxUploadSizeMb: Float
 }
 
 input CreateJobOfferInput {

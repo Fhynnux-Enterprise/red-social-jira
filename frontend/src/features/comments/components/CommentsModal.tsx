@@ -180,6 +180,22 @@ export default function CommentsModal({
 
     const hasPostMedia = isPost && (normalizedItem?.media?.length ?? 0) > 0;
 
+    // Manejar el botón de retroceder nativo de Android para cerrar el modal
+    useEffect(() => {
+        if (!visible) return;
+
+        const onBackPress = () => {
+            onClose();
+            return true; // Prevenir la navegación de salida de la pantalla
+        };
+
+        const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+        return () => {
+            sub.remove();
+        };
+    }, [visible, onClose]);
+
     // Resetear scroll al cambiar de post
     useEffect(() => {
         if (scrollViewRef.current && postId) {
@@ -1313,6 +1329,7 @@ export default function CommentsModal({
             transparent
             animationType="none"
             statusBarTranslucent
+            onRequestClose={onClose}
         >
 
 

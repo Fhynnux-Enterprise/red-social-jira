@@ -1,3 +1,87 @@
+const fs = require('fs');
+const path = require('path');
+const { 
+  withProjectBuildGradle, 
+  withAndroidManifest, 
+  withDangerousMod, 
+  withAndroidStyles 
+} = require('@expo/config-plugins');
+
+const withNotifeeMavenRepo = (config) => {
+  return withProjectBuildGradle(config, (config) => {
+    if (config.modResults.language === 'groovy') {
+      const contents = config.modResults.contents;
+      if (!contents.includes('@notifee/react-native/android/libs')) {
+        const searchRegex = /allprojects\s*\{\s*repositories\s*\{/;
+        const replacement = 'allprojects {\n  repositories {\n    maven { url "$rootDir/../node_modules/@notifee/react-native/android/libs" }';
+        config.modResults.contents = contents.replace(searchRegex, replacement);
+      }
+    }
+    return config;
+  });
+};
+
+const withAndroidPackageManifest = (config) => {
+  return withAndroidManifest(config, (config) => {
+    const packageName = config.android?.package || 'com.fernando.chunchicity';
+    config.modResults.manifest.$['package'] = packageName;
+    return config;
+  });
+};
+
+const withAndroidBrandedSplash = (config) => {
+  return withDangerousMod(config, [
+    'android',
+    async (config) => {
+      const androidResDir = path.join(
+        config.modRequest.platformProjectRoot,
+        'app/src/main/res'
+      );
+      
+      // 1. Copy the FynnuX brand logo to drawable directory
+      const drawableDir = path.join(androidResDir, 'drawable');
+      if (!fs.existsSync(drawableDir)) {
+        fs.mkdirSync(drawableDir, { recursive: true });
+      }
+
+      const sourcePath = path.join(
+        config.modRequest.projectRoot,
+        'assets/images/fynnux-branding-footer.png'
+      );
+      const destPath = path.join(drawableDir, 'fynnux_brand.png');
+
+      if (fs.existsSync(sourcePath)) {
+        fs.copyFileSync(sourcePath, destPath);
+      } else {
+        console.warn(`[BrandedSplash] Source logo not found at: ${sourcePath}`);
+      }
+
+      // 2. Create the values-v31 directory and write styles.xml
+      const valuesV31Dir = path.join(androidResDir, 'values-v31');
+      if (!fs.existsSync(valuesV31Dir)) {
+        fs.mkdirSync(valuesV31Dir, { recursive: true });
+      }
+
+      const v31StylesPath = path.join(valuesV31Dir, 'styles.xml');
+      const v31StylesContent = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">
+    <item name="windowSplashScreenBackground">@color/splashscreen_background</item>
+    <item name="windowSplashScreenAnimatedIcon">@drawable/splashscreen_logo</item>
+    <item name="postSplashScreenTheme">@style/AppTheme</item>
+    <item name="android:windowSplashScreenBehavior">icon_preferred</item>
+    <item name="android:windowSplashScreenBrandingImage">@drawable/fynnux_brand</item>
+  </style>
+</resources>
+`;
+
+      fs.writeFileSync(v31StylesPath, v31StylesContent, 'utf8');
+
+      return config;
+    },
+  ]);
+};
+
 export default ({ config }) => {
   const cityId = process.env.EXPO_PUBLIC_CITY_ID || 'chunchi';
 
@@ -22,7 +106,7 @@ export default ({ config }) => {
 
   const cityConfig = cities[cityId] || cities.chunchi;
 
-  return {
+  const cityConfigData = {
     ...config,
     name: cityConfig.name,
     slug: cityConfig.slug,
@@ -73,9 +157,9 @@ export default ({ config }) => {
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#121212",
+          "backgroundColor": "#000000",
           "dark": {
-            "backgroundColor": "#121212"
+            "backgroundColor": "#000000"
           }
         }
       ],
@@ -105,4 +189,6 @@ export default ({ config }) => {
       reactCompiler: true
     }
   };
+
+  return withAndroidBrandedSplash(withAndroidPackageManifest(withNotifeeMavenRepo(cityConfigData)));
 };

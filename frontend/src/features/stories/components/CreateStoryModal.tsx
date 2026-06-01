@@ -19,6 +19,7 @@ import { gql } from '@apollo/client';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { Video as Compressor } from 'react-native-compressor';
+import * as FileSystem from 'expo-file-system';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { GET_ME } from '../../profile/graphql/profile.operations';
@@ -124,11 +125,28 @@ export default function CreateStoryModal({ visible, onClose, onStoryCreated }: C
                 }, 300);
 
                 try {
-                    finalUri = await Compressor.compress(media.uri, {
+                    const compUri = await Compressor.compress(media.uri, {
                         compressionMethod: 'manual',
                         bitrate: 3000000, // 3.0 Mbps para nitidez y optimización de datos
                         maxSize: 720      // Resolución óptima
                     });
+
+                    // Validar archivo comprimido
+                    try {
+                        const fileInfo = await FileSystem.getInfoAsync(compUri);
+                        if (fileInfo.exists && fileInfo.size > 0) {
+                            finalUri = compUri;
+                        } else {
+                            console.warn('[CreateStoryModal] Video de historia corrupto o vacío, usando original:', compUri);
+                            finalUri = media.uri;
+                        }
+                    } catch (fsErr) {
+                        console.warn('[CreateStoryModal] Error al validar video de historia, usando original:', fsErr);
+                        finalUri = media.uri;
+                    }
+                } catch (compressErr) {
+                    console.warn('[CreateStoryModal] Error de compresión de historia, usando original:', compressErr);
+                    finalUri = media.uri;
                 } finally {
                     clearInterval(interval);
                 }

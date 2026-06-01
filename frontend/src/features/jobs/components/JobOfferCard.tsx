@@ -26,6 +26,7 @@ import { Linking } from 'react-native';
 import { DIRECT_MODERATE_CONTENT } from '../../moderation/graphql/moderation.operations';
 import Toast from 'react-native-toast-message';
 import { GenerateNotificationFromPostModal } from '../../feed/components/PostOptionsModal';
+import VerifiedBadge from '../../../components/VerifiedBadge';
 
 interface JobOfferCardProps {
     item: any;
@@ -339,9 +340,14 @@ export default function JobOfferCard({
                                 )}
                             </View>
                             <View style={styles.sellerTextColumn}>
-                                <Text style={styles.sellerNameOverlay} numberOfLines={1}>
-                                    {item.author?.firstName} {item.author?.lastName}
-                                </Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    <Text style={styles.sellerNameOverlay} numberOfLines={1}>
+                                        {item.author?.firstName} {item.author?.lastName}
+                                    </Text>
+                                    {item.author?.verificationType && (
+                                        <VerifiedBadge size={16} />
+                                    )}
+                                </View>
                                 <Text style={styles.sellerNicknameOverlay} numberOfLines={1}>
                                     @{item.author?.username || 'usuario'}
                                 </Text>

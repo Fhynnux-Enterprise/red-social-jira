@@ -3,6 +3,8 @@ import { ObjectType, Field, ID } from '@nestjs/graphql';
 import { Post } from '../../posts/entities/post.entity';
 import { UserCustomField } from '../../users/entities/user-custom-field.entity';
 import { UserBadge } from '../../users/entities/user-badge.entity';
+import { VerificationType } from '../../users/entities/verification-type.entity';
+import { UserTier } from '../../users/entities/user-tier.entity';
 import { Comment } from '../../comments/entities/comment.entity';
 import { Participant } from '../../chat/entities/participant.entity';
 import { Message } from '../../chat/entities/message.entity';
@@ -109,6 +111,24 @@ export class User {
     @Field(() => UserBadge, { nullable: true })
     @OneToOne(() => UserBadge, badge => badge.user)
     badge: UserBadge;
+
+    @Field(() => String, { nullable: true })
+    @Column({ name: 'verification_type_id', nullable: true })
+    verificationTypeId?: string | null;
+
+    @Field(() => VerificationType, { nullable: true })
+    @ManyToOne(() => VerificationType, { eager: true, nullable: true })
+    @JoinColumn({ name: 'verification_type_id' })
+    verificationType?: VerificationType | null;
+
+    @Field(() => String, { nullable: true })
+    @Column({ name: 'tier_id', type: 'varchar', length: 50, nullable: true, default: 'STANDARD' })
+    tierId?: string | null;
+
+    @Field(() => UserTier, { nullable: true })
+    @ManyToOne(() => UserTier, { eager: true, nullable: true })
+    @JoinColumn({ name: 'tier_id' })
+    tier?: UserTier | null;
 
     @Field(() => [Comment], { nullable: true })
     @OneToMany(() => Comment, (comment) => comment.user)

@@ -79,6 +79,11 @@ export const GET_USER_PROFILE = gql`
         title
         theme
       }
+      verificationType {
+        id
+        name
+        iconUrl
+      }
       followersCount
       followingCount
       posts(limit: $limit, offset: $offset) {
@@ -129,6 +134,21 @@ export const GET_ME = gql`
       photoUrl
       coverUrl
       role
+      verificationType {
+        id
+        name
+        iconUrl
+      }
+      tier {
+        id
+        name
+        maxCarouselItems
+        maxVideos
+        maxVideoDuration
+        maxVideoQuality
+        maxVideoBitrateKbps
+        maxUploadSizeMb
+      }
     }
   }
 `;

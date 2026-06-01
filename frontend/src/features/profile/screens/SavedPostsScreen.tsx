@@ -235,7 +235,6 @@ export default function SavedPostsScreen() {
                     })()}
                     onClose={() => {
                         setSelectedPostForComments(null);
-                        refetch();
                     }}
                     onRefreshPost={refetch}
                     initialMinimized={selectedPostForComments.minimize}

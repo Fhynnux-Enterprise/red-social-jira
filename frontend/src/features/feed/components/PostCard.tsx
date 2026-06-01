@@ -13,6 +13,7 @@ import ImageCarousel from './ImageCarousel';
 import { Dimensions } from 'react-native';
 import ReportModal from '../../reports/components/ReportModal';
 import Toast from 'react-native-toast-message';
+import VerifiedBadge from '../../../components/VerifiedBadge';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_MARGIN = 4;
@@ -215,9 +216,14 @@ export default function PostCard({
                         </View>
                         {/* Name + Nickname */}
                         <View style={{ flex: 1 }}>
-                            <Text style={styles.authorName} numberOfLines={1}>
-                                {item.author?.firstName} {item.author?.lastName}
-                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Text style={styles.authorName} numberOfLines={1}>
+                                    {item.author?.firstName} {item.author?.lastName}
+                                </Text>
+                                {item.author?.verificationType && (
+                                    <VerifiedBadge size={16} />
+                                )}
+                            </View>
                             {item.author?.username && (
                                 <Text style={[styles.dateText, { opacity: 0.7 }]}>@{item.author.username}</Text>
                             )}
@@ -322,9 +328,14 @@ export default function PostCard({
                             )}
                         </View>
                         <View style={styles.overlayTextCol}>
-                            <Text style={styles.overlayAuthorName} numberOfLines={1}>
-                                {item.author?.firstName} {item.author?.lastName}
-                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Text style={styles.overlayAuthorName} numberOfLines={1}>
+                                    {item.author?.firstName} {item.author?.lastName}
+                                </Text>
+                                {item.author?.verificationType && (
+                                    <VerifiedBadge size={16} />
+                                )}
+                            </View>
                             {item.author?.username && (
                                 <Text style={styles.overlayNickname} numberOfLines={1}>
                                     @{item.author.username}

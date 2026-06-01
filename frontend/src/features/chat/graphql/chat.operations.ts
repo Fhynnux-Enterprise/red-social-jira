@@ -192,6 +192,11 @@ export const SEARCH_USERS = gql`
       badge {
         title
       }
+      verificationType {
+        id
+        name
+        iconUrl
+      }
     }
   }
 `;

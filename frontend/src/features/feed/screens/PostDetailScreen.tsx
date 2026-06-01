@@ -253,7 +253,6 @@ export default function PostDetailScreen() {
                     post={mappedPost}
                     onClose={() => {
                         setSelectedPostForComments(null);
-                        refetch();
                     }}
                     onRefreshPost={refetch}
                     initialMinimized={selectedPostForComments.minimize}

@@ -83,10 +83,61 @@ import { CitiesModule } from './cities/cities.module';
           ON CONFLICT ("id") DO NOTHING
         `);
 
-        // ── Paso 3: Eliminar tabla legada saved_posts si existe (reemplazada por saved_items) ──
+        // ── Paso 3: Crear tabla user_tiers si no existe (idempotente) ──────
+        await dataSource.query(`
+          CREATE TABLE IF NOT EXISTS "user_tiers" (
+            "id" VARCHAR(50) PRIMARY KEY,
+            "name" VARCHAR(100) NOT NULL,
+            "max_carousel_items" INT NOT NULL DEFAULT 10,
+            "max_videos" INT NOT NULL DEFAULT 3,
+            "max_video_duration" INT NOT NULL DEFAULT 60,
+            "max_video_quality" VARCHAR(50) NOT NULL DEFAULT '720p',
+            "max_video_bitrate_kbps" INT NOT NULL DEFAULT 3000,
+            "max_upload_size_mb" DOUBLE PRECISION NOT NULL DEFAULT 50.0,
+            "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          )
+        `);
+
+        // Garantizar que la columna exista si la tabla ya existía antes de la sincronización
+        await dataSource.query(`
+          ALTER TABLE "user_tiers" ADD COLUMN IF NOT EXISTS "max_video_bitrate_kbps" INT NOT NULL DEFAULT 3000;
+        `);
+
+        // ── Paso 4: Insertar rangos/niveles de usuario por defecto (idempotente) ──
+        await dataSource.query(`
+          INSERT INTO "user_tiers" ("id", "name", "max_carousel_items", "max_videos", "max_video_duration", "max_video_quality", "max_video_bitrate_kbps", "max_upload_size_mb", "created_at", "updated_at")
+          VALUES 
+            ('STANDARD', 'Estándar', 10, 3, 60, '720p', 3000, 50.0, NOW(), NOW()),
+            ('INTERMEDIATE', 'Creador', 15, 5, 180, '1080p', 5000, 100.0, NOW(), NOW()),
+            ('SUPERIOR', 'Premium', 25, 10, 600, '1080p_high', 8000, 500.0, NOW(), NOW())
+          ON CONFLICT ("id") DO NOTHING
+        `);
+
+        // ── Paso 5: Crear tabla verification_types si no existe (idempotente) ──
+        await dataSource.query(`
+          CREATE TABLE IF NOT EXISTS "verification_types" (
+            "id" VARCHAR(50) PRIMARY KEY,
+            "name" VARCHAR(100) NOT NULL,
+            "icon_url" VARCHAR(255),
+            "description" TEXT,
+            "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          )
+        `);
+
+        // ── Paso 6: Insertar tipos de verificación seed (idempotente) ──────
+        await dataSource.query(`
+          INSERT INTO "verification_types" ("id", "name", "description", "created_at", "updated_at")
+          VALUES 
+            ('STANDARD', 'Verificado Oficial', 'Cuenta verificada estándar para creadores y usuarios notables', NOW(), NOW())
+          ON CONFLICT ("id") DO NOTHING
+        `);
+
+        // ── Paso 7: Eliminar tabla legada saved_posts si existe (reemplazada por saved_items) ──
         await dataSource.query(`DROP TABLE IF EXISTS "saved_posts";`);
 
-        // ── Paso 4: Ahora sí ejecutar synchronize con FK garantizados ─────
+        // ── Paso 8: Ahora sí ejecutar synchronize con FK garantizados ─────
         await dataSource.synchronize();
 
         return dataSource;

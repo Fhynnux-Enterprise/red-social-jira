@@ -3,6 +3,9 @@ import { UseGuards, BadRequestException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UserCustomField } from './entities/user-custom-field.entity';
 import { UserBadge } from './entities/user-badge.entity';
+import { VerificationType } from './entities/verification-type.entity';
+import { UserTier } from './entities/user-tier.entity';
+import { CreateUserTierInput, UpdateUserTierInput } from './dto/user-tier.input';
 import { User } from '../auth/entities/user.entity';
 import { JwtGqlGuard } from '../auth/guards/jwt-gql.guard';
 import { GqlAuthGuard } from '../auth/guards/gql-auth.guard';
@@ -23,6 +26,18 @@ export class UsersResolver {
     private readonly postsService: PostsService,
     private readonly userBlocksService: UserBlocksService,
   ) { }
+
+  @ResolveField(() => VerificationType, { nullable: true })
+  async verificationType(@Parent() user: User): Promise<VerificationType | null> {
+    if (!user.verificationTypeId) return null;
+    return this.usersService.getVerificationTypeById(user.verificationTypeId);
+  }
+
+  @ResolveField(() => UserTier, { nullable: true })
+  async tier(@Parent() user: User): Promise<UserTier | null> {
+    if (!user.tierId) return null;
+    return this.usersService.getUserTierById(user.tierId);
+  }
 
   @ResolveField(() => Int)
   async followersCount(@Parent() user: User): Promise<number> {
@@ -214,5 +229,87 @@ export class UsersResolver {
     @Args('searchTerm', { type: () => String, nullable: true }) searchTerm?: string,
   ): Promise<User[]> {
     return this.usersService.getBannedUsers(limit, offset, searchTerm);
+  }
+
+  // ─── Verificación de Cuentas ──────────────────────────────────────────────
+
+  @Query(() => [VerificationType], { name: 'getVerificationTypes', description: 'Lista todos los tipos de verificación disponibles.' })
+  @UseGuards(JwtGqlGuard)
+  async getVerificationTypes(): Promise<VerificationType[]> {
+    return this.usersService.getVerificationTypes();
+  }
+
+  @Query(() => [User], { name: 'getVerifiedUsers', description: 'Lista todos los usuarios actualmente verificados.' })
+  @UseGuards(GqlAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR)
+  async getVerifiedUsers(
+    @Args('limit', { type: () => Int, nullable: true, defaultValue: 15 }) limit: number,
+    @Args('offset', { type: () => Int, nullable: true, defaultValue: 0 }) offset: number,
+    @Args('searchTerm', { type: () => String, nullable: true }) searchTerm?: string,
+  ): Promise<User[]> {
+    return this.usersService.getVerifiedUsers(limit, offset, searchTerm);
+  }
+
+  @Mutation(() => User, { name: 'verifyUser', description: 'Verifica a un usuario asignándole un rango de verificación.' })
+  @UseGuards(GqlAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR)
+  async verifyUser(
+    @Args('userId') userId: string,
+    @Args('verificationTypeId') verificationTypeId: string,
+  ): Promise<User> {
+    return this.usersService.verifyUser(userId, verificationTypeId);
+  }
+
+  @Mutation(() => User, { name: 'unverifyUser', description: 'Remueve la verificación de un usuario.' })
+  @UseGuards(GqlAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR)
+  async unverifyUser(
+    @Args('userId') userId: string,
+  ): Promise<User> {
+    return this.usersService.unverifyUser(userId);
+  }
+
+  // ── RANGOS Y LÍMITES DE USUARIO (USER TIERS) ──────────────────────────────
+
+  @Query(() => [UserTier], { name: 'getUserTiers', description: 'Lista todos los rangos de límites de publicación.' })
+  async getUserTiers(): Promise<UserTier[]> {
+    return this.usersService.getUserTiers();
+  }
+
+  @Mutation(() => UserTier, { name: 'createUserTier', description: 'Crea un nuevo rango con límites específicos.' })
+  @UseGuards(GqlAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async createUserTier(
+    @Args('input') input: CreateUserTierInput,
+  ): Promise<UserTier> {
+    return this.usersService.createUserTier(input);
+  }
+
+  @Mutation(() => UserTier, { name: 'updateUserTier', description: 'Actualiza los límites de un rango existente.' })
+  @UseGuards(GqlAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async updateUserTier(
+    @Args('input') input: UpdateUserTierInput,
+  ): Promise<UserTier> {
+    return this.usersService.updateUserTier(input);
+  }
+
+  @Mutation(() => Boolean, { name: 'deleteUserTier', description: 'Elimina un rango de límites.' })
+  @UseGuards(GqlAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async deleteUserTier(
+    @Args('id') id: string,
+  ): Promise<boolean> {
+    return this.usersService.deleteUserTier(id);
+  }
+
+  @Mutation(() => User, { name: 'assignUserTier', description: 'Asigna a un usuario un rango de límites específico.' })
+  @UseGuards(GqlAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR)
+  async assignUserTier(
+    @Args('userId') userId: string,
+    @Args('tierId') tierId: string,
+  ): Promise<User> {
+    return this.usersService.assignUserTier(userId, tierId);
   }
 }

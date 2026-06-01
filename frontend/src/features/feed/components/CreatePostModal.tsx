@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { Alert } from 'react-native';
 import { Video as Compressor } from 'react-native-compressor';
+import * as FileSystem from 'expo-file-system';
 import { CREATE_POST, UPDATE_POST, GET_POSTS, GET_FEED } from '../graphql/posts.operations';
 import { GET_ME } from '../../profile/graphql/profile.operations';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
@@ -136,8 +137,16 @@ export default function CreatePostModal({
         fetchPolicy: 'cache-only',
     });
     const currentUser = meData?.me;
+    const userLimits = currentUser?.tier || {
+        maxCarouselItems: 10,
+        maxVideos: 3,
+        maxVideoDuration: 60,
+        maxVideoQuality: '720p',
+        maxVideoBitrateKbps: 3000,
+        maxUploadSizeMb: 50.0
+    };
 
-    const [createPost, { loading: creating }] = useMutation(CREATE_POST, {
+    const [createPost, { loading: creating }] = useMutation<any, any>(CREATE_POST, {
         update(cache, { data }) {
             const newPost = data?.createPost;
             if (!newPost) return;
@@ -167,7 +176,7 @@ export default function CreatePostModal({
         },
     });
 
-    const [updatePost, { loading: updating }] = useMutation(UPDATE_POST, {
+    const [updatePost, { loading: updating }] = useMutation<any, any>(UPDATE_POST, {
         refetchQueries: [{ query: GET_POSTS, variables: { limit: 5, offset: 0 } }],
     });
 
@@ -181,9 +190,12 @@ export default function CreatePostModal({
                 let isValid = true;
                 let errorMessage = '';
 
-                if (type === 'video' && res.duration && res.duration > 60000) {
+                if (type === 'video' && res.duration && res.duration > userLimits.maxVideoDuration * 1000) {
                     isValid = false;
-                    errorMessage = 'Máx 1 minuto';
+                    const durationText = userLimits.maxVideoDuration >= 60 
+                        ? `${Math.floor(userLimits.maxVideoDuration / 60)} min` 
+                        : `${userLimits.maxVideoDuration}s`;
+                    errorMessage = `Máx ${durationText}`;
                 }
 
                 return {
@@ -204,13 +216,13 @@ export default function CreatePostModal({
             const validatedList = updatedTotal.map((item, index) => {
                 if (item.type === 'video') {
                     videoCount++;
-                    if (videoCount > 3) {
-                        return { ...item, isValid: false, errorMessage: 'Límite de videos' };
+                    if (videoCount > userLimits.maxVideos) {
+                        return { ...item, isValid: false, errorMessage: `Límite ${userLimits.maxVideos} videos` };
                     }
                 }
 
-                if (index >= 10) {
-                    return { ...item, isValid: false, errorMessage: 'Límite 10 archivos' };
+                if (index >= userLimits.maxCarouselItems) {
+                    return { ...item, isValid: false, errorMessage: `Límite ${userLimits.maxCarouselItems} archivos` };
                 }
 
                 return item;
@@ -285,15 +297,38 @@ export default function CreatePostModal({
                     if (media.type === 'video') {
                         const compInterval = startProgress('compressing');
                         try {
-                            finalUri = await Compressor.compress(media.uri, {
+                            let targetMaxSize = 720;
+                            if (userLimits.maxVideoQuality === '1080p' || userLimits.maxVideoQuality === '1080p_high') {
+                                targetMaxSize = 1080;
+                            }
+                            const targetBitrate = (userLimits.maxVideoBitrateKbps || 3000) * 1000;
+
+                            const compUri = await Compressor.compress(media.uri, {
                                 compressionMethod: 'manual',
-                                bitrate: 3000000, // 3.0 Mbps para nitidez y optimización de datos
-                                maxSize: 720      // Resolución óptima
+                                bitrate: targetBitrate,
+                                maxSize: targetMaxSize
                             });
-                            // El compresor siempre produce un MP4 — forzamos el tipo
-                            // para que el PUT a R2 use el Content-Type correcto y el
-                            // objeto sea reproducible en todos los dispositivos.
-                            finalMimeType = 'video/mp4';
+
+                            // Validar el archivo comprimido. Si es inválido/vacío, usar original
+                            try {
+                                const fileInfo = await FileSystem.getInfoAsync(compUri);
+                                if (fileInfo.exists && fileInfo.size > 0) {
+                                    finalUri = compUri;
+                                    finalMimeType = 'video/mp4';
+                                } else {
+                                    console.warn('[CreatePostModal] Video comprimido corrupto o vacío, usando original:', compUri);
+                                    finalUri = media.uri;
+                                    finalMimeType = media.mimeType;
+                                }
+                            } catch (fsErr) {
+                                console.warn('[CreatePostModal] Error validando video, usando original:', fsErr);
+                                finalUri = media.uri;
+                                finalMimeType = media.mimeType;
+                            }
+                        } catch (compressErr) {
+                            console.warn('[CreatePostModal] Error de compresión, usando original:', compressErr);
+                            finalUri = media.uri;
+                            finalMimeType = media.mimeType;
                         } finally {
                             clearInterval(compInterval);
                         }
@@ -709,6 +744,13 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         padding: 10,
+    },
+    invalidText: {
+        color: '#FFF',
+        fontSize: 11,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        marginTop: 4,
     },
     uploadOverlay: {
         ...StyleSheet.absoluteFillObject,

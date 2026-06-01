@@ -245,12 +245,16 @@ TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }: any
         } catch (err) {
             console.error('[Background Task] Error displaying Notifee notification:', err);
         }
-    } else if (msgData?.image || msgData?.authorAvatarUrl) {
+    } else if (msgData?.image || msgData?.authorAvatarUrl || msgData?.senderAvatar) {
         // Intercept global notifications with custom images/avatars
         const title = remoteMessage?.title || msgData?.title || 'FynnuX';
         const body = remoteMessage?.body || msgData?.body || '';
         const image = msgData?.image ? resolveMediaUrl(msgData.image) : undefined;
-        const authorAvatarUrl = msgData?.authorAvatarUrl ? resolveMediaUrl(msgData.authorAvatarUrl) : undefined;
+        const authorAvatarUrl = msgData?.authorAvatarUrl
+            ? resolveMediaUrl(msgData.authorAvatarUrl)
+            : msgData?.senderAvatar
+            ? resolveMediaUrl(msgData.senderAvatar)
+            : undefined;
 
         try {
             await notifee.createChannel({

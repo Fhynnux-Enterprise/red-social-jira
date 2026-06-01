@@ -1,4 +1,3 @@
-import * as ImageManipulator from 'expo-image-manipulator';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
@@ -18,6 +17,7 @@ import {
 import { GET_ME } from '../../profile/graphql/profile.operations';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { Video as Compressor } from 'react-native-compressor';
+import * as FileSystem from 'expo-file-system';
 import Toast from 'react-native-toast-message';
 import { customToastConfig } from '../../../components/CustomToast';
 
@@ -230,12 +230,18 @@ export default function CreateProductModal({ visible, onClose, editItem }: Props
         let uploadMimeType = m.mimeType;
         if (m.type === 'VIDEO') {
           try {
-            uploadUri = await Compressor.compress(m.uri, {
+            const compUri = await Compressor.compress(m.uri, {
               compressionMethod: 'manual',
               bitrate: 3000000,
               maxSize: 720,
             });
-            uploadMimeType = 'video/mp4';
+            const fileInfo = await FileSystem.getInfoAsync(compUri);
+            if (fileInfo.exists && fileInfo.size > 0) {
+              uploadUri = compUri;
+              uploadMimeType = 'video/mp4';
+            } else {
+              console.warn('[CreateProductModal] Video comprimido vacío o corrupto, usando original:', compUri);
+            }
           } catch (compErr) {
             console.warn('Compresión de video falló, usando original:', compErr);
           }

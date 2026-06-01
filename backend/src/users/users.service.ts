@@ -3,6 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
 import { UserCustomField } from './entities/user-custom-field.entity';
 import { UserBadge } from './entities/user-badge.entity';
+import { VerificationType } from './entities/verification-type.entity';
+import { UserTier } from './entities/user-tier.entity';
+import { CreateUserTierInput, UpdateUserTierInput } from './dto/user-tier.input';
 import { User } from '../auth/entities/user.entity';
 import { Comment } from '../comments/entities/comment.entity';
 import { Post } from '../posts/entities/post.entity';
@@ -22,8 +25,12 @@ export class UsersService {
     private readonly customFieldRepository: Repository<UserCustomField>,
     @InjectRepository(UserBadge)
     private readonly badgeRepository: Repository<UserBadge>,
+    @InjectRepository(VerificationType)
+    private readonly verificationTypeRepository: Repository<VerificationType>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(UserTier)
+    private readonly userTierRepository: Repository<UserTier>,
     private readonly notificationsService: NotificationsService,
   ) { }
 
@@ -289,5 +296,145 @@ export class UsersService {
       .take(limit)
       .skip(offset)
       .getMany();
+  }
+
+  async getVerificationTypes(): Promise<VerificationType[]> {
+    return this.verificationTypeRepository.find({ order: { name: 'ASC' } });
+  }
+
+  async getVerifiedUsers(limit: number = 15, offset: number = 0, searchTerm?: string): Promise<User[]> {
+    const query = this.userRepository
+      .createQueryBuilder('user')
+      .innerJoinAndSelect('user.verificationType', 'verificationType');
+
+    if (searchTerm) {
+      query.andWhere('(user.username ILIKE :term OR user.firstName ILIKE :term OR user.lastName ILIKE :term)', { term: `%${searchTerm}%` });
+    }
+
+    return query
+      .orderBy('user.username', 'ASC')
+      .take(limit)
+      .skip(offset)
+      .getMany();
+  }
+
+  async verifyUser(targetUserId: string, verificationTypeId: string): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id: targetUserId } });
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado');
+    }
+
+    const verificationType = await this.verificationTypeRepository.findOne({ where: { id: verificationTypeId } });
+    if (!verificationType) {
+      throw new BadRequestException('Tipo de verificación no encontrado');
+    }
+
+    user.verificationType = verificationType;
+    user.verificationTypeId = verificationTypeId;
+    const updatedUser = await this.userRepository.save(user);
+
+    try {
+      await this.notificationsService.createNotification(
+        targetUserId,
+        'Cuenta verificada',
+        `Tu cuenta ahora está verificada como: ${verificationType.name}`,
+        NotificationType.MODERATION
+      );
+    } catch (error) {
+      console.error('Error al enviar notificación de verificación:', error);
+    }
+
+    return updatedUser;
+  }
+
+  async unverifyUser(targetUserId: string): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id: targetUserId } });
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado');
+    }
+
+    user.verificationType = null;
+    user.verificationTypeId = null;
+    return this.userRepository.save(user);
+  }
+
+  async getVerificationTypeById(id: string): Promise<VerificationType | null> {
+    return this.verificationTypeRepository.findOne({ where: { id } });
+  }
+
+  // ── RANGOS Y LÍMITES (USER TIERS) ─────────────────────────────────────────
+
+  async getUserTiers(): Promise<UserTier[]> {
+    return this.userTierRepository.find({ order: { name: 'ASC' } });
+  }
+
+  async getUserTierById(id: string): Promise<UserTier | null> {
+    return this.userTierRepository.findOneBy({ id });
+  }
+
+  async createUserTier(input: CreateUserTierInput): Promise<UserTier> {
+    const existing = await this.userTierRepository.findOneBy({ id: input.id });
+    if (existing) {
+      throw new BadRequestException(`El rango con identificador '${input.id}' ya existe.`);
+    }
+
+    const tier = this.userTierRepository.create(input);
+    return this.userTierRepository.save(tier);
+  }
+
+  async updateUserTier(input: UpdateUserTierInput): Promise<UserTier> {
+    const tier = await this.userTierRepository.findOneBy({ id: input.id });
+    if (!tier) {
+      throw new BadRequestException(`El rango con identificador '${input.id}' no existe.`);
+    }
+
+    if (input.name !== undefined) tier.name = input.name;
+    if (input.maxCarouselItems !== undefined) tier.maxCarouselItems = input.maxCarouselItems;
+    if (input.maxVideos !== undefined) tier.maxVideos = input.maxVideos;
+    if (input.maxVideoDuration !== undefined) tier.maxVideoDuration = input.maxVideoDuration;
+    if (input.maxVideoQuality !== undefined) tier.maxVideoQuality = input.maxVideoQuality;
+    if (input.maxVideoBitrateKbps !== undefined) tier.maxVideoBitrateKbps = input.maxVideoBitrateKbps;
+    if (input.maxUploadSizeMb !== undefined) tier.maxUploadSizeMb = input.maxUploadSizeMb;
+
+    return this.userTierRepository.save(tier);
+  }
+
+  async deleteUserTier(id: string): Promise<boolean> {
+    if (id === 'STANDARD') {
+      throw new BadRequestException('No se puede eliminar el rango Estándar por defecto.');
+    }
+
+    const tier = await this.userTierRepository.findOneBy({ id });
+    if (!tier) {
+      throw new BadRequestException(`El rango con identificador '${id}' no existe.`);
+    }
+
+    await this.userRepository.update({ tierId: id }, { tierId: 'STANDARD' });
+    await this.userTierRepository.delete(id);
+    return true;
+  }
+
+  async assignUserTier(userId: string, tierId: string): Promise<User> {
+    const user = await this.userRepository.findOneBy({ id: userId });
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado.');
+    }
+
+    const tier = await this.userTierRepository.findOneBy({ id: tierId });
+    if (!tier) {
+      throw new BadRequestException('El rango especificado no existe.');
+    }
+
+    user.tierId = tierId;
+    await this.userRepository.save(user);
+
+    const updatedUser = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['verificationType', 'tier']
+    });
+    if (!updatedUser) {
+      throw new BadRequestException('Error al recuperar el usuario modificado.');
+    }
+    return updatedUser;
   }
 }

@@ -376,6 +376,11 @@ export const GET_LOCAL_AD_BY_ID = gql`
                 lastName
                 username
                 photoUrl
+                verificationType {
+                    id
+                    name
+                    iconUrl
+                }
             }
             media {
                 url
@@ -397,6 +402,166 @@ export const GET_CITIES = gql`
             id
             name
             isActive
+        }
+    }
+`;
+
+export const GET_VERIFIED_USERS = gql`
+    query GetVerifiedUsers($limit: Int, $offset: Int, $searchTerm: String) {
+        getVerifiedUsers(limit: $limit, offset: $offset, searchTerm: $searchTerm) {
+            id
+            firstName
+            lastName
+            username
+            photoUrl
+            verificationType {
+                id
+                name
+                iconUrl
+            }
+        }
+    }
+`;
+
+export const GET_VERIFICATION_TYPES = gql`
+    query GetVerificationTypes {
+        getVerificationTypes {
+            id
+            name
+            iconUrl
+        }
+    }
+`;
+
+export const VERIFY_USER = gql`
+    mutation VerifyUser($userId: String!, $verificationTypeId: String!) {
+        verifyUser(userId: $userId, verificationTypeId: $verificationTypeId) {
+            id
+            firstName
+            lastName
+            username
+            verificationType {
+                id
+                name
+                iconUrl
+            }
+        }
+    }
+`;
+
+export const UNVERIFY_USER = gql`
+    mutation UnverifyUser($userId: String!) {
+        unverifyUser(userId: $userId) {
+            id
+            firstName
+            lastName
+            username
+            verificationType {
+                id
+                name
+                iconUrl
+            }
+        }
+    }
+`;
+
+export const SEARCH_USERS_FOR_VERIFICATION = gql`
+    query SearchUsersForVerification($searchTerm: String!, $limit: Int, $offset: Int) {
+        searchUsers(searchTerm: $searchTerm, limit: $limit, offset: $offset) {
+            id
+            firstName
+            lastName
+            username
+            photoUrl
+            verificationType {
+                id
+                name
+                iconUrl
+            }
+            tier {
+                id
+                name
+                maxCarouselItems
+                maxVideos
+                maxVideoDuration
+                maxVideoQuality
+                maxVideoBitrateKbps
+                maxUploadSizeMb
+            }
+        }
+    }
+`;
+
+export const GET_USER_TIERS = gql`
+    query GetUserTiers {
+        getUserTiers {
+            id
+            name
+            maxCarouselItems
+            maxVideos
+            maxVideoDuration
+            maxVideoQuality
+            maxVideoBitrateKbps
+            maxUploadSizeMb
+            createdAt
+            updatedAt
+        }
+    }
+`;
+
+export const CREATE_USER_TIER = gql`
+    mutation CreateUserTier($input: CreateUserTierInput!) {
+        createUserTier(input: $input) {
+            id
+            name
+            maxCarouselItems
+            maxVideos
+            maxVideoDuration
+            maxVideoQuality
+            maxVideoBitrateKbps
+            maxUploadSizeMb
+        }
+    }
+`;
+
+export const UPDATE_USER_TIER = gql`
+    mutation UpdateUserTier($input: UpdateUserTierInput!) {
+        updateUserTier(input: $input) {
+            id
+            name
+            maxCarouselItems
+            maxVideos
+            maxVideoDuration
+            maxVideoQuality
+            maxVideoBitrateKbps
+            maxUploadSizeMb
+        }
+    }
+`;
+
+export const DELETE_USER_TIER = gql`
+    mutation DeleteUserTier($id: String!) {
+        deleteUserTier(id: $id)
+    }
+`;
+
+export const ASSIGN_USER_TIER = gql`
+    mutation AssignUserTier($userId: String!, $tierId: String!) {
+        assignUserTier(userId: $userId, tierId: $tierId) {
+            id
+            firstName
+            lastName
+            username
+            tier {
+                id
+                name
+                maxCarouselItems
+                maxVideos
+                maxVideoDuration
+                maxVideoQuality
+                maxVideoBitrateKbps
+                maxUploadSizeMb
+            }
         }
     }
 `;

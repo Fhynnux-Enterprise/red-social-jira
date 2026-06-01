@@ -31,21 +31,47 @@ export const useVideoCache = (url: string) => {
                 
                 const file = new File(Paths.cache, fileName);
 
-                if (file.exists) {
-                    // Si existe localmente, esta es nuestra fuente definitiva
+                if (file.exists && file.size > 0) {
+                    // Si existe localmente y no está vacío, esta es nuestra fuente definitiva
                     if (isMounted) setCachedSource(file.uri);
                 } else {
-                    // Si no existe, usamos la URL remota como fuente definitiva para esta sesión
+                    // Si el archivo existe pero está vacío o es corrupto, lo eliminamos
+                    if (file.exists) {
+                        try {
+                            await file.delete();
+                        } catch (e) {}
+                    }
+
+                    // Usamos la URL remota como fuente definitiva para esta sesión
                     if (isMounted) {
                         setCachedSource(url);
                         setIsCaching(true);
                     }
 
-                    // Descarga silenciosa en segundo plano (sin actualizar estado al finalizar)
-                    // Esto evita el stuttering y permite que en la siguiente carga ya esté en disco.
-                    await File.downloadFileAsync(url, file).catch(() => {
+                    // Descargamos a un archivo temporal primero para evitar que una descarga
+                    // interrumpida deje un archivo corrupto de 0 bytes en la caché final.
+                    const tempFile = new File(Paths.cache, `${fileName}.tmp`);
+                    if (tempFile.exists) {
+                        try {
+                            await tempFile.delete();
+                        } catch (e) {}
+                    }
+
+                    try {
+                        await File.downloadFileAsync(url, tempFile);
+                        if (tempFile.exists && tempFile.size > 0) {
+                            await tempFile.move(file);
+                        } else {
+                            if (tempFile.exists) await tempFile.delete();
+                        }
+                    } catch (err) {
                         /* Ignorar errores de descarga silenciosa */
-                    });
+                        if (tempFile.exists) {
+                            try {
+                                await tempFile.delete();
+                            } catch (e) {}
+                        }
+                    }
 
                     if (isMounted) setIsCaching(false);
                 }

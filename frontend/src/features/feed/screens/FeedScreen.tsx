@@ -823,7 +823,6 @@ export default function FeedScreen() {
                 })()}
                 onClose={() => {
                     setSelectedPostForComments(null);
-                    refetch();
                 }}
                 onRefreshPost={refetch}
                 onDelete={() => {

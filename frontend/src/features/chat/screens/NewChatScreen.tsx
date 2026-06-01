@@ -20,6 +20,7 @@ import { useTheme } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
 import { GET_FOLLOWING } from '../../follows/graphql/follows.operations';
 import { SEARCH_USERS, GET_OR_CREATE_CHAT } from '../graphql/chat.operations';
+import VerifiedBadge from '../../../components/VerifiedBadge';
 
 export default function NewChatScreen() {
     const { colors, isDark } = useTheme();
@@ -94,10 +95,13 @@ export default function NewChatScreen() {
                 )}
             </View>
             <View style={styles.userInfo}>
-                <View style={styles.nameRow}>
+                <View style={[styles.nameRow, { alignItems: 'center' }]}>
                     <Text style={[styles.userName, { color: colors.text }]}>
                         {item.firstName} {item.lastName}
                     </Text>
+                    {item.verificationType && (
+                        <VerifiedBadge size={14} />
+                    )}
                     {item.badge && (
                         <View style={[styles.badge, { backgroundColor: colors.primary }]}>
                             <Text style={styles.badgeText}>{item.badge.title}</Text>

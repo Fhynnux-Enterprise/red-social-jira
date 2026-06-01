@@ -13,6 +13,7 @@ import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import { useAuth } from '../../auth/context/AuthContext';
 import PostCard from '../../feed/components/PostCard';
 import CommentsModal from '../../comments/components/CommentsModal';
+import VerifiedBadge from '../../../components/VerifiedBadge';
 
 // ─── GraphQL ─────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,11 @@ const SEARCH_USERS = gql`
       lastName
       photoUrl
       bio
+      verificationType {
+        id
+        name
+        iconUrl
+      }
     }
   }
 `;
@@ -94,9 +100,14 @@ const UserRow = ({ user, colors }: { user: any; colors: ThemeColors }) => {
                 )}
             </View>
             <View style={styles.userInfo}>
-                <Text style={[styles.userName, { color: colors.text }]} numberOfLines={1}>
-                    {user.firstName} {user.lastName}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={[styles.userName, { color: colors.text }]} numberOfLines={1}>
+                        {user.firstName} {user.lastName}
+                    </Text>
+                    {user.verificationType && (
+                        <VerifiedBadge size={14} />
+                    )}
+                </View>
                 <Text style={[styles.userHandle, { color: colors.textSecondary }]} numberOfLines={1}>
                     @{user.username}
                     {user.bio ? `  ·  ${user.bio}` : ''}
@@ -373,7 +384,6 @@ export default function SearchScreen() {
                 })()}
                 onClose={() => {
                     setSelectedPostForComments(null);
-                    refetchPosts();
                 }} 
                 onRefreshPost={refetchPosts}
                 initialMinimized={selectedPostForComments?.minimize}

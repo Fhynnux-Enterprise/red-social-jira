@@ -19,6 +19,7 @@ import ReportModal from '../../reports/components/ReportModal';
 import CopyTextModal from '../../../components/CopyTextModal';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GenerateNotificationFromPostModal } from '../../feed/components/PostOptionsModal';
+import VerifiedBadge from '../../../components/VerifiedBadge';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -396,10 +397,15 @@ const StoreProductCard = React.forwardRef((props: any, ref: any) => {
                       <Text style={{ color: '#FFF', fontSize: 10 }}>{item.seller?.firstName?.[0]}</Text>
                     )}
                   </View>
-                  <View style={styles.sellerTextColumn}>
-                    <Text style={styles.sellerNameOverlay} numberOfLines={1}>
-                      {item.seller?.firstName} {item.seller?.lastName}
-                    </Text>
+                   <View style={styles.sellerTextColumn}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Text style={styles.sellerNameOverlay} numberOfLines={1}>
+                        {item.seller?.firstName} {item.seller?.lastName}
+                      </Text>
+                      {item.seller?.verificationType && (
+                        <VerifiedBadge size={16} />
+                      )}
+                    </View>
                     <Text style={styles.sellerNicknameOverlay} numberOfLines={1}>
                       @{item.seller?.username}
                     </Text>

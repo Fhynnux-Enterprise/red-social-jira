@@ -4,12 +4,18 @@ import Toast from 'react-native-toast-message';
 import { customToastConfig } from '../src/components/CustomToast';
 import { ThemeProvider } from '../src/theme/ThemeContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as SplashScreen from 'expo-splash-screen';
 
 import { MuteProvider } from '../src/contexts/MuteContext';
 import { ApolloProvider } from '@apollo/client/react';
 import { apolloClient } from '../src/api/apollo.client';
 import { AuthProvider } from '../src/features/auth/context/AuthContext';
 import notifee, { EventType } from '@notifee/react-native';
+
+// Prevent the native splash screen from hiding automatically
+SplashScreen.preventAutoHideAsync().catch((err) => {
+  console.warn('[SplashScreen] preventAutoHideAsync error:', err);
+});
 
 // Import background task registry to initialize on startup
 import '../src/hooks/useChatBackgroundHandler';

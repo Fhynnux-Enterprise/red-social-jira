@@ -14,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { Video as Compressor } from 'react-native-compressor';
+import * as FileSystem from 'expo-file-system';
 import Toast from 'react-native-toast-message';
 import { customToastConfig } from '../../../components/CustomToast';
 import { CREATE_JOB_OFFER, UPDATE_JOB_OFFER, UPSERT_PROFESSIONAL_PROFILE, UPDATE_PROFESSIONAL_PROFILE, GET_JOB_OFFERS, GET_PROFESSIONALS, GET_MY_JOB_OFFERS } from '../graphql/jobs.operations';
@@ -421,15 +422,18 @@ export default function CreateJobScreen() {
                     if (media.type === 'video') {
                         const compInterval = startProgress('compressing');
                         try {
-                            finalUri = await Compressor.compress(media.uri, {
+                            const compUri = await Compressor.compress(media.uri, {
                                 compressionMethod: 'manual',
                                 bitrate: 3000000,
                                 maxSize: 720
                             });
-                            // El compresor siempre produce un MP4 — forzamos el tipo
-                            // para que el PUT a R2 use el Content-Type correcto y el
-                            // objeto sea reproducible en todos los dispositivos.
-                            finalMimeType = 'video/mp4';
+                            const fileInfo = await FileSystem.getInfoAsync(compUri);
+                            if (fileInfo.exists && fileInfo.size > 0) {
+                                finalUri = compUri;
+                                finalMimeType = 'video/mp4';
+                            } else {
+                                console.warn('[CreateJobScreen] Video comprimido vacío o corrupto, usando original:', compUri);
+                            }
                         } catch (compError) {
                             console.warn('Compresión falló, usando video original:', compError);
                             // Si la compresión falla, usar el video original sin comprimir

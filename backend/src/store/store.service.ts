@@ -199,6 +199,8 @@ export class StoreService {
       const payload = {
         type: 'STORE_DETAIL',
         postId: fullyLoadedProduct.id,
+        image: fullyLoadedProduct.media?.[0]?.url || null,
+        authorAvatarUrl: likerUser?.photoUrl || null,
         senderAvatar: likerUser?.photoUrl || null,
         senderName: likerName
       };
@@ -229,7 +231,10 @@ export class StoreService {
   }
 
   async createComment(productId: string, userId: string, content: string, cityId: string, parentId?: string): Promise<StoreProductComment> {
-    const product = await this.productRepo.findOne({ where: { id: productId } });
+    const product = await this.productRepo.findOne({
+      where: { id: productId },
+      relations: ['media'],   // ← cargar media para obtener la imagen del producto
+    });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
     const comment = this.commentRepo.create({ storeProductId: productId, userId, content, parentId, cityId });
@@ -245,9 +250,15 @@ export class StoreService {
       const commenterName = result?.user ? `${result.user.firstName} ${result.user.lastName}`.trim() : 'Un usuario';
       const title = commenterName ? `${commenterName} comentó en tu producto` : '¡Nuevo comentario en tu producto!';
       const body = content.length > 40 ? `${content.substring(0, 40)}...` : content;
+
+      // Imagen del producto: primer media de tipo imagen
+      const productImage = product.media?.find(m => m.type === 'IMAGE')?.url || null;
+
       const payload = {
         type: 'STORE_DETAIL',
         postId: product.id,
+        image: productImage,
+        authorAvatarUrl: result?.user?.photoUrl || null,
         senderAvatar: result?.user?.photoUrl || null,
         senderName: commenterName
       };

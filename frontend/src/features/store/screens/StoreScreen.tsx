@@ -583,7 +583,6 @@ export default function StoreScreen() {
         post={commentsModalData.post}
         onClose={() => {
             setSelectedPostForComments(null);
-            handleRefreshStore();
         }}
         onRefreshPost={handleRefreshStore}
         initialMinimized={selectedPostForComments?.minimize ?? false}

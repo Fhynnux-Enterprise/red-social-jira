@@ -22,6 +22,11 @@ export const GET_STORE_PRODUCTS = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url
@@ -63,6 +68,11 @@ export const GET_MY_STORE_PRODUCTS = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url
@@ -104,6 +114,11 @@ export const CREATE_STORE_PRODUCT = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url
@@ -145,6 +160,11 @@ export const UPDATE_STORE_PRODUCT = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url
@@ -185,6 +205,11 @@ export const GET_STORE_PRODUCTS_BY_USER = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url
@@ -338,6 +363,11 @@ export const GET_STORE_PRODUCT_BY_ID = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url

@@ -24,6 +24,7 @@ import {
 import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GenerateNotificationFromPostModal } from '../../feed/components/PostOptionsModal';
+import VerifiedBadge from '../../../components/VerifiedBadge';
 
 interface ProfessionalCardProps {
     item: any;
@@ -317,9 +318,16 @@ export default function ProfessionalCard({
                                     )}
                                 </View>
                                 <View style={styles.overlayTextCol}>
-                                    <Text style={styles.overlayAuthorName} numberOfLines={1}>
-                                        {`${item.user?.firstName ?? ''} ${item.user?.lastName ?? ''}`.trim() || 'Usuario'}
-                                    </Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <Text style={styles.overlayAuthorName} numberOfLines={1}>
+                                            {`${item.user?.firstName ?? ''} ${item.user?.lastName ?? ''}`.trim() || 'Usuario'}
+                                        </Text>
+                                        {item.user?.verificationType && (
+                                            <VerifiedBadge 
+                                                size={16} 
+                                            />
+                                        )}
+                                    </View>
                                     {item.user?.username && (
                                         <Text style={styles.overlayNickname} numberOfLines={1}>
                                             @{item.user.username}
@@ -399,9 +407,16 @@ export default function ProfessionalCard({
                                     )}
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.authorName} numberOfLines={1}>
-                                        {`${item.user?.firstName ?? ''} ${item.user?.lastName ?? ''}`.trim() || 'Usuario'}
-                                    </Text>
+                                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                         <Text style={styles.authorName} numberOfLines={1}>
+                                             {`${item.user?.firstName ?? ''} ${item.user?.lastName ?? ''}`.trim() || 'Usuario'}
+                                         </Text>
+                                         {item.user?.verificationType && (
+                                             <VerifiedBadge 
+                                                 size={16} 
+                                             />
+                                         )}
+                                     </View>
                                     {item.user?.username && (
                                         <Text style={styles.nicknameText}>@{item.user.username}</Text>
                                     )}

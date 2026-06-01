@@ -16,6 +16,11 @@ const ADVERTISER_PERMISSION_FIELDS = gql`
       lastName
       photoUrl
       email
+      verificationType {
+        id
+        name
+        iconUrl
+      }
     }
   }
 `;
@@ -39,6 +44,11 @@ const LOCAL_AD_FIELDS = gql`
       firstName
       lastName
       photoUrl
+      verificationType {
+        id
+        name
+        iconUrl
+      }
     }
     media {
       id

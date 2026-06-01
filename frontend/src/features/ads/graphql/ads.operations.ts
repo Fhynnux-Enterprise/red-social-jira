@@ -17,6 +17,11 @@ export const GET_NEXT_AD = gql`
           lastName
           username
           photoUrl
+          verificationType {
+            id
+            name
+            iconUrl
+          }
         }
         media {
           id

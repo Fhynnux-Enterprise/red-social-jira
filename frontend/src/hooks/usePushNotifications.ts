@@ -164,7 +164,7 @@ export const usePushNotifications = (isAuthenticated: boolean) => {
                         trigger: null,
                     }).catch(err => console.error('Error al programar notificación local en primer plano:', err));
                 }
-            } else if (!isLocal && (data?.image || data?.authorAvatarUrl)) {
+            } else if (!isLocal && (data?.image || data?.authorAvatarUrl || data?.senderAvatar)) {
                 try {
                     await notifee.createChannel({
                         id: 'global-notifications',
@@ -180,7 +180,11 @@ export const usePushNotifications = (isAuthenticated: boolean) => {
                     };
 
                     const resolvedImage = data.image ? resolveMediaUrl(data.image) : undefined;
-                    const resolvedAvatar = data.authorAvatarUrl ? resolveMediaUrl(data.authorAvatarUrl) : undefined;
+                    const resolvedAvatar = data.authorAvatarUrl
+                        ? resolveMediaUrl(data.authorAvatarUrl)
+                        : data.senderAvatar
+                        ? resolveMediaUrl(data.senderAvatar)
+                        : undefined;
 
                     if (resolvedAvatar) {
                         androidConfig.largeIcon = resolvedAvatar;

@@ -1,13 +1,13 @@
-import React from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import React, { useEffect } from 'react';
+import { View } from 'react-native';
 import AuthNavigator from '../src/navigation/AuthNavigator';
 import AppNavigator from '../src/navigation/AppNavigator';
 import { useAuth } from '../src/features/auth/context/AuthContext';
 import { useTheme } from '../src/theme/ThemeContext';
-import { colors as baseColors } from '../src/theme/colors';
 import { StatusBar } from 'expo-status-bar';
 import { usePresencePing } from '../src/hooks/usePresencePing';
 import { usePushNotifications } from '../src/hooks/usePushNotifications';
+import * as SplashScreen from 'expo-splash-screen';
 
 export default function RootNavigator() {
     const { userToken, isLoading } = useAuth();
@@ -16,11 +16,20 @@ export default function RootNavigator() {
     usePresencePing(!!userToken);
     usePushNotifications(!!userToken);
 
+    useEffect(() => {
+        if (!isLoading) {
+            // Ocultar el splash screen nativo inmediatamente en cuanto React Native esté listo y cargado
+            SplashScreen.hideAsync().catch((err) => {
+                console.warn('[SplashScreen] Error al ocultar el splash nativo:', err);
+            });
+        }
+    }, [isLoading]);
+
     if (isLoading) {
+        // Retornamos una vista vacía. El Splash Nativo (con el logo de Chunchi en el centro
+        // y el "Powered by FynnuX" abajo de forma nativa) se mantendrá visible arriba de ella.
         return (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
-                <ActivityIndicator size="large" color={baseColors.primary} />
-            </View>
+            <View style={{ flex: 1, backgroundColor: colors.background }} />
         );
     }
 
@@ -31,4 +40,6 @@ export default function RootNavigator() {
         </>
     );
 }
+
+
 

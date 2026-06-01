@@ -32,6 +32,11 @@ export const GET_POSTS = gql`
                 lastName
                 username
                 photoUrl
+                verificationType {
+                    id
+                    name
+                    iconUrl
+                }
             }
         }
     }
@@ -69,6 +74,11 @@ export const CREATE_POST = gql`
                 lastName
                 username
                 photoUrl
+                verificationType {
+                    id
+                    name
+                    iconUrl
+                }
             }
         }
     }
@@ -97,6 +107,11 @@ export const UPDATE_POST = gql`
                 lastName
                 username
                 photoUrl
+                verificationType {
+                    id
+                    name
+                    iconUrl
+                }
             }
         }
     }
@@ -160,6 +175,11 @@ export const GET_FEED = gql`
                     lastName
                     username
                     photoUrl
+                    verificationType {
+                        id
+                        name
+                        iconUrl
+                    }
                 }
             }
             ... on JobOffer {
@@ -183,6 +203,11 @@ export const GET_FEED = gql`
                     lastName
                     username
                     photoUrl
+                    verificationType {
+                        id
+                        name
+                        iconUrl
+                    }
                 }
             }
             ... on ProfessionalProfile {
@@ -205,6 +230,11 @@ export const GET_FEED = gql`
                     lastName
                     username
                     photoUrl
+                    verificationType {
+                        id
+                        name
+                        iconUrl
+                    }
                 }
             }
             ... on StoreProduct {
@@ -243,6 +273,11 @@ export const GET_FEED = gql`
                     lastName
                     username
                     photoUrl
+                    verificationType {
+                        id
+                        name
+                        iconUrl
+                    }
                 }
             }
         }
@@ -279,6 +314,11 @@ export const GET_SAVED_POSTS = gql`
                     lastName
                     username
                     photoUrl
+                    verificationType {
+                        id
+                        name
+                        iconUrl
+                    }
                 }
             }
             ... on JobOffer {
@@ -302,6 +342,11 @@ export const GET_SAVED_POSTS = gql`
                     lastName
                     username
                     photoUrl
+                    verificationType {
+                        id
+                        name
+                        iconUrl
+                    }
                 }
             }
             ... on ProfessionalProfile {
@@ -392,6 +437,11 @@ export const GET_LIKED_POSTS = gql`
                     lastName
                     username
                     photoUrl
+                    verificationType {
+                        id
+                        name
+                        iconUrl
+                    }
                 }
                 likes {
                     id
@@ -436,6 +486,11 @@ export const GET_LIKED_POSTS = gql`
                     lastName
                     username
                     photoUrl
+                    verificationType {
+                        id
+                        name
+                        iconUrl
+                    }
                 }
             }
         }
@@ -474,6 +529,11 @@ export const GET_POST_BY_ID = gql`
                 lastName
                 username
                 photoUrl
+                verificationType {
+                    id
+                    name
+                    iconUrl
+                }
             }
         }
     }

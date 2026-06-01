@@ -17,6 +17,11 @@ export const GET_JOB_OFFERS = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url
@@ -43,6 +48,11 @@ export const GET_PROFESSIONALS = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url
@@ -70,6 +80,11 @@ export const CREATE_JOB_OFFER = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url
@@ -96,6 +111,11 @@ export const UPSERT_PROFESSIONAL_PROFILE = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url
@@ -173,12 +193,17 @@ export const GET_MY_APPLICATIONS = gql`
         contactPhone
         createdAt
         author {
+        id
+        username
+        firstName
+        lastName
+        photoUrl
+        verificationType {
           id
-          username
-          firstName
-          lastName
-          photoUrl
+          name
+          iconUrl
         }
+      }
         media {
           url
           type
@@ -241,6 +266,11 @@ export const GET_JOB_OFFERS_BY_USER = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url
@@ -267,6 +297,11 @@ export const GET_PROFESSIONAL_PROFILES_BY_USER = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url
@@ -294,6 +329,11 @@ export const GET_MY_JOB_OFFERS = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url
@@ -320,6 +360,11 @@ export const GET_MY_PROFESSIONAL_PROFILE = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url
@@ -347,6 +392,11 @@ export const UPDATE_JOB_OFFER = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url
@@ -385,6 +435,11 @@ export const UPDATE_PROFESSIONAL_PROFILE = gql`
         firstName
         lastName
         photoUrl
+        verificationType {
+          id
+          name
+          iconUrl
+        }
       }
       media {
         url

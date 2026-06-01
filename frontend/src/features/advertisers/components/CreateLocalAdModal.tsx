@@ -11,6 +11,7 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import { useMutation, useApolloClient } from '@apollo/client/react';
 import Toast from 'react-native-toast-message';
 import { Video as Compressor } from 'react-native-compressor';
+import * as FileSystem from 'expo-file-system';
 import { useTheme } from '../../../theme/ThemeContext';
 import { useMediaUpload } from '../../storage/hooks/useMediaUpload';
 import { CREATE_LOCAL_AD, UPDATE_LOCAL_AD, GET_MY_ADS } from '../graphql/advertisers.operations';
@@ -225,9 +226,17 @@ export default function CreateLocalAdModal({ visible, onClose, onSuccess, ad }: 
                         if (media.type === 'video') {
                             setStatus('compressing', 30);
                             try {
-                                finalUri = await Compressor.compress(media.uri, { compressionMethod: 'manual', bitrate: 3000000, maxSize: 720 });
-                                finalMime = 'video/mp4';
-                            } catch { /* usar original */ }
+                                const compUri = await Compressor.compress(media.uri, { compressionMethod: 'manual', bitrate: 3000000, maxSize: 720 });
+                                const fileInfo = await FileSystem.getInfoAsync(compUri);
+                                if (fileInfo.exists && fileInfo.size > 0) {
+                                    finalUri = compUri;
+                                    finalMime = 'video/mp4';
+                                } else {
+                                    console.warn('[CreateLocalAdModal] Video comprimido vacío o corrupto, usando original:', compUri);
+                                }
+                            } catch (err) {
+                                console.warn('[CreateLocalAdModal] Error de compresión, usando original:', err);
+                            }
                         }
 
                         setStatus('uploading', 60);

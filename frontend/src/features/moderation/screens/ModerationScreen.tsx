@@ -20,6 +20,7 @@ import CommentsModal from '../../comments/components/CommentsModal';
 import NativeAdCard from '../../ads/components/NativeAdCard';
 import BanUserModal from '../components/BanUserModal';
 
+
 const STATUS_LABEL: Record<string, string> = {
     PENDING: 'Pendiente',
     RESOLVED: 'Resuelto',
@@ -283,7 +284,6 @@ export default function ModerationScreen() {
             Alert.alert('Error', err.message || 'No se pudo resolver la apelación.');
         },
     });
-
 
     const [getPost] = useLazyQuery(GET_POST_BY_ID);
     const [getProduct] = useLazyQuery(GET_STORE_PRODUCT_BY_ID);

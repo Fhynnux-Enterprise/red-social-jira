@@ -34,6 +34,7 @@ import ProfileBio from '../components/ProfileBio';
 import BanUserModal from '../../moderation/components/BanUserModal';
 import { GET_OR_CREATE_CHAT } from '../../chat/graphql/chat.operations';
 import BlockedUsersModal from '../../user-blocks/components/BlockedUsersModal';
+import VerifiedBadge from '../../../components/VerifiedBadge';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ProfileHeader — Componente memoizado separado del screen principal.
@@ -126,7 +127,12 @@ const ProfileHeader = memo(({
                         )}
                     </View>
                 </View>
-                <Text style={headerStyles.fullName}>{userData?.firstName} {userData?.lastName}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={headerStyles.fullName}>{userData?.firstName} {userData?.lastName}</Text>
+                    {userData?.verificationType && (
+                        <VerifiedBadge size={22} style={{ marginTop: 4 }} />
+                    )}
+                </View>
                 <Text style={headerStyles.username}>@{userData?.username}</Text>
                 {userData?.badge?.title && (
                     <View style={headerStyles.badgeContainer}>
@@ -1488,7 +1494,6 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 prevPost={commentsModalData.prevPost}
                 onClose={() => {
                     setSelectedPostForComments(null);
-                    onRefresh();
                 }}
                 onRefreshPost={onRefresh}
                 initialMinimized={selectedPostForComments?.minimize}
@@ -1664,7 +1669,7 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         borderWidth: 1, borderColor: colors.border,
     },
     avatarPlaceholderText: { color: colors.textSecondary, fontSize: 38, fontWeight: '500', textTransform: 'uppercase' },
-    fullName: { fontSize: 22, fontWeight: '800', color: colors.text, marginBottom: 2, textAlign: 'center' },
+    fullName: { fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: 2, textAlign: 'center' },
     username: { fontSize: 14, color: colors.textSecondary, marginBottom: 12, textAlign: 'center' },
     badgeContainer: {
         alignSelf: 'center', paddingVertical: 3, paddingHorizontal: 10,

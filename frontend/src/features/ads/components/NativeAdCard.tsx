@@ -29,11 +29,13 @@ import { useTheme } from '../../../theme/ThemeContext';
 import { GET_NEXT_AD, REGISTER_AD_CLICK } from '../graphql/ads.operations';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../auth/context/AuthContext';
+import { useNavigation } from '@react-navigation/native';
 import CreateLocalAdModal from '../../advertisers/components/CreateLocalAdModal';
 import ConfirmModal from '../../../components/ConfirmModal';
 import ReportModal from '../../reports/components/ReportModal';
 import { DELETE_LOCAL_AD } from '../../advertisers/graphql/advertisers.operations';
 import { GenerateNotificationFromPostModal } from '../../feed/components/PostOptionsModal';
+import VerifiedBadge from '../../../components/VerifiedBadge';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -101,7 +103,7 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
     // Posición acumulada del area de media para el overlay de gestos
     const headerHeightRef = useRef(0);
 
-    const { data, loading: queryLoading, error: queryError } = useQuery(GET_NEXT_AD, {
+    const { data, loading: queryLoading, error: queryError } = useQuery<any, any>(GET_NEXT_AD, {
       fetchPolicy: 'network-only',
       skip: !!adData?.type || !!adData?.title, // No buscar si ya tenemos un tipo o datos reales cacheados
     });
@@ -172,13 +174,20 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
             cache.modify({
                 id: cache.identify({ __typename: 'User', id: currentAdData?.advertiser?.id }),
                 fields: {
-                    followersCount(existingCount = 0) {
-                        return newValue ? existingCount + 1 : Math.max(0, existingCount - 1);
-                    }
-                }
+                    isFollowing: () => newValue,
+                },
             });
         },
     });
+
+    const navigation = useNavigation();
+
+    const goToProfile = useCallback(() => {
+      const advertiser = currentAdData?.advertiser;
+      if (!advertiser?.id) return;
+      const profileUserId = advertiser.id === user?.id ? undefined : advertiser.id;
+      (navigation as any).navigate('Profile', { userId: profileUserId });
+    }, [currentAdData?.advertiser, user?.id, navigation]);
 
     // IMPORTANTE: NO poner 'return null' aquí — viola la regla de hooks de React
     // ya que useCallback y useEffect vienen después. El isDeleted se maneja en el JSX.
@@ -192,7 +201,7 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
         const ad = await NativeAd.createForAdRequest(AD_UNIT_ID, {
           requestNonPersonalizedAdsOnly: true,
           testDeviceIdentifiers: ['81410015-f9f0-4277-aa89-b341cca036c8'],
-        });
+        } as any);
         nativeAdRef.current = ad;
         setNativeAd(ad);
       } catch (error) {
@@ -609,17 +618,30 @@ const NativeAdCard = React.forwardRef<NativeAdCardRef, NativeAdCardProps>(
 
               {/* Overlay de Autor (Anunciante) */}
               <View style={styles.sellerOverlay}>
-                <View style={styles.avatarMiniOverlay}>
-                  {advertiser?.photoUrl ? (
-                    <Image source={{ uri: advertiser.photoUrl }} style={styles.avatarImg} />
-                  ) : (
-                    <Ionicons name="megaphone" size={14} color="#FFF" />
-                  )}
-                </View>
-                <View style={styles.sellerTextColumn}>
-                  <Text style={styles.sellerNameOverlay} numberOfLines={1}>{displayName}</Text>
-                  <Text style={styles.sellerNicknameOverlay} numberOfLines={1}>@{advertiser?.username || 'anunciante'}</Text>
-                </View>
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                  onPress={goToProfile}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.avatarMiniOverlay}>
+                    {advertiser?.photoUrl ? (
+                      <Image source={{ uri: advertiser.photoUrl }} style={styles.avatarImg} />
+                    ) : (
+                      <Ionicons name="megaphone" size={14} color="#FFF" />
+                    )}
+                  </View>
+                  <View style={styles.sellerTextColumn}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Text style={styles.sellerNameOverlay} numberOfLines={1}>{displayName}</Text>
+                      {advertiser?.verificationType && (
+                        <VerifiedBadge 
+                          size={16} 
+                        />
+                      )}
+                    </View>
+                    <Text style={styles.sellerNicknameOverlay} numberOfLines={1}>@{advertiser?.username || 'anunciante'}</Text>
+                  </View>
+                </TouchableOpacity>
 
                 {!isOwner && !isFollowing && (
                   <>
