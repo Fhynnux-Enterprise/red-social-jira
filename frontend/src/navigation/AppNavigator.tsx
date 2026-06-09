@@ -98,19 +98,19 @@ function MainTabNavigator() {
                 headerShown: false,
                 tabBarIcon: ({ focused, color, size }) => {
                     let iconName: keyof typeof Ionicons.glyphMap = 'home';
-
                      if (route.name === 'Feed') {
                         iconName = focused ? 'home' : 'home-outline';
                     } else if (route.name === 'Jobs') {
-                        iconName = focused ? 'briefcase' : 'briefcase-outline';
+                        iconName = focused ? 'business' : 'business-outline';
                     } else if (route.name === 'Store') {
-                        iconName = focused ? 'storefront' : 'storefront-outline';
+                        iconName = focused ? 'pricetags' : 'pricetags-outline';
                     } else if (route.name === 'ChatList') {
-                        iconName = focused ? 'chatbubble-ellipses' : 'chatbubble-outline';
+                        iconName = focused ? 'paper-plane' : 'paper-plane-outline';
                     } else if (route.name === 'Notifications') {
                         iconName = focused ? 'notifications' : 'notifications-outline';
                     } else if (route.name === 'Profile') {
-                        if (user?.photoUrl) {
+                        const initials = user ? `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || user.username?.[0]?.toUpperCase() || 'U' : 'U';
+                         if (user?.photoUrl) {
                             return (
                                 <View style={[
                                     styles.profileIconWrap, 
@@ -123,14 +123,46 @@ function MainTabNavigator() {
                                 </View>
                             );
                         }
-                        iconName = focused ? 'person' : 'person-outline';
+
+                        if (focused) {
+                            return (
+                                <View style={[
+                                    styles.profileIconWrap,
+                                    { borderWidth: 0 }
+                                ]}>
+                                    <LinearGradient
+                                        colors={[colors.primary, colors.secondary, colors.accent]}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 1 }}
+                                        style={StyleSheet.absoluteFillObject}
+                                    />
+                                    <Text style={[styles.profileInitials, { color: '#FFFFFF' }]}>
+                                        {initials}
+                                    </Text>
+                                </View>
+                            );
+                        }
+
+                        return (
+                            <View style={[
+                                styles.profileIconWrap,
+                                { 
+                                    borderColor: colors.border, 
+                                    backgroundColor: isDark ? 'rgba(255, 101, 36, 0.15)' : 'rgba(255, 101, 36, 0.08)' 
+                                }
+                            ]}>
+                                <Text style={[styles.profileInitials, { color: colors.textSecondary }]}>
+                                    {initials}
+                                </Text>
+                            </View>
+                        );
                     }
 
                     const icon = <Ionicons name={iconName} size={24} color={focused ? 'white' : color} />;
 
                     if (focused) {
-                        const gradientColors = [colors.primary, colors.secondary, colors.accent];
-                        const locations = [0, 0.95, 1];
+                        const gradientColors: [string, string, string] = [colors.primary, colors.secondary, colors.accent];
+                        const locations: [number, number, number] = [0, 0.95, 1];
 
                         return (
                             <MaskedView maskElement={<View style={styles.iconCenterer}>{icon}</View>}>
@@ -155,8 +187,8 @@ function MainTabNavigator() {
                     );
 
                     if (focused) {
-                        const labelGradientColors = [colors.primary, colors.secondary, colors.accent];
-                        const labelLocations = [0, 0.95, 1];
+                        const labelGradientColors: [string, string, string] = [colors.primary, colors.secondary, colors.accent];
+                        const labelLocations: [number, number, number] = [0, 0.95, 1];
 
                         return (
                             <MaskedView maskElement={<View style={styles.labelMaskContainer}>{label}</View>}>
@@ -330,7 +362,7 @@ const styles = StyleSheet.create({
     profileIconWrap: {
         width: 44,
         height: 44,
-        borderRadius: 30,
+        borderRadius: 22,
         borderWidth: 2,
         overflow: 'hidden',
         justifyContent: 'center',
@@ -341,5 +373,10 @@ const styles = StyleSheet.create({
     profileTabImage: {
         width: '100%',
         height: '100%',
+    },
+    profileInitials: {
+        fontSize: 15,
+        fontWeight: 'bold',
+        textAlign: 'center',
     }
 });

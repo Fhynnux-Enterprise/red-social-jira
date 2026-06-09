@@ -663,11 +663,4 @@ const styles = StyleSheet.create({
   },
   pickerItemName: { flex: 1, fontSize: 15, fontWeight: '600' },
   pickerItemCode: { fontSize: 14 },
-  counter: {
-    fontSize: 10,
-    textAlign: 'right',
-    marginTop: -14,
-    marginBottom: 10,
-    fontWeight: '600',
-  },
 });

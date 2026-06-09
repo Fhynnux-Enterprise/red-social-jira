@@ -1,6 +1,6 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Notification } from './entities/notification.entity';
 import { DeviceToken } from './entities/device-token.entity';
 import { User } from '../auth/entities/user.entity';
@@ -39,6 +39,20 @@ export class NotificationsService {
 
     async createNotification(userId: string, title: string, message: string, type: NotificationType, data?: string): Promise<Notification | null> {
         try {
+            // Validar preferencias del usuario antes de crear e inyectar en BD
+            const user = await this.userRepository.findOne({ where: { id: userId } });
+            if (user) {
+                if (type === NotificationType.SYSTEM && !user.receiveSystemNotifications) {
+                    return null;
+                }
+                if (type === NotificationType.MODERATION && !user.receiveModerationNotifications) {
+                    return null;
+                }
+                if (type === NotificationType.SOCIAL && !user.receiveSocialNotifications) {
+                    return null;
+                }
+            }
+
             const notification = this.notificationRepository.create({
                 userId,
                 title,
@@ -99,6 +113,10 @@ export class NotificationsService {
                 return false;
             }
 
+            // Verificamos si es el primer token del usuario en toda su historia ANTES de hacer cambios
+            const existingTokensCount = await this.deviceTokenRepository.count({ where: { userId } });
+            const isFirstLogin = existingTokensCount === 0;
+
             let deviceToken = await this.deviceTokenRepository.findOne({ where: { token } });
 
             if (deviceToken) {
@@ -112,6 +130,7 @@ export class NotificationsService {
                 await this.deviceTokenRepository.save(deviceToken);
             } else {
                 console.log(`[NotificationsService] Creando nuevo registro de token.`);
+
                 deviceToken = this.deviceTokenRepository.create({
                     token,
                     userId,
@@ -119,6 +138,20 @@ export class NotificationsService {
                     platform,
                 });
                 await this.deviceTokenRepository.save(deviceToken);
+            }
+
+            // Si es la primera vez que este usuario registra un dispositivo, enviamos Push
+            if (isFirstLogin) {
+                const appName = cityId === 'alausi' ? 'Alausí City App' : 'Chunchi City App';
+                
+                // Esperamos 2 segundos para dar tiempo a que la app termine de cargar la UI inicial
+                setTimeout(() => {
+                    this.sendPushNotification(
+                        userId,
+                        `¡Bienvenido a ${appName}! 🎉`,
+                        'Mantén activas las notificaciones para recibir las últimas noticias, eventos y reportes locales.'
+                    ).catch(e => console.error('Error enviando push de bienvenida:', e));
+                }, 2000);
             }
             console.log(`[NotificationsService] Token registrado con éxito.`);
             return true;
@@ -137,6 +170,30 @@ export class NotificationsService {
     ): Promise<boolean> {
         console.log(`[NotificationsService] Intentando enviar notificación al usuario: ${userId}`);
         try {
+            // Validar preferencias del usuario antes de proceder a armar el push
+            const user = await this.userRepository.findOne({ where: { id: userId } });
+            if (user) {
+                let type = NotificationType.SOCIAL;
+                if (options?.categoryId === 'moderation') {
+                    type = NotificationType.MODERATION;
+                } else if (options?.categoryId === 'system') {
+                    type = NotificationType.SYSTEM;
+                }
+
+                if (type === NotificationType.SYSTEM && !user.receiveSystemNotifications) {
+                    console.log(`[NotificationsService] Envío de push omitido: el usuario desactivó notificaciones de sistema.`);
+                    return false;
+                }
+                if (type === NotificationType.MODERATION && !user.receiveModerationNotifications) {
+                    console.log(`[NotificationsService] Envío de push omitido: el usuario desactivó notificaciones de moderación.`);
+                    return false;
+                }
+                if (type === NotificationType.SOCIAL && !user.receiveSocialNotifications) {
+                    console.log(`[NotificationsService] Envío de push omitido: el usuario desactivó notificaciones sociales.`);
+                    return false;
+                }
+            }
+
             const deviceTokens = await this.deviceTokenRepository.find({ where: { userId } });
             console.log(`[NotificationsService] Se encontraron ${deviceTokens.length} tokens para este usuario.`);
             
@@ -348,6 +405,20 @@ export class NotificationsService {
         } catch (error) {
             console.error('[NotificationsService] Error in sendGlobalNotification:', error);
             return false;
+        }
+    }
+
+    async deleteNotifications(userId: string, ids: string[]): Promise<boolean> {
+        try {
+            if (!ids || ids.length === 0) return true;
+            await this.notificationRepository.delete({
+                userId,
+                id: In(ids)
+            });
+            return true;
+        } catch (error) {
+            console.error('[NotificationsService] Error deleting notifications:', error);
+            throw new InternalServerErrorException('No se pudieron eliminar las notificaciones.');
         }
     }
 }

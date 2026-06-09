@@ -339,4 +339,20 @@ export class ChatResolver {
 
         return this.userBlocksService.checkIfBlocked(user.id, otherParticipant.userId);
     }
+
+    @ResolveField(() => Boolean)
+    @UseGuards(GqlAuthGuard)
+    async isBlockedByMe(
+        @Parent() conversation: Conversation,
+        @CurrentUser() user: User,
+    ): Promise<boolean> {
+        if (!conversation.participants || conversation.participants.length !== 2) {
+            return false;
+        }
+        
+        const otherParticipant = conversation.participants.find(p => p.userId !== user.id);
+        if (!otherParticipant) return false;
+
+        return this.userBlocksService.isBlockedByMe(user.id, otherParticipant.userId);
+    }
 }

@@ -202,6 +202,10 @@ export default function CreateStoryModal({ visible, onClose, onStoryCreated }: C
                             <View style={[styles.avatarPlaceholder, { backgroundColor: colors.surface }]}>
                                 {currentUser?.photoUrl ? (
                                     <Image source={{ uri: currentUser.photoUrl }} style={styles.avatar} />
+                                ) : currentUser ? (
+                                    <Text style={{ color: colors.primary, fontWeight: 'bold', fontSize: 16 }}>
+                                        {currentUser.firstName?.charAt(0) || ''}{currentUser.lastName?.charAt(0) || ''}
+                                    </Text>
                                 ) : (
                                     <Ionicons name="person" size={24} color={colors.textSecondary} />
                                 )}

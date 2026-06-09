@@ -8,6 +8,7 @@ import * as SecureStore from 'expo-secure-store';
 import { notifySessionExpired } from './session.manager';
 import Toast from 'react-native-toast-message';
 import Constants from 'expo-constants';
+import * as Application from 'expo-application';
 
 // ─── Ban event emitter (singleton) ───────────────────────────────────────────
 type BanHandler = (info: { bannedUntil: string; banReason: string }) => void;
@@ -17,6 +18,16 @@ export const registerBanHandler = (handler: BanHandler) => { _banHandler = handl
 export const unregisterBanHandler = () => { _banHandler = null; };
 const notifyBanned = (info: { bannedUntil: string; banReason: string }) => {
     _banHandler?.(info);
+};
+
+// ─── System Status event emitters (singleton) ────────────────────────────────
+type SystemStatusHandler = (info: { type: 'MAINTENANCE_MODE' | 'UPDATE_REQUIRED'; message: string }) => void;
+let _systemStatusHandler: SystemStatusHandler | null = null;
+
+export const registerSystemStatusHandler = (handler: SystemStatusHandler) => { _systemStatusHandler = handler; };
+export const unregisterSystemStatusHandler = () => { _systemStatusHandler = null; };
+export const notifySystemStatus = (info: { type: 'MAINTENANCE_MODE' | 'UPDATE_REQUIRED'; message: string }) => {
+    _systemStatusHandler?.(info);
 };
 
 // Define the GraphQL endpoint connecting securely to the local NestJS server
@@ -36,6 +47,7 @@ const authLink = setContext(async (_, { headers }) => {
             ...headers,
             authorization: token ? `Bearer ${token}` : '',
             'x-city-id': cityId,
+            'x-app-version': Application.nativeApplicationVersion || '1.0.0',
         }
     }
 });
@@ -52,6 +64,7 @@ export const resetSessionExpiredFlag = () => { _sessionExpiredFired = false; };
 // Global Error Link for Apollo Client
 const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
     let isUnauthorized = false;
+    let isDeactivatedOrBanned = false;
 
     if (graphQLErrors) {
         graphQLErrors.forEach(({ extensions, message, path }) => {
@@ -59,25 +72,46 @@ const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
             const isFromSubscription = path && path.includes('messageAdded');
             if (isFromSubscription) return;
 
-            // ── Detectar USER_BANNED ──────────────────────────────────────────
+            // 1. Detectar si es un error de cuenta desactivada o baneo estructurado
+            try {
+                const parsed = JSON.parse(message);
+                if (parsed?.code === 'ACCOUNT_DEACTIVATED') {
+                    isDeactivatedOrBanned = true;
+                    return;
+                }
+                if (parsed?.code === 'USER_BANNED' && parsed?.bannedUntil) {
+                    notifyBanned({
+                        bannedUntil: parsed.bannedUntil,
+                        banReason: parsed.banReason || 'Violación de las normas de la comunidad',
+                    });
+                    isDeactivatedOrBanned = true;
+                    return;
+                }
+            } catch (_) {
+                // Si la extensión contiene el código, también lo capturamos
+                if (extensions?.code === 'ACCOUNT_DEACTIVATED' || message.includes('ACCOUNT_DEACTIVATED')) {
+                    isDeactivatedOrBanned = true;
+                    return;
+                }
+            }
+
+            // 1.5. Detectar mantenimiento o actualización requerida
+            if (extensions?.code === 'MAINTENANCE_MODE') {
+                notifySystemStatus({ type: 'MAINTENANCE_MODE', message: message });
+                return;
+            }
+            if (extensions?.code === 'UPDATE_REQUIRED') {
+                notifySystemStatus({ type: 'UPDATE_REQUIRED', message: message });
+                return;
+            }
+
+            // 2. Si es un 401 normal / Unauthenticated, marcar como no autorizado
             if (
                 extensions?.code === 'UNAUTHENTICATED' ||
                 extensions?.code === '401' ||
                 message.includes('Unauthorized') ||
                 message.includes('not authenticated')
             ) {
-                // Intentar parsear si es un ban estructurado
-                try {
-                    const parsed = JSON.parse(message);
-                    if (parsed?.code === 'USER_BANNED' && parsed?.bannedUntil) {
-                        notifyBanned({
-                            bannedUntil: parsed.bannedUntil,
-                            banReason: parsed.banReason || 'Violación de las normas de la comunidad',
-                        });
-                        return; // No tratar como session expired
-                    }
-                } catch (_) { /* no era JSON de ban */ }
-
                 isUnauthorized = true;
             }
         });
@@ -85,7 +119,10 @@ const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
 
     if (networkError) {
         if ('statusCode' in networkError && networkError.statusCode === 401) {
-            isUnauthorized = true;
+            // Solo marcar como unauthorized si no detectamos desactivación/ban en graphQLErrors
+            if (!isDeactivatedOrBanned) {
+                isUnauthorized = true;
+            }
         } else {
             // Error de conexión (GraphQL) - IP incorrecta o servidor apagado
             Toast.show({
@@ -97,7 +134,7 @@ const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
         }
     }
 
-    if (isUnauthorized && !_sessionExpiredFired) {
+    if (isUnauthorized && !isDeactivatedOrBanned && !_sessionExpiredFired) {
         _sessionExpiredFired = true;
 
         // Limpiar caché para evitar datos rancios

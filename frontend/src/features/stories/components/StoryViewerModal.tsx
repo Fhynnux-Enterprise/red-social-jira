@@ -236,7 +236,25 @@ const UserStoryPage = ({
                 {/* Header */}
                 <View style={[styles.header, { top: insets.top + 35 }]}>
                     <View style={styles.userInfo}>
-                        <Image source={{ uri: currentStory?.user?.photoUrl || '' }} style={styles.avatar} />
+                        {currentStory?.user?.photoUrl ? (
+                            <Image source={{ uri: currentStory.user.photoUrl }} style={styles.avatar} />
+                        ) : (
+                            <View style={[
+                                styles.avatar,
+                                { 
+                                    backgroundColor: 'rgba(255, 255, 255, 0.25)', 
+                                    justifyContent: 'center', 
+                                    alignItems: 'center',
+                                }
+                            ]}>
+                                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
+                                    {(() => {
+                                        const user = currentStory?.user;
+                                        return user ? `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || user.username?.[0]?.toUpperCase() || 'U' : 'U';
+                                    })()}
+                                </Text>
+                            </View>
+                        )}
                         <View>
                             <Text style={styles.username}>{displayName}</Text>
                             <Text style={styles.timeAgo}>Hace {getTimeAgo(currentStory?.createdAt)}</Text>

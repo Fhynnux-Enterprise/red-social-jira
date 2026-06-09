@@ -17,6 +17,7 @@ import { Report } from '../reports/entities/report.entity';
 import { ReportStatus, ReportedItemType } from '../reports/enums/report.enums';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/enums/notification.enums';
+import { VisionService } from '../storage/vision.service';
 
 @Injectable()
 export class UsersService {
@@ -32,6 +33,7 @@ export class UsersService {
     @InjectRepository(UserTier)
     private readonly userTierRepository: Repository<UserTier>,
     private readonly notificationsService: NotificationsService,
+    private readonly visionService: VisionService,
   ) { }
 
   async addCustomField(
@@ -164,6 +166,16 @@ export class UsersService {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new BadRequestException('Usuario no encontrado');
+    }
+
+    // Validar seguridad de la foto de perfil si se actualiza
+    if (photoUrl) {
+      await this.visionService.validateImageSafety(photoUrl);
+    }
+
+    // Validar seguridad de la portada si se actualiza
+    if (coverUrl) {
+      await this.visionService.validateImageSafety(coverUrl);
     }
 
     if (photoUrl !== undefined) user.photoUrl = photoUrl;
@@ -437,4 +449,77 @@ export class UsersService {
     }
     return updatedUser;
   }
+
+  async deleteAccount(userId: string): Promise<boolean> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado.');
+    }
+
+    await this.userRepository.manager.transaction(async transactionalEntityManager => {
+      const now = new Date();
+      
+      // Desactivar usuario
+      user.isActive = false;
+      await transactionalEntityManager.save(user);
+      
+      // Soft-delete del usuario
+      await transactionalEntityManager.softDelete(User, userId);
+
+      // Erradicación de su contenido (Feed, Tienda, Empleos, Comentarios)
+      await transactionalEntityManager.update(Post, { authorId: userId }, { deletedAt: now });
+      await transactionalEntityManager.update(StoreProduct, { sellerId: userId }, { deletedAt: now });
+      await transactionalEntityManager.update(JobOffer, { authorId: userId }, { deletedAt: now });
+      await transactionalEntityManager.update(ProfessionalProfile, { userId: userId }, { deletedAt: now });
+      await transactionalEntityManager.update(Comment, { userId: userId }, { deletedAt: now });
+      await transactionalEntityManager.update(StoreProductComment, { userId: userId }, { deletedAt: now });
+    });
+
+    return true;
+  }
+
+  async reactivateAccount(userId: string): Promise<boolean> {
+    const user = await this.userRepository.findOne({ 
+      where: { id: userId },
+      withDeleted: true 
+    });
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado.');
+    }
+
+    await this.userRepository.manager.transaction(async transactionalEntityManager => {
+      // 1. Quitar soft-delete del usuario y reactivar
+      await transactionalEntityManager.restore(User, userId);
+      await transactionalEntityManager.update(User, userId, { isActive: true });
+
+      // 2. Restaurar contenido (poner deletedAt en null)
+      await transactionalEntityManager.update(Post, { authorId: userId }, { deletedAt: null as any });
+      await transactionalEntityManager.update(StoreProduct, { sellerId: userId }, { deletedAt: null as any });
+      await transactionalEntityManager.update(JobOffer, { authorId: userId }, { deletedAt: null as any });
+      await transactionalEntityManager.update(ProfessionalProfile, { userId: userId }, { deletedAt: null as any });
+      await transactionalEntityManager.update(Comment, { userId: userId }, { deletedAt: null as any });
+      await transactionalEntityManager.update(StoreProductComment, { userId: userId }, { deletedAt: null as any });
+    });
+
+    return true;
+  }
+
+  async updateNotificationPreferences(
+    userId: string,
+    receiveSystem: boolean,
+    receiveModeration: boolean,
+    receiveSocial: boolean,
+  ): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado.');
+    }
+
+    user.receiveSystemNotifications = receiveSystem;
+    user.receiveModerationNotifications = receiveModeration;
+    user.receiveSocialNotifications = receiveSocial;
+
+    return this.userRepository.save(user);
+  }
 }
+

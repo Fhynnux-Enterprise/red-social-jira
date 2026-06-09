@@ -85,10 +85,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         primaryDark: palette.primaryDark,
         accent: palette.accent,
         logo: appTheme === 'mountain' 
-            ? require('../../assets/images/icon-transparent.png')
+            ? require('../../assets/chunchi-city-images/icon-transparent.png')
             : appTheme === 'sunset'
-            ? require('../../assets/images/logo-transparente.png')
-            : require('../../assets/images/icon-transparent.png'), // Logo para Océano (puedes cambiarlo luego)
+            ? require('../../assets/chunchi-city-images/logo-transparente.png')
+            : require('../../assets/chunchi-city-images/icon-transparent.png'), // Logo para Océano (puedes cambiarlo luego)
         ...activeTheme
     };
 

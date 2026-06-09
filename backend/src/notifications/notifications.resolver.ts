@@ -87,6 +87,15 @@ export class NotificationsResolver {
         return this.notificationsService.sendGlobalNotification(title, body, cityId, saveInDb, imageUrl, detailed, badgeText, postId, postType, authorAvatarUrl);
     }
 
+    @Mutation(() => Boolean)
+    @UseGuards(GqlAuthGuard)
+    deleteNotifications(
+        @Args('ids', { type: () => [ID] }) ids: string[],
+        @CurrentUser() user: User,
+    ): Promise<boolean> {
+        return this.notificationsService.deleteNotifications(user.id, ids);
+    }
+
     @Subscription(() => Notification, {
         filter: (payload, variables) => payload.notificationAdded.userId === variables.userId,
     })

@@ -824,8 +824,31 @@ export default function ChatRoomScreen() {
                     return prev.map(m => m.id === optimisticId ? realMsg : m);
                 });
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error sending message:", err);
+            // 1. Quitar el mensaje optimista de la lista
+            setLocalMessages(prev => prev.filter(m => m.id !== optimisticId));
+            
+            // 2. Restaurar el texto y las vistas previas para que no se pierdan
+            setMessageText(content);
+            if (pendingImage) setImagePreview(pendingImage);
+            if (pendingVideo) setVideoPreview(pendingVideo);
+            if (pendingDocument) setDocumentPreview(pendingDocument);
+
+            // 3. Mostrar mensaje de error amigable
+            let displayMessage = 'Ocurrió un error inesperado al enviar el mensaje.';
+            if (err.message) {
+                if (err.message.includes('No puedes comunicarte con este usuario')) {
+                    displayMessage = 'No puedes comunicarte con este usuario.';
+                } else {
+                    displayMessage = err.message;
+                }
+            }
+            Toast.show({
+                type: 'error',
+                text1: 'No se pudo enviar',
+                text2: displayMessage,
+            });
         }
     };
 
@@ -968,6 +991,7 @@ export default function ChatRoomScreen() {
     };
 
     const stopRecording = async () => {
+        let optimisticId: string | null = null;
         try {
             let uri: string | null = null;
             let durationSeconds: number = 0;
@@ -993,7 +1017,7 @@ export default function ChatRoomScreen() {
             }
 
             // --- ACTUALIZACIÓN OPTIMISTA (Audio Instantáneo) ---
-            const optimisticId = `temp-${Date.now()}`;
+            optimisticId = `temp-${Date.now()}`;
             const optimisticMsg = {
                 id: optimisticId,
                 content: '',
@@ -1054,9 +1078,20 @@ export default function ChatRoomScreen() {
                 allowsRecording: false,
                 playsInSilentMode: true,
             });
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to upload recording', err);
-            Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo enviar el audio.' });
+            if (optimisticId) {
+                setLocalMessages(prev => prev.filter(m => m.id !== optimisticId));
+            }
+            let displayMessage = 'No se pudo enviar el audio.';
+            if (err.message) {
+                if (err.message.includes('No puedes comunicarte con este usuario')) {
+                    displayMessage = 'No puedes comunicarte con este usuario.';
+                } else {
+                    displayMessage = err.message;
+                }
+            }
+            Toast.show({ type: 'error', text1: 'Error al enviar audio', text2: displayMessage });
             setIsRecording(false);
             setIsPreviewMode(false);
             await setAudioModeAsync({

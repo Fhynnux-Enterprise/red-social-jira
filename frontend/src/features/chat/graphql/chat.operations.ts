@@ -5,6 +5,7 @@ export const GET_CONVERSATION = gql`
     getConversation(conversationId: $conversationId) {
       id
       isBlocked
+      isBlockedByMe
       participants {
         user {
           id

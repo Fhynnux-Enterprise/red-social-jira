@@ -33,6 +33,9 @@ export class Appeal {
     @Column({ name: 'reference_id', type: 'uuid', nullable: true })
     referenceId: string;
 
+    @Field(() => String, { nullable: true })
+    contentType?: string;
+
     @Field(() => User)
     @ManyToOne(() => User, { eager: true, onDelete: 'CASCADE' })
     @JoinColumn({ name: 'user_id' })

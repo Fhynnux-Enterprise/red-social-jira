@@ -511,6 +511,7 @@ export const GET_POST_BY_ID = gql`
             }
             createdAt
             updatedAt
+            deletedAt
             editedAt
             commentsCount
             likes {

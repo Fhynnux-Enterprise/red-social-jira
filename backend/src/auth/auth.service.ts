@@ -7,6 +7,9 @@ import { v4 as uuidv4, v5 as uuidv5 } from 'uuid';
 import { User } from './entities/user.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { UsersService } from '../users/users.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/enums/notification.enums';
 
 @Injectable()
 export class AuthService {
@@ -16,6 +19,8 @@ export class AuthService {
         private readonly configService: ConfigService,
         @InjectRepository(User)
         private readonly userRepository: Repository<User>,
+        private readonly usersService: UsersService,
+        private readonly notificationsService: NotificationsService,
     ) {
         const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
         const supabaseKey = this.configService.get<string>('SUPABASE_ANON_KEY');
@@ -29,7 +34,20 @@ export class AuthService {
     }
 
     async register(registerDto: RegisterDto) {
-        const { email, password, firstName, lastName, username, cityId = 'chunchi' } = registerDto;
+        const { email, password, firstName, lastName, username, birthDate, cityId = 'chunchi' } = registerDto;
+
+        // 1. Verificación local (preemptiva) para dar feedback claro al usuario
+        const existingEmail = await this.userRepository.findOne({ where: { email } });
+        if (existingEmail) {
+            throw new BadRequestException('El correo ya se encuentra registrado. Por favor, intenta iniciar sesión.');
+        }
+
+        const existingUsername = await this.userRepository.findOne({ where: { username } });
+        if (existingUsername) {
+            throw new BadRequestException('El nombre de usuario ya está en uso. Por favor, elige otro.');
+        }
+
+        const appName = cityId === 'alausi' ? 'Alausí City App' : 'Chunchi City App';
 
         // 2. Llamar a supabase.auth.signUp()
         const { data: authData, error: authError } = await this.supabase.auth.signUp({
@@ -40,6 +58,8 @@ export class AuthService {
                     firstName,
                     lastName,
                     username,
+                    birthDate,
+                    nombre_app: appName,
                 },
             },
         });
@@ -65,10 +85,23 @@ export class AuthService {
                 username: username,
                 firstName: firstName,
                 lastName: lastName,
+                birthDate: birthDate,
                 cityId: cityId,   // ← tenant asignado al registrarse
             });
 
             await this.userRepository.save(newUser);
+
+            // Enviar notificación de bienvenida
+            try {
+                await this.notificationsService.createNotification(
+                    newUser.id,
+                    `¡Bienvenido a ${appName}! 🎉`,
+                    'Mantén activas las notificaciones para recibir las últimas noticias, eventos y reportes del cantón.',
+                    NotificationType.SYSTEM
+                );
+            } catch (notifError) {
+                console.error('Error al crear la notificación de bienvenida:', notifError);
+            }
 
             // 5. Retornar mensaje de éxito
             return {
@@ -79,13 +112,23 @@ export class AuthService {
                     username: newUser.username,
                     firstName: newUser.firstName,
                     lastName: newUser.lastName,
+                    birthDate: newUser.birthDate,
                 },
             };
-        } catch (error) {
-            // Si falla la inserción local, lo ideal sería un mecanismo de compensación/rollback,
-            // pero por ahora lanzamos el error para visibilidad.
+        } catch (error: any) {
             console.error('Error guardando usuario en TypeORM:', error);
-            throw new InternalServerErrorException('El usuario se creó en auth, pero falló en la BD local');
+            
+            // Si es un error de unicidad en PostgreSQL (ej. email o username duplicado concurrentemente)
+            if (error.code === '23505') {
+                if (error.detail?.includes('email')) {
+                    throw new BadRequestException('El correo ya se encuentra registrado.');
+                }
+                if (error.detail?.includes('username')) {
+                    throw new BadRequestException('El nombre de usuario ya está en uso.');
+                }
+            }
+            
+            throw new InternalServerErrorException('No se pudo completar el registro local. Por favor, intenta de nuevo.');
         }
     }
 
@@ -100,6 +143,14 @@ export class AuthService {
 
         // 2. Manejar errores
         if (error) {
+            if (error.message === 'Email not confirmed') {
+                throw new UnauthorizedException(
+                    JSON.stringify({
+                        code: 'EMAIL_NOT_CONFIRMED',
+                        message: 'Email no confirmado',
+                    })
+                );
+            }
             throw new UnauthorizedException(error.message);
         }
 
@@ -112,6 +163,18 @@ export class AuthService {
             message: 'Login exitoso',
             access_token: data.session.access_token,
         };
+    }
+
+    async resendConfirmationEmail(email: string) {
+        const { error } = await this.supabase.auth.resend({
+            type: 'signup',
+            email,
+        });
+
+        if (error) {
+            throw new BadRequestException(error.message);
+        }
+        return { message: 'Correo de confirmación reenviado exitosamente' };
     }
 
     async syncGoogleUser(user: any, cityId?: string) {
@@ -134,11 +197,12 @@ export class AuthService {
         // 2. Buscar si ya existe este usuario ESPECÍFICO para esta ciudad
         if (user.email) {
             const existingUser = await this.userRepository.findOne({ 
-                where: { email: user.email, cityId: tenant } 
+                where: { email: user.email, cityId: tenant },
+                withDeleted: true
             });
 
             if (existingUser) {
-                console.log('[AuthService.syncGoogleUser] Usuario ya existe por email:', existingUser.id);
+                console.log('[AuthService.syncGoogleUser] Usuario ya existe por email (incluyendo soft-deleted):', existingUser.id);
                 // Si el usuario existe pero no tiene el deterministic ID, podriamos tener un problema.
                 // Lo dejamos pasar, pero la proxima vez JwtStrategy lo encontrará por ID directo (si es email/pass)
                 // o fallará si es Google SSO pero el ID era distinto.
@@ -215,5 +279,37 @@ export class AuthService {
         }
 
         return user;
+    }
+
+    async reactivateAccountByToken(token: string) {
+        // 1. Obtener el usuario de Supabase usando el token
+        const { data: { user }, error } = await this.supabase.auth.getUser(token);
+        if (error || !user) {
+            throw new UnauthorizedException('Token inválido o expirado.');
+        }
+
+        // 2. Buscar al usuario en la base de datos local (incluyendo eliminados)
+        const dbUser = await this.userRepository.findOne({
+            where: { email: user.email },
+            withDeleted: true,
+        });
+
+        if (!dbUser) {
+            throw new BadRequestException('Usuario no encontrado.');
+        }
+
+        if (!dbUser.deletedAt) {
+            throw new BadRequestException('La cuenta no está desactivada.');
+        }
+
+        const daysSinceDeletion = (Date.now() - new Date(dbUser.deletedAt).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSinceDeletion > 30) {
+            throw new UnauthorizedException('Esta cuenta ha sido eliminada permanentemente.');
+        }
+
+        // 3. Reactivar la cuenta usando el servicio de usuarios
+        await this.usersService.reactivateAccount(dbUser.id);
+
+        return { message: 'Cuenta reactivada exitosamente.' };
     }
 }

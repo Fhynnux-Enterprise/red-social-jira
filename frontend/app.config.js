@@ -46,7 +46,7 @@ const withAndroidBrandedSplash = (config) => {
 
       const sourcePath = path.join(
         config.modRequest.projectRoot,
-        'assets/images/fynnux-branding-footer.png'
+        'assets/chunchi-city-images/fynnux-branding-footer.png'
       );
       const destPath = path.join(drawableDir, 'fynnux_brand.png');
 
@@ -89,7 +89,7 @@ export default ({ config }) => {
     chunchi: {
       name: "Chunchi City App",
       slug: "chunchi-city-app",
-      icon: "./assets/images/icon.png",
+      icon: "./assets/chunchi-city-images/icon.png",
       package: "com.fernando.chunchicity",
       scheme: "chunchicity",
       micPermission: "Permite que Chunchi City use el micrófono para grabar mensajes de voz."
@@ -97,7 +97,7 @@ export default ({ config }) => {
     alausi: {
       name: "Alausí Móvil",
       slug: "alausi-movil",
-      icon: "./assets/images/icon.png", // Temporalmente usando el icono por defecto
+      icon: "./assets/chunchi-city-images/icon.png", // Temporalmente usando el icono por defecto
       package: "com.fernando.alausimovil",
       scheme: "alausimovil",
       micPermission: "Permite que Alausí Móvil use el micrófono para grabar mensajes de voz."
@@ -136,7 +136,7 @@ export default ({ config }) => {
     },
     web: {
       output: "static",
-      favicon: "./assets/images/favicon.png"
+      favicon: "./assets/chunchi-city-images/favicon.png"
     },
     extra: {
       cityName: cityId === 'alausi' ? 'Alausí' : 'Chunchi',
@@ -154,7 +154,7 @@ export default ({ config }) => {
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/chunchi-city-images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#000000",

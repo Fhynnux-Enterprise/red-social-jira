@@ -10,8 +10,8 @@ import { UserTier } from './entities/user-tier.entity';
 import { FollowsModule } from '../follows/follows.module';
 import { PostsModule } from '../posts/posts.module';
 import { UserBlocksModule } from '../user-blocks/user-blocks.module';
-
 import { NotificationsModule } from '../notifications/notifications.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
@@ -20,6 +20,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     PostsModule,
     NotificationsModule,
     UserBlocksModule,
+    StorageModule,
   ],
   providers: [UsersService, UsersResolver],
   exports: [UsersService],

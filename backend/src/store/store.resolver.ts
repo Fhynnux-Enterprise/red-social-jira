@@ -1,5 +1,5 @@
 import { Resolver, Query, Mutation, Args, Int, ID, ResolveField, Parent, Context } from '@nestjs/graphql';
-import { UseGuards } from '@nestjs/common';
+import { UseGuards, NotFoundException } from '@nestjs/common';
 import { StoreService } from './store.service';
 import { StoreProduct } from './entities/store-product.entity';
 import { CreateStoreProductInput } from './dto/create-store-product.input';
@@ -57,11 +57,21 @@ export class StoreResolver {
 
   @Query(() => StoreProduct, { name: 'getStoreProductById', nullable: true })
   @UseGuards(GqlAuthGuard)
-  getStoreProductById(
+  async getStoreProductById(
     @Args('id', { type: () => ID }) id: string,
     @CurrentUser() currentUser: any,
   ) {
-    return this.storeService.findById(id, currentUser.cityId);
+    const product = await this.storeService.findById(id, currentUser.cityId, true);
+    if (!product) return null;
+
+    if (product.deletedAt) {
+      const isOwner = product.sellerId === currentUser.id;
+      const isModeratorOrAdmin = currentUser.role === 'ADMIN' || currentUser.role === 'MODERATOR';
+      if (!isOwner && !isModeratorOrAdmin) {
+        throw new NotFoundException('Producto no encontrado');
+      }
+    }
+    return product;
   }
 
   @Mutation(() => StoreProduct)
@@ -128,10 +138,21 @@ export class StoreResolver {
 
   @Query(() => StoreProductComment, { name: 'getStoreProductCommentById', nullable: true })
   @UseGuards(GqlAuthGuard)
-  getStoreProductCommentById(
+  async getStoreProductCommentById(
     @Args('id', { type: () => ID }) id: string,
+    @CurrentUser() user: User,
   ) {
-    return this.storeService.getCommentById(id);
+    const comment = await this.storeService.getCommentById(id, true);
+    if (!comment) return null;
+
+    if (comment.deletedAt) {
+      const isAuthor = comment.userId === user?.id;
+      const isModeratorOrAdmin = user?.role === 'ADMIN' || user?.role === 'MODERATOR';
+      if (!isAuthor && !isModeratorOrAdmin) {
+        throw new NotFoundException('Comentario no encontrado');
+      }
+    }
+    return comment;
   }
 
   @Mutation(() => Boolean)

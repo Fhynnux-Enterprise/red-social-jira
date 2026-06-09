@@ -55,3 +55,15 @@ export const NOTIFICATION_ADDED_SUBSCRIPTION = gql`
         }
     }
 `;
+
+export const DELETE_NOTIFICATIONS = gql`
+    mutation DeleteNotifications($ids: [ID!]!) {
+        deleteNotifications(ids: $ids)
+    }
+`;
+
+export const MARK_ALL_AS_READ = gql`
+    mutation MarkAllNotificationsAsRead {
+        markAllNotificationsAsRead
+    }
+`;

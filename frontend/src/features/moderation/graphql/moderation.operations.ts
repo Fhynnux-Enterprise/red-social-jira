@@ -168,6 +168,7 @@ export const GET_COMMENT_BY_ID = gql`
             id
             content
             createdAt
+            deletedAt
             user {
                 id
                 firstName
@@ -210,6 +211,7 @@ export const GET_STORE_PRODUCT_COMMENT_BY_ID = gql`
             id
             content
             createdAt
+            deletedAt
             user {
                 id
                 firstName
@@ -338,6 +340,7 @@ export const GET_PENDING_APPEALS = gql`
             status
             type
             referenceId
+            contentType
             createdAt
             user {
                 id

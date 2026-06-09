@@ -232,9 +232,9 @@ export default function ProfessionalCard({
             >
                 {/* ── Card Head (Estilo Oferta) ── */}
                 <View style={styles.cardHead}>
-                    <View style={[styles.typeBadgeHead, { backgroundColor: '#2196F315' }]}>
-                        <Ionicons name="ribbon" size={12} color="#2196F3" />
-                        <Text style={[styles.typeBadgeTextHead, { color: '#2196F3' }]}>PERFIL PROFESIONAL</Text>
+                    <View style={[styles.typeBadgeHead, { backgroundColor: '#E91E6315' }]}>
+                        <Ionicons name="ribbon" size={12} color="#E91E63" />
+                        <Text style={[styles.typeBadgeTextHead, { color: '#E91E63' }]}>PERFIL PROFESIONAL</Text>
                     </View>
                 </View>
 

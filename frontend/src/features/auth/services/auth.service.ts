@@ -35,6 +35,15 @@ export const AuthService = {
         }
     },
 
+    async resendConfirmation(email: string) {
+        try {
+            const response = await apiClient.post('/auth/resend-confirmation', { email });
+            return response.data;
+        } catch (error) {
+            throw error;
+        }
+    },
+
     async logout() {
         try {
             await SecureStore.deleteItemAsync('access_token');
@@ -100,15 +109,17 @@ export const AuthService = {
             } catch (err: any) {
                 const responseData = err.response?.data?.message;
                 
-                // Detectar si el backend indica que el perfil no está sincronizado
-                const isNotSynced = (() => {
+                // Detectar código de error específico del backend
+                const parsedError = (() => {
                     try {
-                        const parsed = typeof responseData === 'string' ? JSON.parse(responseData) : responseData;
-                        return parsed?.code === 'USER_NOT_SYNCED';
+                        return typeof responseData === 'string' ? JSON.parse(responseData) : responseData;
                     } catch (_) {
-                        return false;
+                        return null;
                     }
                 })();
+
+                const isNotSynced = parsedError?.code === 'USER_NOT_SYNCED';
+                const isDeactivatedOrBanned = parsedError?.code === 'ACCOUNT_DEACTIVATED' || parsedError?.code === 'USER_BANNED';
 
                 if (isNotSynced) {
                     console.log('[AuthService] Usuario no sincronizado en esta ciudad. Iniciando sincronización silenciosa...');
@@ -119,8 +130,10 @@ export const AuthService = {
                     });
                     
                     console.log('[AuthService] Sincronización multi-tenant completada con éxito.');
+                } else if (isDeactivatedOrBanned) {
+                    console.log(`[AuthService] Usuario desactivado o baneado (${parsedError?.code}). Dejando pasar token para que AuthContext maneje el modal.`);
                 } else {
-                    // Si es otro tipo de error (ej. Ban o error de red), propagarlo
+                    // Si es otro tipo de error (ej. error de red), propagarlo
                     throw err;
                 }
             }
@@ -131,6 +144,15 @@ export const AuthService = {
                 throw { isCancelled: true };
             }
             console.error('Error in loginWithGoogle Flow: ', error);
+            throw error;
+        }
+    },
+
+    async reactivate(token: string) {
+        try {
+            const response = await apiClient.post('/auth/reactivate', { token });
+            return response.data;
+        } catch (error) {
             throw error;
         }
     }

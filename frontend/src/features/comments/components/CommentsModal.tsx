@@ -1860,8 +1860,32 @@ export default function CommentsModal({
                                                             )}
                                                         </View>
 
-                                                        {/* Descripción y fecha abajo de la media */}
-                                                        <Animated.View collapsable={false} {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14, overflow: 'hidden' }}>
+                                                        {/* Actions Row con el estilo de la tienda (instagramActionsRow) debajo de la media */}
+                                                        <Animated.View collapsable={false} {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4, flexDirection: 'row', alignItems: 'center', gap: 18 }}>
+                                                            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }} onPress={handleLike}>
+                                                                <Feather
+                                                                    name="heart"
+                                                                    size={22}
+                                                                    color={localLiked ? '#FF3B30' : colors.text}
+                                                                />
+                                                                {localCount > 0 && (
+                                                                    <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text }}>{localCount}</Text>
+                                                                )}
+                                                            </TouchableOpacity>
+
+                                                            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }} onPress={() => {
+                                                                setActiveTab('comments');
+                                                                if (isMinimized) toggleMinimize();
+                                                            }}>
+                                                                <Feather name="message-circle" size={22} color={colors.text} />
+                                                                {commentsCount > 0 && (
+                                                                    <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text }}>{commentsCount}</Text>
+                                                                )}
+                                                            </TouchableOpacity>
+                                                        </Animated.View>
+
+                                                        {/* Descripción y fecha abajo de las acciones */}
+                                                        <Animated.View collapsable={false} {...shortContentPan.panHandlers} style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 14, overflow: 'hidden' }}>
                                                             <TouchableOpacity
                                                                 activeOpacity={0.8}
                                                                 onPress={() => isTextLong && setIsExpanded(!isExpanded)}
@@ -1894,6 +1918,11 @@ export default function CommentsModal({
                                                                     </Text>
                                                                 </TouchableOpacity>
                                                             )}
+
+                                                            {/* Fecha al final del post */}
+                                                            <Text style={{ fontSize: 11, paddingTop: 10, opacity: 0.5, color: colors.textSecondary }}>
+                                                                {formatDate(post.createdAt)}{isPost && isEdited ? ' · Editado' : ''}
+                                                            </Text>
                                                         </Animated.View>
                                                     </>
                                                 )}
@@ -1902,7 +1931,7 @@ export default function CommentsModal({
                                     </ScrollView>
 
                                     {/* Footer con Like/Comentar */}
-                                    {isCommentable && !isStore && (
+                                    {isCommentable && !isStore && !hasPostMedia && (
                                         <Animated.View {...footerSwipePan.panHandlers} style={[styles.postFooterFixed, { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth, backgroundColor: colors.surface }]}>
                                             {/* Actions Row con el estilo de la tienda (instagramActionsRow) */}
                                             <TouchableOpacity activeOpacity={1} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4, gap: 18 }}>
@@ -2235,12 +2264,12 @@ export default function CommentsModal({
                     visible={postReportVisible}
                     onClose={() => setPostReportVisible(false)}
                     reportedItemId={post.id}
-                    reportedItemType={{
-                        'StoreProduct': 'STORE_PRODUCT',
-                        'JobOffer': 'JOB_OFFER',
-                        'ProfessionalProfile': 'SERVICE',
-                        'Post': 'POST',
-                    }[post?.__typename || 'Post'] || 'POST'}
+                    reportedItemType={
+                        post?.__typename === 'StoreProduct' ? 'PRODUCT' :
+                        post?.__typename === 'JobOffer' ? 'JOB_OFFER' :
+                        post?.__typename === 'ProfessionalProfile' ? 'SERVICE' :
+                        'POST'
+                    }
                     onContentDeleted={() => {
                         apolloClient.cache.evict({
                             id: apolloClient.cache.identify({

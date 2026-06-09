@@ -7,6 +7,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { router } from 'expo-router';
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
 import { useApolloClient } from '@apollo/client/react';
 import Toast from 'react-native-toast-message';
@@ -62,6 +63,26 @@ export default function ModerationScreen() {
     const [pendingAction, setPendingAction] = useState<null | { type: 'resolve' | 'resolve_delete' | 'dismiss' }>(null);
     const [confirmNote, setConfirmNote] = useState('');
     const [unbanTarget, setUnbanTarget] = useState<{ id: string; firstName: string; lastName: string; username: string; appealId?: string } | null>(null);
+    const [restoreTarget, setRestoreTarget] = useState<{
+        id: string;
+        user: {
+            id: string;
+            firstName: string;
+            lastName: string;
+            username: string;
+        };
+        reason: string;
+    } | null>(null);
+    const [rejectTarget, setRejectTarget] = useState<{
+        id: string;
+        user: {
+            id: string;
+            firstName: string;
+            lastName: string;
+            username: string;
+        };
+        reason: string;
+    } | null>(null);
     const [banModalVisible, setBanModalVisible] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
     const [hasMore, setHasMore] = useState(true);
@@ -741,17 +762,23 @@ export default function ModerationScreen() {
     
                                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
                                     <TouchableOpacity
-                                        style={[{ flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' }, { borderColor: colors.error, backgroundColor: 'transparent' }, resolvingAppeal && { opacity: 0.5 }]}
+                                        style={[{ flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' }, { borderColor: '#EF4444', backgroundColor: 'transparent' }, resolvingAppeal && { opacity: 0.5 }]}
                                         disabled={resolvingAppeal}
                                         onPress={() => {
-                                            Alert.alert('Rechazar apelación', 'La sanción se mantendrá intacta. ¿Confirmar?', [
-                                                { text: 'Cancelar', style: 'cancel' },
-                                                { text: 'Rechazar', style: 'destructive', onPress: () => resolveAppeal({ variables: { input: { appealId: item.id, approve: false } } }) }
-                                            ]);
+                                            setRejectTarget({
+                                                id: item.id,
+                                                user: {
+                                                    id: item.user.id,
+                                                    firstName: item.user.firstName,
+                                                    lastName: item.user.lastName,
+                                                    username: item.user.username,
+                                                },
+                                                reason: item.reason,
+                                            });
                                         }}
                                     >
-                                        <Ionicons name="close-circle-outline" size={16} color={colors.error} style={{ marginRight: 6 }} />
-                                        <Text style={[{ fontSize: 14, fontWeight: '600' }, { color: colors.error }]}>Rechazar</Text>
+                                        <Ionicons name="close-circle-outline" size={16} color="#EF4444" style={{ marginRight: 6 }} />
+                                        <Text style={[{ fontSize: 14, fontWeight: '600' }, { color: '#EF4444' }]}>Rechazar</Text>
                                     </TouchableOpacity>
 
                                     <TouchableOpacity
@@ -768,10 +795,16 @@ export default function ModerationScreen() {
                                                     appealId: item.id,
                                                 });
                                             } else {
-                                                Alert.alert('Restaurar contenido', 'Esto restaurará el contenido eliminado. ¿Continuar?', [
-                                                    { text: 'Cancelar', style: 'cancel' },
-                                                    { text: 'Restaurar', onPress: () => resolveAppeal({ variables: { input: { appealId: item.id, approve: true } } }) }
-                                                ]);
+                                                setRestoreTarget({
+                                                    id: item.id,
+                                                    user: {
+                                                        id: item.user.id,
+                                                        firstName: item.user.firstName,
+                                                        lastName: item.user.lastName,
+                                                        username: item.user.username,
+                                                    },
+                                                    reason: item.reason,
+                                                });
                                             }
                                         }}
                                     >
@@ -781,6 +814,38 @@ export default function ModerationScreen() {
                                         </Text>
                                     </TouchableOpacity>
                                 </View>
+
+                                {item.type === 'CONTENT_DELETION' && item.referenceId && item.contentType && (
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.viewContentBtn, 
+                                            { 
+                                                borderColor: colors.primary, 
+                                                borderWidth: 1,
+                                                backgroundColor: isDark ? 'rgba(0, 179, 65, 0.08)' : 'rgba(0, 179, 65, 0.05)',
+                                            }
+                                        ]}
+                                        onPress={() => {
+                                            router.push({
+                                                pathname: '/postDetail',
+                                                params: { 
+                                                    postId: item.referenceId, 
+                                                    isStore: (item.contentType === 'STORE_DETAIL' || item.contentType === 'STORE_COMMENT_DETAIL') ? 'true' : 'false',
+                                                    itemType: (item.contentType === 'STORE_COMMENT_DETAIL' || item.contentType === 'COMMENT_DETAIL') ? 'COMMENT_DETAIL' : item.contentType,
+                                                    isDeletedContent: 'true',
+                                                    appealId: item.id
+                                                }
+                                            });
+                                        }}
+                                    >
+                                        <Ionicons name="eye-outline" size={16} color={colors.primary} style={{ marginRight: 6 }} />
+                                        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.primary }}>
+                                            {(item.contentType === 'COMMENT_DETAIL' || item.contentType === 'STORE_COMMENT_DETAIL') 
+                                                ? 'Ver comentario apelado' 
+                                                : 'Ver publicación apelada'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         )}
                     />
@@ -1257,6 +1322,132 @@ export default function ModerationScreen() {
                     </View>
                 </View>
             </Modal>
+
+            {/* ── Modal de confirmación de restauración de contenido ─────────────────────────── */}
+            <Modal
+                visible={restoreTarget !== null}
+                transparent
+                animationType="fade"
+                onRequestClose={() => { if (!resolvingAppeal) setRestoreTarget(null); }}
+            >
+                <View style={styles.confirmBackdrop}>
+                    <View style={[styles.unbanDialog, { backgroundColor: colors.surface }]}>
+                        {/* Icono */}
+                        <View style={styles.unbanIconRow}>
+                            <View style={[styles.unbanIconBg, { backgroundColor: isDark ? 'rgba(34,197,94,0.12)' : 'rgba(34,197,94,0.08)' }]}>
+                                <Ionicons name="refresh-circle" size={36} color="#22C55E" />
+                            </View>
+                        </View>
+
+                        {/* Textos */}
+                        <Text style={[styles.unbanDialogTitle, { color: colors.text }]}>
+                            Restaurar contenido
+                        </Text>
+                        <Text style={[styles.unbanDialogSub, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 8 }]}>
+                            ¿Confirmas que deseas restaurar el contenido de{' '}
+                            <Text style={{ fontWeight: '800', color: colors.text }}>
+                                {restoreTarget?.user?.firstName} {restoreTarget?.user?.lastName}
+                            </Text>
+                            {' '}(@{restoreTarget?.user?.username})?
+                        </Text>
+                        <Text style={[styles.unbanDialogNote, { color: colors.textSecondary, backgroundColor: isDark ? 'rgba(34,197,94,0.07)' : 'rgba(34,197,94,0.05)', borderColor: 'rgba(34,197,94,0.2)' }]}>
+                            El contenido volverá a ser visible para todos los usuarios de la aplicación.
+                        </Text>
+
+                        {/* Botones */}
+                        <View style={styles.unbanActions}>
+                            <TouchableOpacity
+                                style={[styles.unbanCancelBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)' }]}
+                                onPress={() => setRestoreTarget(null)}
+                                disabled={resolvingAppeal}
+                            >
+                                <Text style={[styles.unbanCancelText, { color: colors.textSecondary }]}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.unbanConfirmBtn, resolvingAppeal && { opacity: 0.6 }]}
+                                onPress={() => {
+                                    if (restoreTarget) {
+                                        resolveAppeal({ variables: { input: { appealId: restoreTarget.id, approve: true } } });
+                                        setRestoreTarget(null);
+                                    }
+                                }}
+                                disabled={resolvingAppeal}
+                            >
+                                {resolvingAppeal
+                                    ? <ActivityIndicator color="#FFF" size="small" />
+                                    : <>
+                                        <Ionicons name="shield-checkmark-outline" size={16} color="#FFF" style={{ marginRight: 6 }} />
+                                        <Text style={styles.unbanConfirmText}>Restaurar</Text>
+                                      </>
+                                }
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* ── Modal de confirmación de rechazo de apelación ─────────────────────────── */}
+            <Modal
+                visible={rejectTarget !== null}
+                transparent
+                animationType="fade"
+                onRequestClose={() => { if (!resolvingAppeal) setRejectTarget(null); }}
+            >
+                <View style={styles.confirmBackdrop}>
+                    <View style={[styles.unbanDialog, { backgroundColor: colors.surface }]}>
+                        {/* Icono */}
+                        <View style={styles.unbanIconRow}>
+                            <View style={[styles.unbanIconBg, { backgroundColor: isDark ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.08)' }]}>
+                                <Ionicons name="close-circle" size={36} color="#EF4444" />
+                            </View>
+                        </View>
+
+                        {/* Textos */}
+                        <Text style={[styles.unbanDialogTitle, { color: colors.text }]}>
+                            Rechazar apelación
+                        </Text>
+                        <Text style={[styles.unbanDialogSub, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 8 }]}>
+                            ¿Confirmas que deseas rechazar la apelación de{' '}
+                            <Text style={{ fontWeight: '800', color: colors.text }}>
+                                {rejectTarget?.user?.firstName} {rejectTarget?.user?.lastName}
+                            </Text>
+                            {' '}(@{rejectTarget?.user?.username})?
+                        </Text>
+                        <Text style={[styles.unbanDialogNote, { color: colors.textSecondary, backgroundColor: isDark ? 'rgba(239,68,68,0.07)' : 'rgba(239,68,68,0.05)', borderColor: 'rgba(239,68,68,0.2)' }]}>
+                            La sanción se mantendrá intacta y la apelación será descartada.
+                        </Text>
+
+                        {/* Botones */}
+                        <View style={styles.unbanActions}>
+                            <TouchableOpacity
+                                style={[styles.unbanCancelBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)' }]}
+                                onPress={() => setRejectTarget(null)}
+                                disabled={resolvingAppeal}
+                            >
+                                <Text style={[styles.unbanCancelText, { color: colors.textSecondary }]}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.unbanConfirmBtn, { backgroundColor: '#EF4444' }, resolvingAppeal && { opacity: 0.6 }]}
+                                onPress={() => {
+                                    if (rejectTarget) {
+                                        resolveAppeal({ variables: { input: { appealId: rejectTarget.id, approve: false } } });
+                                        setRejectTarget(null);
+                                    }
+                                }}
+                                disabled={resolvingAppeal}
+                            >
+                                {resolvingAppeal
+                                    ? <ActivityIndicator color="#FFF" size="small" />
+                                    : <>
+                                        <Ionicons name="close-circle-outline" size={16} color="#FFF" style={{ marginRight: 6 }} />
+                                        <Text style={styles.unbanConfirmText}>Rechazar</Text>
+                                      </>
+                                }
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
             {/* Ban Modal for Moderation Panel */}
             <BanUserModal
                 visible={banModalVisible}
@@ -1627,5 +1818,14 @@ const styles = StyleSheet.create({
         fontSize: 14,
         marginLeft: 8,
         height: '100%',
+    },
+    viewContentBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        borderRadius: 12,
+        marginTop: 10,
+        width: '100%',
     },
 });

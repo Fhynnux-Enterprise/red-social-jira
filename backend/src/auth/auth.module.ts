@@ -7,11 +7,15 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AuthResolver } from './auth.resolver';
 import { GqlAuthGuard } from './guards/gql-auth.guard';
+import { UsersModule } from '../users/users.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
     imports: [
         PassportModule.register({ defaultStrategy: 'jwt' }),
         TypeOrmModule.forFeature([User]),
+        UsersModule,
+        NotificationsModule,
     ],
     controllers: [AuthController],
     providers: [JwtStrategy, AuthService, AuthResolver, GqlAuthGuard],

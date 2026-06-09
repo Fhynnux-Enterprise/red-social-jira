@@ -208,11 +208,40 @@ export class ReportsService implements OnModuleInit {
         const resolvedReport = await this.reportRepository.save(report);
 
         if (didDelete && ownerId) {
+            const isComment = report.reportedItemType === ReportedItemType.COMMENT;
+            let isStoreComment = false;
+            if (isComment) {
+                const postComment = await this.commentRepository.findOne({ where: { id: report.reportedItemId }, withDeleted: true });
+                if (!postComment) {
+                    isStoreComment = true;
+                }
+            }
+            const title = isComment ? 'Tu comentario ha sido eliminado' : 'Tu contenido ha sido eliminado';
+            const message = isComment 
+                ? `Tu comentario ha sido eliminado por un moderador debido a reportes de la comunidad. Nota del moderador: ${input.moderatorNote || 'Ninguna'}`
+                : `Tu contenido ha sido eliminado por un moderador debido a reportes de la comunidad. Nota del moderador: ${input.moderatorNote || 'Ninguna'}`;
+            const payload = {
+                type: isComment ? 'COMMENT_DETAIL' : (report.reportedItemType === ReportedItemType.PRODUCT ? 'STORE_DETAIL' : 'POST_DETAIL'),
+                postId: report.reportedItemId,
+                isStore: isStoreComment ? 'true' : 'false',
+                isDeletedContent: 'true',
+                moderatorNote: input.moderatorNote || '',
+            };
+            const payloadStr = JSON.stringify(payload);
+
             await this.notificationsService.createNotification(
                 ownerId,
-                'Tu contenido ha sido eliminado',
-                `Tu contenido ha sido eliminado por un moderador debido a reportes de la comunidad. Nota del moderador: ${input.moderatorNote || 'Ninguna'}`,
-                NotificationType.MODERATION
+                title,
+                message,
+                NotificationType.MODERATION,
+                payloadStr
+            );
+            await this.notificationsService.sendPushNotification(
+                ownerId,
+                title,
+                message,
+                payload,
+                { categoryId: 'moderation' }
             );
         }
 
@@ -237,11 +266,29 @@ export class ReportsService implements OnModuleInit {
         const ownerId = await this.softDeleteContent(input.reportedItemType, input.reportedItemId);
 
         if (ownerId) {
+            const title = 'Tu contenido ha sido eliminado';
+            const message = `Tu contenido ha sido eliminado por un moderador. Nota del moderador: ${input.moderatorNote || 'Eliminado por moderación directa.'}`;
+            const payload = {
+                type: input.reportedItemType === ReportedItemType.PRODUCT ? 'STORE_DETAIL' : 'POST_DETAIL',
+                postId: input.reportedItemId,
+                isDeletedContent: 'true',
+                moderatorNote: input.moderatorNote || 'Eliminado por moderación directa.',
+            };
+            const payloadStr = JSON.stringify(payload);
+
             await this.notificationsService.createNotification(
                 ownerId,
-                'Tu contenido ha sido eliminado',
-                `Tu contenido ha sido eliminado por un moderador. Nota del moderador: ${input.moderatorNote || 'Eliminado por moderación directa.'}`,
-                NotificationType.MODERATION
+                title,
+                message,
+                NotificationType.MODERATION,
+                payloadStr
+            );
+            await this.notificationsService.sendPushNotification(
+                ownerId,
+                title,
+                message,
+                payload,
+                { categoryId: 'moderation' }
             );
         }
 
@@ -350,21 +397,21 @@ export class ReportsService implements OnModuleInit {
             console.log(`[Moderation] PRODUCT ${itemId} soft-deleted (R2 intacto).`);
         } else if (type === ReportedItemType.COMMENT) {
             // 1. Identificar si es comentario de post o de producto
-            const postComment = await this.commentRepository.findOne({ where: { id: itemId } });
+            const postComment = await this.commentRepository.findOne({ where: { id: itemId }, withDeleted: true });
             if (postComment) {
                 ownerId = postComment.userId;
                 // Eliminar respuestas (hijos) primero, luego el comentario raíz
-                await this.commentRepository.delete({ parentId: itemId });
-                await this.commentRepository.delete({ id: itemId });
-                console.log(`[Moderation] Post Comment ${itemId} + replies hard-deleted.`);
+                await this.commentRepository.softDelete({ parentId: itemId });
+                await this.commentRepository.softDelete({ id: itemId });
+                console.log(`[Moderation] Post Comment ${itemId} + replies soft-deleted.`);
             } else {
                 // Buscar en comentarios de tienda
-                const storeComment = await this.storeProductCommentRepository.findOne({ where: { id: itemId } });
+                const storeComment = await this.storeProductCommentRepository.findOne({ where: { id: itemId }, withDeleted: true });
                 if (storeComment) {
                     ownerId = storeComment.userId;
-                    await this.storeProductCommentRepository.delete({ parentId: itemId });
-                    await this.storeProductCommentRepository.delete({ id: itemId });
-                    console.log(`[Moderation] StoreProduct Comment ${itemId} + replies hard-deleted.`);
+                    await this.storeProductCommentRepository.softDelete({ parentId: itemId });
+                    await this.storeProductCommentRepository.softDelete({ id: itemId });
+                    console.log(`[Moderation] StoreProduct Comment ${itemId} + replies soft-deleted.`);
                 }
             }
         } else if (type === ReportedItemType.JOB_OFFER) {

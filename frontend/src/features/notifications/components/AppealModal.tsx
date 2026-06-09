@@ -12,9 +12,10 @@ interface AppealModalProps {
     onClose: () => void;
     notificationItem?: any; // O el ID para apelar
     appealType?: 'CONTENT_DELETION' | 'ACCOUNT_BAN';
+    referenceId?: string;
 }
 
-export default function AppealModal({ visible, onClose, notificationItem, appealType = 'CONTENT_DELETION' }: AppealModalProps) {
+export default function AppealModal({ visible, onClose, notificationItem, appealType = 'CONTENT_DELETION', referenceId }: AppealModalProps) {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const [reason, setReason] = useState('');
@@ -37,7 +38,7 @@ export default function AppealModal({ visible, onClose, notificationItem, appeal
                     input: {
                         reason: reason.trim(),
                         type: appealType,
-                        referenceId: null // O el ID real si estuviera en la notificación
+                        referenceId: referenceId || null
                     }
                 }
             });

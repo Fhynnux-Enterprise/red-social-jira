@@ -55,11 +55,7 @@ export class UsersResolver {
     @CurrentUser() currentUser: any,
   ): Promise<boolean> {
     if (!currentUser) return false;
-    return this.userBlocksService.checkIfBlocked(currentUser.id, user.id).then(async (both) => {
-        // checkIfBlocked checks both ways, but we want specifically if I blocked them
-        const blockedUsers = await this.userBlocksService.getBlockedUsers(currentUser.id);
-        return blockedUsers.some(u => u.id === user.id);
-    });
+    return this.userBlocksService.isBlockedByMe(currentUser.id, user.id);
   }
 
   @ResolveField(() => Boolean)
@@ -311,5 +307,22 @@ export class UsersResolver {
     @Args('tierId') tierId: string,
   ): Promise<User> {
     return this.usersService.assignUserTier(userId, tierId);
+  }
+
+  @Mutation(() => Boolean, { name: 'deleteAccount', description: 'Elimina de forma permanente la cuenta del usuario autenticado.' })
+  @UseGuards(JwtGqlGuard)
+  async deleteAccount(@CurrentUser() user: any): Promise<boolean> {
+    return this.usersService.deleteAccount(user.id);
+  }
+
+  @Mutation(() => User, { name: 'updateNotificationPreferences' })
+  @UseGuards(JwtGqlGuard)
+  async updateNotificationPreferences(
+    @Args('receiveSystemNotifications', { type: () => Boolean }) receiveSystem: boolean,
+    @Args('receiveModerationNotifications', { type: () => Boolean }) receiveModeration: boolean,
+    @Args('receiveSocialNotifications', { type: () => Boolean }) receiveSocial: boolean,
+    @CurrentUser() user: any,
+  ): Promise<User> {
+    return this.usersService.updateNotificationPreferences(user.id, receiveSystem, receiveModeration, receiveSocial);
   }
 }

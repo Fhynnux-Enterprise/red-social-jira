@@ -218,7 +218,30 @@ const StoryMediaThumbnail = ({ uri, type, style }: { uri: string, type?: string,
 
 export const StoriesBar = () => {
     const { user: currentUser } = useAuth();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
+
+    const renderBadgeAvatar = (user: any) => {
+        if (user?.photoUrl) {
+            return (
+                <Image 
+                    source={{ uri: user.photoUrl }} 
+                    style={styles.badgeAvatar}
+                />
+            );
+        }
+        const initials = user ? `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || user.username?.[0]?.toUpperCase() || 'U' : 'U';
+        return (
+            <View style={[
+                styles.badgeAvatarInitials,
+                { backgroundColor: isDark ? 'rgba(255, 101, 36, 0.2)' : 'rgba(255, 101, 36, 0.12)' }
+            ]}>
+                <Text style={[styles.badgeAvatarInitialsText, { color: colors.primary }]}>
+                    {initials}
+                </Text>
+            </View>
+        );
+    };
+
     const [isCreating, setIsCreating] = useState(false);
     const [isViewerVisible, setIsViewerVisible] = useState(false);
     const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
@@ -361,10 +384,7 @@ export const StoriesBar = () => {
                         style={styles.previewImage} 
                     />
                     <View style={[styles.badgeAvatarContainer, { borderColor: colors.background }]}>
-                        <Image 
-                            source={{ uri: item.user?.photoUrl || 'https://via.placeholder.com/150' }} 
-                            style={styles.badgeAvatar}
-                        />
+                        {renderBadgeAvatar(item.user)}
                     </View>
                 </BrandingCircle>
                 <Text numberOfLines={1} style={[styles.username, { color: colors.text }]}>
@@ -410,10 +430,7 @@ export const StoriesBar = () => {
                                 style={styles.previewImage}
                             />
                             <View style={[styles.badgeAvatarContainer, { borderColor: colors.background }]}>
-                                <Image 
-                                    source={{ uri: currentUser?.photoUrl || 'https://via.placeholder.com/150' }} 
-                                    style={styles.badgeAvatar}
-                                />
+                                {renderBadgeAvatar(currentUser)}
                             </View>
                         </BrandingCircle>
                         <Text style={[styles.username, { color: colors.text }]}>Mi Historia</Text>
@@ -468,16 +485,19 @@ export const StoriesBar = () => {
 
 const styles = StyleSheet.create({
     container: {
-        paddingVertical: 2,
+        paddingVertical: 6,
         borderBottomWidth: 0.5,
     },
     listContent: {
-        paddingHorizontal: 16,
+        paddingLeft: 10,
+        paddingRight: 16,
     },
     storyItem: {
         alignItems: 'center',
         marginRight: 12,
         width: 92,
+        paddingTop: 0,      // Espacio arriba de la bolita
+        paddingBottom: 2,   // Espacio abajo del texto
     },
     userControlsContainer: {
         flexDirection: 'row',
@@ -488,7 +508,7 @@ const styles = StyleSheet.create({
         borderRadius: 46,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 6,
+        marginBottom: 4,
         position: 'relative',
     },
     grayBorder: {
@@ -499,7 +519,7 @@ const styles = StyleSheet.create({
         padding: 3,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 6,
+        marginBottom: 4,
         position: 'relative',
     },
     innerCircle: {
@@ -539,10 +559,21 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
     },
+    badgeAvatarInitials: {
+        width: '100%',
+        height: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    badgeAvatarInitialsText: {
+        fontSize: 10,
+        fontWeight: 'bold',
+        textAlign: 'center',
+    },
     username: {
         fontSize: 12,
         fontWeight: '500',
         textAlign: 'center',
-        marginTop: 2,
+        marginTop: 0,
     },
 });

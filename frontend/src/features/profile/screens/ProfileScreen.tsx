@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback, memo } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, RefreshControl, Platform, FlatList, TextInput, KeyboardAvoidingView, Linking, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Image, Modal, TouchableWithoutFeedback, RefreshControl, Platform, FlatList, TextInput, KeyboardAvoidingView, Linking, ScrollView, Alert, Switch } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,9 +9,11 @@ import { useAuth } from '../../auth/context/AuthContext';
 import ThemeSelectorModal from '../../../components/ThemeSelectorModal';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
 import Toast from 'react-native-toast-message';
-import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
+import { supabase } from '../../../api/supabase.client';
+import { useQuery, useMutation, useLazyQuery, useApolloClient } from '@apollo/client/react';
 import { gql } from '@apollo/client';
-import { GET_USER_PROFILE, CREATE_REPORT, GET_MY_REPORT_STATUS } from '../graphql/profile.operations';
+import ReportModal from '../../reports/components/ReportModal';
+import { GET_USER_PROFILE, CREATE_REPORT, GET_MY_REPORT_STATUS, DELETE_ACCOUNT, UPDATE_NOTIFICATION_PREFERENCES } from '../graphql/profile.operations';
 import { DELETE_POST, GET_POSTS, GET_SAVED_POSTS, GET_LIKED_POSTS, TOGGLE_SAVE_POST } from '../../feed/graphql/posts.operations';
 import { TOGGLE_FOLLOW, IS_FOLLOWING } from '../../follows/graphql/follows.operations';
 import { BLOCK_USER, UNBLOCK_USER } from '../../user-blocks/graphql/user-blocks.operations';
@@ -220,7 +222,7 @@ interface ProfileScreenProps {
 const PROFILE_PAGE_SIZE = 5;
 
 export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProps) {
-    const { signOut } = useAuth();
+    const { signOut, refreshProfile, triggerSessionExpired } = useAuth() as any;
     const navigation = useNavigation();
     const { colors, themeMode, setThemeMode, isDark } = useTheme();
     const authContext = useAuth() as any;
@@ -230,6 +232,17 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [isMenuVisible, setIsMenuVisible] = useState(false);
+    const [menuView, setMenuView] = useState<'main' | 'account' | 'notifications' | 'changePassword'>('main');
+    const [oldPassword, setOldPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmNewPassword, setConfirmNewPassword] = useState('');
+    const [logoutAllDevices, setLogoutAllDevices] = useState(true);
+    const [isChangingPassword, setIsChangingPassword] = useState(false);
+    const [customAlert, setCustomAlert] = useState<{ visible: boolean; title: string; message: string; type: 'error' | 'success'; onPress?: () => void } | null>(null);
+    const [receiveSystem, setReceiveSystem] = useState(true);
+    const [receiveModeration, setReceiveModeration] = useState(true);
+    const [receiveSocial, setReceiveSocial] = useState(true);
+    const [isConfirmDeleteVisible, setIsConfirmDeleteVisible] = useState(false);
     const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
     const [isCreatePostVisible, setIsCreatePostVisible] = useState(false);
     const [editingPostId, setEditingPostId] = useState<string | undefined>(undefined);
@@ -257,12 +270,14 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     // ── Menú contextual (perfil ajeno) ────────────────────────────────────────
     const [isContextMenuVisible, setIsContextMenuVisible] = useState(false);
     const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+    const [isPostReportModalVisible, setIsPostReportModalVisible] = useState(false);
     const [isBanModalVisible, setIsBanModalVisible] = useState(false);
     const [reportReason, setReportReason] = useState('');
     // Estado del reporte previo (null = nunca reportado, PENDING = pendiente, RESOLVED/DISMISSED = puede reportar de nuevo)
     const [myReportStatus, setMyReportStatus] = useState<string | null>(null);
 
     const insets = useSafeAreaInsets();
+    const apolloClient = useApolloClient();
     const isFocused = useIsFocused();
     const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
 
@@ -290,28 +305,37 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         variables: { userId: profileUserId, limit: 20, offset: 0 },
         skip: !profileUserId,
         fetchPolicy: 'cache-and-network',
-        onCompleted: (data) => {
-            if ((data?.storeProductsByUser?.length || 0) < 20) setHasMoreStore(false);
-        }
     });
+
+    useEffect(() => {
+        if (storeData) {
+            if ((storeData?.storeProductsByUser?.length || 0) < 20) setHasMoreStore(false);
+        }
+    }, [storeData]);
 
     const { data: jobOffersData, refetch: refetchJobOffers, fetchMore: fetchMoreJobOffers } = useQuery<any>(GET_JOB_OFFERS_BY_USER, {
         variables: { userId: profileUserId, limit: 20, offset: 0 },
         skip: !profileUserId,
         fetchPolicy: 'cache-and-network',
-        onCompleted: (data) => {
-            if ((data?.jobOffersByUser?.length || 0) < 20) setHasMoreJobOffers(false);
-        }
     });
+
+    useEffect(() => {
+        if (jobOffersData) {
+            if ((jobOffersData?.jobOffersByUser?.length || 0) < 20) setHasMoreJobOffers(false);
+        }
+    }, [jobOffersData]);
 
     const { data: profsData, refetch: refetchProfs, fetchMore: fetchMoreProfs } = useQuery<any>(GET_PROFESSIONAL_PROFILES_BY_USER, {
         variables: { userId: profileUserId, limit: 20, offset: 0 },
         skip: !profileUserId,
         fetchPolicy: 'cache-and-network',
-        onCompleted: (data) => {
-            if ((data?.professionalProfilesByUser?.length || 0) < 20) setHasMoreProfs(false);
-        }
     });
+
+    useEffect(() => {
+        if (profsData) {
+            if ((profsData?.professionalProfilesByUser?.length || 0) < 20) setHasMoreProfs(false);
+        }
+    }, [profsData]);
 
     const { data: followData } = useQuery<any>(IS_FOLLOWING, {
         variables: { followingId: profileUserId },
@@ -330,19 +354,25 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         variables: { limit: 20, offset: 0 },
         skip: !isMyProfile,
         fetchPolicy: 'cache-and-network',
-        onCompleted: (data) => {
-            if ((data?.getSavedPosts?.length || 0) < 20) setHasMoreSaved(false);
-        }
     });
+
+    useEffect(() => {
+        if (savedData) {
+            if ((savedData?.getSavedPosts?.length || 0) < 20) setHasMoreSaved(false);
+        }
+    }, [savedData]);
 
     const { data: likedData, refetch: refetchLiked, fetchMore: fetchMoreLiked } = useQuery<any>(GET_LIKED_POSTS, {
         variables: { limit: 20, offset: 0 },
         skip: !isMyProfile,
         fetchPolicy: 'cache-and-network',
-        onCompleted: (data) => {
-            if ((data?.getLikedItems?.length || 0) < 20) setHasMoreLiked(false);
-        }
     });
+
+    useEffect(() => {
+        if (likedData) {
+            if ((likedData?.getLikedItems?.length || 0) < 20) setHasMoreLiked(false);
+        }
+    }, [likedData]);
 
     // ── Mutations ─────────────────────────────────────────────────────────────
     const [toggleFollow] = useMutation<any>(TOGGLE_FOLLOW, {
@@ -395,6 +425,74 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     });
 
     const [toggleSavePost] = useMutation(TOGGLE_SAVE_POST);
+
+    const [deleteAccount] = useMutation(DELETE_ACCOUNT, {
+        onCompleted: async () => {
+            Toast.show({
+                type: 'success',
+                text1: 'Cuenta desactivada',
+                text2: 'Tu cuenta ha sido desactivada. Tienes 30 días para volver a iniciar sesión y recuperarla.',
+            });
+            await signOut();
+        },
+        onError: (err) => {
+            Alert.alert('Error', err.message || 'No se pudo eliminar la cuenta');
+        }
+    });
+
+    const [updateNotificationPreferences] = useMutation(UPDATE_NOTIFICATION_PREFERENCES);
+
+    useEffect(() => {
+        if (isMenuVisible && authContext.user) {
+            setReceiveSystem(authContext.user.receiveSystemNotifications ?? true);
+            setReceiveModeration(authContext.user.receiveModerationNotifications ?? true);
+            setReceiveSocial(authContext.user.receiveSocialNotifications ?? true);
+        }
+    }, [isMenuVisible, authContext.user]);
+
+    const handleTogglePreference = async (key: 'system' | 'moderation' | 'social', value: boolean) => {
+        let nextSystem = receiveSystem;
+        let nextModeration = receiveModeration;
+        let nextSocial = receiveSocial;
+
+        if (key === 'system') {
+            setReceiveSystem(value);
+            nextSystem = value;
+        } else if (key === 'moderation') {
+            setReceiveModeration(value);
+            nextModeration = value;
+        } else if (key === 'social') {
+            setReceiveSocial(value);
+            nextSocial = value;
+        }
+
+        try {
+            await updateNotificationPreferences({
+                variables: {
+                    receiveSystemNotifications: nextSystem,
+                    receiveModerationNotifications: nextModeration,
+                    receiveSocialNotifications: nextSocial,
+                }
+            });
+            await refreshProfile();
+        } catch (error) {
+            console.error('Error updating notification preferences:', error);
+            if (key === 'system') setReceiveSystem(!value);
+            if (key === 'moderation') setReceiveModeration(!value);
+            if (key === 'social') setReceiveSocial(!value);
+            Toast.show({
+                type: 'error',
+                text1: 'Error',
+                text2: 'No se pudieron actualizar tus preferencias.'
+            });
+        }
+    };
+
+    const handleDeleteAccount = useCallback(() => {
+        setIsConfirmDeleteVisible(true);
+    }, []);
+
+
 
     const handleToggleSave = useCallback(async (item: any) => {
         if (!item) return;
@@ -491,12 +589,15 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
         },
     });
 
-    const [fetchMyReportStatus] = useLazyQuery(GET_MY_REPORT_STATUS, {
+    const [fetchMyReportStatus, { data: reportStatusData }] = useLazyQuery(GET_MY_REPORT_STATUS, {
         fetchPolicy: 'network-only',
-        onCompleted: (data: any) => {
-            setMyReportStatus(data?.getMyReportStatus?.status ?? null);
-        },
     });
+
+    useEffect(() => {
+        if (reportStatusData) {
+            setMyReportStatus((reportStatusData as any)?.getMyReportStatus?.status ?? null);
+        }
+    }, [reportStatusData]);
 
     // Al abrir el modal de reporte, verificar si ya hay un reporte activo
     const handleOpenReportModal = useCallback(() => {
@@ -840,7 +941,90 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
     }, [navigation]);
 
     const handleOpenMenu = useCallback(() => setIsMenuVisible(true), []);
-    const handleCloseMenu = useCallback(() => setIsMenuVisible(false), []);
+    const handleCloseMenu = useCallback(() => {
+        setIsMenuVisible(false);
+        setMenuView('main');
+        setOldPassword('');
+        setNewPassword('');
+        setConfirmNewPassword('');
+        setLogoutAllDevices(true);
+    }, []);
+
+    const handleChangePassword = useCallback(async () => {
+        if (!oldPassword || !newPassword || !confirmNewPassword) {
+            setCustomAlert({ visible: true, title: 'Campos requeridos', message: 'Por favor, completa todos los campos.', type: 'error' });
+            return;
+        }
+
+        if (newPassword.length < 6) {
+            setCustomAlert({ visible: true, title: 'Contraseña muy corta', message: 'La nueva contraseña debe tener al menos 6 caracteres.', type: 'error' });
+            return;
+        }
+
+        if (newPassword !== confirmNewPassword) {
+            setCustomAlert({ visible: true, title: 'Contraseñas no coinciden', message: 'La nueva contraseña y su confirmación no coinciden.', type: 'error' });
+            return;
+        }
+
+        const userEmail = authContext.user?.email;
+        if (!userEmail) {
+            setCustomAlert({ visible: true, title: 'Error de usuario', message: 'No se pudo obtener el correo del usuario.', type: 'error' });
+            return;
+        }
+
+        setIsChangingPassword(true);
+
+        try {
+            // 1. Re-autenticar al usuario para verificar la contraseña actual
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+                email: userEmail,
+                password: oldPassword,
+            });
+
+            if (signInError) {
+                setCustomAlert({ visible: true, title: 'Contraseña actual incorrecta', message: 'La contraseña actual ingresada es inválida.', type: 'error' });
+                setIsChangingPassword(false);
+                return;
+            }
+
+            // 2. Cambiar la contraseña del usuario
+            const { error: updateError } = await supabase.auth.updateUser({
+                password: newPassword,
+            });
+
+            if (updateError) {
+                setCustomAlert({ visible: true, title: 'Error al actualizar', message: updateError.message || 'No se pudo actualizar la contraseña.', type: 'error' });
+                setIsChangingPassword(false);
+                return;
+            }
+
+            // 3. Cerrar sesión según la selección con Alert de éxito
+            setCustomAlert({
+                visible: true,
+                title: 'Contraseña actualizada',
+                message: 'Tu contraseña ha sido cambiada correctamente.',
+                type: 'success',
+                onPress: async () => {
+                    setIsChangingPassword(false);
+                    handleCloseMenu();
+                    
+                    triggerSessionExpired('password_changed');
+
+                    if (logoutAllDevices) {
+                        await supabase.auth.signOut({ scope: 'global' });
+                    } else {
+                        await supabase.auth.signOut({ scope: 'local' });
+                    }
+                    
+                    await signOut();
+                }
+            });
+
+        } catch (error: any) {
+            setCustomAlert({ visible: true, title: 'Error', message: error.message || 'Ocurrió un error inesperado.', type: 'error' });
+            setIsChangingPassword(false);
+        }
+    }, [oldPassword, newPassword, confirmNewPassword, logoutAllDevices, authContext.user, handleCloseMenu, signOut, triggerSessionExpired]);
     const handleOpenContextMenu = useCallback(() => setIsContextMenuVisible(true), []);
     const handleCloseContextMenu = useCallback(() => setIsContextMenuVisible(false), []);
 
@@ -1230,82 +1414,377 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                     <View style={styles.modalOverlay}>
                         <TouchableWithoutFeedback>
                             <View style={[styles.modalContent, { paddingTop: Math.max(insets.top, 20) + 10, paddingBottom: Math.max(insets.bottom, 20) + 20 }]}>
-                                <View style={styles.drawerHeader}>
-                                    <TouchableOpacity onPress={handleCloseMenu} style={styles.drawerCloseBtn}>
-                                        <Ionicons name="close" size={28} color={colors.text} />
+                                <View style={[styles.drawerHeader, menuView === 'notifications' && { justifyContent: 'flex-start' }]}>
+                                    <TouchableOpacity 
+                                        onPress={menuView !== 'main' ? () => setMenuView(menuView === 'changePassword' ? 'account' : 'main') : handleCloseMenu} 
+                                        style={[styles.drawerCloseBtn, menuView === 'notifications' && { marginRight: 16 }]}
+                                    >
+                                        <Ionicons 
+                                            name={menuView !== 'main' ? "arrow-back" : "close"} 
+                                            size={28} 
+                                            color={colors.text} 
+                                        />
                                     </TouchableOpacity>
-                                    <Text style={styles.modalTitle}>Configuración</Text>
-                                    <View style={{ width: 28 }} />
+                                    <Text style={styles.modalTitle}>
+                                        {menuView === 'account' 
+                                            ? 'Configuración de cuenta' 
+                                            : menuView === 'notifications'
+                                                ? 'Notificaciones'
+                                                : menuView === 'changePassword'
+                                                    ? 'Cambiar contraseña'
+                                                    : 'Configuración'}
+                                    </Text>
+                                    {menuView !== 'notifications' && <View style={{ width: 28 }} />}
                                 </View>
-                                {['ADMIN', 'MODERATOR'].includes(authContext.user?.role) && (
+                                
+                                {menuView === 'main' ? (
+                                    <>
+                                        {['ADMIN', 'MODERATOR'].includes(authContext.user?.role) && (
+                                            <>
+                                                <TouchableOpacity
+                                                    style={styles.settingButton}
+                                                    onPress={() => { handleCloseMenu(); setTimeout(() => (navigation as any).navigate('Moderation', { initialTab: 'reports' }), 300); }}
+                                                >
+                                                    <View style={styles.settingLeft}>
+                                                        <View style={{ backgroundColor: 'rgba(255,101,36,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
+                                                            <Ionicons name="shield-checkmark-outline" size={22} color="#FF6524" />
+                                                        </View>
+                                                        <Text style={[styles.settingText, { color: '#FF6524' }]}>Moderación</Text>
+                                                    </View>
+                                                    <Ionicons name="chevron-forward" size={20} color="#FF6524" />
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity
+                                                    style={styles.settingButton}
+                                                    onPress={() => { handleCloseMenu(); setTimeout(() => (navigation as any).navigate('Admin'), 300); }}
+                                                >
+                                                    <View style={styles.settingLeft}>
+                                                        <View style={{ backgroundColor: 'rgba(99,102,241,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
+                                                            <Ionicons name="settings-outline" size={22} color="#6366F1" />
+                                                        </View>
+                                                        <Text style={[styles.settingText, { color: '#6366F1' }]}>Administración</Text>
+                                                    </View>
+                                                    <Ionicons name="chevron-forward" size={20} color="#6366F1" />
+                                                </TouchableOpacity>
+                                            </>
+                                        )}
+                                        <TouchableOpacity
+                                            style={styles.settingButton}
+                                            onPress={() => { handleCloseMenu(); setTimeout(() => setIsThemeModalVisible(true), 400); }}
+                                        >
+                                            <View style={styles.settingLeft}>
+                                                <Ionicons name="color-palette-outline" size={24} color={colors.text} />
+                                                <Text style={styles.settingText}>Tema</Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={styles.settingButton}
+                                            onPress={() => { handleCloseMenu(); setTimeout(() => setIsBlockedUsersVisible(true), 300); }}
+                                        >
+                                            <View style={styles.settingLeft}>
+                                                <Ionicons name="lock-closed-outline" size={24} color={colors.text} />
+                                                <Text style={styles.settingText}>Bloqueados</Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={styles.settingButton}
+                                            onPress={() => {
+                                                handleCloseMenu();
+                                                setTimeout(() => {
+                                                    router.push('/ads/info');
+                                                }, 300);
+                                            }}
+                                        >
+                                            <View style={styles.settingLeft}>
+                                                <Ionicons name="megaphone-outline" size={24} color={colors.text} />
+                                                <Text style={styles.settingText}>Publicidad</Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={styles.settingButton}
+                                            onPress={() => setMenuView('notifications')}
+                                        >
+                                            <View style={styles.settingLeft}>
+                                                <Ionicons name="notifications-outline" size={24} color={colors.text} />
+                                                <Text style={styles.settingText}>Notificaciones</Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={styles.settingButton}
+                                            onPress={() => setMenuView('account')}
+                                        >
+                                            <View style={styles.settingLeft}>
+                                                <Ionicons name="settings-outline" size={24} color={colors.text} />
+                                                <Text style={styles.settingText}>Configuración de cuenta</Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                        <View style={styles.spacer} />
+                                        <TouchableOpacity style={styles.logoutButton} onPress={signOut}>
+                                            <Ionicons name="log-out-outline" size={24} color={colors.error} />
+                                            <Text style={styles.logoutText}>Cerrar Sesión</Text>
+                                        </TouchableOpacity>
+                                    </>
+                                ) : menuView === 'notifications' ? (
+                                    <>
+                                        <View style={styles.notificationPrefContainer}>
+                                            <View style={styles.notificationPrefRow}>
+                                                <View style={styles.notificationPrefLeft}>
+                                                    <View style={[styles.iconWrapper, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)' }]}>
+                                                        <Ionicons name="information-circle-outline" size={22} color={colors.text} />
+                                                    </View>
+                                                    <View style={styles.notificationPrefTextWrapper}>
+                                                        <Text style={[styles.settingText, { color: colors.text }]}>Sistema</Text>
+                                                        <Text style={[styles.settingSubtext, { color: colors.textSecondary }]}>Notificaciones generales y avisos oficiales</Text>
+                                                    </View>
+                                                </View>
+                                                <Switch
+                                                    value={receiveSystem}
+                                                    onValueChange={(val) => handleTogglePreference('system', val)}
+                                                    trackColor={{ false: '#767577', true: colors.primary + '80' }}
+                                                    thumbColor={receiveSystem ? colors.primary : '#f4f3f4'}
+                                                />
+                                            </View>
+
+                                            <View style={styles.notificationPrefRow}>
+                                                <View style={styles.notificationPrefLeft}>
+                                                    <View style={[styles.iconWrapper, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)' }]}>
+                                                        <Ionicons name="shield-half-outline" size={22} color={colors.text} />
+                                                    </View>
+                                                    <View style={styles.notificationPrefTextWrapper}>
+                                                        <Text style={[styles.settingText, { color: colors.text }]}>Moderación</Text>
+                                                        <Text style={[styles.settingSubtext, { color: colors.textSecondary }]}>Reportes, apelaciones y advertencias</Text>
+                                                    </View>
+                                                </View>
+                                                <Switch
+                                                    value={receiveModeration}
+                                                    onValueChange={(val) => handleTogglePreference('moderation', val)}
+                                                    trackColor={{ false: '#767577', true: colors.primary + '80' }}
+                                                    thumbColor={receiveModeration ? colors.primary : '#f4f3f4'}
+                                                />
+                                            </View>
+
+                                            <View style={styles.notificationPrefRow}>
+                                                <View style={styles.notificationPrefLeft}>
+                                                    <View style={[styles.iconWrapper, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)' }]}>
+                                                        <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.text} />
+                                                    </View>
+                                                    <View style={styles.notificationPrefTextWrapper}>
+                                                        <Text style={[styles.settingText, { color: colors.text }]}>Social</Text>
+                                                        <Text style={[styles.settingSubtext, { color: colors.textSecondary }]}>Mensajes directos, me gusta y comentarios</Text>
+                                                    </View>
+                                                </View>
+                                                <Switch
+                                                    value={receiveSocial}
+                                                    onValueChange={(val) => handleTogglePreference('social', val)}
+                                                    trackColor={{ false: '#767577', true: colors.primary + '80' }}
+                                                    thumbColor={receiveSocial ? colors.primary : '#f4f3f4'}
+                                                />
+                                            </View>
+                                        </View>
+                                        <View style={styles.spacer} />
+                                    </>
+                                ) : menuView === 'account' ? (
                                     <>
                                         <TouchableOpacity
                                             style={styles.settingButton}
-                                            onPress={() => { handleCloseMenu(); setTimeout(() => (navigation as any).navigate('Moderation', { initialTab: 'reports' }), 300); }}
+                                            onPress={() => setMenuView('changePassword')}
                                         >
                                             <View style={styles.settingLeft}>
-                                                <View style={{ backgroundColor: 'rgba(255,101,36,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
-                                                    <Ionicons name="shield-checkmark-outline" size={22} color="#FF6524" />
-                                                </View>
-                                                <Text style={[styles.settingText, { color: '#FF6524' }]}>Moderación</Text>
+                                                <Ionicons name="key-outline" size={24} color={colors.text} />
+                                                <Text style={styles.settingText}>Cambiar contraseña</Text>
                                             </View>
-                                            <Ionicons name="chevron-forward" size={20} color="#FF6524" />
+                                            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                                         </TouchableOpacity>
-
                                         <TouchableOpacity
                                             style={styles.settingButton}
-                                            onPress={() => { handleCloseMenu(); setTimeout(() => (navigation as any).navigate('Admin'), 300); }}
+                                            onPress={() => {
+                                                handleCloseMenu();
+                                                setTimeout(() => {
+                                                    handleDeleteAccount();
+                                                }, 300);
+                                            }}
                                         >
                                             <View style={styles.settingLeft}>
-                                                <View style={{ backgroundColor: 'rgba(99,102,241,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
-                                                    <Ionicons name="settings-outline" size={22} color="#6366F1" />
-                                                </View>
-                                                <Text style={[styles.settingText, { color: '#6366F1' }]}>Administración</Text>
+                                                <Ionicons name="trash-outline" size={24} color={colors.error} />
+                                                <Text style={[styles.settingText, { color: colors.error }]}>Eliminar Cuenta</Text>
                                             </View>
-                                            <Ionicons name="chevron-forward" size={20} color="#6366F1" />
+                                            <Ionicons name="chevron-forward" size={20} color={colors.error} />
                                         </TouchableOpacity>
+                                        <View style={styles.spacer} />
+                                    </>
+                                ) : (
+                                    <>
+                                        {/* Contenido de Cambiar Contraseña */}
+                                        <View style={styles.formContainer}>
+                                            <View style={styles.formGroup}>
+                                                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Contraseña Actual</Text>
+                                                <View style={[styles.formInputWrapper, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }]}>
+                                                    <TextInput
+                                                        style={[styles.formInput, { color: colors.text }]}
+                                                        secureTextEntry
+                                                        value={oldPassword}
+                                                        onChangeText={setOldPassword}
+                                                        placeholder="Ingresa tu contraseña actual"
+                                                        placeholderTextColor={colors.textSecondary + '80'}
+                                                    />
+                                                </View>
+                                            </View>
+
+                                            <View style={styles.formGroup}>
+                                                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Nueva Contraseña</Text>
+                                                <View style={[styles.formInputWrapper, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }]}>
+                                                    <TextInput
+                                                        style={[styles.formInput, { color: colors.text }]}
+                                                        secureTextEntry
+                                                        value={newPassword}
+                                                        onChangeText={setNewPassword}
+                                                        placeholder="Mínimo 6 caracteres"
+                                                        placeholderTextColor={colors.textSecondary + '80'}
+                                                     />
+                                                </View>
+                                            </View>
+
+                                            <View style={styles.formGroup}>
+                                                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Confirmar Nueva Contraseña</Text>
+                                                <View style={[styles.formInputWrapper, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }]}>
+                                                    <TextInput
+                                                        style={[styles.formInput, { color: colors.text }]}
+                                                        secureTextEntry
+                                                        value={confirmNewPassword}
+                                                        onChangeText={setConfirmNewPassword}
+                                                        placeholder="Repite tu nueva contraseña"
+                                                        placeholderTextColor={colors.textSecondary + '80'}
+                                                    />
+                                                </View>
+                                            </View>
+
+                                            <Text style={[styles.formLabel, { color: colors.textSecondary, marginTop: 10, marginBottom: 8 }]}>Cerrar sesión en:</Text>
+                                            <View style={styles.sessionOptions}>
+                                                <TouchableOpacity 
+                                                    style={styles.radioOption} 
+                                                    onPress={() => setLogoutAllDevices(true)}
+                                                >
+                                                    <View style={[styles.radioCircle, { borderColor: colors.border }]}>
+                                                        {logoutAllDevices && <View style={[styles.radioDot, { backgroundColor: colors.primary }]} />}
+                                                    </View>
+                                                    <Text style={[styles.radioLabel, { color: colors.text }]}>Todos los dispositivos</Text>
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity 
+                                                    style={styles.radioOption} 
+                                                    onPress={() => setLogoutAllDevices(false)}
+                                                >
+                                                    <View style={[styles.radioCircle, { borderColor: colors.border }]}>
+                                                        {!logoutAllDevices && <View style={[styles.radioDot, { backgroundColor: colors.primary }]} />}
+                                                    </View>
+                                                    <Text style={[styles.radioLabel, { color: colors.text }]}>Solo en este dispositivo</Text>
+                                                </TouchableOpacity>
+                                            </View>
+
+                                            <TouchableOpacity
+                                                style={[styles.submitButton, { backgroundColor: colors.primary }]}
+                                                onPress={handleChangePassword}
+                                                disabled={isChangingPassword}
+                                            >
+                                                {isChangingPassword ? (
+                                                    <ActivityIndicator color="#FFFFFF" size="small" />
+                                                ) : (
+                                                    <Text style={styles.submitButtonText}>Actualizar Contraseña</Text>
+                                                )}
+                                            </TouchableOpacity>
+                                        </View>
                                     </>
                                 )}
-                                <TouchableOpacity
-                                    style={styles.settingButton}
-                                    onPress={() => { handleCloseMenu(); setTimeout(() => setIsThemeModalVisible(true), 400); }}
-                                >
-                                    <View style={styles.settingLeft}>
-                                        <Ionicons name="color-palette-outline" size={24} color={colors.text} />
-                                        <Text style={styles.settingText}>Tema</Text>
-                                    </View>
-                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={styles.settingButton}
-                                    onPress={() => { handleCloseMenu(); setTimeout(() => setIsBlockedUsersVisible(true), 300); }}
-                                >
-                                    <View style={styles.settingLeft}>
-                                        <Ionicons name="lock-closed-outline" size={24} color={colors.text} />
-                                        <Text style={styles.settingText}>Bloqueados</Text>
-                                    </View>
-                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={styles.settingButton}
-                                    onPress={() => {
-                                        handleCloseMenu();
-                                        setTimeout(() => {
-                                            router.push('/ads/info');
-                                        }, 300);
-                                    }}
-                                >
-                                    <View style={styles.settingLeft}>
-                                        <Ionicons name="megaphone-outline" size={24} color={colors.text} />
-                                        <Text style={styles.settingText}>Publicidad</Text>
-                                    </View>
-                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                                </TouchableOpacity>
-                                <View style={styles.spacer} />
-                                <TouchableOpacity style={styles.logoutButton} onPress={signOut}>
-                                    <Ionicons name="log-out-outline" size={24} color={colors.error} />
-                                    <Text style={styles.logoutText}>Cerrar Sesión</Text>
-                                </TouchableOpacity>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+
+            {/* Modal personalizado de confirmación de eliminación de cuenta */}
+            <Modal
+                visible={isConfirmDeleteVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsConfirmDeleteVisible(false)}
+            >
+                <TouchableWithoutFeedback onPress={() => setIsConfirmDeleteVisible(false)}>
+                    <View style={styles.confirmModalOverlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={[styles.confirmModalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                <View style={styles.confirmModalIconContainer}>
+                                    <Ionicons name="warning" size={30} color="#EF4444" />
+                                </View>
+                                <Text style={[styles.confirmModalTitle, { color: colors.text }]}>
+                                    ¿Eliminar tu cuenta?
+                                </Text>
+                                <Text style={[styles.confirmModalMessage, { color: colors.textSecondary }]}>
+                                    Tu cuenta se desactivará e invisibilizará de inmediato. Tendrás un plazo de 30 días para volver a iniciar sesión y reactivar tu cuenta con todo tu contenido si cambias de opinión. Pasado ese tiempo, tu perfil y datos se eliminarán de forma definitiva e irreversible.
+                                </Text>
+                                <View style={styles.confirmModalButtons}>
+                                    <TouchableOpacity
+                                        style={[styles.confirmModalButton, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' }]}
+                                        onPress={() => setIsConfirmDeleteVisible(false)}
+                                    >
+                                        <Text style={[styles.confirmModalCancelText, { color: colors.text }]}>Cancelar</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.confirmModalButton, styles.confirmModalDeleteButton]}
+                                        onPress={() => {
+                                            setIsConfirmDeleteVisible(false);
+                                            deleteAccount();
+                                        }}
+                                    >
+                                        <Text style={styles.confirmModalDeleteText}>Eliminar</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+
+            {/* Modal de Alerta Personalizado */}
+            <Modal
+                visible={!!customAlert?.visible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setCustomAlert(null)}
+            >
+                <TouchableWithoutFeedback onPress={() => { if (customAlert?.type !== 'success') setCustomAlert(null); }}>
+                    <View style={styles.confirmModalOverlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={[styles.confirmModalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                <View style={[styles.confirmModalIconContainer, { backgroundColor: customAlert?.type === 'success' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)' }]}>
+                                    <Ionicons 
+                                        name={customAlert?.type === 'success' ? "checkmark-circle" : "alert-circle"} 
+                                        size={30} 
+                                        color={customAlert?.type === 'success' ? "#10B981" : "#EF4444"} 
+                                    />
+                                </View>
+                                <Text style={[styles.confirmModalTitle, { color: colors.text }]}>
+                                    {customAlert?.title}
+                                </Text>
+                                <Text style={[styles.confirmModalMessage, { color: colors.textSecondary }]}>
+                                    {customAlert?.message}
+                                </Text>
+                                <View style={styles.confirmModalButtons}>
+                                    <TouchableOpacity
+                                        style={[styles.confirmModalButton, { backgroundColor: customAlert?.type === 'success' ? "#10B981" : colors.primary }]}
+                                        onPress={() => {
+                                            const action = customAlert?.onPress;
+                                            setCustomAlert(null);
+                                            if (action) action();
+                                        }}
+                                    >
+                                        <Text style={[styles.confirmModalCancelText, { color: 'white', fontWeight: 'bold' }]}>Aceptar</Text>
+                                    </TouchableOpacity>
+                                </View>
                             </View>
                         </TouchableWithoutFeedback>
                     </View>
@@ -1315,8 +1794,6 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
             <ThemeSelectorModal
                 visible={isThemeModalVisible}
                 onClose={() => setIsThemeModalVisible(false)}
-                currentTheme={themeMode}
-                onSelectTheme={(theme) => setThemeMode(theme)}
             />
 
 
@@ -1539,7 +2016,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                 visible={isCreatePostVisible}
                 onClose={() => {
                     setIsCreatePostVisible(false);
-                    setEditingPostId(null);
+                    setEditingPostId(undefined);
                     setEditingPostContent('');
                     setEditingPostTitle('');
                 }}
@@ -1577,6 +2054,10 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                     selectedPost?.seller?.id === currentUserId ||
                     selectedPost?.user?.id === currentUserId
                 }
+                onReport={() => {
+                    setIsOptionsMenuVisible(false);
+                    setIsPostReportModalVisible(true);
+                }}
                 onToggleSave={() => handleToggleSave(selectedPost)}
                 isSaved={selectedPost?.isSaved}
                 onEdit={() => {
@@ -1613,8 +2094,7 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                                 setSelectedPostForComments({
                                     post: itemWithAuthor,
                                     minimize: !!selectedPostForComments?.minimize,
-                                    initialTab: selectedPostForComments?.initialTab,
-                                    initialExpanded: false
+                                    initialTab: selectedPostForComments?.initialTab
                                 });
                             } else {
                                 // Si no hay más, cerrar
@@ -1637,6 +2117,26 @@ export default function ProfileScreen({ userId: propsUserId }: ProfileScreenProp
                     }
                 }}
             />
+
+            {isPostReportModalVisible && selectedPost && (
+                <ReportModal
+                    visible={isPostReportModalVisible}
+                    onClose={() => setIsPostReportModalVisible(false)}
+                    reportedItemId={selectedPost.realId || selectedPost.id}
+                    reportedItemType={
+                        selectedPost.__typename === 'StoreProduct' ? 'PRODUCT' :
+                        selectedPost.__typename === 'JobOffer' ? 'JOB_OFFER' :
+                        selectedPost.__typename === 'ProfessionalProfile' ? 'SERVICE' :
+                        'POST'
+                    }
+                    onContentDeleted={() => {
+                        apolloClient.cache.evict({ id: apolloClient.cache.identify({ __typename: selectedPost.__typename, id: selectedPost.id }) });
+                        apolloClient.cache.gc();
+                        setIsPostReportModalVisible(false);
+                        onRefresh();
+                    }}
+                />
+            )}
         </SafeAreaView>
     );
 }
@@ -1929,6 +2429,170 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     errorGoBackText: {
         color: '#FFF',
         fontSize: 16,
+        fontWeight: 'bold',
+    },
+    confirmModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 24,
+    },
+    confirmModalContent: {
+        width: '85%',
+        borderRadius: 24,
+        padding: 24,
+        alignItems: 'center',
+        borderWidth: 1,
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+    },
+    confirmModalIconContainer: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: 'rgba(239, 68, 68, 0.12)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    confirmModalTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    confirmModalMessage: {
+        fontSize: 14,
+        textAlign: 'center',
+        lineHeight: 20,
+        marginBottom: 24,
+    },
+    confirmModalButtons: {
+        flexDirection: 'row',
+        width: '100%',
+        gap: 12,
+    },
+    confirmModalButton: {
+        flex: 1,
+        height: 46,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    confirmModalCancelText: {
+        fontWeight: '600',
+        fontSize: 14,
+    },
+    confirmModalDeleteButton: {
+        backgroundColor: '#EF4444',
+    },
+    confirmModalDeleteText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 14,
+    },
+    notificationPrefContainer: {
+        width: '100%',
+        paddingHorizontal: 8,
+        gap: 20,
+        marginTop: 10,
+    },
+    notificationPrefRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+    },
+    notificationPrefLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        marginRight: 16,
+    },
+    notificationPrefTextWrapper: {
+        marginLeft: 12,
+        flex: 1,
+    },
+    settingSubtext: {
+        fontSize: 12,
+        marginTop: 2,
+    },
+    iconWrapper: {
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    formContainer: {
+        width: '100%',
+        marginTop: 10,
+        gap: 16,
+    },
+    formGroup: {
+        width: '100%',
+        gap: 6,
+    },
+    formLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    formInputWrapper: {
+        borderWidth: 1,
+        borderRadius: 12,
+        height: 48,
+        justifyContent: 'center',
+        paddingHorizontal: 14,
+    },
+    formInput: {
+        fontSize: 15,
+        padding: 0,
+    },
+    sessionOptions: {
+        gap: 12,
+        marginBottom: 8,
+    },
+    radioOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    radioCircle: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        borderWidth: 2,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    radioDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+    },
+    radioLabel: {
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    submitButton: {
+        height: 48,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    submitButtonText: {
+        color: '#FFFFFF',
+        fontSize: 15,
         fontWeight: 'bold',
     },
 });

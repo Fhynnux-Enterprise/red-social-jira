@@ -16,6 +16,7 @@ import { UserBlocksService } from '../user-blocks/user-blocks.service';
 import { UserBlock } from '../user-blocks/entities/user-block.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/enums/notification.enums';
+import { VisionService } from '../storage/vision.service';
 
 @Injectable()
 export class StoreService {
@@ -32,10 +33,20 @@ export class StoreService {
     private readonly commentLikeRepo: Repository<StoreProductCommentLike>,
     private readonly userBlocksService: UserBlocksService,
     private readonly notificationsService: NotificationsService,
+    private readonly visionService: VisionService,
   ) {}
 
   async create(data: CreateStoreProductInput, userId: string, cityId: string): Promise<StoreProduct> {
     const { media, ...rest } = data;
+
+    // Validar seguridad de imágenes antes de guardar el producto
+    if (media && media.length > 0) {
+      for (const item of media) {
+        if (item.type === 'IMAGE' || item.url.match(/\.(jpeg|jpg|gif|png|webp)/i)) {
+          await this.visionService.validateImageSafety(item.url);
+        }
+      }
+    }
     const product = this.productRepo.create({
       ...rest,
       sellerId: userId,
@@ -109,10 +120,11 @@ export class StoreService {
     });
   }
 
-  async findById(id: string, cityId?: string): Promise<StoreProduct> {
+  async findById(id: string, cityId?: string, includeDeleted = false): Promise<StoreProduct> {
     const product = await this.productRepo.findOne({
       where: { id, cityId },
       relations: ['seller', 'media', 'likes', 'likes.user'],
+      withDeleted: includeDeleted,
     });
     if (!product) throw new NotFoundException('Producto no encontrado');
     if (product.media) product.media.sort((a, b) => a.order - b.order);
@@ -129,6 +141,15 @@ export class StoreService {
       throw new ForbiddenException('Sin permiso para editar este producto');
 
     const { id, media, ...updates } = data;
+
+    // Validar seguridad de nuevas imágenes antes de editar el producto
+    if (media !== undefined && media.length > 0) {
+      for (const item of media) {
+        if (item.type === 'IMAGE' || item.url.match(/\.(jpeg|jpg|gif|png|webp)/i)) {
+          await this.visionService.validateImageSafety(item.url);
+        }
+      }
+    }
     Object.keys(updates).forEach(key => {
       if (updates[key] !== undefined) {
         product[key] = updates[key];
@@ -298,7 +319,7 @@ export class StoreService {
     });
   }
 
-  async getCommentById(commentId: string): Promise<StoreProductComment | null> {
+  async getCommentById(commentId: string, withDeleted = false): Promise<StoreProductComment | null> {
     const comment = await this.commentRepo.findOne({
       where: { id: commentId },
       relations: [
@@ -312,6 +333,7 @@ export class StoreService {
         'product.likes.user',
         'product.author',
       ],
+      withDeleted,
     });
     if (!comment) return null;
     return comment;

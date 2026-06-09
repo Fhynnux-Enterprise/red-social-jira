@@ -85,4 +85,11 @@ export class UserBlocksService {
 
     return !!block;
   }
+
+  async isBlockedByMe(blockerId: string, blockedId: string): Promise<boolean> {
+    const block = await this.userBlockRepository.findOne({
+      where: { blockerId, blockedId },
+    });
+    return !!block;
+  }
 }

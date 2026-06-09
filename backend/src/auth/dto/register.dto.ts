@@ -18,6 +18,10 @@ export class RegisterDto {
     @IsNotEmpty({ message: 'El apellido es requerido' })
     lastName: string;
 
+    @IsOptional()
+    @IsString({ message: 'La fecha de nacimiento debe ser una cadena de texto' })
+    birthDate?: string;
+
     @IsString({ message: 'El nombre de usuario debe ser una cadena de texto' })
     @IsNotEmpty({ message: 'El nombre de usuario es requerido' })
     @Matches(/^[a-zA-Z0-9_]+$/, { message: 'El nombre de usuario solo puede contener letras, números y guiones bajos (sin espacios)' })

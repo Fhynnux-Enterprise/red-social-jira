@@ -751,7 +751,7 @@ export default function JobsScreen() {
             {/* ── Header ── */}
             <View style={[styles.header, { paddingTop: insets.top + 10, borderBottomColor: colors.border }]}>
                 <View style={styles.headerTop}>
-                    <Text style={[styles.title, { color: colors.text }]}>Empleos</Text>
+                    <Text style={[styles.title, { color: colors.text }]}>Bolsa de empleo y servicios</Text>
                     <View style={{ flexDirection: 'row', gap: 10 }}>
                         <TouchableOpacity style={[styles.notifBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)' }]}>
                             <Ionicons name="notifications-outline" size={22} color={colors.text} />
@@ -1269,7 +1269,7 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
         marginBottom: 16,
     },
     title: {
-        fontSize: 26,
+        fontSize: 22,
         fontWeight: '800',
         letterSpacing: -0.5,
     },

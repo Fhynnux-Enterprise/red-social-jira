@@ -1,5 +1,5 @@
 import { Resolver, Query, Mutation, Args, Context, ResolveField, Parent, Int } from '@nestjs/graphql';
-import { UseGuards } from '@nestjs/common';
+import { UseGuards, NotFoundException } from '@nestjs/common';
 import { CommentsService } from './comments.service';
 import { Comment } from './entities/comment.entity';
 import { JwtGqlGuard } from '../auth/guards/jwt-gql.guard';
@@ -39,7 +39,17 @@ export class CommentsResolver {
         @Context() context: any,
     ): Promise<Comment | null> {
         const user = context.req?.user;
-        return this.commentsService.getCommentById(id, user?.id, user?.cityId);
+        const comment = await this.commentsService.getCommentById(id, user?.id, user?.cityId, true);
+        if (!comment) return null;
+
+        if (comment.deletedAt) {
+            const isAuthor = comment.userId === user?.id;
+            const isModeratorOrAdmin = user?.role === 'ADMIN' || user?.role === 'MODERATOR';
+            if (!isAuthor && !isModeratorOrAdmin) {
+                throw new NotFoundException('Comentario no encontrado');
+            }
+        }
+        return comment;
     }
 
     @Mutation(() => Boolean, { name: 'deleteComment' })

@@ -153,6 +153,7 @@ type Conversation {
   lastMessage: Message
   unreadCount: Float
   isBlocked: Boolean!
+  isBlockedByMe: Boolean!
 }
 
 type Participant {
@@ -260,6 +261,7 @@ type User {
   username: String!
   firstName: String!
   lastName: String!
+  birthDate: String
   phone: String
   bio: String
   photoUrl: String
@@ -269,6 +271,9 @@ type User {
   bannedUntil: DateTime
   banReason: String
   cityId: String!
+  receiveSystemNotifications: Boolean!
+  receiveModerationNotifications: Boolean!
+  receiveSocialNotifications: Boolean!
   city: City
   posts(limit: Int = 5, offset: Int = 0): [Post!]
   customFields: [UserCustomField!]
@@ -298,15 +303,6 @@ enum UserRole {
   ADMIN
   MODERATOR
   VERIFIED_BUSINESS
-}
-
-type UserBlock {
-  id: ID!
-  blockerId: String!
-  blockedId: String!
-  blocker: User!
-  blocked: User!
-  createdAt: DateTime!
 }
 
 type StoreProductMedia {
@@ -380,29 +376,6 @@ type StoreProduct {
   isSaved: Boolean!
 }
 
-type Notification {
-  id: ID!
-  title: String!
-  message: String!
-  type: NotificationType!
-  isRead: Boolean!
-  user: User!
-  data: String
-  createdAt: DateTime!
-}
-
-"""Tipo de notificación"""
-enum NotificationType {
-  SYSTEM
-  MODERATION
-  SOCIAL
-}
-
-type UploadUrlResponse {
-  signedUrl: String!
-  publicUrl: String!
-}
-
 type Report {
   id: ID!
   reason: String!
@@ -433,6 +406,38 @@ enum ReportedItemType {
   COMMENT
   USER
   LOCAL_AD
+}
+
+type Notification {
+  id: ID!
+  title: String!
+  message: String!
+  type: NotificationType!
+  isRead: Boolean!
+  user: User!
+  data: String
+  createdAt: DateTime!
+}
+
+"""Tipo de notificación"""
+enum NotificationType {
+  SYSTEM
+  MODERATION
+  SOCIAL
+}
+
+type UserBlock {
+  id: ID!
+  blockerId: String!
+  blockedId: String!
+  blocker: User!
+  blocked: User!
+  createdAt: DateTime!
+}
+
+type UploadUrlResponse {
+  signedUrl: String!
+  publicUrl: String!
 }
 
 type ReadMessagesPayload {
@@ -478,6 +483,7 @@ type Appeal {
   status: AppealStatus!
   type: AppealType!
   referenceId: ID
+  contentType: String
   user: User!
   createdAt: DateTime!
 }
@@ -513,17 +519,19 @@ type AdvertiserPermission {
   createdAt: DateTime!
 }
 
+type SystemSetting {
+  id: String!
+  isMaintenanceMode: Boolean!
+  minRequiredAppVersion: String!
+  maintenanceMessage: String
+  storeUrlIos: String
+  storeUrlAndroid: String
+  updatedAt: DateTime!
+}
+
 type Query {
   """Verifica si el servidor GraphQL está funcionando"""
   ping: String!
-  getPostById(id: String!): Post
-  getPosts(limit: Int! = 5, offset: Int! = 0): [Post!]!
-  searchPosts(query: String!, limit: Int! = 5, offset: Int! = 0): [Post!]!
-  getSavedPosts(limit: Int! = 20, offset: Int! = 0): [SavedContent!]!
-  getLikedItems(limit: Int! = 20, offset: Int! = 0): [LikedContent!]!
-  getMyBlockedUsers(limit: Float, offset: Float): [User!]!
-  getMyNotifications(limit: Int! = 20, offset: Int! = 0): [Notification!]!
-  getUnreadNotificationsCount: Int!
   getUserProfile(id: String!): User!
   me: User!
   searchUsers(searchTerm: String!, limit: Int = 5, offset: Int = 0): [User!]!
@@ -544,6 +552,14 @@ type Query {
   getFollowing(userId: String!): [User!]!
   getOnlineFollowing: [User!]!
   getOnlineFollowingCount: Int!
+  getMyBlockedUsers(limit: Float, offset: Float): [User!]!
+  getMyNotifications(limit: Int! = 20, offset: Int! = 0): [Notification!]!
+  getUnreadNotificationsCount: Int!
+  getPostById(id: String!): Post
+  getPosts(limit: Int! = 5, offset: Int! = 0): [Post!]!
+  searchPosts(query: String!, limit: Int! = 5, offset: Int! = 0): [Post!]!
+  getSavedPosts(limit: Int! = 20, offset: Int! = 0): [SavedContent!]!
+  getLikedItems(limit: Int! = 20, offset: Int! = 0): [LikedContent!]!
   getCommentsByPost(postId: String!, limit: Int = 10, offset: Int = 0): [Comment!]!
   getCommentById(id: String!): Comment
   getUserConversations: [Conversation!]!
@@ -585,6 +601,7 @@ type Query {
   getMyAdvertiserPermission: AdvertiserPermission
   getMyAds: [LocalAd!]!
   getCities: [City!]!
+  getSystemConfig: SystemSetting!
 }
 
 union SavedContent = Post | StoreProduct | JobOffer | ProfessionalProfile
@@ -594,19 +611,6 @@ union LikedContent = Post | StoreProduct
 union FeedItem = Post | JobOffer | ProfessionalProfile | StoreProduct
 
 type Mutation {
-  createPost(content: String!, title: String, media: [PostMediaInput!]): Post!
-  updatePost(id: String!, content: String!, title: String): Post!
-  deletePost(id: String!): Boolean!
-  toggleLike(postId: String!): Post!
-  toggleSavePost(postId: String!, itemType: SavedItemType! = POST): Boolean!
-  generateUploadUrl(fileName: String!, fileType: String!, folder: String!): UploadUrlResponse!
-  blockUser(userId: String!): UserBlock!
-  unblockUser(userId: String!): Boolean!
-  markNotificationAsRead(id: ID!): Notification
-  markAllNotificationsAsRead: Boolean!
-  registerPushToken(token: String!, platform: String): Boolean!
-  testMyPushNotification: Boolean!
-  sendGlobalNotification(title: String!, body: String!, cityId: String, saveInDb: Boolean!, imageUrl: String, detailed: Boolean, badgeText: String, postId: String, postType: String, authorAvatarUrl: String): Boolean!
   addCustomField(title: String!, value: String!): UserCustomField!
   updateCustomField(id: String!, title: String!, value: String!): UserCustomField!
   deleteCustomField(id: String!): Boolean!
@@ -640,7 +644,25 @@ type Mutation {
 
   """Asigna a un usuario un rango de límites específico."""
   assignUserTier(userId: String!, tierId: String!): User!
+
+  """Elimina de forma permanente la cuenta del usuario autenticado."""
+  deleteAccount: Boolean!
+  updateNotificationPreferences(receiveSystemNotifications: Boolean!, receiveModerationNotifications: Boolean!, receiveSocialNotifications: Boolean!): User!
   toggleFollow(followingId: String!): Boolean!
+  blockUser(userId: String!): UserBlock!
+  unblockUser(userId: String!): Boolean!
+  markNotificationAsRead(id: ID!): Notification
+  markAllNotificationsAsRead: Boolean!
+  registerPushToken(token: String!, platform: String): Boolean!
+  testMyPushNotification: Boolean!
+  sendGlobalNotification(title: String!, body: String!, cityId: String, saveInDb: Boolean!, imageUrl: String, detailed: Boolean, badgeText: String, postId: String, postType: String, authorAvatarUrl: String): Boolean!
+  deleteNotifications(ids: [ID!]!): Boolean!
+  createPost(content: String!, title: String, media: [PostMediaInput!]): Post!
+  updatePost(id: String!, content: String!, title: String): Post!
+  deletePost(id: String!): Boolean!
+  toggleLike(postId: String!): Post!
+  toggleSavePost(postId: String!, itemType: SavedItemType! = POST): Boolean!
+  generateUploadUrl(fileName: String!, fileType: String!, folder: String!): UploadUrlResponse!
   createComment(postId: String!, content: String!, parentId: String): Comment!
   deleteComment(id: String!): Boolean!
   updateComment(id: String!, content: String!): Comment!
@@ -690,20 +712,7 @@ type Mutation {
   deleteLocalAd(id: String!): Boolean!
   createLocalAd(input: CreateLocalAdInput!): LocalAd!
   updateLocalAd(input: UpdateLocalAdInput!): LocalAd!
-}
-
-input PostMediaInput {
-  url: String!
-  type: String!
-  order: Int!
-}
-
-enum SavedItemType {
-  POST
-  JOB_OFFER
-  PROFESSIONAL_PROFILE
-  STORE_PRODUCT
-  AD
+  updateSystemConfig(isMaintenanceMode: Boolean, minRequiredAppVersion: String, maintenanceMessage: String, storeUrlIos: String, storeUrlAndroid: String): SystemSetting!
 }
 
 input CreateUserTierInput {
@@ -726,6 +735,20 @@ input UpdateUserTierInput {
   maxVideoQuality: String
   maxVideoBitrateKbps: Int
   maxUploadSizeMb: Float
+}
+
+input PostMediaInput {
+  url: String!
+  type: String!
+  order: Int!
+}
+
+enum SavedItemType {
+  POST
+  JOB_OFFER
+  PROFESSIONAL_PROFILE
+  STORE_PRODUCT
+  AD
 }
 
 input CreateJobOfferInput {

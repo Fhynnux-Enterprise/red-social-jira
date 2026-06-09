@@ -173,3 +173,29 @@ export const GET_MY_REPORT_STATUS = gql`
     }
   }
 `;
+
+export const DELETE_ACCOUNT = gql`
+  mutation DeleteAccount {
+    deleteAccount
+  }
+`;
+
+export const UPDATE_NOTIFICATION_PREFERENCES = gql`
+  mutation UpdateNotificationPreferences(
+    $receiveSystemNotifications: Boolean!
+    $receiveModerationNotifications: Boolean!
+    $receiveSocialNotifications: Boolean!
+  ) {
+    updateNotificationPreferences(
+      receiveSystemNotifications: $receiveSystemNotifications
+      receiveModerationNotifications: $receiveModerationNotifications
+      receiveSocialNotifications: $receiveSocialNotifications
+    ) {
+      id
+      receiveSystemNotifications
+      receiveModerationNotifications
+      receiveSocialNotifications
+    }
+  }
+`;
+

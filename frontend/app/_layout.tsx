@@ -10,6 +10,8 @@ import { MuteProvider } from '../src/contexts/MuteContext';
 import { ApolloProvider } from '@apollo/client/react';
 import { apolloClient } from '../src/api/apollo.client';
 import { AuthProvider } from '../src/features/auth/context/AuthContext';
+import { SystemStatusProvider } from '../src/contexts/SystemStatusContext';
+import SystemBlocker from '../src/features/system/components/SystemBlocker';
 import notifee, { EventType } from '@notifee/react-native';
 
 // Prevent the native splash screen from hiding automatically
@@ -48,7 +50,9 @@ export default function RootLayout() {
           params: { 
             postId: data.postId, 
             isStore: data.type === 'STORE_DETAIL' ? 'true' : 'false',
-            itemType: data.type
+            itemType: data.type,
+            isDeletedContent: data.isDeletedContent === 'true' || data.isDeletedContent === true ? 'true' : 'false',
+            moderatorNote: data.moderatorNote || ''
           }
         });
         return;
@@ -107,32 +111,36 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ApolloProvider client={apolloClient}>
-        <AuthProvider>
-          <ThemeProvider>
-            <MuteProvider>
-              <Stack screenOptions={{ animation: 'slide_from_right' }}>
-                <Stack.Screen name="index" options={{ headerShown: false }} />
-                <Stack.Screen name="search" options={{ headerShown: false }} />
-                <Stack.Screen name="profile" options={{ headerShown: false }} />
-                <Stack.Screen name="postDetail" options={{ headerShown: false }} />
-                <Stack.Screen name="notificationDetail" options={{ headerShown: false }} />
-                <Stack.Screen 
-                  name="jobs/create" 
-                  options={{ 
-                    headerShown: false,
-                    presentation: 'fullScreenModal',
-                    animation: 'slide_from_bottom'
-                  }} 
-                />
-                <Stack.Screen
-                  name="jobs/[id]/applicants"
-                  options={{ headerShown: false }}
-                />
-              </Stack>
-            </MuteProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <SystemStatusProvider>
+              <SystemBlocker>
+                <MuteProvider>
+                  <Stack screenOptions={{ animation: 'slide_from_right' }}>
+                    <Stack.Screen name="index" options={{ headerShown: false }} />
+                    <Stack.Screen name="search" options={{ headerShown: false }} />
+                    <Stack.Screen name="profile" options={{ headerShown: false }} />
+                    <Stack.Screen name="postDetail" options={{ headerShown: false }} />
+                    <Stack.Screen name="notificationDetail" options={{ headerShown: false }} />
+                    <Stack.Screen 
+                      name="jobs/create" 
+                      options={{ 
+                        headerShown: false,
+                        presentation: 'fullScreenModal',
+                        animation: 'slide_from_bottom'
+                      }} 
+                    />
+                    <Stack.Screen
+                      name="jobs/[id]/applicants"
+                      options={{ headerShown: false }}
+                    />
+                  </Stack>
+                </MuteProvider>
+              </SystemBlocker>
+            </SystemStatusProvider>
             <Toast config={customToastConfig} position="top" topOffset={60} />
-          </ThemeProvider>
-        </AuthProvider>
+          </AuthProvider>
+        </ThemeProvider>
       </ApolloProvider>
     </GestureHandlerRootView>
   );

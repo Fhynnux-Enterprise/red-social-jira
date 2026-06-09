@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { passportJwtSecret } from 'jwks-rsa';
@@ -7,12 +7,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v5 as uuidv5 } from 'uuid';
 import { User } from '../entities/user.entity';
+import { UsersService } from '../../users/users.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
     constructor(
         private configService: ConfigService,
         @InjectRepository(User) private userRepository: Repository<User>,
+        private readonly usersService: UsersService,
     ) {
         const supabaseUrl = configService.get<string>('SUPABASE_URL');
 
@@ -39,16 +41,37 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         const cityId = req.headers['x-city-id'] || 'chunchi';
         
         // 1. Intentar buscar por ID directo (Usuarios Email/Password) 
-        // Filtramos también por cityId para asegurar que un token solo funcione en su ciudad
+        // Buscamos con withDeleted: true para saber si la cuenta está en período de gracia (soft-deleted)
         let dbUser = await this.userRepository.findOne({ 
-            where: { id: payload.sub, cityId: cityId } 
+            where: { id: payload.sub, cityId: cityId },
+            withDeleted: true
         });
 
         // 2. Si no existe, intentar buscar por ID determinista (Usuarios Google SSO)
         if (!dbUser) {
             const NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
             const deterministicId = uuidv5(`${payload.sub}:${cityId}`, NAMESPACE);
-            dbUser = await this.userRepository.findOne({ where: { id: deterministicId, cityId: cityId } });
+            dbUser = await this.userRepository.findOne({ 
+                where: { id: deterministicId, cityId: cityId },
+                withDeleted: true
+            });
+        }
+
+        // Si el usuario existe pero está soft-deleted (tiene deletedAt establecido)
+        if (dbUser && dbUser.deletedAt) {
+            const daysSinceDeletion = (Date.now() - new Date(dbUser.deletedAt).getTime()) / (1000 * 60 * 60 * 24);
+            if (daysSinceDeletion <= 30) {
+                // Lanzamos una excepción estructurada para que el frontend pregunte si desea reactivar la cuenta
+                throw new UnauthorizedException(
+                    JSON.stringify({
+                        code: 'ACCOUNT_DEACTIVATED',
+                        message: 'Tu cuenta está desactivada pero se puede reactivar.',
+                    })
+                );
+            } else {
+                // Si pasaron los 30 días, tratamos como no existente/eliminado permanente
+                throw new UnauthorizedException('Esta cuenta ha sido eliminada permanentemente.');
+            }
         }
         
         if (!dbUser) {

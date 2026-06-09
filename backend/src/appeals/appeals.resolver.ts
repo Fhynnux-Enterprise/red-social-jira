@@ -1,4 +1,4 @@
-import { Resolver, Query, Mutation, Args, Int } from '@nestjs/graphql';
+import { Resolver, Query, Mutation, Args, Int, ResolveField, Parent } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { AppealsService } from './appeals.service';
 import { Appeal } from './entities/appeal.entity';
@@ -41,5 +41,10 @@ export class AppealsResolver {
         @CurrentUser() user: User,
     ): Promise<Appeal> {
         return this.appealsService.resolveAppeal(input, user);
+    }
+
+    @ResolveField(() => String, { nullable: true })
+    async contentType(@Parent() appeal: Appeal): Promise<string | null> {
+        return this.appealsService.getContentType(appeal);
     }
 }

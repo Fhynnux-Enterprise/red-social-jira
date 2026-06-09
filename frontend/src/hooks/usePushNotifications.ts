@@ -37,7 +37,7 @@ Notifications.setNotificationHandler({
             shouldShowAlert: shouldShow,
             shouldPlaySound: !isCurrentChat,
             shouldSetBadge: false,
-        };
+        } as Notifications.NotificationBehavior;
     },
 });
 
@@ -52,7 +52,7 @@ if (Platform.OS !== 'web') {
                 placeholder: 'Escribe un mensaje...',
             },
             options: {
-                opensAppToPerformAction: false,
+                opensAppToForeground: false,
             },
         },
     ]).catch(err => console.error('Error al configurar la categoría de notificaciones de chat:', err));
@@ -61,8 +61,8 @@ if (Platform.OS !== 'web') {
 export const usePushNotifications = (isAuthenticated: boolean) => {
     const [expoPushToken, setExpoPushToken] = useState<string | undefined>();
     const [notification, setNotification] = useState<Notifications.Notification | undefined>();
-    const notificationListener = useRef<Notifications.Subscription>();
-    const responseListener = useRef<Notifications.Subscription>();
+    const notificationListener = useRef<Notifications.Subscription | undefined>(undefined);
+    const responseListener = useRef<Notifications.Subscription | undefined>(undefined);
     const hasRegistered = useRef(false);
 
     const [registerPushToken] = useMutation(REGISTER_PUSH_TOKEN_MUTATION);
@@ -130,8 +130,12 @@ export const usePushNotifications = (isAuthenticated: boolean) => {
                 hasRegistered.current = true;
                 console.log('Token de notificaciones registrado correctamente:', token);
             } catch (error: any) {
+                const isDeactivated = error?.message?.includes('ACCOUNT_DEACTIVATED') || 
+                                      (error?.graphQLErrors && error.graphQLErrors.some((ge: any) => ge?.extensions?.code === 'ACCOUNT_DEACTIVATED'));
                 if (error?.message?.includes('Unauthorized')) {
                     console.warn('No se pudo registrar el push token: Sesión expirada o no autorizada.');
+                } else if (isDeactivated) {
+                    console.warn('No se pudo registrar el push token: Cuenta desactivada (pendiente de reactivación).');
                 } else {
                     console.error('Error al registrar las notificaciones push:', error);
                 }
@@ -251,15 +255,18 @@ export const usePushNotifications = (isAuthenticated: boolean) => {
                         data.type === 'POST_DETAIL' ||
                         data.type === 'STORE_DETAIL' ||
                         data.type === 'JOB_DETAIL' ||
-                        data.type === 'SERVICE_DETAIL'
+                        data.type === 'SERVICE_DETAIL' ||
+                        data.type === 'COMMENT_DETAIL'
                     )) {
                         console.log('Deep linking to postDetail with ID:', data.postId, 'type:', data.type);
                         router.push({
                             pathname: '/postDetail',
                             params: { 
                                 postId: data.postId, 
-                                isStore: data.type === 'STORE_DETAIL' ? 'true' : 'false',
-                                itemType: data.type
+                                isStore: data.isStore || (data.type === 'STORE_DETAIL' ? 'true' : 'false'),
+                                itemType: data.type,
+                                isDeletedContent: data.isDeletedContent === 'true' || data.isDeletedContent === true ? 'true' : 'false',
+                                moderatorNote: data.moderatorNote || ''
                             }
                         });
                         return;

@@ -1,5 +1,5 @@
 import { Resolver, Query, Mutation, Args, Context, ResolveField, Parent, Int, createUnionType } from '@nestjs/graphql';
-import { UseGuards } from '@nestjs/common';
+import { UseGuards, NotFoundException } from '@nestjs/common';
 import { PostsService } from './posts.service';
 import { Post } from './entities/post.entity';
 import { SavedItemType } from './entities/saved-item.entity';
@@ -71,7 +71,17 @@ export class PostsResolver {
         @Args('id') id: string,
         @CurrentUser() user: any,
     ): Promise<Post | null> {
-        return this.postsService.findById(id, user.cityId);
+        const post = await this.postsService.findById(id, user.cityId, true);
+        if (!post) return null;
+
+        if (post.deletedAt) {
+            const isAuthor = post.authorId === user.id || post.author?.id === user.id;
+            const isModeratorOrAdmin = user.role === 'ADMIN' || user.role === 'MODERATOR';
+            if (!isAuthor && !isModeratorOrAdmin) {
+                throw new NotFoundException('Publicación no encontrada');
+            }
+        }
+        return post;
     }
 
     @Query(() => [Post], { name: 'getPosts' })

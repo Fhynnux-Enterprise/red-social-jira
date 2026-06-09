@@ -4,15 +4,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { useTheme } from '../../../theme/ThemeContext';
-import { GET_MY_NOTIFICATIONS, MARK_AS_READ, GET_UNREAD_NOTIFICATIONS_COUNT, NOTIFICATION_ADDED_SUBSCRIPTION } from '../graphql/notifications.operations';
+import { GET_MY_NOTIFICATIONS, MARK_AS_READ, GET_UNREAD_NOTIFICATIONS_COUNT, NOTIFICATION_ADDED_SUBSCRIPTION, DELETE_NOTIFICATIONS, MARK_ALL_AS_READ } from '../graphql/notifications.operations';
 import AppealModal from '../components/AppealModal';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../auth/context/AuthContext';
+import Toast from 'react-native-toast-message';
 
 export default function NotificationsScreen() {
     const { colors, isDark } = useTheme();
     const router = useRouter();
     const [appealItem, setAppealItem] = React.useState<any>(null);
+    const [selectionMode, setSelectionMode] = React.useState(false);
+    const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
 
     const formatDate = (isoString: string) => {
         if (!isoString) return '';
@@ -83,7 +86,89 @@ export default function NotificationsScreen() {
         }
     });
 
+    const [deleteNotifications] = useMutation(DELETE_NOTIFICATIONS, {
+        refetchQueries: [
+            { query: GET_MY_NOTIFICATIONS, variables: { limit: 50, offset: 0 } },
+            { query: GET_UNREAD_NOTIFICATIONS_COUNT }
+        ]
+    });
+
+    const [markAllNotificationsAsRead] = useMutation(MARK_ALL_AS_READ, {
+        refetchQueries: [
+            { query: GET_MY_NOTIFICATIONS, variables: { limit: 50, offset: 0 } },
+            { query: GET_UNREAD_NOTIFICATIONS_COUNT }
+        ]
+    });
+
+    const toggleSelect = (id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    };
+
+    const handleCancelSelection = () => {
+        setSelectedIds(new Set());
+        setSelectionMode(false);
+    };
+
+    const handleToggleSelectAll = () => {
+        const notifications = data?.getMyNotifications || [];
+        if (selectedIds.size === notifications.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(notifications.map((n: any) => n.id)));
+        }
+    };
+
+    const handleDeleteSelected = async () => {
+        if (selectedIds.size === 0) return;
+        const idsArray = Array.from(selectedIds);
+        try {
+            await deleteNotifications({
+                variables: { ids: idsArray }
+            });
+            setSelectedIds(new Set());
+            setSelectionMode(false);
+            Toast.show({
+                type: 'success',
+                text1: 'Avisos eliminados',
+                text2: 'Las notificaciones seleccionadas fueron eliminadas.',
+            });
+        } catch (error) {
+            console.error('Error deleting notifications:', error);
+            Toast.show({
+                type: 'error',
+                text1: 'Error',
+                text2: 'No se pudieron eliminar las notificaciones.',
+            });
+        }
+    };
+
+    const handleMarkAllAsRead = async () => {
+        try {
+            await markAllNotificationsAsRead();
+            Toast.show({
+                type: 'success',
+                text1: 'Notificaciones leídas',
+                text2: 'Todas las notificaciones se marcaron como leídas.',
+            });
+        } catch (error) {
+            console.error('Error marking all notifications as read:', error);
+        }
+    };
+
     const handlePressNotification = (item: any) => {
+        if (selectionMode) {
+            toggleSelect(item.id);
+            return;
+        }
+
         if (!item.isRead) {
             markAsRead({
                 variables: { id: item.id },
@@ -105,14 +190,17 @@ export default function NotificationsScreen() {
                         parsedData.type === 'POST_DETAIL' ||
                         parsedData.type === 'STORE_DETAIL' ||
                         parsedData.type === 'JOB_DETAIL' ||
-                        parsedData.type === 'SERVICE_DETAIL'
+                        parsedData.type === 'SERVICE_DETAIL' ||
+                        parsedData.type === 'COMMENT_DETAIL'
                     )) {
                         router.push({
                             pathname: '/postDetail',
                             params: { 
                                 postId: parsedData.postId, 
-                                isStore: parsedData.type === 'STORE_DETAIL' ? 'true' : 'false',
-                                itemType: parsedData.type
+                                isStore: parsedData.isStore || (parsedData.type === 'STORE_DETAIL' ? 'true' : 'false'),
+                                itemType: parsedData.type,
+                                isDeletedContent: parsedData.isDeletedContent === 'true' || parsedData.isDeletedContent === true ? 'true' : 'false',
+                                moderatorNote: parsedData.moderatorNote || ''
                             }
                         });
                         return;
@@ -147,11 +235,21 @@ export default function NotificationsScreen() {
         }
     };
 
+    const handleLongPressNotification = (item: any) => {
+        if (!selectionMode) {
+            setSelectionMode(true);
+            setSelectedIds(new Set([item.id]));
+        }
+    };
+
     const renderItem = ({ item }: { item: any }) => {
         const isUnread = !item.isRead;
-        const bgColor = isUnread 
-            ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.06)') 
-            : colors.surface;
+        const isSelected = selectedIds.has(item.id);
+        const bgColor = isSelected
+            ? (isDark ? 'rgba(59, 130, 246, 0.25)' : 'rgba(59, 130, 246, 0.1)')
+            : isUnread 
+                ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.06)') 
+                : colors.surface;
         
         const titleStyle = isUnread ? { fontWeight: 'bold' as const } : { fontWeight: '600' as const };
         const dateString = formatDate(item.createdAt);
@@ -209,12 +307,28 @@ export default function NotificationsScreen() {
             ? 'transparent'
             : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)');
 
+        const renderCheckbox = () => {
+            if (!selectionMode) return null;
+            return (
+                <View style={styles.checkboxWrapper}>
+                    <Ionicons 
+                        name={isSelected ? "checkmark-circle" : "ellipse-outline"} 
+                        size={22} 
+                        color={isSelected ? "#3B82F6" : colors.textSecondary} 
+                    />
+                </View>
+            );
+        };
+
         return (
             <TouchableOpacity 
                 style={[styles.notificationCard, { backgroundColor: bgColor, borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.2)' : colors.border }]}
                 onPress={() => handlePressNotification(item)}
+                onLongPress={() => handleLongPressNotification(item)}
+                delayLongPress={400}
                 activeOpacity={0.7}
             >
+                {renderCheckbox()}
                 <View style={[styles.iconContainer, { backgroundColor: iconBg }]}>
                     {renderIconOrAvatar()}
                 </View>
@@ -247,7 +361,46 @@ export default function NotificationsScreen() {
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
             <View style={[styles.header, { borderBottomColor: colors.border }]}>
-                <Text style={[styles.title, { color: colors.text }]}>Notificaciones</Text>
+                {selectionMode ? (
+                    <View style={styles.headerRow}>
+                        <TouchableOpacity onPress={handleCancelSelection} style={styles.headerButton}>
+                            <Ionicons name="close-outline" size={24} color={colors.text} />
+                            <Text style={[styles.headerButtonText, { color: colors.text }]}>Cancelar</Text>
+                        </TouchableOpacity>
+                        
+                        <Text style={[styles.headerTitle, { color: colors.text }]}>
+                            {selectedIds.size} {selectedIds.size === 1 ? 'seleccionado' : 'seleccionados'}
+                        </Text>
+                        
+                        <TouchableOpacity onPress={handleToggleSelectAll} style={styles.headerButton}>
+                            <Text style={[styles.headerButtonText, { color: '#3B82F6', fontWeight: '600' }]}>
+                                {selectedIds.size === notifications.length ? 'Ninguno' : 'Todos'}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    <View style={styles.headerRow}>
+                        <Text style={[styles.title, { color: colors.text }]}>Notificaciones</Text>
+                        <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
+                            {notifications.length > 0 && (
+                                <>
+                                    <TouchableOpacity 
+                                        onPress={handleMarkAllAsRead} 
+                                        style={styles.iconHeaderButton}
+                                    >
+                                        <Ionicons name="checkmark-done-outline" size={24} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity 
+                                        onPress={() => setSelectionMode(true)} 
+                                        style={styles.iconHeaderButton}
+                                    >
+                                        <Ionicons name="checkbox-outline" size={22} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                </>
+                            )}
+                        </View>
+                    </View>
+                )}
             </View>
 
             {loading && notifications.length === 0 ? (
@@ -267,10 +420,23 @@ export default function NotificationsScreen() {
                     data={notifications}
                     keyExtractor={(item) => item.id}
                     renderItem={renderItem}
-                    contentContainerStyle={{ paddingBottom: 20 }}
+                    contentContainerStyle={{ paddingBottom: selectionMode ? 100 : 20 }}
                     refreshing={loading}
                     onRefresh={refetch}
                 />
+            )}
+
+            {selectionMode && (
+                <View style={[styles.footerBar, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+                    <TouchableOpacity 
+                        style={[styles.deleteButton, selectedIds.size === 0 && { opacity: 0.5 }]} 
+                        onPress={handleDeleteSelected}
+                        disabled={selectedIds.size === 0}
+                    >
+                        <Ionicons name="trash-outline" size={20} color="white" />
+                        <Text style={styles.deleteButtonText}>Eliminar ({selectedIds.size})</Text>
+                    </TouchableOpacity>
+                </View>
             )}
 
             {/* Modal de Apelación */}
@@ -385,5 +551,68 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         marginLeft: 12,
         backgroundColor: 'rgba(150, 150, 150, 0.1)',
-    }
+    },
+    headerRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+    },
+    headerTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    headerButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    headerButtonText: {
+        fontSize: 15,
+    },
+    iconHeaderButton: {
+        padding: 4,
+    },
+    checkboxWrapper: {
+        marginRight: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    footerBar: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        padding: 16,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -3 },
+        shadowOpacity: 0.1,
+        shadowRadius: 5,
+    },
+    deleteButton: {
+        backgroundColor: '#EF4444',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 12,
+        paddingHorizontal: 32,
+        borderRadius: 24,
+        width: '80%',
+        shadowColor: '#EF4444',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
+        elevation: 4,
+    },
+    deleteButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 15,
+    },
 });

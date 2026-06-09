@@ -15,6 +15,7 @@ import AdminAdsConfig from '../components/AdminAdsConfig';
 import AdminUserPermissions from '../components/AdminUserPermissions';
 import AdminGlobalNotifications from '../components/AdminGlobalNotifications';
 import AdminUserTiers from '../components/AdminUserTiers';
+import AdminSystemStatus from '../components/AdminSystemStatus';
 import VerifiedBadge from '../../../components/VerifiedBadge';
 import {
     GET_VERIFIED_USERS,
@@ -24,7 +25,7 @@ import {
     SEARCH_USERS_FOR_VERIFICATION
 } from '../graphql/moderation.operations';
 
-type AdminTab = 'config' | 'users' | 'notifications' | 'verified' | 'tiers';
+type AdminTab = 'config' | 'users' | 'notifications' | 'verified' | 'tiers' | 'system';
 
 export default function AdminScreen() {
     const { colors, isDark } = useTheme();
@@ -186,8 +187,9 @@ export default function AdminScreen() {
             </View>
 
             {/* Tab Bar */}
-            <View style={[styles.tabBar, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-                <TouchableOpacity
+            <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.surface }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBar}>
+                    <TouchableOpacity
                     style={[styles.tabItem, activeTab === 'config' && { borderBottomColor: colors.primary }]}
                     onPress={() => setActiveTab('config')}
                 >
@@ -247,15 +249,30 @@ export default function AdminScreen() {
                     style={[styles.tabItem, activeTab === 'notifications' && { borderBottomColor: colors.primary }]}
                     onPress={() => setActiveTab('notifications')}
                 >
-                    <Ionicons 
-                        name={activeTab === 'notifications' ? "megaphone" : "megaphone-outline"} 
-                        size={18} 
-                        color={activeTab === 'notifications' ? colors.primary : colors.textSecondary} 
-                    />
-                    <Text style={[styles.tabLabel, { color: activeTab === 'notifications' ? colors.primary : colors.textSecondary }]}>
-                        Notif.
-                    </Text>
-                </TouchableOpacity>
+                        <Ionicons 
+                            name={activeTab === 'notifications' ? "megaphone" : "megaphone-outline"} 
+                            size={18} 
+                            color={activeTab === 'notifications' ? colors.primary : colors.textSecondary} 
+                        />
+                        <Text style={[styles.tabLabel, { color: activeTab === 'notifications' ? colors.primary : colors.textSecondary }]}>
+                            Notif.
+                        </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.tabItem, activeTab === 'system' && { borderBottomColor: colors.error }]}
+                        onPress={() => setActiveTab('system')}
+                    >
+                        <Ionicons 
+                            name={activeTab === 'system' ? "warning" : "warning-outline"} 
+                            size={18} 
+                            color={activeTab === 'system' ? colors.error : colors.textSecondary} 
+                        />
+                        <Text style={[styles.tabLabel, { color: activeTab === 'system' ? colors.error : colors.textSecondary }]}>
+                            Sistema
+                        </Text>
+                    </TouchableOpacity>
+                </ScrollView>
             </View>
 
             {activeTab !== 'verified' ? (
@@ -268,6 +285,7 @@ export default function AdminScreen() {
                         {activeTab === 'users' && <AdminUserPermissions />}
                         {activeTab === 'notifications' && <AdminGlobalNotifications />}
                         {activeTab === 'tiers' && <AdminUserTiers />}
+                        {activeTab === 'system' && <AdminSystemStatus />}
                     </KeyboardAvoidingView>
                 </ScrollView>
             ) : (
@@ -469,13 +487,13 @@ const styles = StyleSheet.create({
     },
     tabBar: {
         flexDirection: 'row',
-        borderBottomWidth: 1,
+        paddingHorizontal: 10,
     },
     tabItem: {
-        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
+        paddingHorizontal: 16,
         paddingVertical: 14,
         gap: 6,
         borderBottomWidth: 2,

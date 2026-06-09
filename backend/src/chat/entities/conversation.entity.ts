@@ -34,4 +34,7 @@ export class Conversation {
 
     @Field(() => Boolean)
     isBlocked: boolean;
+
+    @Field(() => Boolean)
+    isBlockedByMe: boolean;
 }

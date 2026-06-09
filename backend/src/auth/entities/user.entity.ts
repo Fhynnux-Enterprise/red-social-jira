@@ -42,6 +42,10 @@ export class User {
     lastName: string;
 
     @Field({ nullable: true })
+    @Column({ name: 'birth_date', type: 'date', nullable: true })
+    birthDate?: string;
+
+    @Field({ nullable: true })
     @Column({ nullable: true })
     phone: string;
 
@@ -93,6 +97,18 @@ export class User {
     @Field()
     @Column({ name: 'city_id', default: 'chunchi' })
     cityId: string;
+
+    @Field()
+    @Column({ name: 'receive_system_notifications', default: true })
+    receiveSystemNotifications: boolean;
+
+    @Field()
+    @Column({ name: 'receive_moderation_notifications', default: true })
+    receiveModerationNotifications: boolean;
+
+    @Field()
+    @Column({ name: 'receive_social_notifications', default: true })
+    receiveSocialNotifications: boolean;
 
     @Field(() => City, { nullable: true })
     @ManyToOne(() => City, { eager: false, nullable: true })

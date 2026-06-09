@@ -7,10 +7,14 @@ import { AppealStatus, AppealType } from './enums/appeal.enums';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/enums/notification.enums';
 import { Post } from '../posts/entities/post.entity';
+import { PostMedia } from '../posts/entities/post-media.entity';
 import { StoreProduct } from '../store/entities/store-product.entity';
+import { StoreProductMedia } from '../store/entities/store-product-media.entity';
 import { JobOffer } from '../jobs/entities/job-offer.entity';
 import { ProfessionalProfile } from '../jobs/entities/professional-profile.entity';
 import { User } from '../auth/entities/user.entity';
+import { Comment } from '../comments/entities/comment.entity';
+import { StoreProductComment } from '../store/entities/store-product-comment.entity';
 
 @Injectable()
 export class AppealsService {
@@ -31,22 +35,34 @@ export class AppealsService {
     ) {}
 
     async createAppeal(userId: string, input: CreateAppealInput): Promise<Appeal> {
-        // Prevent multiple pending appeals for the same reference
+        // Prevent multiple appeals for the same reference
         if (input.referenceId) {
             const existing = await this.appealRepository.findOne({
-                where: { userId, referenceId: input.referenceId, status: AppealStatus.PENDING }
+                where: { userId, referenceId: input.referenceId },
+                order: { createdAt: 'DESC' }
             });
             if (existing) {
-                throw new BadRequestException('Ya tienes una apelación pendiente para este contenido.');
+                if (existing.status === AppealStatus.PENDING) {
+                    throw new BadRequestException('Ya tienes una apelación pendiente para este contenido.');
+                } else if (existing.status === AppealStatus.REJECTED) {
+                    throw new BadRequestException('Ya se ha procesado una apelación para este contenido y la decisión es final.');
+                }
+                // If it was APPROVED, we allow a new appeal because the post was restored and deleted again
             }
         } else {
             // If it's an account ban appeal without referenceId, check if one exists already
             if (input.type === AppealType.ACCOUNT_BAN) {
                 const existing = await this.appealRepository.findOne({
-                    where: { userId, type: AppealType.ACCOUNT_BAN, status: AppealStatus.PENDING }
+                    where: { userId, type: AppealType.ACCOUNT_BAN },
+                    order: { createdAt: 'DESC' }
                 });
                 if (existing) {
-                    throw new BadRequestException('Ya tienes una apelación pendiente para tu cuenta.');
+                    if (existing.status === AppealStatus.PENDING) {
+                        throw new BadRequestException('Ya tienes una apelación pendiente para tu cuenta.');
+                    } else if (existing.status === AppealStatus.REJECTED) {
+                        throw new BadRequestException('Ya se ha procesado una apelación para tu cuenta y la decisión es final.');
+                    }
+                    // If it was APPROVED, they were unbanned and banned again, so we allow a new appeal
                 }
             }
         }
@@ -95,9 +111,25 @@ export class AppealsService {
                 if (appeal.type === AppealType.CONTENT_DELETION && appeal.referenceId) {
                     // Intentar hacer un-delete en las entidades principales
                     await transactionalEntityManager.restore(Post, { id: appeal.referenceId });
+                    await transactionalEntityManager
+                        .createQueryBuilder()
+                        .update(PostMedia)
+                        .set({ deletedAt: null })
+                        .where('post_id = :postId', { postId: appeal.referenceId })
+                        .execute();
+
                     await transactionalEntityManager.restore(StoreProduct, { id: appeal.referenceId });
+                    await transactionalEntityManager
+                        .createQueryBuilder()
+                        .update(StoreProductMedia)
+                        .set({ deletedAt: null })
+                        .where('product_id = :productId', { productId: appeal.referenceId })
+                        .execute();
+
                     await transactionalEntityManager.restore(JobOffer, { id: appeal.referenceId });
                     await transactionalEntityManager.restore(ProfessionalProfile, { id: appeal.referenceId });
+                    await transactionalEntityManager.restore(Comment, { id: appeal.referenceId });
+                    await transactionalEntityManager.restore(StoreProductComment, { id: appeal.referenceId });
                 } else if (appeal.type === AppealType.ACCOUNT_BAN) {
                     // Unban user
                     await transactionalEntityManager
@@ -108,9 +140,22 @@ export class AppealsService {
                         .execute();
                     
                     // Restaurar contenido si es necesario (asumiendo que fue borrado con wipeContent)
-                    // Para ser seguros, restauramos.
                     await transactionalEntityManager.restore(Post, { authorId: appeal.userId });
+                    await transactionalEntityManager
+                        .createQueryBuilder()
+                        .update(PostMedia)
+                        .set({ deletedAt: null })
+                        .where('post_id IN (SELECT id FROM posts WHERE user_id = :userId)', { userId: appeal.userId })
+                        .execute();
+
                     await transactionalEntityManager.restore(StoreProduct, { sellerId: appeal.userId });
+                    await transactionalEntityManager
+                        .createQueryBuilder()
+                        .update(StoreProductMedia)
+                        .set({ deletedAt: null })
+                        .where('product_id IN (SELECT id FROM store_products WHERE seller_id = :userId)', { userId: appeal.userId })
+                        .execute();
+
                     await transactionalEntityManager.restore(JobOffer, { authorId: appeal.userId });
                     await transactionalEntityManager.restore(ProfessionalProfile, { userId: appeal.userId });
                 }
@@ -129,9 +174,6 @@ export class AppealsService {
             } else {
                 message += 'La decisión original se mantiene. Por favor, revisa nuestras normas comunitarias.';
             }
-
-            // Using notificationsService.createNotification is usually outside transaction unless injected with queryRunner.
-            // For simplicity, doing it here might not be transactional but it's fine for notification.
         });
 
         // Outside transaction to ensure it uses its own context if needed
@@ -147,8 +189,89 @@ export class AppealsService {
         } else {
             message += 'La decisión original se mantiene. Por favor, revisa nuestras normas comunitarias.';
         }
-        await this.notificationsService.createNotification(appeal.userId, title, message, NotificationType.SYSTEM);
+
+        let payloadStr: string | undefined = undefined;
+        let payloadObj: any = null;
+        if (input.approve && appeal.type === AppealType.CONTENT_DELETION && appeal.referenceId) {
+            const cType = await this.getContentType(appeal);
+            if (cType) {
+                const finalType = cType === 'STORE_COMMENT_DETAIL' ? 'COMMENT_DETAIL' : cType;
+                payloadObj = {
+                    type: finalType,
+                    postId: appeal.referenceId,
+                    isDeletedContent: 'false',
+                    isStore: cType === 'STORE_COMMENT_DETAIL' ? 'true' : 'false',
+                };
+                payloadStr = JSON.stringify(payloadObj);
+            }
+        }
+
+        await this.notificationsService.createNotification(
+            appeal.userId,
+            title,
+            message,
+            NotificationType.SYSTEM,
+            payloadStr
+        );
+
+        if (payloadObj) {
+            await this.notificationsService.sendPushNotification(
+                appeal.userId,
+                title,
+                message,
+                payloadObj,
+                { categoryId: 'system' }
+            ).catch(err => console.error('Error sending system push notification for resolved appeal:', err));
+        }
 
         return appeal;
+    }
+
+    async getContentType(appeal: Appeal): Promise<string | null> {
+        if (!appeal.referenceId) return null;
+
+        // Check Comment
+        const commentRepo = this.postRepository.manager.getRepository(Comment);
+        const commentExists = await commentRepo.findOne({
+            where: { id: appeal.referenceId },
+            withDeleted: true
+        });
+        if (commentExists) return 'COMMENT_DETAIL';
+
+        // Check StoreProductComment
+        const storeCommentRepo = this.postRepository.manager.getRepository(StoreProductComment);
+        const storeCommentExists = await storeCommentRepo.findOne({
+            where: { id: appeal.referenceId },
+            withDeleted: true
+        });
+        if (storeCommentExists) return 'STORE_COMMENT_DETAIL';
+
+        // Check Post
+        const postExists = await this.postRepository.findOne({
+            where: { id: appeal.referenceId },
+            withDeleted: true
+        });
+        if (postExists) return 'POST_DETAIL';
+
+        // Check StoreProduct
+        const productExists = await this.storeProductRepository.findOne({
+            where: { id: appeal.referenceId },
+            withDeleted: true
+        });
+        if (productExists) return 'STORE_DETAIL';
+
+        // Check JobOffer
+        const jobExists = await this.jobOfferRepository.findOne({
+            where: { id: appeal.referenceId }
+        });
+        if (jobExists) return 'JOB_DETAIL';
+
+        // Check ProfessionalProfile
+        const profileExists = await this.professionalProfileRepository.findOne({
+            where: { id: appeal.referenceId }
+        });
+        if (profileExists) return 'SERVICE_DETAIL';
+
+        return null;
     }
 }

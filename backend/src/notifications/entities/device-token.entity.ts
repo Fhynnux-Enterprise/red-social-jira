@@ -6,7 +6,8 @@ import {
     ManyToOne,
     PrimaryGeneratedColumn,
     UpdateDateColumn,
-    JoinColumn
+    JoinColumn,
+    Index
 } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 
@@ -22,6 +23,7 @@ export class DeviceToken {
     token: string;
 
     @Field(() => String)
+    @Index()
     @Column()
     userId: string;
 

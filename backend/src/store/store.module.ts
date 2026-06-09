@@ -10,6 +10,7 @@ import { StoreResolver, StoreProductCommentResolver } from './store.resolver';
 import { UserBlocksModule } from '../user-blocks/user-blocks.module';
 import { PostsModule } from '../posts/posts.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     UserBlocksModule,
     PostsModule,
     NotificationsModule,
+    StorageModule,
   ],
   providers: [StoreService, StoreResolver, StoreProductCommentResolver],
   exports: [StoreService],

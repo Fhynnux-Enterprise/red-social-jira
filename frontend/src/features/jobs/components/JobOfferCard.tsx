@@ -258,9 +258,9 @@ export default function JobOfferCard({
             >
                 {/* ── Card Head ── */}
                 <View style={styles.cardHead}>
-                    <View style={[styles.typeBadgeHead, { backgroundColor: '#2196F315' }]}>
-                        <Ionicons name="briefcase" size={12} color="#2196F3" />
-                        <Text style={[styles.typeBadgeTextHead, { color: '#2196F3' }]}>OFERTA DE EMPLEO</Text>
+                    <View style={[styles.typeBadgeHead, { backgroundColor: '#FF980015' }]}>
+                        <Ionicons name="briefcase" size={12} color="#FF9800" />
+                        <Text style={[styles.typeBadgeTextHead, { color: '#FF9800' }]}>OFERTA DE EMPLEO</Text>
                     </View>
                 </View>
 
@@ -336,7 +336,9 @@ export default function JobOfferCard({
                                 {item.author?.photoUrl ? (
                                     <Image source={{ uri: item.author.photoUrl }} style={styles.avatarImg} />
                                 ) : (
-                                    <Text style={{ color: '#FFF', fontSize: 10 }}>{item.author?.firstName?.[0]}</Text>
+                                    <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>
+                                        {`${item.author?.firstName?.[0] || ''}${item.author?.lastName?.[0] || ''}`.toUpperCase() || 'U'}
+                                    </Text>
                                 )}
                             </View>
                             <View style={styles.sellerTextColumn}>

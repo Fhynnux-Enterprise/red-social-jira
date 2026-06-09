@@ -6,6 +6,7 @@ import { CreateJobOfferInput } from './dto/create-job-offer.input';
 import { UpdateJobOfferInput } from './dto/update-job-offer.input';
 import { UserBlocksService } from '../user-blocks/user-blocks.service';
 import { UserBlock } from '../user-blocks/entities/user-block.entity';
+import { VisionService } from '../storage/vision.service';
 
 @Injectable()
 export class JobsService {
@@ -13,9 +14,19 @@ export class JobsService {
     @InjectRepository(JobOffer)
     private readonly jobOfferRepository: Repository<JobOffer>,
     private readonly userBlocksService: UserBlocksService,
+    private readonly visionService: VisionService,
   ) {}
 
   async createJobOffer(data: CreateJobOfferInput, userId: string, cityId: string): Promise<JobOffer> {
+    // Validar seguridad de imágenes antes de guardar la oferta de empleo
+    if (data.media && data.media.length > 0) {
+      for (const item of data.media) {
+        if (item.type === 'IMAGE' || item.url.match(/\.(jpeg|jpg|gif|png|webp)/i)) {
+          await this.visionService.validateImageSafety(item.url);
+        }
+      }
+    }
+
     const jobOffer = this.jobOfferRepository.create({
       ...data,
       authorId: userId,

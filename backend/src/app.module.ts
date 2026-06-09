@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 // Force restart to sync schema changes for bulk deletion
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -29,6 +30,8 @@ import { UserBlocksModule } from './user-blocks/user-blocks.module';
 import { AdsModule } from './ads/ads.module';
 import { AdvertisersModule } from './advertisers/advertisers.module';
 import { CitiesModule } from './cities/cities.module';
+import { SystemSettingsModule } from './system-settings/system-settings.module';
+import { SystemStatusInterceptor } from './common/interceptors/system-status.interceptor';
 
 @Module({
   imports: [
@@ -201,8 +204,15 @@ import { CitiesModule } from './cities/cities.module';
     AdsModule,
     AdvertisersModule,
     CitiesModule,
+    SystemSettingsModule,
   ],
   controllers: [],
-  providers: [GqlAuthGuard],
+  providers: [
+    GqlAuthGuard,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: SystemStatusInterceptor,
+    },
+  ],
 })
 export class AppModule { }

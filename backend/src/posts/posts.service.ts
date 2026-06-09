@@ -14,6 +14,7 @@ import { ProfessionalProfile } from '../jobs/entities/professional-profile.entit
 import { UserBlock } from '../user-blocks/entities/user-block.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/enums/notification.enums';
+import { VisionService } from '../storage/vision.service';
 
 @Injectable()
 export class PostsService {
@@ -37,9 +38,19 @@ export class PostsService {
         private readonly dataSource: DataSource,
         private readonly userBlocksService: UserBlocksService,
         private readonly notificationsService: NotificationsService,
+        private readonly visionService: VisionService,
     ) { }
 
     async createPost(content: string, authorId: string, cityId: string, media?: PostMediaInput[], title?: string): Promise<Post> {
+        // Validar la seguridad de todas las imágenes con la API de Google Vision antes de procesar el post
+        if (media && media.length > 0) {
+            for (const item of media) {
+                if (item.type === 'IMAGE' || item.url.match(/\.(jpeg|jpg|gif|png|webp)/i)) {
+                    await this.visionService.validateImageSafety(item.url);
+                }
+            }
+        }
+
         const queryRunner = this.dataSource.createQueryRunner();
         await queryRunner.connect();
         await queryRunner.startTransaction();
@@ -144,19 +155,12 @@ export class PostsService {
         return posts;
     }
 
-    async findById(id: string, cityId?: string): Promise<Post> {
-        const query = this.postsRepository.createQueryBuilder('post')
-            .leftJoinAndSelect('post.author', 'author')
-            .leftJoinAndSelect('post.likes', 'likes')
-            .leftJoinAndSelect('likes.user', 'likeUser')
-            .leftJoinAndSelect('post.media', 'media')
-            .where('post.id = :id', { id });
-
-        if (cityId) {
-            query.andWhere('post.cityId = :cityId', { cityId });
-        }
-
-        const post = await query.getOne();
+    async findById(id: string, cityId?: string, includeDeleted = false): Promise<Post> {
+        const post = await this.postsRepository.findOne({
+            where: { id, ...(cityId ? { cityId } : {}) },
+            relations: ['author', 'likes', 'likes.user', 'media'],
+            withDeleted: includeDeleted,
+        });
         if (!post) throw new NotFoundException('Publicación no encontrada');
         if (post.media && post.media.length > 1) {
             post.media.sort((a, b) => a.order - b.order);

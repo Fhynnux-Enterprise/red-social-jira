@@ -17,11 +17,23 @@ export class AuthController {
     async login(@Body(ValidationPipe) loginDto: LoginDto) {
         return this.authService.login(loginDto);
     }
+    @Post('resend-confirmation')
+    async resendConfirmation(@Body() body: { email: string }) {
+        if (!body.email) {
+            throw new UnauthorizedException('Email es requerido');
+        }
+        return this.authService.resendConfirmationEmail(body.email);
+    }
 
     @Post('sync')
     @UseGuards(JwtRestGuard)
     async syncGoogleUser(@Req() req: any, @Body() body: any) {
         return this.authService.syncGoogleUser(req.user, body?.cityId);
+    }
+
+    @Post('reactivate')
+    async reactivateAccount(@Body() body: { token: string }) {
+        return this.authService.reactivateAccountByToken(body.token);
     }
 
     @Get('me')

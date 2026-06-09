@@ -356,6 +356,7 @@ export const GET_STORE_PRODUCT_BY_ID = gql`
       category
       isAvailable
       createdAt
+      deletedAt
       editedAt
       seller {
         id

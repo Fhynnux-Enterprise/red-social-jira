@@ -89,13 +89,14 @@ export class CommentsService {
         return comments.map(comment => this.mapComment(comment, userId));
     }
 
-    async getCommentById(id: string, userId?: string, cityId?: string): Promise<Comment | null> {
+    async getCommentById(id: string, userId?: string, cityId?: string, withDeleted = false): Promise<Comment | null> {
         const where: any = { id };
         if (cityId) where.cityId = cityId;
 
         const comment = await this.commentRepository.findOne({
             where,
             relations: ['user', 'likes', 'post', 'post.author', 'post.author.badge', 'post.media', 'post.likes'],
+            withDeleted,
         });
         if (!comment) return null;
         return this.mapComment(comment, userId);

@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, Image, Platform, Alert, StatusBar, Modal, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet, Image, Platform, Alert, StatusBar, Modal, TouchableWithoutFeedback, Switch, TextInput } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { supabase } from '../../../api/supabase.client';
 import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import { gql } from '@apollo/client';
 import { useFocusEffect, useNavigation, useIsFocused } from '@react-navigation/native';
@@ -17,7 +18,7 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import CreatePostModal from '../components/CreatePostModal';
 import { useRouter } from 'expo-router';
 import { useTheme, ThemeColors } from '../../../theme/ThemeContext';
-import { GET_ME } from '../../profile/graphql/profile.operations';
+import { GET_ME, DELETE_ACCOUNT, UPDATE_NOTIFICATION_PREFERENCES } from '../../profile/graphql/profile.operations';
 import Toast from 'react-native-toast-message';
 import PostCard from '../components/PostCard';
 import PostOptionsModal from '../components/PostOptionsModal';
@@ -84,9 +85,23 @@ interface SelectedPostForComments {
     initialExpanded?: boolean;
 }
 
+const getFriendlyErrorMessage = (error: any): string => {
+    if (!error) return '';
+    const message = error.message || '';
+    if (message.includes('ACCOUNT_DEACTIVATED') || (error.graphQLErrors && error.graphQLErrors.some((ge: any) => ge.message?.includes('ACCOUNT_DEACTIVATED') || ge.extensions?.code === 'ACCOUNT_DEACTIVATED'))) {
+        return 'Tu cuenta ha sido desactivada y no se pueden mostrar las publicaciones.';
+    }
+    if (message.includes('USER_BANNED') || (error.graphQLErrors && error.graphQLErrors.some((ge: any) => ge.message?.includes('USER_BANNED') || ge.extensions?.code === 'USER_BANNED'))) {
+        return 'Tu cuenta ha sido suspendida y no se pueden mostrar las publicaciones.';
+    }
+    return message;
+};
+
 export default function FeedScreen() {
-    const { signOut } = useAuth();
+    const { signOut, refreshProfile, triggerSessionExpired } = useAuth() as any;
+    const authContext = useAuth() as any;
     const { colors, isDark, themeMode, setThemeMode } = useTheme();
+    const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
     const navigation = useNavigation();
     const router = useRouter();
     const [isModalVisible, setIsModalVisible] = useState(false);
@@ -118,7 +133,27 @@ export default function FeedScreen() {
     const [isMenuVisible, setIsMenuVisible] = useState(false);
     const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
     const [isBlockedUsersVisible, setIsBlockedUsersVisible] = useState(false);
+    const [menuView, setMenuView] = useState<'main' | 'account' | 'notifications' | 'changePassword'>('main');
+    const [oldPassword, setOldPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmNewPassword, setConfirmNewPassword] = useState('');
+    const [logoutAllDevices, setLogoutAllDevices] = useState(true);
+    const [isChangingPassword, setIsChangingPassword] = useState(false);
+    const [customAlert, setCustomAlert] = useState<{ visible: boolean; title: string; message: string; type: 'error' | 'success'; onPress?: () => void } | null>(null);
+    const [receiveSystem, setReceiveSystem] = useState(true);
+    const [receiveModeration, setReceiveModeration] = useState(true);
+    const [receiveSocial, setReceiveSocial] = useState(true);
+    const [isConfirmDeleteVisible, setIsConfirmDeleteVisible] = useState(false);
     const insets = useSafeAreaInsets();
+
+    const handleCloseMenu = useCallback(() => {
+        setIsMenuVisible(false);
+        setMenuView('main');
+        setOldPassword('');
+        setNewPassword('');
+        setConfirmNewPassword('');
+        setLogoutAllDevices(true);
+    }, []);
 
     // Memoria para guardar los anuncios cargados y evitar que cambien al hacer scroll o swipe
     const [loadedAds, setLoadedAds] = useState<Record<string, any>>({});
@@ -153,11 +188,56 @@ export default function FeedScreen() {
         }, [refetchAdFrequency])
     );
 
+    const [updateNotificationPreferences] = useMutation(UPDATE_NOTIFICATION_PREFERENCES);
+
+    useEffect(() => {
+        if (isMenuVisible && authContext.user) {
+            setReceiveSystem(authContext.user.receiveSystemNotifications ?? true);
+            setReceiveModeration(authContext.user.receiveModerationNotifications ?? true);
+            setReceiveSocial(authContext.user.receiveSocialNotifications ?? true);
+        }
+    }, [isMenuVisible, authContext.user]);
+
+    const handleTogglePreference = async (key: 'system' | 'moderation' | 'social', value: boolean) => {
+        let nextSystem = receiveSystem;
+        let nextModeration = receiveModeration;
+        let nextSocial = receiveSocial;
+
+        if (key === 'system') {
+            setReceiveSystem(value);
+            nextSystem = value;
+        } else if (key === 'moderation') {
+            setReceiveModeration(value);
+            nextModeration = value;
+        } else if (key === 'social') {
+            setReceiveSocial(value);
+            nextSocial = value;
+        }
+
+        try {
+            await updateNotificationPreferences({
+                variables: {
+                    receiveSystemNotifications: nextSystem,
+                    receiveModerationNotifications: nextModeration,
+                    receiveSocialNotifications: nextSocial,
+                }
+            });
+            await refreshProfile();
+        } catch (error) {
+            console.error('Error updating notification preferences:', error);
+            if (key === 'system') setReceiveSystem(!value);
+            if (key === 'moderation') setReceiveModeration(!value);
+            if (key === 'social') setReceiveSocial(!value);
+            Toast.show({
+                type: 'error',
+                text1: 'Error',
+                text2: 'No se pudieron actualizar tus preferencias.'
+            });
+        }
+    };
+
     // Ya no usamos useFocusEffect para refetch manual en cada foco para evitar saltos y recargas molestas.
     // Apollo Client con cache-and-network ya se encarga de servir datos de caché inmediatamente.
-
-    // Generamos estilos dinámicos que reaccionan al tema
-    const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
 
     /**
      * Inyecta un objeto de publicidad cada N elementos del feed y fusiona datos cacheados si existen.
@@ -201,6 +281,100 @@ export default function FeedScreen() {
     const [deleteProfessionalProfile] = useMutation(DELETE_PROFESSIONAL_PROFILE);
 
     const [toggleSavePost] = useMutation(TOGGLE_SAVE_POST);
+
+    const [deleteAccount] = useMutation(DELETE_ACCOUNT, {
+        onCompleted: async () => {
+            Toast.show({
+                type: 'success',
+                text1: 'Cuenta desactivada',
+                text2: 'Tu cuenta ha sido desactivada. Tienes 30 días para volver a iniciar sesión y recuperarla.',
+            });
+            await signOut();
+        },
+        onError: (err) => {
+            Alert.alert('Error', err.message || 'No se pudo eliminar la cuenta');
+        }
+    });
+
+    const handleDeleteAccount = useCallback(() => {
+        setIsConfirmDeleteVisible(true);
+    }, []);
+
+    const handleChangePassword = useCallback(async () => {
+        if (!oldPassword || !newPassword || !confirmNewPassword) {
+            setCustomAlert({ visible: true, title: 'Campos requeridos', message: 'Por favor, completa todos los campos.', type: 'error' });
+            return;
+        }
+
+        if (newPassword.length < 6) {
+            setCustomAlert({ visible: true, title: 'Contraseña muy corta', message: 'La nueva contraseña debe tener al menos 6 caracteres.', type: 'error' });
+            return;
+        }
+
+        if (newPassword !== confirmNewPassword) {
+            setCustomAlert({ visible: true, title: 'Contraseñas no coinciden', message: 'La nueva contraseña y su confirmación no coinciden.', type: 'error' });
+            return;
+        }
+
+        const userEmail = authContext.user?.email;
+        if (!userEmail) {
+            setCustomAlert({ visible: true, title: 'Error de usuario', message: 'No se pudo obtener el correo del usuario.', type: 'error' });
+            return;
+        }
+
+        setIsChangingPassword(true);
+
+        try {
+            // 1. Re-autenticar al usuario para verificar la contraseña actual
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+                email: userEmail,
+                password: oldPassword,
+            });
+
+            if (signInError) {
+                setCustomAlert({ visible: true, title: 'Contraseña actual incorrecta', message: 'La contraseña actual ingresada es inválida.', type: 'error' });
+                setIsChangingPassword(false);
+                return;
+            }
+
+            // 2. Cambiar la contraseña del usuario
+            const { error: updateError } = await supabase.auth.updateUser({
+                password: newPassword,
+            });
+
+            if (updateError) {
+                setCustomAlert({ visible: true, title: 'Error al actualizar', message: updateError.message || 'No se pudo actualizar la contraseña.', type: 'error' });
+                setIsChangingPassword(false);
+                return;
+            }
+
+            // 3. Cerrar sesión según la selección con Alert de éxito
+            setCustomAlert({
+                visible: true,
+                title: 'Contraseña actualizada',
+                message: 'Tu contraseña ha sido cambiada correctamente.',
+                type: 'success',
+                onPress: async () => {
+                    setIsChangingPassword(false);
+                    handleCloseMenu();
+                    
+                    triggerSessionExpired('password_changed');
+
+                    if (logoutAllDevices) {
+                        await supabase.auth.signOut({ scope: 'global' });
+                    } else {
+                        await supabase.auth.signOut({ scope: 'local' });
+                    }
+                    
+                    await signOut();
+                }
+            });
+
+        } catch (error: any) {
+            setCustomAlert({ visible: true, title: 'Error', message: error.message || 'Ocurrió un error inesperado.', type: 'error' });
+            setIsChangingPassword(false);
+        }
+    }, [oldPassword, newPassword, confirmNewPassword, logoutAllDevices, authContext.user, handleCloseMenu, signOut, triggerSessionExpired]);
 
     const handleToggleSave = useCallback(async (item: any) => {
         if (!item) return;
@@ -526,7 +700,7 @@ export default function FeedScreen() {
                     >
                         <LinearGradient
                             colors={[colors.primary, colors.secondary, colors.accent]}
-                            locations={[0, 0.95, 1]}
+                            locations={[0, 0.5, 1]}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
                             style={{ flex: 1, justifyContent: 'center' }}
@@ -564,7 +738,7 @@ export default function FeedScreen() {
                         <Ionicons name="cloud-offline-outline" size={48} color={colors.textSecondary} style={{ opacity: 0.4, marginBottom: 12 }} />
                         <Text style={styles.errorText}>No se pudieron cargar las publicaciones</Text>
                         <Text style={{ color: colors.textSecondary, fontSize: 12, textAlign: 'center', marginTop: 6, paddingHorizontal: 20 }}>
-                            {error.message}
+                            {getFriendlyErrorMessage(error)}
                         </Text>
                         <TouchableOpacity onPress={handleRefresh} style={[styles.emptyButton, { marginTop: 16 }]}>
                             <LinearGradient colors={[colors.primary, colors.secondary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.emptyButtonGradient}>
@@ -883,7 +1057,7 @@ export default function FeedScreen() {
                 reportedItemType={
                     selectedPost?.__typename === 'StoreProduct' ? 'PRODUCT' :
                         selectedPost?.__typename === 'JobOffer' ? 'JOB_OFFER' :
-                            selectedPost?.__typename === 'ProfessionalProfile' ? 'PROFESSIONAL_PROFILE' :
+                            selectedPost?.__typename === 'ProfessionalProfile' ? 'SERVICE' :
                                 'POST'
                 }
                 onContentDeleted={() => {
@@ -896,87 +1070,382 @@ export default function FeedScreen() {
             />
 
             {/* Menú lateral de configuración */}
-            <Modal visible={isMenuVisible} animationType="fade" transparent onRequestClose={() => setIsMenuVisible(false)}>
-                <TouchableWithoutFeedback onPress={() => setIsMenuVisible(false)}>
+            <Modal visible={isMenuVisible} animationType="fade" transparent onRequestClose={handleCloseMenu}>
+                <TouchableWithoutFeedback onPress={handleCloseMenu}>
                     <View style={styles.modalOverlay}>
                         <TouchableWithoutFeedback>
                             <View style={[styles.modalContent, { paddingTop: Math.max(insets.top, 20) + 10, paddingBottom: Math.max(insets.bottom, 20) + 20 }]}>
-                                <View style={styles.drawerHeader}>
-                                    <TouchableOpacity onPress={() => setIsMenuVisible(false)} style={styles.drawerCloseBtn}>
-                                        <Ionicons name="close" size={28} color={colors.text} />
+                                <View style={[styles.drawerHeader, menuView === 'notifications' && { justifyContent: 'flex-start' }]}>
+                                    <TouchableOpacity 
+                                        onPress={menuView !== 'main' ? () => setMenuView(menuView === 'changePassword' ? 'account' : 'main') : handleCloseMenu} 
+                                        style={[styles.drawerCloseBtn, menuView === 'notifications' && { marginRight: 16 }]}
+                                    >
+                                        <Ionicons 
+                                            name={menuView !== 'main' ? "arrow-back" : "close"} 
+                                            size={28} 
+                                            color={colors.text} 
+                                        />
                                     </TouchableOpacity>
-                                    <Text style={styles.modalTitle}>Configuración</Text>
-                                    <View style={{ width: 28 }} />
+                                    <Text style={styles.modalTitle}>
+                                        {menuView === 'account' 
+                                            ? 'Configuración de cuenta' 
+                                            : menuView === 'notifications'
+                                                ? 'Notificaciones'
+                                                : menuView === 'changePassword'
+                                                    ? 'Cambiar contraseña'
+                                                    : 'Configuración'}
+                                    </Text>
+                                    {menuView !== 'notifications' && <View style={{ width: 28 }} />}
                                 </View>
-                                {isAdmin && (
+                                
+                                {menuView === 'main' ? (
+                                    <>
+                                        {isAdmin && (
+                                            <>
+                                                <TouchableOpacity
+                                                    style={styles.settingButton}
+                                                    onPress={() => { handleCloseMenu(); setTimeout(() => (navigation as any).navigate('Moderation', { initialTab: 'reports' }), 300); }}
+                                                >
+                                                    <View style={styles.settingLeft}>
+                                                        <View style={{ backgroundColor: 'rgba(255,101,36,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
+                                                            <Ionicons name="shield-checkmark-outline" size={22} color="#FF6524" />
+                                                        </View>
+                                                        <Text style={[styles.settingText, { color: '#FF6524' }]}>Moderación</Text>
+                                                    </View>
+                                                    <Ionicons name="chevron-forward" size={20} color="#FF6524" />
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity
+                                                    style={styles.settingButton}
+                                                    onPress={() => { handleCloseMenu(); setTimeout(() => (navigation as any).navigate('Admin'), 300); }}
+                                                >
+                                                    <View style={styles.settingLeft}>
+                                                        <View style={{ backgroundColor: 'rgba(99,102,241,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
+                                                            <Ionicons name="settings-outline" size={22} color="#6366F1" />
+                                                        </View>
+                                                        <Text style={[styles.settingText, { color: '#6366F1' }]}>Administración</Text>
+                                                    </View>
+                                                    <Ionicons name="chevron-forward" size={20} color="#6366F1" />
+                                                </TouchableOpacity>
+                                            </>
+                                        )}
+                                        <TouchableOpacity
+                                            style={styles.settingButton}
+                                            onPress={() => { handleCloseMenu(); setTimeout(() => setIsThemeModalVisible(true), 400); }}
+                                        >
+                                            <View style={styles.settingLeft}>
+                                                <Ionicons name="color-palette-outline" size={24} color={colors.text} />
+                                                <Text style={styles.settingText}>Tema</Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={styles.settingButton}
+                                            onPress={() => { handleCloseMenu(); setTimeout(() => setIsBlockedUsersVisible(true), 300); }}
+                                        >
+                                            <View style={styles.settingLeft}>
+                                                <Ionicons name="lock-closed-outline" size={24} color={colors.text} />
+                                                <Text style={styles.settingText}>Bloqueados</Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={styles.settingButton}
+                                            onPress={() => {
+                                                handleCloseMenu();
+                                                setTimeout(() => {
+                                                    router.push('/ads/info');
+                                                }, 300);
+                                            }}
+                                        >
+                                            <View style={styles.settingLeft}>
+                                                <Ionicons name="megaphone-outline" size={24} color={colors.text} />
+                                                <Text style={styles.settingText}>Publicidad</Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={styles.settingButton}
+                                            onPress={() => setMenuView('notifications')}
+                                        >
+                                            <View style={styles.settingLeft}>
+                                                <Ionicons name="notifications-outline" size={24} color={colors.text} />
+                                                <Text style={styles.settingText}>Notificaciones</Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={styles.settingButton}
+                                            onPress={() => setMenuView('account')}
+                                        >
+                                            <View style={styles.settingLeft}>
+                                                <Ionicons name="settings-outline" size={24} color={colors.text} />
+                                                <Text style={styles.settingText}>Configuración de cuenta</Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                        <View style={styles.spacer} />
+                                        <TouchableOpacity style={styles.logoutButton} onPress={signOut}>
+                                            <Ionicons name="log-out-outline" size={24} color={colors.error} />
+                                            <Text style={styles.logoutText}>Cerrar Sesión</Text>
+                                        </TouchableOpacity>
+                                    </>
+                                ) : menuView === 'notifications' ? (
+                                    <>
+                                        <View style={styles.notificationPrefContainer}>
+                                            <View style={styles.notificationPrefRow}>
+                                                <View style={styles.notificationPrefLeft}>
+                                                    <View style={[styles.iconWrapper, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)' }]}>
+                                                        <Ionicons name="information-circle-outline" size={22} color={colors.text} />
+                                                    </View>
+                                                    <View style={styles.notificationPrefTextWrapper}>
+                                                        <Text style={[styles.settingText, { color: colors.text, marginLeft: 0, textAlign: 'left' }]}>Sistema</Text>
+                                                        <Text style={[styles.settingSubtext, { color: colors.textSecondary, textAlign: 'left' }]}>Notificaciones generales y avisos oficiales</Text>
+                                                    </View>
+                                                </View>
+                                                <Switch
+                                                    value={receiveSystem}
+                                                    onValueChange={(val) => handleTogglePreference('system', val)}
+                                                    trackColor={{ false: '#767577', true: colors.primary + '80' }}
+                                                    thumbColor={receiveSystem ? colors.primary : '#f4f3f4'}
+                                                />
+                                            </View>
+
+                                            <View style={styles.notificationPrefRow}>
+                                                <View style={styles.notificationPrefLeft}>
+                                                    <View style={[styles.iconWrapper, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)' }]}>
+                                                        <Ionicons name="shield-half-outline" size={22} color={colors.text} />
+                                                    </View>
+                                                    <View style={styles.notificationPrefTextWrapper}>
+                                                        <Text style={[styles.settingText, { color: colors.text, marginLeft: 0, textAlign: 'left' }]}>Moderación</Text>
+                                                        <Text style={[styles.settingSubtext, { color: colors.textSecondary, textAlign: 'left' }]}>Reportes, apelaciones y advertencias</Text>
+                                                    </View>
+                                                </View>
+                                                <Switch
+                                                    value={receiveModeration}
+                                                    onValueChange={(val) => handleTogglePreference('moderation', val)}
+                                                    trackColor={{ false: '#767577', true: colors.primary + '80' }}
+                                                    thumbColor={receiveModeration ? colors.primary : '#f4f3f4'}
+                                                />
+                                            </View>
+
+                                            <View style={styles.notificationPrefRow}>
+                                                <View style={styles.notificationPrefLeft}>
+                                                    <View style={[styles.iconWrapper, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)' }]}>
+                                                        <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.text} />
+                                                    </View>
+                                                    <View style={styles.notificationPrefTextWrapper}>
+                                                        <Text style={[styles.settingText, { color: colors.text, marginLeft: 0, textAlign: 'left' }]}>Social</Text>
+                                                        <Text style={[styles.settingSubtext, { color: colors.textSecondary, textAlign: 'left' }]}>Mensajes directos, me gusta y comentarios</Text>
+                                                    </View>
+                                                </View>
+                                                <Switch
+                                                    value={receiveSocial}
+                                                    onValueChange={(val) => handleTogglePreference('social', val)}
+                                                    trackColor={{ false: '#767577', true: colors.primary + '80' }}
+                                                    thumbColor={receiveSocial ? colors.primary : '#f4f3f4'}
+                                                />
+                                            </View>
+                                        </View>
+                                        <View style={styles.spacer} />
+                                    </>
+                                ) : menuView === 'account' ? (
                                     <>
                                         <TouchableOpacity
                                             style={styles.settingButton}
-                                            onPress={() => { setIsMenuVisible(false); setTimeout(() => (navigation as any).navigate('Moderation', { initialTab: 'reports' }), 300); }}
+                                            onPress={() => setMenuView('changePassword')}
                                         >
                                             <View style={styles.settingLeft}>
-                                                <View style={{ backgroundColor: 'rgba(255,101,36,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
-                                                    <Ionicons name="shield-checkmark-outline" size={22} color="#FF6524" />
-                                                </View>
-                                                <Text style={[styles.settingText, { color: '#FF6524' }]}>Moderación</Text>
+                                                <Ionicons name="key-outline" size={24} color={colors.text} />
+                                                <Text style={styles.settingText}>Cambiar contraseña</Text>
                                             </View>
-                                            <Ionicons name="chevron-forward" size={20} color="#FF6524" />
+                                            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                                         </TouchableOpacity>
-
                                         <TouchableOpacity
                                             style={styles.settingButton}
-                                            onPress={() => { setIsMenuVisible(false); setTimeout(() => (navigation as any).navigate('Admin'), 300); }}
+                                            onPress={() => {
+                                                handleCloseMenu();
+                                                setTimeout(() => {
+                                                    handleDeleteAccount();
+                                                }, 300);
+                                            }}
                                         >
                                             <View style={styles.settingLeft}>
-                                                <View style={{ backgroundColor: 'rgba(99,102,241,0.12)', borderRadius: 10, padding: 4, marginRight: 4 }}>
-                                                    <Ionicons name="settings-outline" size={22} color="#6366F1" />
-                                                </View>
-                                                <Text style={[styles.settingText, { color: '#6366F1' }]}>Administración</Text>
+                                                <Ionicons name="trash-outline" size={24} color={colors.error} />
+                                                <Text style={[styles.settingText, { color: colors.error }]}>Eliminar Cuenta</Text>
                                             </View>
-                                            <Ionicons name="chevron-forward" size={20} color="#6366F1" />
+                                            <Ionicons name="chevron-forward" size={20} color={colors.error} />
                                         </TouchableOpacity>
+                                        <View style={styles.spacer} />
+                                    </>
+                                ) : (
+                                    <>
+                                        {/* Contenido de Cambiar Contraseña */}
+                                        <View style={styles.formContainer}>
+                                            <View style={styles.formGroup}>
+                                                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Contraseña Actual</Text>
+                                                <View style={[styles.formInputWrapper, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }]}>
+                                                    <TextInput
+                                                        style={[styles.formInput, { color: colors.text }]}
+                                                        secureTextEntry
+                                                        value={oldPassword}
+                                                        onChangeText={setOldPassword}
+                                                        placeholder="Ingresa tu contraseña actual"
+                                                        placeholderTextColor={colors.textSecondary + '80'}
+                                                    />
+                                                </View>
+                                            </View>
+
+                                            <View style={styles.formGroup}>
+                                                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Nueva Contraseña</Text>
+                                                <View style={[styles.formInputWrapper, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }]}>
+                                                    <TextInput
+                                                        style={[styles.formInput, { color: colors.text }]}
+                                                        secureTextEntry
+                                                        value={newPassword}
+                                                        onChangeText={setNewPassword}
+                                                        placeholder="Mínimo 6 caracteres"
+                                                        placeholderTextColor={colors.textSecondary + '80'}
+                                                     />
+                                                </View>
+                                            </View>
+
+                                            <View style={styles.formGroup}>
+                                                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Confirmar Nueva Contraseña</Text>
+                                                <View style={[styles.formInputWrapper, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }]}>
+                                                    <TextInput
+                                                        style={[styles.formInput, { color: colors.text }]}
+                                                        secureTextEntry
+                                                        value={confirmNewPassword}
+                                                        onChangeText={setConfirmNewPassword}
+                                                        placeholder="Repite tu nueva contraseña"
+                                                        placeholderTextColor={colors.textSecondary + '80'}
+                                                    />
+                                                </View>
+                                            </View>
+
+                                            <Text style={[styles.formLabel, { color: colors.textSecondary, marginTop: 10, marginBottom: 8 }]}>Cerrar sesión en:</Text>
+                                            <View style={styles.sessionOptions}>
+                                                <TouchableOpacity 
+                                                    style={styles.radioOption} 
+                                                    onPress={() => setLogoutAllDevices(true)}
+                                                >
+                                                    <View style={[styles.radioCircle, { borderColor: colors.border }]}>
+                                                        {logoutAllDevices && <View style={[styles.radioDot, { backgroundColor: colors.primary }]} />}
+                                                    </View>
+                                                    <Text style={[styles.radioLabel, { color: colors.text }]}>Todos los dispositivos</Text>
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity 
+                                                    style={styles.radioOption} 
+                                                    onPress={() => setLogoutAllDevices(false)}
+                                                >
+                                                    <View style={[styles.radioCircle, { borderColor: colors.border }]}>
+                                                        {!logoutAllDevices && <View style={[styles.radioDot, { backgroundColor: colors.primary }]} />}
+                                                    </View>
+                                                    <Text style={[styles.radioLabel, { color: colors.text }]}>Solo en este dispositivo</Text>
+                                                </TouchableOpacity>
+                                            </View>
+
+                                            <TouchableOpacity
+                                                style={[styles.submitButton, { backgroundColor: colors.primary }]}
+                                                onPress={handleChangePassword}
+                                                disabled={isChangingPassword}
+                                            >
+                                                {isChangingPassword ? (
+                                                    <ActivityIndicator color="#FFFFFF" size="small" />
+                                                ) : (
+                                                    <Text style={styles.submitButtonText}>Actualizar Contraseña</Text>
+                                                )}
+                                            </TouchableOpacity>
+                                        </View>
                                     </>
                                 )}
-                                <TouchableOpacity
-                                    style={styles.settingButton}
-                                    onPress={() => { setIsMenuVisible(false); setTimeout(() => setIsThemeModalVisible(true), 400); }}
-                                >
-                                    <View style={styles.settingLeft}>
-                                        <Ionicons name="color-palette-outline" size={24} color={colors.text} />
-                                        <Text style={styles.settingText}>Tema</Text>
-                                    </View>
-                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={styles.settingButton}
-                                    onPress={() => { setIsMenuVisible(false); setTimeout(() => setIsBlockedUsersVisible(true), 300); }}
-                                >
-                                    <View style={styles.settingLeft}>
-                                        <Ionicons name="lock-closed-outline" size={24} color={colors.text} />
-                                        <Text style={styles.settingText}>Bloqueados</Text>
-                                    </View>
-                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={styles.settingButton}
-                                    onPress={() => {
-                                        setIsMenuVisible(false);
-                                        setTimeout(() => {
-                                            router.push('/ads/info');
-                                        }, 300);
-                                    }}
-                                >
-                                    <View style={styles.settingLeft}>
-                                        <Ionicons name="megaphone-outline" size={24} color={colors.text} />
-                                        <Text style={styles.settingText}>Publicidad</Text>
-                                    </View>
-                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                                </TouchableOpacity>
-                                <View style={styles.spacer} />
-                                <TouchableOpacity style={styles.logoutButton} onPress={signOut}>
-                                    <Ionicons name="log-out-outline" size={24} color={colors.error} />
-                                    <Text style={styles.logoutText}>Cerrar Sesión</Text>
-                                </TouchableOpacity>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+
+            {/* Modal personalizado de confirmación de eliminación de cuenta */}
+            <Modal
+                visible={isConfirmDeleteVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsConfirmDeleteVisible(false)}
+            >
+                <TouchableWithoutFeedback onPress={() => setIsConfirmDeleteVisible(false)}>
+                    <View style={styles.confirmModalOverlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={[styles.confirmModalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                <View style={styles.confirmModalIconContainer}>
+                                    <Ionicons name="warning" size={30} color="#EF4444" />
+                                </View>
+                                <Text style={[styles.confirmModalTitle, { color: colors.text }]}>
+                                    ¿Eliminar tu cuenta?
+                                </Text>
+                                <Text style={[styles.confirmModalMessage, { color: colors.textSecondary }]}>
+                                    Tu cuenta se desactivará e invisibilizará de inmediato. Tendrás un plazo de 30 días para volver a iniciar sesión y reactivar tu cuenta con todo tu contenido si cambias de opinión. Pasado ese tiempo, tu perfil y datos se eliminarán de forma definitiva e irreversible.
+                                </Text>
+                                <View style={styles.confirmModalButtons}>
+                                    <TouchableOpacity
+                                        style={[styles.confirmModalButton, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' }]}
+                                        onPress={() => setIsConfirmDeleteVisible(false)}
+                                    >
+                                        <Text style={[styles.confirmModalCancelText, { color: colors.text }]}>Cancelar</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.confirmModalButton, styles.confirmModalDeleteButton]}
+                                        onPress={() => {
+                                            setIsConfirmDeleteVisible(false);
+                                            deleteAccount();
+                                        }}
+                                    >
+                                        <Text style={styles.confirmModalDeleteText}>Eliminar</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+
+            {/* Modal de Alerta Personalizado */}
+            <Modal
+                visible={!!customAlert?.visible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setCustomAlert(null)}
+            >
+                <TouchableWithoutFeedback onPress={() => { if (customAlert?.type !== 'success') setCustomAlert(null); }}>
+                    <View style={styles.confirmModalOverlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={[styles.confirmModalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                <View style={[styles.confirmModalIconContainer, { backgroundColor: customAlert?.type === 'success' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)' }]}>
+                                    <Ionicons 
+                                        name={customAlert?.type === 'success' ? "checkmark-circle" : "alert-circle"} 
+                                        size={30} 
+                                        color={customAlert?.type === 'success' ? "#10B981" : "#EF4444"} 
+                                    />
+                                </View>
+                                <Text style={[styles.confirmModalTitle, { color: colors.text }]}>
+                                    {customAlert?.title}
+                                </Text>
+                                <Text style={[styles.confirmModalMessage, { color: colors.textSecondary }]}>
+                                    {customAlert?.message}
+                                </Text>
+                                <View style={styles.confirmModalButtons}>
+                                    <TouchableOpacity
+                                        style={[styles.confirmModalButton, { backgroundColor: customAlert?.type === 'success' ? "#10B981" : colors.primary }]}
+                                        onPress={() => {
+                                            const action = customAlert?.onPress;
+                                            setCustomAlert(null);
+                                            if (action) action();
+                                        }}
+                                    >
+                                        <Text style={[styles.confirmModalCancelText, { color: 'white', fontWeight: 'bold' }]}>Aceptar</Text>
+                                    </TouchableOpacity>
+                                </View>
                             </View>
                         </TouchableWithoutFeedback>
                     </View>
@@ -1009,8 +1478,8 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
+        paddingVertical: 8, // Sleek, modern compact vertical padding
+        borderBottomWidth: 0.5, // Thinner border
         borderBottomColor: colors.border,
         backgroundColor: colors.background,
     },
@@ -1020,27 +1489,29 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         alignItems: 'center',
     },
     brandLogo: {
-        width: 40,
-        height: 40,
-        marginRight: 8,
-        borderRadius: 8,
+        width: 44,
+        height: 44,
+        marginRight: 12,
+        borderRadius: 12, // Modern squircle rounded shape
+        borderWidth: 1.5,
+        borderColor: colors.border,
     },
     brandTitle: {
-        fontSize: 22, // Reducido para que quepa mejor
-        fontWeight: '900',
-        letterSpacing: 0.5,
+        fontSize: 24, // Larger, more premium size
+        fontWeight: '900', // Extra bold weight to highlight the color gradient
+        letterSpacing: 0.3, // Premium typographic letter spacing
     },
     headerIcons: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 4,
-        flexShrink: 0, // Evitar que los iconos se aplasten
+        gap: 8, // Better separation
+        flexShrink: 0,
     },
     iconButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: colors.surface,
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)', // Modern translucent backings
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -1165,7 +1636,171 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         height: 0.6,
         backgroundColor: '#BDBDBD',
         opacity: 0.35,
-        marginTop: 4,
-        marginBottom: 20,
+        marginTop: 6,
+        marginBottom: 10,
+    },
+    confirmModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 24,
+    },
+    confirmModalContent: {
+        width: '85%',
+        borderRadius: 24,
+        padding: 24,
+        alignItems: 'center',
+        borderWidth: 1,
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+    },
+    confirmModalIconContainer: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: 'rgba(239, 68, 68, 0.12)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    confirmModalTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    confirmModalMessage: {
+        fontSize: 14,
+        textAlign: 'center',
+        lineHeight: 20,
+        marginBottom: 24,
+    },
+    confirmModalButtons: {
+        flexDirection: 'row',
+        width: '100%',
+        gap: 12,
+    },
+    confirmModalButton: {
+        flex: 1,
+        height: 46,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    confirmModalCancelText: {
+        fontWeight: '600',
+        fontSize: 14,
+    },
+    confirmModalDeleteButton: {
+        backgroundColor: '#EF4444',
+    },
+    confirmModalDeleteText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 14,
+    },
+    notificationPrefContainer: {
+        width: '100%',
+        paddingHorizontal: 8,
+        gap: 20,
+        marginTop: 10,
+    },
+    notificationPrefRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+    },
+    notificationPrefLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        marginRight: 16,
+    },
+    notificationPrefTextWrapper: {
+        marginLeft: 12,
+        flex: 1,
+    },
+    settingSubtext: {
+        fontSize: 12,
+        marginTop: 2,
+    },
+    iconWrapper: {
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    formContainer: {
+        width: '100%',
+        marginTop: 10,
+        gap: 16,
+    },
+    formGroup: {
+        width: '100%',
+        gap: 6,
+    },
+    formLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    formInputWrapper: {
+        borderWidth: 1,
+        borderRadius: 12,
+        height: 48,
+        justifyContent: 'center',
+        paddingHorizontal: 14,
+    },
+    formInput: {
+        fontSize: 15,
+        padding: 0,
+    },
+    sessionOptions: {
+        gap: 12,
+        marginBottom: 8,
+    },
+    radioOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    radioCircle: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        borderWidth: 2,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    radioDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+    },
+    radioLabel: {
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    submitButton: {
+        height: 48,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    submitButtonText: {
+        color: '#FFFFFF',
+        fontSize: 15,
+        fontWeight: 'bold',
     },
 });

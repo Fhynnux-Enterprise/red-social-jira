@@ -738,7 +738,7 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   },
   card: {
     marginHorizontal: 8,
-    marginVertical: 10,
+    marginVertical: 6,
     borderRadius: 20,
     backgroundColor: colors.surface,
     overflow: 'hidden',
@@ -899,7 +899,7 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     zIndex: 25,
   },
   belowMediaContent: {
-    paddingBottom: 16,
+    paddingBottom: 4,
   },
   noImage: {
     width: '100%',
@@ -990,7 +990,8 @@ const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   },
   footer: {
     paddingHorizontal: 10,
-    paddingVertical: 14,
+    paddingTop: 12,
+    paddingBottom: 6,
   },
   appMetaRow: {
     flexDirection: 'row',

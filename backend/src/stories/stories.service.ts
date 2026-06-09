@@ -5,6 +5,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Story } from './entities/story.entity';
 import { StoryView } from './entities/story-view.entity';
 import { StorageService } from '../storage/storage.service';
+import { VisionService } from '../storage/vision.service';
 
 @Injectable()
 export class StoriesService {
@@ -16,9 +17,15 @@ export class StoriesService {
     @InjectRepository(StoryView)
     private readonly storyViewsRepository: Repository<StoryView>,
     private readonly storageService: StorageService,
+    private readonly visionService: VisionService,
   ) {}
 
   async create(userId: string, mediaUrl: string, mediaType: string, cityId: string, content?: string) {
+    // Validar seguridad de la imagen con la API de Google Vision antes de crear la historia
+    if (mediaType === 'IMAGE' || mediaUrl.match(/\.(jpeg|jpg|gif|png|webp)/i)) {
+      await this.visionService.validateImageSafety(mediaUrl);
+    }
+
     const story = this.storiesRepository.create({
       userId,
       mediaUrl,

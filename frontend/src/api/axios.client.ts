@@ -85,6 +85,12 @@ apiClient.interceptors.response.use(
                     return Promise.reject(error);
                 }
 
+                // 3. CASO CUENTA DESACTIVADA (Para reactivación)
+                // Devolvemos el error sin expirar la sesión globalmente para permitir reactivación
+                if (parsed?.code === 'ACCOUNT_DEACTIVATED') {
+                    return Promise.reject(error);
+                }
+
             } catch (_) { /* no era JSON estructurado */ }
 
             // 401 normal → sesión expirada

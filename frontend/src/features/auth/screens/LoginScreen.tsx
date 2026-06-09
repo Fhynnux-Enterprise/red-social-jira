@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -9,6 +9,8 @@ import {
     Platform,
     ActivityIndicator,
     Image,
+    Linking,
+    Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -39,7 +41,11 @@ export default function LoginScreen({ navigation }: any) {
     const { colors } = useTheme();
     const styles = useMemo(() => getStyles(colors), [colors]);
 
+    const passwordInputRef = useRef<any>(null);
+
     const [isLoadingGoogle, setIsLoadingGoogle] = React.useState(false);
+    const [unconfirmedEmail, setUnconfirmedEmail] = React.useState<string | null>(null);
+    const [isResending, setIsResending] = React.useState(false);
 
     const {
         control,
@@ -49,6 +55,18 @@ export default function LoginScreen({ navigation }: any) {
         resolver: zodResolver(loginSchema),
         defaultValues: { email: '', password: '' },
     });
+
+    const openTerms = () => {
+        Linking.openURL('https://fynnux.app/chunchi-city-app/terminos-condiciones').catch(() => {
+            Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir el enlace de términos' });
+        });
+    };
+
+    const openPrivacy = () => {
+        Linking.openURL('https://fynnux.app/chunchi-city-app/politica-privacidad').catch(() => {
+            Toast.show({ type: 'error', text1: 'Error', text2: 'No se pudo abrir el enlace de privacidad' });
+        });
+    };
 
     useEffect(() => {
         // Usamos el ID desde el archivo .env para mayor seguridad y facilidad de mantenimiento
@@ -95,6 +113,10 @@ export default function LoginScreen({ navigation }: any) {
             try {
                 const parsed = JSON.parse(raw);
                 if (parsed?.code === 'USER_BANNED') return;
+                if (parsed?.code === 'EMAIL_NOT_CONFIRMED') {
+                    setUnconfirmedEmail(data.email);
+                    return;
+                }
             } catch (_) {}
 
             const errorMessage =
@@ -103,12 +125,47 @@ export default function LoginScreen({ navigation }: any) {
                 'Ocurrió un error al iniciar sesión';
 
             const isInvalidCredentials = errorMessage.includes('Invalid login credentials');
+            const isEmailNotConfirmed = 
+                errorMessage.toLowerCase().includes('email not confirmed') ||
+                errorMessage.toLowerCase().includes('email_not_confirmed') ||
+                errorMessage.toLowerCase().includes('confirm your email') ||
+                errorMessage.toLowerCase().includes('email confirmation');
+
+            let finalMessage = errorMessage;
+            if (isInvalidCredentials) {
+                finalMessage = 'Correo o contraseña incorrectos.';
+            } else if (isEmailNotConfirmed) {
+                setUnconfirmedEmail(data.email);
+                return;
+            }
 
             Toast.show({
                 type: 'error',
                 text1: 'Error',
-                text2: isInvalidCredentials ? 'Correo o contraseña incorrectos.' : errorMessage,
+                text2: finalMessage,
             });
+        }
+    };
+
+    const handleResendConfirmation = async () => {
+        if (!unconfirmedEmail) return;
+        setIsResending(true);
+        try {
+            await AuthService.resendConfirmation(unconfirmedEmail);
+            Toast.show({
+                type: 'success',
+                text1: '¡Correo reenviado!',
+                text2: 'Revisa tu bandeja de entrada o la carpeta de SPAM.',
+            });
+            setUnconfirmedEmail(null);
+        } catch (error: any) {
+            Toast.show({
+                type: 'error',
+                text1: 'Error al reenviar',
+                text2: error?.response?.data?.message || error.message || 'Intenta de nuevo más tarde.',
+            });
+        } finally {
+            setIsResending(false);
         }
     };
 
@@ -148,6 +205,9 @@ export default function LoginScreen({ navigation }: any) {
                                         onChangeText={onChange}
                                         onBlur={onBlur}
                                         editable={!isSubmitting}
+                                        returnKeyType="next"
+                                        onSubmitEditing={() => passwordInputRef.current?.focus()}
+                                        blurOnSubmit={false}
                                     />
                                 </View>
                             )}
@@ -161,6 +221,7 @@ export default function LoginScreen({ navigation }: any) {
                                 <View style={styles.inputWrapper}>
                                     {errors.password && <Text style={styles.errorText}>{errors.password.message}</Text>}
                                     <TextInput
+                                        ref={passwordInputRef}
                                         style={[styles.input, errors.password ? styles.inputError : null]}
                                         placeholder="Contraseña"
                                         placeholderTextColor={colors.textSecondary}
@@ -169,10 +230,20 @@ export default function LoginScreen({ navigation }: any) {
                                         onChangeText={onChange}
                                         onBlur={onBlur}
                                         editable={!isSubmitting}
+                                        returnKeyType="done"
+                                        onSubmitEditing={handleSubmit(onSubmit)}
                                     />
                                 </View>
                             )}
                         />
+
+                        <TouchableOpacity
+                            onPress={() => navigation.navigate('ForgotPassword')}
+                            disabled={isSubmitting}
+                            style={styles.forgotPasswordContainer}
+                        >
+                            <Text style={styles.forgotPasswordText}>¿Has olvidado tu contraseña?</Text>
+                        </TouchableOpacity>
                     </View>
 
                     <TouchableOpacity
@@ -213,7 +284,6 @@ export default function LoginScreen({ navigation }: any) {
                             </View>
                         )}
                     </TouchableOpacity>
-
                     <TouchableOpacity
                         style={styles.linkContainer}
                         onPress={() => navigation.navigate('Register')}
@@ -223,6 +293,61 @@ export default function LoginScreen({ navigation }: any) {
                     </TouchableOpacity>
                 </View>
             </KeyboardAvoidingView>
+
+            {/* Mensaje de aceptación legal al pie de la vista */}
+            <View style={styles.footerDisclaimer}>
+                <Text style={styles.disclaimerText}>
+                    Al continuar aceptas los{' '}
+                    <Text style={styles.disclaimerLink} onPress={openTerms}>
+                        términos y condiciones
+                    </Text>{' '}
+                    y las{' '}
+                    <Text style={styles.disclaimerLink} onPress={openPrivacy}>
+                        políticas de privacidad
+                    </Text>
+                    .
+                </Text>
+            </View>
+
+            {/* Modal de correo no confirmado */}
+            <Modal
+                visible={!!unconfirmedEmail}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setUnconfirmedEmail(null)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                        <View style={styles.modalHeader}>
+                            <Text style={[styles.modalTitle, { color: colors.text }]}>Correo no confirmado</Text>
+                        </View>
+                        
+                        <Text style={[styles.modalText, { color: colors.textSecondary }]}>
+                            Antes de poder iniciar sesión, necesitas confirmar tu cuenta a través del enlace que te enviamos al correo.
+                        </Text>
+                       
+
+                        <TouchableOpacity
+                            style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                            onPress={handleResendConfirmation}
+                            disabled={isResending}
+                        >
+                            {isResending ? (
+                                <ActivityIndicator color="#fff" />
+                            ) : (
+                                <Text style={styles.modalButtonText}>Reenviar correo de confirmación</Text>
+                            )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.modalCloseBtn}
+                            onPress={() => setUnconfirmedEmail(null)}
+                        >
+                            <Text style={[styles.modalCloseText, { color: colors.textSecondary }]}>Cancelar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -249,6 +374,67 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
         width: 180,
         height: 180,
         borderRadius: 24,
+    },
+    termsText: {
+        fontSize: 12,
+        textAlign: 'center',
+        marginTop: 20,
+        lineHeight: 18,
+        paddingHorizontal: 10,
+    },
+    termsLink: {
+        fontWeight: 'bold',
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modalContent: {
+        width: '100%',
+        borderRadius: 16,
+        padding: 24,
+        elevation: 5,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+    },
+    modalHeader: {
+        marginBottom: 16,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        textAlign: 'center',
+    },
+    modalText: {
+        fontSize: 15,
+        lineHeight: 22,
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    modalButton: {
+        paddingVertical: 14,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 10,
+    },
+    modalButtonText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    modalCloseBtn: {
+        paddingVertical: 12,
+        alignItems: 'center',
+    },
+    modalCloseText: {
+        fontSize: 15,
+        fontWeight: '600',
     },
     title: {
         fontSize: 32,
@@ -326,5 +512,31 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     linkText: {
         color: colors.primary,
         fontSize: 16,
+    },
+    forgotPasswordContainer: {
+        alignSelf: 'center',
+        marginTop: 4,
+        marginBottom: 8,
+    },
+    forgotPasswordText: {
+        color: colors.primary,
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    footerDisclaimer: {
+        paddingHorizontal: 55,
+        paddingBottom: Platform.OS === 'ios' ? 10 : 20,
+        alignItems: 'center',
+    },
+    disclaimerText: {
+        textAlign: 'center',
+        fontSize: 11,
+        color: colors.textSecondary,
+        lineHeight: 16,
+    },
+    disclaimerLink: {
+        color: colors.primary,
+        fontWeight: '600',
+        textDecorationLine: 'underline',
     },
 });

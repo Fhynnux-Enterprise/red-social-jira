@@ -279,9 +279,9 @@ const StoreProductCard = React.forwardRef((props: any, ref: any) => {
         <View style={{ overflow: 'hidden' }}>
             {/* ── Card Head (Estilo Oferta) ── */}
             <View style={styles.cardHead}>
-              <View style={[styles.typeBadgeHead, { backgroundColor: '#2196F315' }]}>
-                <Ionicons name="cart" size={12} color="#2196F3" />
-                <Text style={[styles.typeBadgeTextHead, { color: '#2196F3' }]}>PUBLICACIÓN DE TIENDA</Text>
+              <View style={[styles.typeBadgeHead, { backgroundColor: '#9C27B015' }]}>
+                <Ionicons name="cart" size={12} color="#9C27B0" />
+                <Text style={[styles.typeBadgeTextHead, { color: '#9C27B0' }]}>PUBLICACIÓN DE TIENDA</Text>
               </View>
             </View>
 
@@ -394,7 +394,9 @@ const StoreProductCard = React.forwardRef((props: any, ref: any) => {
                     {item.seller?.photoUrl ? (
                       <Image source={{ uri: item.seller.photoUrl }} style={styles.avatarImg} />
                     ) : (
-                      <Text style={{ color: '#FFF', fontSize: 10 }}>{item.seller?.firstName?.[0]}</Text>
+                      <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>
+                        {`${item.seller?.firstName?.[0] || ''}${item.seller?.lastName?.[0] || ''}`.toUpperCase() || 'U'}
+                      </Text>
                     )}
                   </View>
                    <View style={styles.sellerTextColumn}>

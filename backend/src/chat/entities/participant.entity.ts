@@ -25,12 +25,12 @@ export class Participant {
     joinedAt: Date;
 
     @Field(() => User)
-    @ManyToOne(() => User, (user) => user.participations)
+    @ManyToOne(() => User, (user) => user.participations, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'user_id' })
     user: User;
 
     @Field(() => Conversation)
-    @ManyToOne(() => Conversation, (conversation) => conversation.participants)
+    @ManyToOne(() => Conversation, (conversation) => conversation.participants, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'conversation_id' })
     conversation: Conversation;
 }

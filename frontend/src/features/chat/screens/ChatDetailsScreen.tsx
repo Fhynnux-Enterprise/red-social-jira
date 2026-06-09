@@ -92,6 +92,19 @@ export default function ChatDetailsScreen() {
         skip: !conversationId,
     });
 
+    const [loadingDots, setLoadingDots] = useState('');
+
+    React.useEffect(() => {
+        if (!loading) return;
+        const interval = setInterval(() => {
+            setLoadingDots(prev => {
+                if (prev === '...') return '';
+                return prev + '.';
+            });
+        }, 500);
+        return () => clearInterval(interval);
+    }, [loading]);
+
     const MEDIA_LIMIT = 24; // Múltiplo de 3
     const [localMedia, setLocalMedia] = useState<any[]>([]);
     const [hasMoreMedia, setHasMoreMedia] = useState(true);
@@ -118,6 +131,8 @@ export default function ChatDetailsScreen() {
         try {
             const { data: moreData } = await fetchMoreMedia({
                 variables: {
+                    conversationId,
+                    limit: MEDIA_LIMIT,
                     offset: localMedia.length
                 }
             });
@@ -136,12 +151,18 @@ export default function ChatDetailsScreen() {
             }
         } catch (err) {
             console.error("Error fetching more media:", err);
+            Toast.show({
+                type: 'error',
+                text1: 'Error de conexión',
+                text2: 'No se pudo cargar más multimedia. Revisa la red y el servidor.'
+            });
         } finally {
             setIsFetchingMoreMedia(false);
         }
     };
 
     const isBlocked = useMemo(() => data?.getConversation?.isBlocked, [data]);
+    const isBlockedByMe = useMemo(() => data?.getConversation?.isBlockedByMe, [data]);
 
     const otherUser = useMemo(() => {
         const participants = data?.getConversation?.participants;
@@ -173,7 +194,7 @@ export default function ChatDetailsScreen() {
     });
 
     const handleBlockAction = () => {
-        if (isBlocked) {
+        if (isBlockedByMe) {
             unblockUser({ variables: { userId: otherUser.id } });
         } else {
             setIsBlockConfirmVisible(true);
@@ -307,12 +328,12 @@ export default function ChatDetailsScreen() {
                     disabled={blocking || unblocking}
                 >
                     <Ionicons 
-                        name={isBlocked ? "shield-checkmark-outline" : "shield-outline"} 
+                        name={isBlockedByMe ? "shield-checkmark-outline" : "shield-outline"} 
                         size={22} 
-                        color={isBlocked ? colors.primary : "#FF3B30"} 
+                        color={isBlockedByMe ? colors.primary : "#FF3B30"} 
                     />
-                    <Text style={[styles.optionText, { color: isBlocked ? colors.primary : "#FF3B30" }]}>
-                        {isBlocked ? 'Desbloquear usuario' : 'Bloquear usuario'}
+                    <Text style={[styles.optionText, { color: isBlockedByMe ? colors.primary : "#FF3B30" }]}>
+                        {isBlockedByMe ? 'Desbloquear usuario' : 'Bloquear usuario'}
                     </Text>
                 </TouchableOpacity>
             </View>
@@ -323,10 +344,10 @@ export default function ChatDetailsScreen() {
     if (loading) {
         return (
             <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
-                <Image 
-                    source={require('../../../../assets/images/icon.png')} 
-                    style={{ width: 40, height: 40, opacity: 0.5 }} 
-                />
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={{ marginTop: 12, fontSize: 16, color: colors.textSecondary, fontWeight: '500' }}>
+                    Cargando{loadingDots}
+                </Text>
             </View>
         );
     }

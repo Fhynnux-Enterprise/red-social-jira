@@ -6,6 +6,7 @@ import { ProfessionalProfileMedia } from './entities/professional-profile-media.
 import { UpsertProfessionalProfileInput } from './dto/upsert-professional-profile.input';
 import { UserBlocksService } from '../user-blocks/user-blocks.service';
 import { UserBlock } from '../user-blocks/entities/user-block.entity';
+import { VisionService } from '../storage/vision.service';
 
 @Injectable()
 export class ProfessionalsService {
@@ -15,10 +16,20 @@ export class ProfessionalsService {
     @InjectRepository(ProfessionalProfileMedia)
     private readonly mediaRepository: Repository<ProfessionalProfileMedia>,
     private readonly userBlocksService: UserBlocksService,
+    private readonly visionService: VisionService,
   ) {}
 
   async upsertProfessionalProfile(data: UpsertProfessionalProfileInput, userId: string): Promise<ProfessionalProfile> {
     const { media, ...profileData } = data;
+
+    // Validar seguridad de imágenes antes de guardar el perfil
+    if (media && media.length > 0) {
+      for (const item of media) {
+        if (item.type === 'IMAGE' || item.url.match(/\.(jpeg|jpg|gif|png|webp)/i)) {
+          await this.visionService.validateImageSafety(item.url);
+        }
+      }
+    }
 
     // Siempre crear un nuevo perfil (es una publicación, no un upsert por usuario)
     const profile = this.profileRepository.create({
@@ -119,6 +130,15 @@ export class ProfessionalsService {
     if (profile.userId !== userId) throw new ForbiddenException('No puedes editar este perfil.');
 
     const { media, ...profileData } = data;
+
+    // Validar seguridad de imágenes antes de editar el perfil
+    if (media && media.length > 0) {
+      for (const item of media) {
+        if (item.type === 'IMAGE' || item.url.match(/\.(jpeg|jpg|gif|png|webp)/i)) {
+          await this.visionService.validateImageSafety(item.url);
+        }
+      }
+    }
     Object.keys(profileData).forEach(key => {
       if ((profileData as any)[key] !== undefined) {
         (profile as any)[key] = (profileData as any)[key];
