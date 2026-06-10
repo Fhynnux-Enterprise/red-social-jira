@@ -53,8 +53,12 @@ import { SystemStatusInterceptor } from './common/interceptors/system-status.int
         username: configService.get<string>('DB_USERNAME'),
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_DATABASE'),
+        schema: 'app',
         autoLoadEntities: true,
         synchronize: false, // Controlado manualmente en dataSourceFactory
+        extra: {
+          options: '-c search_path=app,public,extensions'
+        }
       }),
       /**
        * dataSourceFactory nos permite controlar el orden exacto de operaciones:
@@ -67,6 +71,9 @@ import { SystemStatusInterceptor } from './common/interceptors/system-status.int
       dataSourceFactory: async (options) => {
         const dataSource = new DataSource(options as any);
         await dataSource.initialize();
+
+        // ── Paso 0: Habilitar la extensión uuid-ossp si no existe ───────────
+        await dataSource.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
 
         // ── Paso 1: Crear tabla cities si no existe (idempotente) ──────────
         await dataSource.query(`
