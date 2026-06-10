@@ -2344,7 +2344,7 @@ export default function ChatRoomScreen() {
                                     }}
                                 >
                                     <Ionicons name="checkbox-outline" size={24} color="#FF3B30" />
-                                    <Text style={[styles.actionModalText, { color: '#FF3B30' }]}>Eliminar para todos (Selección múltiple)</Text>
+                                    <Text style={[styles.actionModalText, { color: '#FF3B30' }]}>Eliminar para todos</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
@@ -2359,7 +2359,7 @@ export default function ChatRoomScreen() {
                                     }}
                                 >
                                     <Ionicons name="trash-bin-outline" size={24} color={colors.text} />
-                                    <Text style={[styles.actionModalText, { color: colors.text }]}>Eliminar para mí (Selección múltiple)</Text>
+                                    <Text style={[styles.actionModalText, { color: colors.text }]}>Eliminar para mí</Text>
                                 </TouchableOpacity>
 
                                 <View style={[styles.actionModalDivider, { backgroundColor: colors.border }]} />

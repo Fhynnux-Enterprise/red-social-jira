@@ -32,6 +32,7 @@ import { AdvertisersModule } from './advertisers/advertisers.module';
 import { CitiesModule } from './cities/cities.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
 import { SystemStatusInterceptor } from './common/interceptors/system-status.interceptor';
+import { ChatbotModule } from './chatbot/chatbot.module';
 
 @Module({
   imports: [
@@ -212,6 +213,7 @@ import { SystemStatusInterceptor } from './common/interceptors/system-status.int
     AdvertisersModule,
     CitiesModule,
     SystemSettingsModule,
+    ChatbotModule,
   ],
   controllers: [],
   providers: [

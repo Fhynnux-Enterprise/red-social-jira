@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, View, StyleSheet, Text, Image } from 'react-native';
+import { Platform, View, StyleSheet, Text, Image, TouchableOpacity } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +13,7 @@ import ChatListScreen from '../features/chat/screens/ChatListScreen';
 import ChatRoomScreen from '../features/chat/screens/ChatRoomScreen';
 import ChatDetailsScreen from '../features/chat/screens/ChatDetailsScreen';
 import NewChatScreen from '../features/chat/screens/NewChatScreen';
+import ChatBotScreen from '../features/chat/screens/ChatBotScreen';
 import StoryViewerScreen from '../features/stories/screens/StoryViewerScreen';
 import JobsScreen from '../features/jobs/screens/JobsScreen';
 import StoreScreen from '../features/store/screens/StoreScreen';
@@ -44,6 +45,7 @@ export type AppTabParamList = {
     Feed: undefined;
     Jobs: undefined;
     Store: undefined;
+    ChatBot: undefined;
     ChatList: undefined;
     Notifications: undefined;
     Profile: { userId?: string } | undefined;
@@ -51,6 +53,105 @@ export type AppTabParamList = {
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 const Tab = createBottomTabNavigator<AppTabParamList>();
+
+interface CustomTabBarButtonProps {
+    children?: React.ReactNode;
+    onPress?: (event: any) => void;
+    accessibilityState?: any;
+    style?: any;
+}
+
+const CustomTabBarButton: React.FC<CustomTabBarButtonProps> = ({ onPress, accessibilityState, style }) => {
+    const { colors, isDark } = useTheme();
+    const focused = accessibilityState?.selected;
+    return (
+        <TouchableOpacity
+            style={[style, styles.customButtonContainer]}
+            onPress={onPress}
+            activeOpacity={0.85}
+        >
+            <View style={[styles.customButtonOutline, { backgroundColor: colors.surface, shadowColor: '#000' }]}>
+                <LinearGradient
+                    colors={focused 
+                        ? [colors.primary, colors.secondary, colors.accent] 
+                        : [isDark ? '#2A2A2A' : '#EAEAEA', isDark ? '#3A3A3A' : '#F2F2F2']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.customButton}
+                >
+                    <Image 
+                        source={require('../../assets/chunchi-city-images/fynnux-corte-512x512.png')} 
+                        style={{ 
+                            width: 38,
+                            height: 38,
+                            resizeMode: 'contain',
+                            alignSelf: 'center',
+                            opacity: focused ? 1 : 0.7,
+                            tintColor: focused ? undefined : colors.textSecondary,
+                        }} 
+                    />
+                </LinearGradient>
+            </View>
+        </TouchableOpacity>
+    );
+};
+
+const ProfileTabBarButton: React.FC<CustomTabBarButtonProps> = ({ onPress, accessibilityState, style }) => {
+    const { colors, isDark } = useTheme();
+    const { user } = useAuth() as any;
+    const focused = accessibilityState?.selected;
+    const initials = user ? `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || user.username?.[0]?.toUpperCase() || 'U' : 'U';
+
+    return (
+        <TouchableOpacity
+            style={[style, styles.profileTabButtonContainer]}
+            onPress={onPress}
+            activeOpacity={0.85}
+        >
+            {user?.photoUrl ? (
+                <LinearGradient
+                    colors={focused 
+                        ? [colors.primary, colors.secondary, colors.accent] 
+                        : [colors.border, colors.border]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.profileTabButtonOutlineGradient}
+                >
+                    <View style={[styles.profileTabButtonInner, { backgroundColor: colors.surface }]}>
+                        <Image 
+                            source={{ uri: user.photoUrl }} 
+                            style={styles.profileTabButtonImage} 
+                        />
+                    </View>
+                </LinearGradient>
+            ) : (
+                <View style={[
+                    styles.profileTabButtonOutline,
+                    { 
+                        borderWidth: focused ? 0 : 2,
+                        borderColor: colors.border,
+                        backgroundColor: isDark ? 'rgba(255, 101, 36, 0.15)' : 'rgba(255, 101, 36, 0.08)' 
+                    }
+                ]}>
+                    {focused && (
+                        <LinearGradient
+                            colors={[colors.primary, colors.secondary, colors.accent]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={StyleSheet.absoluteFillObject}
+                        />
+                    )}
+                    <Text style={[
+                        styles.profileTabButtonInitials, 
+                        { color: focused ? '#FFFFFF' : colors.textSecondary }
+                    ]}>
+                        {initials}
+                    </Text>
+                </View>
+            )}
+        </TouchableOpacity>
+    );
+};
 
 function MainTabNavigator() {
     const insets = useSafeAreaInsets();
@@ -104,58 +205,12 @@ function MainTabNavigator() {
                         iconName = focused ? 'business' : 'business-outline';
                     } else if (route.name === 'Store') {
                         iconName = focused ? 'pricetags' : 'pricetags-outline';
+                    } else if (route.name === 'ChatBot') {
+                        iconName = focused ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline';
                     } else if (route.name === 'ChatList') {
                         iconName = focused ? 'paper-plane' : 'paper-plane-outline';
                     } else if (route.name === 'Notifications') {
                         iconName = focused ? 'notifications' : 'notifications-outline';
-                    } else if (route.name === 'Profile') {
-                        const initials = user ? `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || user.username?.[0]?.toUpperCase() || 'U' : 'U';
-                         if (user?.photoUrl) {
-                            return (
-                                <View style={[
-                                    styles.profileIconWrap, 
-                                    { borderColor: focused ? colors.primary : 'transparent' }
-                                ]}>
-                                    <Image 
-                                        source={{ uri: user.photoUrl }} 
-                                        style={styles.profileTabImage} 
-                                    />
-                                </View>
-                            );
-                        }
-
-                        if (focused) {
-                            return (
-                                <View style={[
-                                    styles.profileIconWrap,
-                                    { borderWidth: 0 }
-                                ]}>
-                                    <LinearGradient
-                                        colors={[colors.primary, colors.secondary, colors.accent]}
-                                        start={{ x: 0, y: 0 }}
-                                        end={{ x: 1, y: 1 }}
-                                        style={StyleSheet.absoluteFillObject}
-                                    />
-                                    <Text style={[styles.profileInitials, { color: '#FFFFFF' }]}>
-                                        {initials}
-                                    </Text>
-                                </View>
-                            );
-                        }
-
-                        return (
-                            <View style={[
-                                styles.profileIconWrap,
-                                { 
-                                    borderColor: colors.border, 
-                                    backgroundColor: isDark ? 'rgba(255, 101, 36, 0.15)' : 'rgba(255, 101, 36, 0.08)' 
-                                }
-                            ]}>
-                                <Text style={[styles.profileInitials, { color: colors.textSecondary }]}>
-                                    {initials}
-                                </Text>
-                            </View>
-                        );
                     }
 
                     const icon = <Ionicons name={iconName} size={24} color={focused ? 'white' : color} />;
@@ -211,15 +266,15 @@ function MainTabNavigator() {
                     borderTopWidth: 1,
                     borderTopColor: colors.border,
                     backgroundColor: colors.surface,
-                    minHeight: Platform.OS === 'ios' ? 92 : 72 + insets.bottom,
-                    paddingBottom: Platform.OS === 'ios' ? 32 : Math.max(insets.bottom, 12) + 10,
+                    minHeight: Platform.OS === 'ios' ? 90 : 70 + insets.bottom,
+                    paddingBottom: Platform.OS === 'ios' ? 30 : Math.max(insets.bottom, 12) + 8,
                     paddingTop: 8,
                     elevation: 8,
                     shadowOpacity: 0.08,
                     shadowRadius: 6,
                 },
                 tabBarIconStyle: {
-                    marginTop: 0,
+                    marginTop: 2, // Desplazado 2px hacia abajo
                     width: 30,
                     height: 30,
                     justifyContent: 'center',
@@ -230,6 +285,15 @@ function MainTabNavigator() {
             <Tab.Screen name="Feed" component={FeedScreen} options={{ tabBarLabel: 'Inicio' }} />
             <Tab.Screen name="Jobs" component={JobsScreen} options={{ tabBarLabel: 'Empleo' }} />
             <Tab.Screen name="Store" component={StoreScreen} options={{ tabBarLabel: 'Tienda' }} />
+            <Tab.Screen 
+                name="ChatBot" 
+                component={ChatBotScreen} 
+                options={{ 
+                    tabBarLabel: 'IA',
+                    tabBarButton: (props) => <CustomTabBarButton {...props} />,
+                    tabBarHideOnKeyboard: true
+                }} 
+            />
             <Tab.Screen 
                 name="ChatList" 
                 component={ChatListScreen} 
@@ -277,6 +341,7 @@ function MainTabNavigator() {
                 component={ProfileScreen}
                 options={{ 
                     tabBarLabel: () => null,
+                    tabBarButton: (props) => <ProfileTabBarButton {...props} />
                 }}
                 listeners={({ navigation }) => ({
                     tabPress: (e) => {
@@ -359,24 +424,77 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-    profileIconWrap: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+    profileTabButtonContainer: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        flexDirection: 'column',
+        margin: 0,
+        padding: 0,
+        alignSelf: 'stretch',
+        flex: 1,
+        height: '100%',
+        top: Platform.OS === 'ios' ? 8 : 6, // Desplazado 2px hacia abajo (antes era 6 : 4)
+    },
+    profileTabButtonOutlineGradient: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 3, // Anillo de selección de 3px, visible y nítido
+    },
+    profileTabButtonInner: {
+        flex: 1,
+        width: '100%',
+        height: '100%',
+        borderRadius: 21, // Concentricidad perfecta: 24 (radio externo) - 3 (ancho de borde)
+        overflow: 'hidden',
+    },
+    profileTabButtonOutline: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
         borderWidth: 2,
         overflow: 'hidden',
         justifyContent: 'center',
         alignItems: 'center',
-        marginTop: 18,
-        marginRight: 10,
     },
-    profileTabImage: {
+    profileTabButtonImage: {
         width: '100%',
         height: '100%',
     },
-    profileInitials: {
+    profileTabButtonInitials: {
         fontSize: 15,
         fontWeight: 'bold',
         textAlign: 'center',
+    },
+    customButtonContainer: {
+        top: Platform.OS === 'ios' ? 0 : 2, // Desplazado 2px hacia abajo (antes era -2 : 0)
+        justifyContent: 'center',
+        alignItems: 'center',
+        flexDirection: 'column',
+        margin: 0,
+        padding: 0,
+        alignSelf: 'stretch',
+        flex: 1,
+    },
+    customButtonOutline: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        justifyContent: 'center',
+        alignItems: 'center',
+        alignSelf: 'center', // Asegura el centrado exacto en la cuadrícula horizontal
+        elevation: 3,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+    },
+    customButton: {
+        width: 54,
+        height: 54,
+        borderRadius: 27,
+        justifyContent: 'center',
+        alignItems: 'center',
     }
 });
